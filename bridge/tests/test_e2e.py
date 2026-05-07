@@ -185,3 +185,141 @@ def test_bridge_full_message_round_trip(bridge_proc: _BridgeProc) -> None:
     # The exact LLM output isn't pinned, but for this prompt we expect
     # something containing 'pong' (case-insensitive).
     assert "pong" in final.lower(), f"unexpected final content: {final!r}"
+
+
+def test_approval_deny_short_circuits(bridge_proc: _BridgeProc) -> None:
+    """Send a prompt designed to trigger code_run, deny the approval, and
+    verify the run still completes (agent receives denied status and proceeds)."""
+    ready = bridge_proc.next_event(timeout=E2E_READY_TIMEOUT)
+    assert ready["kind"] == "ready"
+
+    bridge_proc.send(
+        {
+            "kind": "user_message",
+            "text": (
+                "Invoke the code_run tool now with type=python and "
+                'code=\'print("approval-test")\'. Do not just show me the '
+                "code; actually call the tool."
+            ),
+            "images": [],
+        }
+    )
+
+    # Look for tool_call_pending. The LLM may emit other events first
+    # (e.g. turn_end with no tool calls). Cap how long we wait for one.
+    pending: dict[str, Any] | None = None
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        ev = bridge_proc.next_event(timeout=E2E_LINE_TIMEOUT)
+        if ev["kind"] == "tool_call_pending":
+            pending = ev
+            break
+        if ev["kind"] == "run_complete":
+            pytest.skip(
+                "LLM did not call code_run on this run; approval flow "
+                "couldn't be exercised. Try again or refine the prompt."
+            )
+
+    assert pending is not None, "no tool_call_pending observed"
+    assert pending["toolName"] == "code_run"
+    assert pending["riskLevel"] == "high"
+    assert pending["approvalId"]
+    assert pending["reason"]
+
+    # Deny.
+    bridge_proc.send(
+        {
+            "kind": "approval_response",
+            "approvalId": pending["approvalId"],
+            "decision": "deny",
+        }
+    )
+
+    # Drain until run_complete. Agent should observe denied tool result
+    # and finish the run on its own (possibly with a refusal message).
+    deadline = time.monotonic() + E2E_RUN_TIMEOUT
+    while time.monotonic() < deadline:
+        ev = bridge_proc.next_event(timeout=E2E_LINE_TIMEOUT)
+        if ev["kind"] == "run_complete":
+            return
+    pytest.fail("no run_complete after deny")
+
+
+def test_load_history_restores_context(bridge_proc: _BridgeProc) -> None:
+    """Inject a fake prior conversation, then ask a follow-up that depends
+    on it. If the LLM answers correctly, history injection works."""
+    ready = bridge_proc.next_event(timeout=E2E_READY_TIMEOUT)
+    assert ready["kind"] == "ready"
+
+    bridge_proc.send(
+        {
+            "kind": "load_history",
+            "messages": [
+                {"role": "user", "content": "请记住一个数字：1729"},
+                {"role": "assistant", "content": "好的，我已经记住数字 1729。"},
+            ],
+        }
+    )
+    loaded = bridge_proc.next_event(timeout=10)
+    assert loaded["kind"] == "history_loaded", loaded
+    assert loaded["messageCount"] == 2
+
+    bridge_proc.send(
+        {
+            "kind": "user_message",
+            "text": "我刚才让你记住的数字是多少？只回答这个数字，不要其他内容。",
+            "images": [],
+        }
+    )
+
+    deadline = time.monotonic() + E2E_RUN_TIMEOUT
+    final: str | None = None
+    while time.monotonic() < deadline:
+        ev = bridge_proc.next_event(timeout=E2E_LINE_TIMEOUT)
+        if ev["kind"] == "run_complete":
+            final = ev["finalContent"]
+            break
+    else:
+        pytest.fail("no run_complete")
+
+    assert final is not None
+    # If history injection works, "1729" should be in the response. If it
+    # isn't, our load_history mapping needs refinement (PRD §10 open item).
+    assert "1729" in final, (
+        f"history did not restore: agent did not recall the number. "
+        f"finalContent: {final!r}"
+    )
+
+
+def test_abort_synthesizes_run_complete(bridge_proc: _BridgeProc) -> None:
+    """Start a long-form generation, abort mid-stream, expect ABORTED."""
+    ready = bridge_proc.next_event(timeout=E2E_READY_TIMEOUT)
+    assert ready["kind"] == "ready"
+
+    bridge_proc.send(
+        {
+            "kind": "user_message",
+            "text": (
+                "Please write a detailed 2000-word essay on the history of "
+                "computing, in English. Be very thorough."
+            ),
+            "images": [],
+        }
+    )
+
+    # Give the worker a moment to start streaming LLM tokens.
+    # GA checks stop_sig at every chunk yield, so abort takes effect on
+    # the next chunk after it's set.
+    time.sleep(2.0)
+
+    bridge_proc.send({"kind": "abort"})
+
+    # Expect run_complete with exitReason.result == "ABORTED" (synthesized
+    # by bridge since GA's break path doesn't fire turn_end_callback).
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        ev = bridge_proc.next_event(timeout=E2E_LINE_TIMEOUT)
+        if ev["kind"] == "run_complete":
+            assert ev["exitReason"]["result"] == "ABORTED", ev
+            return
+    pytest.fail("no run_complete with ABORTED")

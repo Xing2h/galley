@@ -409,7 +409,20 @@ class Bridge:
             self.run_in_progress.set()
             self.agent.put_task(cmd.text, source="workbench")
         elif isinstance(cmd, AbortCommand):
+            # GA's abort() sets stop_sig and breaks out of the run loop
+            # without firing turn_end_callback, so we synthesize the
+            # run_complete event ourselves with the ABORTED marker.
             self.agent.abort()
+            if self.run_in_progress.is_set():
+                self._emit(
+                    RunCompleteEvent(
+                        sessionId=self.session_id,
+                        exitReason={"result": "ABORTED", "data": None},
+                        finalContent="",
+                        totalTurns=self.current_turn,
+                    )
+                )
+                self.run_in_progress.clear()
         elif isinstance(cmd, LoadHistoryCommand):
             try:
                 self._load_history(cmd.messages)
@@ -434,11 +447,32 @@ class Bridge:
             self.shutdown_event.set()
 
     def _load_history(self, messages: list[dict[str, Any]]) -> None:
-        # POC mapping per docs/ipc-protocol.md §10 open item: stash messages
-        # directly. Real format depends on the active LLM session class
-        # (ClaudeSession vs NativeOAISession). E2E will tell us where to
-        # refine. Documented as open item until empirically validated.
-        self.agent.llmclient.backend.history = list(messages)
+        """Inject conversation history into the backend.
+
+        Desktop-facing schema (docs/ipc-protocol.md §8.4) uses simple string
+        content per message. GA's NativeClaudeSession backend stores history
+        as a list of {role, content: [{type, text}, ...]} dicts (Anthropic
+        native format). Adapt here so the desktop never has to know GA's
+        internal shape.
+
+        E2E-validated for NativeClaudeSession (GLM 5.1 via native_claude
+        config). Other session classes (NativeOAISession, ClaudeSession,
+        LLMSession, MixinSession) are NOT yet validated; if a session uses
+        a different shape we'll need a per-class adapter. Tracked as PRD
+        §10 open item.
+        """
+        adapted = []
+        for m in messages:
+            role = m.get("role")
+            content = m.get("content", "")
+            if isinstance(content, str):
+                blocks: list[Any] = [{"type": "text", "text": content}]
+            elif isinstance(content, list):
+                blocks = content  # assume already native shape
+            else:
+                blocks = [{"type": "text", "text": str(content)}]
+            adapted.append({"role": role, "content": blocks})
+        self.agent.llmclient.backend.history = adapted
 
     # ---------------- Main loop ----------------
 

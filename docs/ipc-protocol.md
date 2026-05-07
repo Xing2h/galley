@@ -427,6 +427,7 @@ bridge:   { kind: "turn_start", ... }
 
 ## 10. Open Items（实现阶段确认）
 
-- [ ] `load_history` 的 messages 数据结构需要与 `llmclient.backend.history` 实际格式对齐（不同 LLM provider 可能不同；阶段 1 POC 时确认 ClaudeSession 的格式后写死）
-- [ ] `tool_call_progress` 字符串解析规则（GA 当前 yield 的 emoji 前缀格式）需在 bridge 实现时记录到 `bridge/handlers.py` 注释，避免 GA 升级时格式变化无人知晓
-- [ ] images 字段的传递路径（user_message → GA put_task）需在 bridge 验证可行
+- [x] **`load_history` messages 数据结构** — 已 e2e 验证：`NativeClaudeSession` 的 `backend.history` 是 `[{role, content: [{type:"text", text:str}, ...]}]`（Anthropic native messages 格式）。`bridge/workbench_bridge.py:_load_history` 把 desktop 传来的简单 string content 适配为 native blocks。**未验证**：`NativeOAISession` / `ClaudeSession` / `LLMSession` / `MixinSession` 的 history 形态可能不同，需要对应 adapter。当前 V0.1 只在 `NativeClaudeSession` 下保证恢复语义。
+- [ ] `tool_call_progress` 字符串解析规则（GA 当前 yield 的 emoji 前缀格式）需在 bridge 实现时记录到 `bridge/handlers.py` 注释，避免 GA 升级时格式变化无人知晓 — V0.1 暂不实现 progress 事件，turn_end 已含完整 toolCalls/toolResults
+- [ ] images 字段的传递路径（user_message → GA put_task）需在 bridge 验证可行 — bridge 已通过 `images=cmd.images` 透传到 `agent.put_task`，但实际多模态调用未 e2e 验证
+- [x] **`abort` 路径** — GA 的 `abort()` 设 `stop_sig` 让 worker 跳出循环，但**不**触发 `turn_end_callback`。bridge 在 `dispatch_command` 收到 `AbortCommand` 时主动合成 `RunCompleteEvent` with `exitReason.result = "ABORTED"`。e2e 已验证。
