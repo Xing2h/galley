@@ -155,6 +155,63 @@ def _simplify_llm_name(raw: str) -> str:
     return f"{brand} {parts[1]}" if len(parts) > 1 else brand
 
 
+# Keyword patterns for hint inference. Match in order; first hit wins.
+# Patterns are case-insensitive substring matches against the error message.
+# See docs/ipc-protocol.md §4.10 for the hint contract; DESIGN.md §6.2 for
+# the Error Card variants the desktop renders for each hint.
+_ERROR_HINT_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "check_llm_config",
+        (
+            "api_key",
+            "api key",
+            "unauthorized",
+            "authentication",
+            "invalid key",
+            "401",
+            "403",
+        ),
+    ),
+    (
+        "quota_exceeded",
+        ("quota", "rate limit", "rate_limit", "429", "too many requests"),
+    ),
+    (
+        "network",
+        (
+            "connection refused",
+            "timeout",
+            "timed out",
+            "dns",
+            "network is unreachable",
+            "connection reset",
+        ),
+    ),
+)
+
+
+def _classify_error(message: str, category: str) -> tuple[str | None, bool]:
+    """Classify an error message into (hint, retryable) for ErrorEvent.
+
+    Only runtime errors get hints — those are the user-facing failure modes
+    worth translating ("401 Unauthorized" -> "check your mykey.py"). Bridge
+    and business errors fall through to the standard Error Card without a
+    hint.
+
+    Returns (hint, retryable). retryable defaults to True for runtime
+    errors (the user can plausibly try again, possibly with a fix);
+    False for bridge / business errors (those are bugs or invalid input
+    that retrying wouldn't change).
+    """
+    if category != "runtime":
+        return None, False
+    msg_lower = message.lower()
+    for hint, keywords in _ERROR_HINT_PATTERNS:
+        if any(kw in msg_lower for kw in keywords):
+            return hint, True
+    return None, True
+
+
 def _resolve_ga_commit(ga_path: str) -> str:
     import subprocess
 
@@ -334,11 +391,36 @@ class Bridge:
     def _emit(self, ev: Any) -> None:
         self.event_queue.put(encode(ev))
 
-    def _emit_error(self, message: str, tb: str | None) -> None:
+    def _emit_error(
+        self,
+        message: str,
+        tb: str | None,
+        *,
+        category: str = "bridge",
+        severity: str = "error",
+        context: str | None = None,
+    ) -> None:
+        """Emit a structured ErrorEvent.
+
+        category: "bridge" (default) for bridge-internal faults that desktop
+        renders as a toast; "runtime" for GA/LLM/tool failures rendered as
+        an inline conversation message; "business" for user-action errors
+        (invalid input, history corruption) also rendered as a toast.
+
+        hint and retryable are inferred from the message via
+        _classify_error — runtime errors with known keyword matches get a
+        hint that desktop maps to a tailored Error Card.
+        """
+        hint, retryable = _classify_error(message, category)
         self._emit(
             ErrorEvent(
                 sessionId=self.session_id,
                 message=message,
+                category=category,
+                severity=severity,
+                retryable=retryable,
+                hint=hint,
+                context=context,
                 traceback=tb,
             )
         )
@@ -451,6 +533,9 @@ class Bridge:
             self._emit_error(
                 f"Approval timed out for {tool_name} ({self.APPROVAL_WAIT_SECS}s); denying.",
                 None,
+                category="business",
+                severity="warning",
+                context="approval_timeout",
             )
             return "deny"
         return pending.decision or "deny"
@@ -464,7 +549,11 @@ class Bridge:
         elif isinstance(cmd, ApprovalResponseCommand):
             ok = self.state.resolve_pending(cmd.approvalId, cmd.decision)
             if not ok:
-                self._emit_error(f"Unknown approval id: {cmd.approvalId}", None)
+                self._emit_error(
+                    f"Unknown approval id: {cmd.approvalId}",
+                    None,
+                    context="approval_response",
+                )
         elif isinstance(cmd, AskUserResponseCommand):
             self.run_in_progress.set()
             self.agent.put_task(cmd.text, source="workbench")
@@ -494,7 +583,10 @@ class Bridge:
                 )
             except Exception as e:
                 self._emit_error(
-                    f"load_history failed: {e}", traceback.format_exc()
+                    f"load_history failed: {e}",
+                    traceback.format_exc(),
+                    category="business",
+                    context="load_history",
                 )
         elif isinstance(cmd, SetApprovalRulesCommand):
             # In-place mutation so the existing handler instance picks up
@@ -518,26 +610,36 @@ class Bridge:
         """
         if self.run_in_progress.is_set():
             self._emit_error(
-                "Cannot switch LLM while a run is in progress", "set_llm"
+                "Cannot switch LLM while a run is in progress",
+                None,
+                category="business",
+                context="set_llm",
             )
             return
         try:
             count = len(self.agent.llmclients)
         except Exception as e:
             self._emit_error(
-                f"Cannot read LLM list: {e}", traceback.format_exc()
+                f"Cannot read LLM list: {e}",
+                traceback.format_exc(),
+                context="set_llm",
             )
             return
         if not 0 <= cmd.llmIndex < count:
             self._emit_error(
-                f"llmIndex {cmd.llmIndex} out of range [0, {count})", "set_llm"
+                f"llmIndex {cmd.llmIndex} out of range [0, {count})",
+                None,
+                category="business",
+                context="set_llm",
             )
             return
         try:
             self.agent.next_llm(cmd.llmIndex)
         except Exception as e:
             self._emit_error(
-                f"next_llm({cmd.llmIndex}) failed: {e}", traceback.format_exc()
+                f"next_llm({cmd.llmIndex}) failed: {e}",
+                traceback.format_exc(),
+                context="set_llm",
             )
             return
         raw_name = self.agent.get_llm_name()

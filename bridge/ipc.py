@@ -127,6 +127,13 @@ class RunCompleteEvent:
 class ErrorEvent:
     sessionId: str
     message: str
+    # Structured triage fields — see docs/ipc-protocol.md §4.10.
+    # All have defaults so existing call sites stay valid; bridge classifies
+    # known errors before emitting and desktop renders accordingly.
+    category: str = "bridge"  # "bridge" | "runtime" | "business"
+    severity: str = "error"  # "error" | "warning" | "info"
+    retryable: bool = False
+    hint: str | None = None  # "check_llm_config" | "network" | "quota_exceeded" | None
     context: str | None = None
     traceback: str | None = None
     timestamp: str = field(default_factory=_now_iso)

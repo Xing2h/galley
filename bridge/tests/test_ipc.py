@@ -10,6 +10,7 @@ from bridge.ipc import (
     AbortCommand,
     ApprovalResponseCommand,
     AskUserResponseCommand,
+    ErrorEvent,
     IPCProtocolError,
     LLMChangedEvent,
     LoadHistoryCommand,
@@ -172,6 +173,51 @@ def test_run_complete_round_trip() -> None:
     )
     decoded = decode_event(encode(ev))
     assert decoded == ev
+
+
+def test_error_event_default_fields() -> None:
+    """Bridge call sites that only pass message + traceback get bridge-class
+    error with the expected defaults."""
+    ev = ErrorEvent(sessionId="s1", message="something went wrong")
+    decoded = decode_event(encode(ev))
+    assert decoded == ev
+    assert decoded.category == "bridge"
+    assert decoded.severity == "error"
+    assert decoded.retryable is False
+    assert decoded.hint is None
+
+
+def test_error_event_runtime_with_hint() -> None:
+    """Runtime errors with hints get full triage payload across the wire."""
+    ev = ErrorEvent(
+        sessionId="s1",
+        message="Authentication failed: invalid api_key",
+        category="runtime",
+        severity="error",
+        retryable=True,
+        hint="check_llm_config",
+        context="user_message",
+        traceback="Traceback (most recent call last):\n...",
+    )
+    decoded = decode_event(encode(ev))
+    assert decoded == ev
+    assert decoded.hint == "check_llm_config"
+    assert decoded.retryable is True
+
+
+def test_error_event_business_warning() -> None:
+    """Business errors (user input issues) render as warning toasts."""
+    ev = ErrorEvent(
+        sessionId="s1",
+        message="Cannot switch LLM while a run is in progress",
+        category="business",
+        severity="warning",
+        context="set_llm",
+    )
+    decoded = decode_event(encode(ev))
+    assert decoded == ev
+    assert decoded.category == "business"
+    assert decoded.severity == "warning"
 
 
 def test_unicode_preserved() -> None:

@@ -1,47 +1,712 @@
 # GenericAgent Workbench DESIGN.md
 
-> Status: **Draft v0.2 — work in progress**
-> Last updated: 2026-05-07
-> v0.1（dark-first / Linear 风）已被 v0.2 整体方向替换。
+> Status: **v0.2 — complete**
+> Last updated: 2026-05-08
+> v0.1（dark-first / Linear 风）已被 v0.2 整体方向替换，Notion 历史稿仅作对照。
+> 决策叙事与 rejected alternatives 见 [docs/devlog/](./devlog/) 中 2026-05-07 / 2026-05-08 的设计相关 entry。
 
-## v0.2 设计方向
+---
 
-PRD v0.2 落定后，UI 设计方向从 v0.1 的"dark graphite + cyan-emerald + Linear/Raycast 紧凑驾驶舱"重构为：
+## 1. 设计哲学
 
-- **气质**：Notion + Claude 结合 —— 文档化的对话工作台
-- **模式**：Light-first（暖米白基底；dark mode 暂缓到 V0.2+）
-- **品牌色**：杏沙 `#D9A78A`（产品体温色，不做主 CTA 填充）
-- **字体**：Newsreader 衬线（内容）+ Inter（UI）+ JetBrains Mono（命令）三 register
-- **Icon set**：Phosphor Thin
+GA Workbench 的视觉与交互气质 = **Notion + Claude**。
 
-完整 token、组件 spec、交互规则的对齐过程，见 [devlog 的设计相关 entry](./devlog/)。当所有组件设计讨论结束后，本文件会更新为完整 v0.2 spec。
+- **Notion 给**：文档心智、舒展留白、emoji 锚点（克制使用）、Sidebar 树
+- **Claude 给**：暖色调、文学性可读性、对话感、克制
+- **二者结合 = 在文档工作区里跟一个温和但严肃的助手协作**
 
-## 当前进度
+不是「驾驶舱盯着野兽工作」，不是 IDE，不是 chat 气泡 IM，不是 dashboard。
 
-设计基础已对齐：
+### 1.1 三个统摄性约束（PRD §15.4 重申，DESIGN 落地）
 
-- [x] 整体气质方向（Notion + Claude 结合）
-- [x] Light-first 完整色板（surface / 文字三档 / 互动状态 / 状态色）
-- [x] 字体方案 C（内容衬线 / UI 无衬线 / 命令等宽）
-- [x] Sidebar Spec（含 PIN / Projects / Trash / Command Palette / 折叠）
-- [x] Tool Event callout（6 状态映射 / 折叠展开 / inline approval）
-- [x] Conversation 主区（user vs agent 三重区分 / thinking summary / turn 结构 / 双 hr / scroll）
-- [x] Composer（杏沙 focus ring + 杏沙 Submit 例外 / Enter 发送）
-- [x] Approval Dock（amber sticky 单行 / 不可 dismiss / hover preview）
-- [x] Top Bar（macOS traffic light 集成 / session title inline edit）
-- [x] Inspector（默认展开 / 3 tabs / Logs 移到 Settings → Developer）
+1. **单容器更新** —— 一个 session 的所有进展在同一视图内持续刷新，不开新窗口 / 不 toast / 不弹层抢焦点
+2. **渐进式披露** —— 默认只展示摘要，细节按需展开。Tool event / raw JSON / 历史 turn 都默认折叠
+3. **结果优先** —— 最终答案与过程必须视觉分离，用户第一眼看到结论再展开过程
 
-设计还在讨论中：
+### 1.2 设计源头分级
 
-- [ ] Onboarding / Empty state / Health Check Card
-- [ ] Error Card
-- [ ] Command Palette UI
-- [ ] Settings
+| 源头 | 借用 | 不借用 |
+|---|---|---|
+| **Notion** | sidebar 树、文档留白、callout 块、emoji 锚点 | 数据库视图复杂度、cover image |
+| **Claude.ai** | 暖底色、衬线正文、hero composer、对话节奏 | message 气泡、artifact 侧边栏（V0.1） |
+| **Linear** | 键盘优先、Command Palette、密度 | dark-first、cyan/emerald 信号、紧凑驾驶舱感 |
+| **Raycast** | overlay Command Palette 形态 | 顶部贴边、酷炫渐变 |
 
-讨论完成后，所有对齐内容会一次性合并到本文件作为 v0.2 完整版。
+---
 
-## 与上游设计稿的关系
+## 2. 设计 Tokens
 
-- v0.1 完整版仍在 Notion 保留为历史对照
+### 2.1 色板（Light-first）
+
+#### 基底层
+
+| Token | 值 | 用途 |
+|---|---|---|
+| `bg-app` | `#FAF7F2` | App background，暖米白（不是纯白） |
+| `surface` | `#FDFAF5` | 普通卡片底 |
+| `surface-elevated` | `#FFFFFF` | 浮起卡片（Health Check / Error / Command Palette） |
+| `surface-overlay` | `rgba(31,27,23,0.4)` | Command Palette / modal 遮罩 |
+
+#### 边框 / 分隔
+
+| Token | 值 | 用途 |
+|---|---|---|
+| `border-default` | `#EDE6D8` | 卡片边、divider |
+| `border-strong` | `#D9CFB8` | hover 边、focus 边（非杏沙时） |
+
+#### 文字三档
+
+| Token | 值 | 用途 |
+|---|---|---|
+| `text-primary` | `#1F1B17` | charcoal-warm，标题、主文本、主 CTA 填充 |
+| `text-secondary` | `#5C544A` | 次要文本、metadata |
+| `text-muted` | `#8E867A` | hint、placeholder、timestamp |
+
+#### 互动状态
+
+| Token | 值 | 用途 |
+|---|---|---|
+| `hover-tint` | `#F2EDE3` | 中性灰 hover（不抢戏） |
+| `selected-tint` | `#F8EDDA` | 杏沙 tint（品牌时刻） |
+| `focus-ring` | `#D9A78A` | 杏沙 focus ring |
+
+#### 品牌 / 状态
+
+| Token | 值 | 用途 |
+|---|---|---|
+| `brand` | `#D9A78A` | 杏沙，体温色，**不做主 CTA 填充** |
+| `brand-soft` | `#F8EDDA` | 杏沙最浅 tint |
+| `success` | `#5A8C5A` | 成功状态 line icon |
+| `warning` | `#BF7A1F` | 深琥珀，warning（与杏沙拉开 13° 色相） |
+| `error` | `#B14545` | 深红 |
+| `info` | `#7A7A8E` | muted 灰蓝（info severity） |
+
+### 2.2 字体（方案 C：三 register）
+
+| Register | 字体（英 / 中） | 用途 |
+|---|---|---|
+| **Serif（被读）** | Newsreader / 思源宋体 | 用户消息、agent 回复、turn summary |
+| **Sans（被点）** | Inter / 苹方 / 思源黑体 | 按钮、菜单、metadata、session row |
+| **Mono（技术 ID）** | JetBrains Mono | shell 命令、路径、JSON、tool 名 |
+
+字号 / 行高：
+
+- Body: 16px / line-height 1.65–1.7
+- Subtle: 13px / line-height 1.5
+- Hint: 11px uppercase tracked
+- Heading（Newsreader medium）: 20–24px
+
+### 2.3 Icon set
+
+**Phosphor Thin** 全局唯一 icon set。
+
+- 默认 16px stroke 1.25px
+- 状态色随上下文（参考 §2.1 状态色）
+- **不用 emoji 做状态指示**（跨平台渲染不一致 + 视觉太重）
+- **唯一 emoji 例外**：Conversation thinking summary 锚点 💭（Notion-style 文档区合法 register）
+
+### 2.4 圆角 / 阴影 / 间距
+
+| Token | 值 | 用途 |
+|---|---|---|
+| `radius-sm` | 6px | inline element |
+| `radius-md` | 12px | card |
+| `radius-lg` | 14px | overlay (Command Palette) |
+| `shadow-card` | `0 1px 2px rgba(31,27,23,0.04)` | 普通卡片 |
+| `shadow-elevated` | `0 8px 24px rgba(31,27,23,0.12)` | 浮起卡片、Command Palette |
+| `space-unit` | 4px | 间距基础单位 |
+
+---
+
+## 3. 整体布局
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Top Bar（44px）— traffic light · Sidebar toggle · Title · ⌘K │
+├──────────────┬─────────────────────────┬────────────────────┤
+│              │                         │                    │
+│  Sidebar     │   Conversation          │   Inspector        │
+│  (240px)     │   + Tool Timeline       │   (320px)          │
+│              │                         │   default expanded │
+│              │   ┌───────────────┐     │                    │
+│              │   │ Approval Dock │     │   3 tabs:          │
+│              │   │ (sticky)      │     │   Details          │
+│              │   ├───────────────┤     │   Approvals        │
+│              │   │ Composer      │     │   Runtime          │
+│              │   └───────────────┘     │                    │
+└──────────────┴─────────────────────────┴────────────────────┘
+```
+
+- 三栏宽度 240 / flex / 320，min total 1120px（V0.1 不做窄屏特殊处理）
+- ⌘\\ 折叠 Sidebar
+- Inspector 默认展开（Empty state 时收起）
+
+---
+
+## 4. 组件 Spec
+
+### 4.1 Top Bar
+
+- **44px 高**，自定义 titlebar（macOS traffic light 集成）
+- 左：traffic light（70px reserved）+ Sidebar toggle Phosphor `SidebarSimple` thin
+- 中-左：**Session title inline edit**（点击进入编辑态，Enter 提交，Esc 取消）
+- 右：⌘K Command Palette 入口（Phosphor `MagnifyingGlass`）+ `...` 更多
+- **不显示**：runtime（在 Sidebar 顶部）/ Stop（在 Composer Submit 位置）/ Context Window（V0.1 拿不到）/ 价格
+- Windows / Linux 暂用 native titlebar 兜底
+
+### 4.2 Sidebar
+
+#### 结构（自上而下）
+
+```
+┌────────────────────────┐
+│ [GA Workbench logo]    │  16px Newsreader medium
+│ Runtime: ● healthy     │  13px Inter, 点击弹 Health Check Card popover
+├────────────────────────┤
+│ + New Chat       ⌘N    │  Quick action
+│ Search           ⌘K    │  打开 Command Palette
+├────────────────────────┤
+│ PINNED                 │  仅有 pin session 时显示
+│   ◐ Session A          │
+├────────────────────────┤
+│ TODAY                  │
+│   ◐ Session 1          │
+│   ◐ Session 2          │
+│ THIS WEEK              │
+│ EARLIER                │
+├────────────────────────┤
+│ PROJECTS               │  折叠列表
+│   📁 Project X         │  默认 emoji（无 cwd → Folder / 有 cwd → FolderOpen）
+│     ◐ Session in proj  │  双重显示：project 内 session 也在时间流出现
+├────────────────────────┤
+│ Trash         (隐蔽)    │  底部
+└────────────────────────┘
+```
+
+#### 关键决策
+
+- **去掉 ACTIVE / WAITING FOR YOU 区块**：状态由 row icon 颜色对比 + Approval Dock 兜底
+- **去掉 "UNFILED" 命名**：通用 Agent 工作台 80%+ 对话本就 free-floating，时间分组就是主体
+- **PINNED section** 仅在有 pin 时显示，空时不占位
+- **PROJECTS** 是 V0.1 可选归类容器（PRD §7.3）；session 双重显示（project 内 + 时间流）
+- **Trash** 整行清空需输入 `delete` 三字符确认；单条永久删用 modal 但不要求字符
+- ⌘\\ 折叠 sidebar / ⌘K 全局 Command Palette / 右键 + hover `...` 双入口
+
+#### Session Row（参考 PRD §7.5）
+
+每行显示：
+
+- 16px Phosphor thin **状态 icon**（颜色随状态）
+  - idle: `Circle` muted / connecting: `CircleNotch` 旋转 / running: `CircleNotch` 杏沙旋转 / waiting_approval: `Pause` 深琥珀 / error: `X` 深红 / completed: `CheckCircle` 杏沙 / archived: `ArchiveBox` muted
+- **Title**（13px Inter medium，1 行 truncate）
+- **下一行**：`Turn N · {summary}`（11px Inter muted，1 行 truncate）
+- **角标**：pending approval count（深琥珀点 + 数字）/ error count（深红点）
+
+### 4.3 Conversation 主区
+
+#### Turn 结构
+
+```
+[💭 Thinking summary callout]      ← 序列最前，emoji 锚点
+[Tool callout 1]                    ← 行动序列
+[Tool callout 2]
+[Tool callout 3]
+─────────────────                   ← 稍深 1px 全宽 hr（行动 → 结论）
+[Final answer，浮在文档里]          ← 不放 callout
+═════════════════                   ← 极淡 1px 60% 居中 hr（turn 间）
+[下一 turn ...]
+```
+
+#### User vs Agent 三重区分（不用气泡）
+
+| 维度 | User | Agent |
+|---|---|---|
+| 字体 | Inter 500 | Newsreader 400 |
+| 字重 | medium | regular |
+| 锚点 | 左侧 2px 灰竖条 | 无 |
+| 对齐 | 左对齐 | 左对齐 |
+
+不要 right-align 不要气泡 —— 这是文档区，不是聊天 IM。
+
+#### Thinking Summary
+
+- 每 turn 第一个 callout，💭 emoji 锚点（破例 emoji 合法）
+- 内容 = LLM 这一轮"打算做什么"的总结
+- Newsreader italic muted，13px
+
+### 4.4 Composer
+
+#### 视觉
+
+- **杏沙 focus ring**（`brand` token）
+- 圆角 12px / `surface` 背景 / 默认 1px `border-default`
+- 上方留 1.5em，下方贴 viewport bottom（in-session）或居中（empty state hero）
+- + icon 占位（V0.2 接 attach）/ Submit 按钮
+
+#### Submit 按钮（杏沙 CTA 例外）
+
+- **Submit 是全局唯一用杏沙作为 CTA 填充的元素** —— 用户最高频元素，杏沙带来"亲和体温"
+- Phosphor `ArrowUp` thin / 32px circle / 杏沙填充 / charcoal icon
+- Enter 触发，Shift+Enter 换行
+- agent running 时**位置替换为 Stop 按钮**（深琥珀填充 / Phosphor `Stop` thin），点击触发 abort
+
+#### LLM 切换器（V0.1）
+
+位置：**Composer 内部左下角**，跟 + button 并列。
+
+- 形态：Phosphor `Cube` thin icon + LLM displayName + `CaretDown` thin
+- Ghost button / hover `hover-tint` / 13px Inter / 28px 高
+- 点击展开 popover：
+  - `surface-elevated` 背景 + `shadow-elevated`
+  - 圆角 12px / 内边距 8px / 每行 32px
+  - current 项右侧杏沙 ✓
+  - 切换中 `Check` 替换为 `CircleNotch` 旋转
+- agent running / waiting approval 时 disabled，hover 显示 tooltip "Wait for the current run to finish"
+- LLM list > 8 时加 scroll
+- displayName 由 bridge 端 `_simplify_llm_name` 生成（详见 IPC 协议）
+
+#### 不显示
+
+Context Window / 价格 / token estimate（V0.1 拿不到 + 信息噪音）
+
+### 4.5 Tool Event Callout
+
+#### 视觉（像 Notion callout，不像 stdout log）
+
+每个 tool call 是独立 block：
+
+- **左侧 3px 状态色竖条** + **1px `border-default`** + **12px 圆角**
+- **不用 background tint**（暖米白底上太花）
+- 16px Phosphor thin icon + tool name（mono）+ status pill + `CaretDown`
+- 内边距 16px / 上下 margin 12px
+
+#### 6 状态映射
+
+| 状态 | 左竖条色 | icon | 默认折叠 |
+|---|---|---|---|
+| running | 杏沙 `brand` | `CircleNotch` 旋转 | 当前 step 默认展开 |
+| success-current | 杏沙 | `CheckCircle` | 当前 step 默认展开 |
+| **success-historical** | **几乎不可见**（融入背景） | `CheckCircle` muted | **默认折叠** |
+| waiting_approval | 深琥珀 | `Pause` | **强制展开**（不可折叠） |
+| failed | 深红 | `X` | **强制展开** |
+| denied | muted | `Prohibit` | 折叠（结果已知，不重要） |
+
+#### 展开内容
+
+- **args preview**：mono 等宽，syntax highlight
+- **stdout / progress**：mono 等宽，scroll 区域 max 200px
+- **result preview**：折叠 raw JSON 链接
+
+### 4.6 Approval Dock + Approval Card
+
+#### Approval Dock（Composer 上方 sticky）
+
+- **仅在有 pending approval 时存在**（不是 hide，是不渲染）
+- amber-tint `#F8EDDA` 背景 + 3px 深琥珀左竖条
+- 单行：`{count} pending approval · Next: {tool_name}` + Advance button
+- **不可 dismiss**（必处理状态必须 surface）
+- hover 显示 tooltip 预览
+- 决策仍必须在对应的 callout 内做（dock 是 navigator，callout 是 decider）
+
+#### Approval Card（waiting_approval 状态的 inline form）
+
+**不是独立组件**，是 Tool callout 的 waiting_approval 形态。展开后内嵌：
+
+- **风险等级 pill**：high（深红）/ medium（深琥珀）/ low（muted）
+- **动作说明**：1 行人话 ("Run shell command" / "Patch file at /path")
+- **目标对象 / 工具特定渲染**（见下）
+- **为什么需要审批**：1 行 muted 文案
+- **四个按钮**（Phosphor icon + label）：
+  - Allow once（charcoal primary）
+  - Deny（深红 ghost）
+  - Always allow in this Project（杏沙 ghost）
+  - Always allow globally（杏沙 ghost，high risk 工具如 `start_long_term_update` disabled）
+
+#### 工具特定渲染
+
+##### `file_patch` — split diff 视图（V0.1 必做）
+
+- 用 **`@pierre/diffs`** 开源组件 + Shiki 语法高亮
+- 数据来源：`args.path` / `args.old_content` / `args.new_content`（GA `file_patch(path, old_content, new_content)` 签名）
+- 视觉：
+  - Header：path（mono）+ 文件 size delta（`+12 / -3 lines`，13px muted）
+  - Split layout（左旧右新）/ 行号显示
+  - 高亮主题 light：使用 Shiki `github-light` theme（跟暖米白底协调）
+  - max-height 480px，超出 scroll
+  - 折叠时只显示 header + `View diff`
+- 为什么 V0.1 必做：file_patch 是审批高频工具，没 diff 视图等于"审批黑盒"，违反"不要让用户思考"原则
+
+##### `file_write` — 仅 path + mode
+
+- 显示 `path`（mono）+ `mode pill`（overwrite/append/prepend）
+- 下方 muted 一行："内容由 LLM 当前回复决定，将写入此文件"
+- **不做内容预览**：GA 架构限制（`do_file_write` 跑时才从 `response.content` 提取，dispatch 拦截时还没跑），提前预览需要复刻 GA 逻辑，违反 non-invasive
+
+##### `code_run` — 命令展示
+
+- mono 等宽 + 语言高亮（bash / python / powershell）
+- 多行命令完整展示（不截断）
+- 顶部 language pill
+
+##### `start_long_term_update` — memory 写入
+
+- 显示 memory key + 内容预览
+- high risk 标记，**Always allow globally 选项 disabled**
+
+### 4.7 Inspector
+
+#### 默认状态
+
+- **默认展开**（"可观察"是 PRD 强调的能力，藏起来等于自废武功）
+- **Empty state（无 session）时收起**（更干净）
+- 用户偏好持久化（V0.2 决定，V0.1 简单 toggle）
+
+#### 3 Tabs
+
+| Tab | 内容 |
+|---|---|
+| **Details** | 自适应当前 main 区 selection；选中 tool callout 显示完整 raw JSON / 选中 message 显示 metadata |
+| **Approvals** | 当前 session 所有 approval 历史 / pending 列表 / "Jump to in conversation" link（滚到对应 callout 并杏沙背景闪烁 1.5s） |
+| **Runtime** | Health Check Card 嵌入版 / GA path / Bridge Python / 子进程 PID / 当前 LLM displayName |
+
+**Logs 不在这里**（移到 Settings → Developer，V0.2）
+
+---
+
+## 5. 流程：Onboarding（4 步多页 wizard）
+
+形态：多页 wizard 而非单页 scroll —— 每步只关注一件事。气质 Linear / Raycast 的极简首次启动，不教学、不讲故事。
+
+### Step 0 — 欢迎页
+
+- 大标题 `GenericAgent Workbench`（Newsreader medium 36px）
+- 衬线副标题（italic muted 18px）："GA 的本地桌面工作台"
+- 三件事简列（13px Inter，charcoal）：
+  - 多 session 并行
+  - 高风险动作审批
+  - 历史会话恢复
+- 主 CTA `开始`（charcoal 填充）
+- Footer muted 一行："不会修改你的 GA，删除 Workbench 后 GA 独立可用"
+
+### Step 1 — Attach GA
+
+- 路径输入框（mono / 预填 `~/Documents/GenericAgent` / 可改）
+- 文件夹选择器按钮（Phosphor `FolderOpen`）
+- **实时反馈**（路径变化时立刻校验）：
+  - 路径不存在 → 深红 X icon + "路径不存在"
+  - 路径存在但找不到 `agentmain.py` → 深琥珀 Warning + "未在此路径找到 agentmain.py，确认这是 GA 安装目录？"
+  - 路径合法 → 杏沙 Check + "找到 GA 安装"
+- 主 CTA `继续`（路径合法时启用）
+- 弱链接 muted 文案："还没装 GenericAgent？→ 在这里安装"（外链 GA GitHub）
+
+### Step 2 — Health Check
+
+跑 5 项检查，**全过才能继续**：
+
+1. 路径存在
+2. Python 可用（默认 system Python，可在 Settings 改 BRIDGE_PYTHON）
+3. `agentmain.py` 可 import
+4. `mykey.py` 存在
+5. 至少一个 LLM 配置可解析
+
+**故意决策**：跳过 LLM session dry-run（dry-run 真发 API 请求会消耗 quota）。第一次发 message 时如有问题再报错（详见 §7 Error Card 的首次失败引导）。
+
+UI：嵌入 Health Check Card（详见 §6.1），失败项必须 fix 才能继续，**不允许"以只读模式进入"**（Workbench 没 LLM 什么都做不了）。
+
+### Step 3 — 进入主界面
+
+本质是"Onboarding 消失"。用户被带到主界面，看到 Empty state hero composer。
+
+---
+
+## 6. 卡片家族（Health Check / Error）
+
+两个 card 共享同一个视觉骨架：
+
+- `surface-elevated` 背景 + 1px `border-default` + `shadow-card`
+- 圆角 12px / 内边距 16px
+- 左侧 16px Phosphor thin icon + severity 色
+
+### 6.1 Health Check Card
+
+#### 5 个出场场合
+
+1. Onboarding Step 2
+2. Inspector → Runtime tab
+3. Top Bar runtime row 点击弹 popover
+4. Settings → Runtime "Re-run health check"
+5. 系统检测 GA 异常时主动弹
+
+#### 视觉
+
+- 标题："Health Check" + 总状态 pill（All passed / N failed）
+- 5 项目列表，每项一行：
+  - 16px Phosphor thin icon + 状态色：
+    - pending: muted dot
+    - running: `CircleNotch` 杏沙旋转
+    - success: `Check` muted 灰
+    - failed: `X` 深红
+    - warning: `Warning` 深琥珀
+    - blocked: `Pause` muted
+  - 13px Inter / 项目名
+  - 失败项 expand 显示错误简要 + inline action button："打开 GA 安装指南" / "选择其他路径" / "View details"
+- 底部："All checks passed" 或 "Fix N issue(s) to continue"
+
+#### 行为差异
+
+- onboarding：失败必须 fix（阻断）
+- 其他场合：允许查看 unhealthy，但 Top Bar runtime indicator 显示 unhealthy
+
+### 6.2 Error Card
+
+#### 三种 severity
+
+| Severity | icon | 色 | token |
+|---|---|---|---|
+| error | `X` | 深红 `#B14545` | `error` |
+| warning | `Warning` | 深琥珀 `#BF7A1F` | `warning` |
+| info | `Info` | muted 灰蓝 `#7A7A8E` | `info` |
+
+#### 三种出场场合
+
+| Category | 场合 | 形态 |
+|---|---|---|
+| `runtime` | Tool 执行失败 / LLM 调用失败 / agent 报错 | **Conversation 流内 inline message bubble**（紧跟出错 tool 之后，Tool callout 行保持失败状态） |
+| `bridge` | bridge crash / IPC 协议 mismatch | **Top-level toast**（5s auto-dismiss 或手动叉） |
+| `business` | Attach 路径非法 / 历史恢复失败 / SQLite 损坏 | **Top-level toast** |
+
+Inline 类**不可 dismiss**（属于对话历史）；toast 类可手动 dismiss。
+
+#### 标准展示
+
+- 标题（14px Inter medium）+ 一行简要（13px muted）
+- 主 action button（杏沙轮廓 ghost / 28px / Phosphor icon + label）
+- 可折叠 details panel（点 `CaretDown` 展开）：
+  - stack trace / 完整 error message / source 字段
+  - 等宽 12px JetBrains Mono
+  - 给 power user 看的，普通用户不需要看
+
+#### 重试语义
+
+- bridge **不主动 retry**
+- desktop 根据 IPC 字段 `retryable=true` 显示 Retry button
+- 点击 Retry = 触发新的 send_message（参数复用上次），不是隐藏副作用
+
+#### 首次 message 失败的友好引导（hint 系统）
+
+bridge 端检测错误类型，emit 时附 `hint` 字段，desktop 渲染专用引导卡片：
+
+| hint | 触发条件 | 卡片内容 |
+|---|---|---|
+| `check_llm_config` | 401/403/`api_key`/`unauthorized` keyword | 标题 "LLM 配置可能有问题" / 一行 "首次发送失败，通常是 API key 或配置问题" / Actions: "检查 mykey.py" / "查看 GA 文档" / "View raw error" |
+| `network` | 网络超时 / DNS 失败 | 标题 "网络无法连接" / Actions: "Retry" / "View raw error" |
+| `quota_exceeded` | 429 / quota keyword | 标题 "API 配额耗尽" / 一行 "可切换其他 LLM 继续" / Actions: "Switch LLM" (打开 Composer LLM dropdown) / "View raw error" |
+| （无 hint） | 其他错误 | 标准 Error Card |
+
+**为什么不直接显示 "401 Unauthorized"**：普通用户看到原始错误不知道下一步。"哪里出错 → 怎么解决"的翻译是 Workbench 比裸跑 GA 增值的关键点。
+
+---
+
+## 7. Empty State（无 session 时主区）
+
+主界面没 session 时**不放大段欢迎文案**，**Composer 浮在视口中部**（不在底部正常位置）。提交第一条后滑到底部。
+
+参考 Claude.ai / ChatGPT / Cursor 标准模式，跟"对话工作台"心智一致。
+
+### 视觉
+
+```
+                      你想做什么？             ← Newsreader italic muted
+            ┌─────────────────────────────┐
+            │ Composer (居中，560px max)   │
+            │ [Cube] LLM dropdown │ [+]   │
+            │                       [↑]   │
+            └─────────────────────────────┘
+
+           ▢ 翻译     ▢ 整理会议笔记
+           ▢ 论文查询  ▢ 写脚本               ← 4 quick prompts，不偏 coding
+```
+
+- 上方：衬线 italic muted "你想做什么？"
+- Composer 居中（含 LLM 切换器，跟 in-session 对称）
+- 下方 4 条 quick prompts（13px Inter ghost button）：翻译 / 整理会议笔记 / 论文查询 / 写脚本 —— **故意不偏 coding**，体现"通用 Agent"心智
+- Sidebar 极简版（只 New Chat + Search 显示，时间分组 section header 不显示）
+- **Inspector 默认 hide**（empty state 收起更干净，进入 session 后展开）
+
+---
+
+## 8. Command Palette（⌘K Overlay）
+
+### 触发与形态
+
+- `⌘K` 开 / `Esc` 或点遮罩关
+- **居中 overlay**（不贴顶；居中更聚焦，不遮 Top Bar 状态）
+- 宽度 **560px**（不顶天立地）
+- 高度自适应，max 420px（约 8 行结果），超出 scroll
+- 背景 `surface-elevated` + `shadow-elevated` + 圆角 14px
+- 触发后页面其余加 `surface-overlay` 遮罩，**无模糊**（模糊太花）
+
+### 不加 ⌘P 别名
+
+只 `⌘K`，少而精（VS Code/macOS `⌘P` 习惯不引入）。
+
+### 内容范围（V0.1 收敛）
+
+#### Session 类（主轴）
+
+- 最近 8 个 session（按 `lastActiveAt` 倒序）
+- 搜索：按 title 模糊匹配（V0.2 加 message 内容全文搜索）
+- "New chat" 永远固定在第一项
+
+#### Action 类（少而精）
+
+- Switch LLM → 嵌套二级（展开当前 availableLLMs 列表）
+- Re-run health check
+- Open settings
+- Toggle inspector
+- Attach GA folder（仅 onboarding 已完成、想换路径时）
+
+#### 故意排除（V0.1 不做）
+
+- 跨 session 全文搜索
+- Theme switcher（V0.1 light-only）
+- Quick prompt insertion（empty state 已经有）
+- 任何 destructive action（删除 session 之类，Palette 不该让破坏太轻松）
+
+### 视觉细节
+
+- **Input row**：48px 高 / 17px Inter / placeholder italic muted "搜索 session 或输入命令…" / 左侧 16px Phosphor `MagnifyingGlass` thin / 右侧 `Esc` shortcut hint（13px muted）
+- **Divider**：1px `border-default`
+- **Result row**：36px 高 / 13px Inter / 左侧 16px Phosphor icon / 中间 label / 右侧 keyboard shortcut（如 `⌘N`）灰色 hint
+- **Section header**（仅多组结果时）：11px Inter uppercase tracked `RECENT` / `ACTIONS` / `LLMS` —— 大多数情况下不显示 header（结果少时 header 是噪音）
+- **Hover / 键盘选中态**：背景 `hover-tint`，左侧 2px charcoal 竖条
+- **Empty state**：输入有内容但无匹配 → 中央一行 muted "没找到。Enter 直接发问？" + Enter shortcut（**做** —— 输入框里写的字 Enter 直接 new chat + 把它当第一句 prompt，是对"文档对话工作台"心智的延伸）
+
+### 关键交互
+
+- ↑↓ 选 / Enter 执行 / Tab 进二级（如 Switch LLM 子菜单）
+- 输入"#"前缀强制只搜 session（V0.2 留）；输入">"前缀只搜 action（V0.2 留）
+- **没有最近搜索历史持久化**（V0.1 简化）
+
+### 排序规则
+
+- Session 类按 lastActiveAt
+- Action 类按内置优先级：New chat > Switch LLM > Re-run health check > Open settings > Toggle inspector
+- Switch LLM 嵌套二级而不是平铺（避免 LLM 多时淹没 session）
+
+---
+
+## 9. Settings（独立窗口）
+
+### 形态决策
+
+**独立窗口**（不是 modal，不是主视图替换）。理由：
+
+- 用户经常需要"边设置边看主界面有没有变化"
+- modal 遮挡主视图、独立路径替换会丢 session 上下文
+- macOS 原生应用（System Settings / 1Password / Linear）都是独立 settings window
+
+### 窗口规格
+
+- **720 × 560px / resizable / 跟主窗口同款 traffic light**
+- 左侧 180px Tab list（垂直），右侧主内容区
+- 不能多开（再次触发就 focus 已有的）
+- 触发：菜单栏 / 主窗口 ⌘, / Command Palette "Open settings"
+
+### V0.1 三个 Tab
+
+#### Runtime
+
+- **GA path**：当前路径显示（mono）+ 重选按钮（触发文件夹选择器）
+  - 改动后弹 confirm dialog："路径改动需要重启 Workbench 才能生效。立即重启？/ 稍后"（不悄悄 kill 所有 session）
+- **Bridge Python**：当前 interpreter 路径显示 + 重选 + muted hint "用于运行 bridge，影响 GA 子进程"
+- **Re-run health check**：button → 弹 Health Check Card 重跑
+- 底部 muted 一行：`GA baseline: 6a3eecc...` + `Workbench v0.1.0`
+
+#### Approval
+
+- **Approval-required tools**：复选列表（默认 `code_run` / `file_write` / `file_patch` / `start_long_term_update`），用户可勾选
+- **Always-allow rules**：分两组显示
+  - **Per-project**（当前 attached GA 目录下的）—— 列出 tool name + 添加日期 + remove 按钮
+  - **Global** —— 同上
+- 改动后弹 toast "已应用到所有 session"（避免"太隐式"）
+- 底部 muted hint："Always-allow 在审批弹窗里勾'always allow'后会出现在这里"
+
+#### About
+
+- App icon + `GenericAgent Workbench` 标题（Newsreader medium 18px）
+- 版本号 / GA baseline commit / build date
+- Links（Phosphor `ArrowSquareOut`）：GitHub / Documentation / Report issue（外链浏览器）
+- License：MIT
+- 一行 `Made by JCONE · Open source`
+
+### 视觉
+
+- **Tab list**：每项 32px 高 / 13px Inter / 左侧 16px Phosphor icon
+  - Runtime: `Cpu`
+  - Approval: `ShieldCheck`
+  - About: `Info`
+- 选中态：`hover-tint` 背景 + 左侧 2px charcoal 竖条
+- **主内容区**：内边距 32px / 标题 18px Newsreader medium / 描述 13px Inter muted / 控件之间 24px 垂直间距
+- **Form 控件**：路径 input + 文件夹选择器按钮（Phosphor `FolderOpen`）/ 复选框跟 Approval Dock 同款 / Button 体系跟主界面一致
+- **没有 sticky save button**：所有改动**即时生效 + 自动持久化**（违反"不要让用户思考"），破坏性改动单独 confirm dialog
+
+### 推到 V0.2 的 Tab
+
+- **General** （theme / language / telemetry）—— V0.1 light-only 中文
+- **LLM**（custom displayName / default index）—— per-app preference 已够，custom name V0.2
+- **Data**（SQLite 位置 / export / clear history）—— V0.1 不做高危数据 UI
+- **Shortcuts**（自定义快捷键）—— V0.1 内置一套就够
+- **Developer**（Logs / IPC trace）—— V0.1 用 stderr 调试
+
+---
+
+## 10. 全局快捷键
+
+| 键位 | 动作 |
+|---|---|
+| `⌘K` | Command Palette |
+| `⌘N` | New chat |
+| `⌘\\` | 折叠 Sidebar |
+| `⌘,` | 打开 Settings |
+| `⌘E` | Toggle Inspector |
+| `Esc` | 关 overlay / 退 inline edit |
+| `Enter` | Composer 发送 / Palette 执行 |
+| `Shift+Enter` | Composer 换行 |
+| `↑ / ↓` | Palette 选项 |
+| `Tab` | Palette 进二级 |
+
+---
+
+## 11. 已知未决与扩展方向
+
+### V0.1 范围内 open
+
+- **Inspector default 展开 vs Empty state 隐藏的状态切换**：用户首次完成 onboarding → 第一次进入主界面（empty state，Inspector 隐藏）→ 发了第一条消息后（Inspector 应展开还是仍隐藏？用户偏好持久化？）
+- **LLM displayName 标准化字典覆盖范围**（当前 13 个 brand keyword）：实际跑 e2e 验证用户 mykey.py 里所有 LLM 都能 prettify 后再扩
+- **Composer LLM dropdown 在 long LLM list 下的 UX**：V0.1 不做特殊处理，超过 8 个加 scroll
+- **Onboarding 走完后下次启动是否每次跑 Health Check**：建议**后台**重新跑（不阻塞 UI），失败时弹 toast；V0.2 desktop 阶段验证
+
+### 推到 V0.2+ 的设计扩展
+
+- **Dark mode**：light-first token 已预留命名空间（`surface-dark` 系列待补）
+- **`file_write` 内容预览**：依赖 GA 上游把 `extract_robust_content` 前置到 dispatch，可以是给 GA 的 PR
+- **Slash commands** in Composer（`/restore` `/new` 等）
+- **Cross-session 全文搜索**（Command Palette `#` prefix）
+- **Custom LLM displayName**（Settings → LLM tab）
+- **拖拽 session 到 Project**（V0.1 用右键 + `...`）
+- **Trees / file explorer**（如果 V0.2+ 加 file inspector，候选 [trees.software](https://trees.software) + [@pierre/diffs](https://diffs.com) 配套）
+
+---
+
+## 12. 与 Notion 历史稿的关系
+
+- v0.1 完整版（dark-first / Linear 风）保留在 Notion 作为历史对照（page id `3552aab6e913815f91a1c2b8b0a15672`）
 - v0.2 working draft 在本仓库 + devlog
-- v0.2 完整版定稿后，会同步到 Notion 保持镜像
+- v0.2 完整版（本文件）定稿后，会同步到 Notion 保持镜像
+
+完整决策叙事见 `docs/devlog/`：
+
+- `2026-05-07-design-direction-pivot.md` — Notion + Claude 转向，9 块基础对齐
+- `2026-05-08-onboarding-and-llm-switching.md` — Onboarding / Empty / Health Check / LLM 切换
+- `2026-05-08-design-trio-finale.md` — Error Card / Command Palette / Settings + file_patch diff

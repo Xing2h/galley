@@ -246,12 +246,37 @@ agent 主动调用 `ask_user` 工具时发出。bridge 此时 agent_runner_loop 
 {
   "kind": "error",
   "sessionId": "sess_abc123",
-  "message": "Failed to parse tool args: ...",
-  "context": "tool_call_pending",
+  "message": "Authentication failed: invalid api_key",
+  "category": "runtime",
+  "severity": "error",
+  "retryable": true,
+  "hint": "check_llm_config",
+  "context": "user_message",
   "traceback": "...",
   "timestamp": "..."
 }
 ```
+
+字段说明：
+
+- `message`：用户可读的错误简要（一句话，≤200 字符）
+- `category`：`"bridge" | "runtime" | "business"` —— 决定 desktop 显示位置
+  - `"bridge"`：bridge 自身故障（IPC 协议 mismatch、handler 崩溃）→ desktop 渲染为 toast
+  - `"runtime"`：GA / LLM / tool 执行错误 → desktop 渲染为 conversation inline message bubble
+  - `"business"`：Workbench 业务错误（attach 路径非法、SQLite 损坏、历史恢复失败）→ desktop 渲染为 toast
+- `severity`：`"error" | "warning" | "info"` —— 决定颜色与 icon（详见 DESIGN.md §6.2）
+- `retryable`：是否值得让用户重试。`true` 时 desktop 显示 Retry button；点击 = 触发新的 `user_message`（参数复用上次）。**bridge 自身不主动 retry**
+- `hint`：可选；bridge 端检测错误类型后给出的引导线索，desktop 用于渲染专用引导卡片：
+  - `"check_llm_config"`：LLM 认证 / 配置类错误（401/403/`api_key`/`unauthorized` 关键字命中）
+  - `"network"`：网络层错误（超时、DNS、connection refused）
+  - `"quota_exceeded"`：API 配额耗尽（429 / quota 关键字）
+  - 未命中分类时省略此字段
+- `context`：错误发生时正在处理的命令名或阶段（debug 用）
+- `traceback`：完整 Python traceback（power user / debug 用，desktop 默认折叠）
+
+**为什么 bridge 给结构化字段而不是 desktop 推断**：bridge 离异常源最近，分类最准；desktop 做字符串模式匹配是反模式，新增错误类型时容易漏判。一致原则：bridge 是 truth，desktop 是 view。
+
+**hint 的产品意义**：普通用户看到原始错误（"401 Unauthorized"）不知道下一步。bridge 把"哪里出错"翻译成"怎么解决"是 Workbench 比裸跑 GA 增值的关键点。
 
 致命错误：bridge 直接 exit，desktop 通过 stdout EOF + 进程退出码感知。
 
@@ -474,3 +499,6 @@ bridge:   { kind: "turn_start", ... }
 - [ ] `tool_call_progress` 字符串解析规则（GA 当前 yield 的 emoji 前缀格式）需在 bridge 实现时记录到 `bridge/handlers.py` 注释，避免 GA 升级时格式变化无人知晓 — V0.1 暂不实现 progress 事件，turn_end 已含完整 toolCalls/toolResults
 - [ ] images 字段的传递路径（user_message → GA put_task）需在 bridge 验证可行 — bridge 已通过 `images=cmd.images` 透传到 `agent.put_task`，但实际多模态调用未 e2e 验证
 - [x] **`abort` 路径** — GA 的 `abort()` 设 `stop_sig` 让 worker 跳出循环，但**不**触发 `turn_end_callback`。bridge 在 `dispatch_command` 收到 `AbortCommand` 时主动合成 `RunCompleteEvent` with `exitReason.result = "ABORTED"`。e2e 已验证。
+- [x] **`error` 事件结构化字段** — `category` / `severity` / `retryable` / `hint` 四字段在 v0.1 落地（见 §4.10）。bridge 端 LLM 调用错误的 hint 推断逻辑见 `bridge/workbench_bridge.py` 的 `_classify_error`。
+- [ ] **`file_patch` Approval Card diff 视图** — desktop 端用 `@pierre/diffs` 渲染。args 字典已含 `path` / `old_content` / `new_content` 三元组（GA 原生 signature），bridge 不需要额外处理；ToolCalled / tool_call_pending 事件结构无需扩展。Stage 2 desktop 实现时落地。
+- [ ] **`file_write` 内容预览限制** — GA `do_file_write` 在 `dispatch` 之后才从 `response.content` 通过 `extract_robust_content` 提取实际内容；审批拦截时拿不到内容。V0.1 不做内容预览（违反 non-invasive 第 4 条）；V0.2+ 可考虑给 GA 上游提 PR 让 extract 前置。

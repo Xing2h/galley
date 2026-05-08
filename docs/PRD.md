@@ -399,6 +399,13 @@ V0.1 不做：路径级 allow、正则 policy、多人审批。
 
 工具名 / 动作说明 / 风险等级 / 目标对象（path / 命令摘要）/ 为什么需要审批 / 四个按钮。
 
+**工具特定渲染**：
+
+- **`file_patch`**：渲染 split diff 视图（old_content → new_content），用 `@pierre/diffs` 开源组件 + Shiki 语法高亮。args 字典中 `path` / `old_content` / `new_content` 三元组完整可得（GA `file_patch(path, old_content, new_content)` 签名），bridge 不需要额外处理
+- **`file_write`**：显示 `path + mode (overwrite/append/prepend)` + muted 一行 "内容由 LLM 当前回复决定，将写入此文件"。**不做内容预览** —— GA 架构限制：实际内容由 `do_file_write` 跑时从 `response.content` 通过 `extract_robust_content` 提取，dispatch 拦截时还没跑这段；提前预览需要复刻 GA 的 extract 逻辑，违反 non-invasive 第 4 条
+- **`code_run`**：显示完整命令 + 等宽字体 + 语言高亮（bash/python/powershell）
+- **`start_long_term_update`**：显示要写入的 memory key + 内容预览
+
 ## 12. Session 持久化与恢复
 
 ### 12.1 写入
@@ -517,6 +524,8 @@ Notion / Claude.ai / Linear / Raycast / opencode Desktop。
 - 用户可 Allow once / Deny / Always allow（in Project / globally）
 - Deny 后 agent 收到拒绝信号继续工作
 - Approval Card 显示风险原因和目标对象
+- **`file_patch` 审批 Card 渲染 split diff 视图**（基于 `args.old_content` / `args.new_content`），用 `@pierre/diffs` + Shiki 高亮
+- **`file_write` 审批 Card 显示 `path + mode` + muted 文案**（不做内容预览，文档说明 GA 架构限制）
 
 ### 17.5 Session 历史
 
