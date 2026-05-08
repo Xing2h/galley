@@ -17,6 +17,12 @@ import {
   DEMO_SESSIONS,
 } from "@/stores/demo";
 import type { AppError } from "@/types/app-error";
+import type {
+  AgentTurn,
+  PendingApproval,
+  Turn,
+  UserTurn,
+} from "@/types/conversation";
 import type { ApprovalRecord, RuntimeInfo } from "@/types/inspector";
 import type { ApprovalDecision, IPCCommand } from "@/types/ipc";
 import type { Session } from "@/types/session";
@@ -63,6 +69,10 @@ interface State {
   llmDisplayName: string;
   runtimeInfo: RuntimeInfo;
 
+  // ---- Conversation (V0.1: single active session) ----
+  turns: Turn[];
+  pendingApprovals: PendingApproval[];
+
   // ---- Approval ----
   approvalDecisions: Record<string, ApprovalDecision>;
   approvalConfig: ApprovalConfig;
@@ -104,6 +114,13 @@ interface Actions {
 
   // LLMs (replaceLLMs is called by ipc-handlers on ready/llm_changed)
   replaceLLMs: (llms: LLMOption[]) => void;
+
+  // Conversation
+  appendUserTurn: (text: string) => void;
+  appendAgentTurn: (turn: AgentTurn) => void;
+  addPendingApproval: (p: PendingApproval) => void;
+  removePendingApproval: (approvalId: string) => void;
+  clearConversation: () => void;
 
   // Bridge runtime
   setBridgeStatus: (status: BridgeStatus) => void;
@@ -148,6 +165,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   approvalDecisions: {},
   approvalConfig: DEMO_APPROVAL_CONFIG,
   approvalRecords: DEMO_APPROVAL_RECORDS,
+
+  turns: [],
+  pendingApprovals: [],
 
   toasts: [],
 
@@ -213,6 +233,37 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   // ---- LLMs ----
   replaceLLMs: (llms) => set({ llms }),
+
+  // ---- Conversation ----
+  appendUserTurn: (text) =>
+    set((state) => ({
+      turns: [...state.turns, { role: "user", content: text } as UserTurn],
+    })),
+
+  appendAgentTurn: (turn) =>
+    set((state) => ({
+      turns: [...state.turns, turn],
+    })),
+
+  addPendingApproval: (p) =>
+    set((state) => ({
+      // de-dupe on approvalId so a re-emitted pending event doesn't
+      // create twin entries
+      pendingApprovals: [
+        ...state.pendingApprovals.filter((x) => x.approvalId !== p.approvalId),
+        p,
+      ],
+    })),
+
+  removePendingApproval: (approvalId) =>
+    set((state) => ({
+      pendingApprovals: state.pendingApprovals.filter(
+        (x) => x.approvalId !== approvalId,
+      ),
+    })),
+
+  clearConversation: () =>
+    set({ turns: [], pendingApprovals: [], approvalDecisions: {} }),
 
   // ---- Bridge runtime ----
   setBridgeStatus: (status) => set({ bridgeStatus: status }),

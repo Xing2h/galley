@@ -72,6 +72,11 @@ function App() {
   const shutdownBridge = useAppStore((s) => s.shutdownBridge);
   const sendIPCCommand = useAppStore((s) => s.sendIPCCommand);
 
+  const storeTurns = useAppStore((s) => s.turns);
+  const storePending = useAppStore((s) => s.pendingApprovals);
+  const appendUserTurn = useAppStore((s) => s.appendUserTurn);
+  const removePendingApproval = useAppStore((s) => s.removePendingApproval);
+
   const hydrateFromDB = useAppStore((s) => s.hydrateFromDB);
 
   // Hydrate sessions from SQLite on mount. Falls through to the demo
@@ -106,16 +111,26 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [togglePalette, setSettingsOpen, toggleInspector, setScreen]);
 
-  // Demo conversation derivation. Replaced by store-driven turn data
-  // once IPC events feed real conversation in #10.
-  const turns = useMemo(
+  // Conversation source-of-truth precedence:
+  //   1. store.turns + store.pendingApprovals — populated by IPC
+  //      handlers as bridge events arrive
+  //   2. demo fallback (buildDemoTurns / buildDemoPending) when the
+  //      store hasn't received anything yet — keeps Main View visible
+  //      in pre-bridge dev so layouts can be eyeballed
+  //
+  // Empty store + a connected bridge means "the user hasn't sent a
+  // message yet"; demo doesn't kick in then because state.turns is
+  // populated as soon as appendUserTurn fires.
+  const demoTurns = useMemo(
     () => buildDemoTurns(approvalDecisions),
     [approvalDecisions],
   );
-  const pendingApprovals = useMemo(
+  const demoPending = useMemo(
     () => buildDemoPending(approvalDecisions),
     [approvalDecisions],
   );
+  const turns = storeTurns.length > 0 ? storeTurns : demoTurns;
+  const pendingApprovals = storePending.length > 0 ? storePending : demoPending;
   const isRunning = approvalDecisions["appr_demo1"] === "allow_once";
 
   // Sidebar full mode requires sessions; in the empty-state hero
@@ -167,17 +182,25 @@ function App() {
             <EmptyState
               llmDisplayName={llmDisplayName}
               onSubmit={(t) => {
-                console.info("[empty] submit:", t);
+                // Only push into store turns when the bridge is alive
+                // — otherwise we'd flip the source-of-truth precedence
+                // away from the demo flow and the user would see their
+                // own message but no agent reply.
                 if (bridgeStatus === "connected") {
+                  appendUserTurn(t);
                   sendIPCCommand({ kind: "user_message", text: t, images: [] });
+                } else {
+                  console.info("[empty] submit (demo flow):", t);
                 }
                 setActiveSession("s-today-1");
                 setScreen("main");
               }}
               onQuickPrompt={(p) => {
-                console.info("[empty] quick-prompt:", p);
                 if (bridgeStatus === "connected") {
+                  appendUserTurn(p);
                   sendIPCCommand({ kind: "user_message", text: p, images: [] });
+                } else {
+                  console.info("[empty] quick-prompt (demo flow):", p);
                 }
                 setActiveSession("s-today-1");
                 setScreen("main");
@@ -190,13 +213,16 @@ function App() {
               pendingApprovals={pendingApprovals}
               approvalDecisions={approvalDecisions}
               onSubmit={(t) => {
-                console.info("[main] submit:", t);
                 if (bridgeStatus === "connected") {
+                  appendUserTurn(t);
                   sendIPCCommand({ kind: "user_message", text: t, images: [] });
+                } else {
+                  console.info("[main] submit (demo flow):", t);
                 }
               }}
               onApprove={(approvalId, decision) => {
                 recordApprovalDecision(approvalId, decision);
+                removePendingApproval(approvalId);
                 if (bridgeStatus === "connected") {
                   sendIPCCommand({
                     kind: "approval_response",

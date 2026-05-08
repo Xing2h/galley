@@ -1,26 +1,40 @@
 import { fromIPCError } from "@/types/app-error";
-import type { IPCEvent } from "@/types/ipc";
+import type {
+  AgentTurn,
+  ConversationToolEvent,
+  PendingApproval,
+} from "@/types/conversation";
+import type {
+  IPCEvent,
+  ToolCall as IPCToolCall,
+  ToolResult as IPCToolResult,
+} from "@/types/ipc";
 
 import type { useAppStore } from "@/stores/useAppStore";
 
 /**
  * Routes an IPC event from the bridge into store actions.
  *
- * #10a wires the five most user-facing events:
+ * #10b coverage:
  *
- *   ready             — bridge is up and reported runtime/llm info
- *   turn_end          — conversation advanced one turn (logged for now)
- *   tool_call_pending — approval needed (logged for now)
- *   error             — converted to AppError + pushed as toast
- *   llm_changed       — refreshes the llms[] currentness
+ *   ready             → connected status + replace LLMs
+ *   llm_changed       → flip currentness in llms[]
+ *   error             → push toast (fromIPCError)
+ *   turn_end          → append agent turn (thinking + tools + final
+ *                       answer), persisted to messages table
+ *   tool_call_pending → add to pendingApprovals
+ *   tool_call_end     → no-op for V0.1 (the conversation rebuilds the
+ *                       tool's final state from turn_end's
+ *                       toolResults; we don't need a separate row)
+ *   tool_call_progress→ debug log (not in conversation rendering)
+ *   ask_user          → V0.1: log; ask_user surfaces via the existing
+ *                       conversation flow when GA exits the loop
+ *   run_complete      → log; pending list is already cleared by the
+ *                       desktop when the user records a decision
+ *   history_loaded    → log
  *
- * #10b rounds out the rest (turn_start / tool_call_start /
- * tool_call_end / tool_call_progress / ask_user / run_complete /
- * history_loaded) and replaces the "logged for now" stubs with real
- * conversation/approval state writes + SQLite double-writes.
- *
- * The store handle is passed in so we can call typed actions without
- * an import cycle (bridge → ipc-handlers → store → bridge).
+ * Tool ids: turn_end's toolCalls / toolResults are positional, so we
+ * walk them in order with synthetic ids when none is supplied.
  */
 export function dispatchIPCEvent(
   event: IPCEvent,
@@ -36,8 +50,6 @@ export function dispatchIPCEvent(
         llm: event.llmName,
         availableLLMs: event.availableLLMs.length,
       });
-      // Update LLM list with the bridge-reported displayName +
-      // current flag. runtimeInfo refresh stays as a #10b polish.
       s.replaceLLMs(
         event.availableLLMs.map((l) => ({
           index: l.index,
@@ -70,37 +82,39 @@ export function dispatchIPCEvent(
     }
 
     case "turn_end": {
-      // #10b: append the assistant turn to a real messages[] in store
-      // and persist via INSERT messages + UPDATE sessions. For now
-      // log so we can verify the wire is alive.
-      console.info("[ipc] turn_end", {
-        turnIndex: event.turnIndex,
-        summary: event.summary,
-        toolCount: event.toolCalls.length,
-      });
+      const turn = turnFromTurnEnd(event);
+      s.appendAgentTurn(turn);
+      // Best-effort SQLite double-write. Silently swallow when the
+      // backend isn't available (Vite dev / first launch / migration).
+      void persistTurnEndToMessages(event);
       return;
     }
 
     case "tool_call_pending": {
-      // #10b: append to pendingApprovals state + show in Inspector
-      // approvals tab + flash the conversation callout. For now log.
-      console.info("[ipc] tool_call_pending", {
+      const target = pickTarget(event.args);
+      const pending: PendingApproval = {
         approvalId: event.approvalId,
         toolName: event.toolName,
-        risk: event.riskLevel,
-      });
+        target,
+        riskLevel: event.riskLevel,
+      };
+      s.addPendingApproval(pending);
       return;
     }
 
-    // The remaining events get noop logging until #10b promotes them
-    // to real state writes.
-    case "turn_start":
-    case "tool_call_start":
-    case "tool_call_end":
-    case "tool_call_progress":
+    case "tool_call_end": {
+      // turn_end carries the same toolResults; we don't need an
+      // independent state shape for finished tools.
+      console.debug("[ipc] tool_call_end", event);
+      return;
+    }
+
     case "ask_user":
     case "run_complete":
-    case "history_loaded": {
+    case "history_loaded":
+    case "turn_start":
+    case "tool_call_start":
+    case "tool_call_progress": {
       console.debug(`[ipc] ${event.kind}`, event);
       return;
     }
@@ -109,5 +123,148 @@ export function dispatchIPCEvent(
       const exhaustive: never = event;
       console.warn("[ipc] unknown event kind", exhaustive);
     }
+  }
+}
+
+// ---------------- Turn-end → AgentTurn ----------------
+
+function turnFromTurnEnd(event: {
+  toolCalls: IPCToolCall[];
+  toolResults: IPCToolResult[];
+  responseContent: string;
+}): AgentTurn {
+  const tools = event.toolCalls.map((tc, i) =>
+    toolEventFromIPC(tc, event.toolResults[i], i),
+  );
+  return {
+    role: "agent",
+    thinking: extractThinking(event.responseContent),
+    tools,
+    finalAnswer: cleanFinalAnswer(event.responseContent),
+  };
+}
+
+function toolEventFromIPC(
+  tc: IPCToolCall,
+  result: IPCToolResult | undefined,
+  index: number,
+): ConversationToolEvent {
+  const id =
+    (typeof result?.toolUseId === "string" && result.toolUseId) ||
+    (typeof tc.toolUseId === "string" && tc.toolUseId) ||
+    `t-${index}`;
+
+  let resultPreview: string | undefined;
+  const content = result?.content;
+  if (typeof content === "string") {
+    resultPreview = content.slice(0, 500);
+  } else if (content !== undefined) {
+    try {
+      resultPreview = JSON.stringify(content).slice(0, 500);
+    } catch {
+      resultPreview = String(content).slice(0, 500);
+    }
+  }
+
+  return {
+    id,
+    name: tc.toolName,
+    // turn_end is the post-completion state — by definition every
+    // tool here finished. The conversation view fades older success
+    // tools via "success-historical".
+    status: "success-historical",
+    args: tc.args,
+    resultPreview,
+  };
+}
+
+function pickTarget(args: Record<string, unknown>): string | undefined {
+  if (typeof args.path === "string") return args.path;
+  if (typeof args.command === "string") return args.command.slice(0, 60);
+  if (typeof args.code === "string") return args.code.slice(0, 60);
+  return undefined;
+}
+
+// ---------------- GA tag stripping ----------------
+
+const GA_TAG_PATTERNS: RegExp[] = [
+  /<thinking>[\s\S]*?<\/thinking>/g,
+  /<summary>[\s\S]*?<\/summary>/g,
+  /<tool_use>[\s\S]*?<\/tool_use>/g,
+  /<file_content[^>]*>[\s\S]*?<\/file_content>/g,
+];
+
+const FILE_REF_PATTERN = /\[FILE:[^\]]+\]/g;
+
+/**
+ * Mirror of bridge's `_clean_response_for_display`. Strips GA's
+ * structured tags so the user sees the prose-ish final answer
+ * Newsreader can render directly. Bridge emits the raw responseContent
+ * in turn_end (to keep the wire faithful); this is the desktop
+ * equivalent of that python helper.
+ */
+function cleanFinalAnswer(text: string): string {
+  if (!text) return "";
+  let out = text;
+  for (const p of GA_TAG_PATTERNS) out = out.replace(p, "");
+  out = out.replace(FILE_REF_PATTERN, "");
+  out = out.replace(/\n{3,}/g, "\n\n");
+  return out.trim();
+}
+
+function extractThinking(text: string): string | undefined {
+  const m = text.match(/<thinking>([\s\S]*?)<\/thinking>/);
+  if (!m) return undefined;
+  const inner = m[1].trim();
+  return inner || undefined;
+}
+
+// ---------------- SQLite persistence (best-effort) ----------------
+
+/**
+ * Best-effort SQLite write. Imported lazily so a non-Tauri runtime
+ * (Vite-only dev) doesn't fail hard at IPC dispatch time; if the DB
+ * isn't available we just log and move on.
+ */
+async function persistTurnEndToMessages(event: {
+  sessionId: string;
+  turnIndex: number;
+  toolCalls: IPCToolCall[];
+  toolResults: IPCToolResult[];
+  responseContent: string;
+  summary: string;
+}): Promise<void> {
+  try {
+    const { getDB } = await import("@/lib/db");
+    const db = await getDB();
+    const id = `msg_${event.sessionId}_${event.turnIndex}_assistant`;
+    const createdAt = new Date().toISOString();
+    await db.execute(
+      `INSERT INTO messages (
+         id, session_id, turn_index, sequence, role, content,
+         tool_calls, tool_results, thinking, final_answer, created_at
+       ) VALUES ($1, $2, $3, $4, 'assistant', $5,
+                 $6, $7, $8, $9, $10)
+       ON CONFLICT(id) DO UPDATE SET
+         content       = excluded.content,
+         tool_calls    = excluded.tool_calls,
+         tool_results  = excluded.tool_results,
+         thinking      = excluded.thinking,
+         final_answer  = excluded.final_answer`,
+      [
+        id,
+        event.sessionId,
+        event.turnIndex,
+        0,
+        event.responseContent,
+        JSON.stringify(event.toolCalls),
+        JSON.stringify(event.toolResults),
+        extractThinking(event.responseContent) ?? null,
+        cleanFinalAnswer(event.responseContent),
+        createdAt,
+      ],
+    );
+  } catch (e) {
+    console.debug("[ipc] persistTurnEndToMessages: SQLite unavailable.", e);
   }
 }
