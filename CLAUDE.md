@@ -70,8 +70,8 @@ genericagent-workbench/
 |---|---|---|
 | 0. 基础设施 | ✅ 完成 | git init、目录、CLAUDE.md、LICENSE、README |
 | 1. Bridge POC | ✅ 完成 | IPC 协议、WorkbenchHandler、主入口、e2e |
-| 2. 桌面端骨架 | 🔨 进行中 | Tauri v2 + React 19 + Tailwind v4 + DESIGN tokens（#1 ✅）、各组件、SQLite、Session Manager |
-| 3. V0.1 七件事 | ⏸ 阶段 2 后 | Attach / 多 session / Tool Timeline / Approval / 历史恢复 / Session Row 状态 / LLM 切换 |
+| 2. 桌面端骨架 | ✅ 完成 | Tauri v2 + React 19 + Tailwind v4 + Zustand + SQLite + plugin-shell 端到端 IPC（#1-#10b 全部子任务） |
+| 3. V0.1 七件事 polish | 🔨 准备开始 | Multi-session / Session 恢复 / Onboarding 真 validation / Settings respawn / tool_events 持久化 / macOS bundle |
 
 ## 工程规范
 
@@ -215,6 +215,12 @@ shadcn vs 自研判断：
 
 ## 设计文档状态
 
-DESIGN.md v0.2 完整版已定稿（[docs/DESIGN.md](./docs/DESIGN.md)）。Stage 2 #1 落地时实际工程命名（Tailwind v4 友好的 `--color-app` / `--color-ink` / `--color-line`）跟 DESIGN.md 描述命名（语义化的 `bg-app` / `text-primary` / `border-default`）有 mapping 关系，semantically 一致。Stage 2 #2 实现 Sidebar 时一并做 DESIGN.md token 命名 patch，对齐工程实际。
+DESIGN.md v0.2 完整版已定稿（[docs/DESIGN.md](./docs/DESIGN.md)），实现层与设计层对齐过几次：
+- §2.1 token 表加 Tailwind v4 utility 列（ink / line 命名空间）+ `--brand-strong` / `--border-subtle`（Stage 2 #2）
+- §4.6 file_patch 渲染从 `@pierre/diffs` 改为自研 PatchView（Stage 2 #6 reversal，bundle cost 不可接受）
 
 参考 prototype 在 `docs/GenericAgent Workbench-handoff/`（design agent 出品的 5 张关键界面静态实现），实现各组件时对照视觉。
+
+实现过程的关键决策叙事见 `docs/devlog/`，特别是阶段切换总结：
+- [2026-05-07 Stage 1 bridge POC 完成](./docs/devlog/2026-05-07-stage1-bridge-poc-complete.md)
+- [2026-05-08 Stage 2 桌面端骨架完成](./docs/devlog/2026-05-08-stage2-desktop-skeleton-complete.md)
