@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { Inspector } from "@/components/inspector/Inspector";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
@@ -12,6 +13,11 @@ import type {
   PendingApproval,
   Turn,
 } from "@/types/conversation";
+import type {
+  ApprovalRecord,
+  InspectorSelection,
+  RuntimeInfo,
+} from "@/types/inspector";
 import type { ApprovalDecision } from "@/types/ipc";
 import type { Session } from "@/types/session";
 
@@ -94,7 +100,22 @@ function App() {
             />
           )
         }
-        inspector={screen === "main" ? <InspectorPlaceholder /> : null}
+        inspector={
+          screen === "main" ? (
+            <Inspector
+              selection={demoSelection(turns)}
+              pendingApprovals={pendingApprovals}
+              approvalRecords={DEMO_APPROVAL_RECORDS}
+              runtimeInfo={DEMO_RUNTIME_INFO}
+              onJumpToApproval={(id) =>
+                console.info("[inspector] jump to:", id)
+              }
+              onReRunHealthCheck={() =>
+                console.info("[inspector] re-run health check")
+              }
+            />
+          ) : null
+        }
         inspectorVisible={screen === "main"}
       />
 
@@ -106,34 +127,6 @@ function App() {
 }
 
 export default App;
-
-// ---------------- Inspector placeholder ----------------
-// Real three-tab Inspector lands in #4.
-
-function InspectorPlaceholder() {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex gap-3 border-b border-line px-4 pb-2.5 pt-3 text-[12.5px] font-medium text-ink-soft">
-        {["Details", "Approvals", "Runtime"].map((t, i) => (
-          <span
-            key={t}
-            className={cn(
-              "border-b-2 pb-2",
-              i === 0
-                ? "border-ink text-ink"
-                : "border-transparent text-ink-soft",
-            )}
-          >
-            {t}
-          </span>
-        ))}
-      </div>
-      <div className="px-4 py-6 text-[12.5px] italic text-ink-muted">
-        Inspector 三个 tab 的内容在 #4 落实。
-      </div>
-    </div>
-  );
-}
 
 // ---------------- dev-only screen toggle ----------------
 
@@ -169,7 +162,80 @@ function DevScreenToggle({
 
 // ---------------- demo data ----------------
 //
-// All hardcoded for #3. Replaced by store-derived data in #9.
+// All hardcoded for #3 / #4. Replaced by store-derived data in #9.
+
+/**
+ * Pick the most recent tool from the most recent agent turn as the
+ * Inspector's selection, so opening the Details tab actually shows
+ * something. In real life this comes from a click on a callout.
+ */
+function demoSelection(turns: Turn[]): InspectorSelection {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.role === "agent" && t.tools.length > 0) {
+      return {
+        type: "tool",
+        tool: t.tools[t.tools.length - 1],
+        turnIndex: i,
+      };
+    }
+  }
+  return { type: "none" };
+}
+
+const DEMO_APPROVAL_RECORDS: ApprovalRecord[] = [
+  {
+    approvalId: "appr_demo_t1",
+    toolName: "file_read",
+    target: "desktop/src/db/migrations/",
+    decision: "auto_allowed",
+    decidedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+  },
+  {
+    approvalId: "appr_demo_t2",
+    toolName: "file_read",
+    target: "docs/PRD.md",
+    decision: "auto_allowed",
+    decidedAt: new Date(Date.now() - 90_000).toISOString(),
+  },
+];
+
+const DEMO_RUNTIME_INFO: RuntimeInfo = {
+  gaPath: "~/Documents/GenericAgent",
+  pythonVersion: "3.11.9 (system)",
+  llmDisplayName: "Claude Sonnet 4.5",
+  bridgePid: 48213,
+  cwd: "~/Code/ga-workbench",
+  gaBaseline: "6a3eecc07eb7dbdde823c0095842c829925e3e64",
+  workbenchVersion: "0.1.0",
+  healthChecks: [
+    {
+      name: "GA path",
+      detail: "~/Documents/GenericAgent",
+      state: "success",
+    },
+    {
+      name: "Python 可用",
+      detail: "Python 3.11.9 (system)",
+      state: "success",
+    },
+    {
+      name: "agentmain.py 可 import",
+      detail: "GA baseline 6a3eecc · OK",
+      state: "success",
+    },
+    {
+      name: "mykey.py 存在",
+      detail: "5 LLM 配置",
+      state: "success",
+    },
+    {
+      name: "至少一个 LLM 配置可解析",
+      detail: "Claude / OAI / Gemini · parse OK",
+      state: "success",
+    },
+  ],
+};
 
 const DEMO_USER_PROMPT =
   "帮我把 sessions 表的 SQL schema 写到 desktop/src/db/migrations/001_init.sql。" +
