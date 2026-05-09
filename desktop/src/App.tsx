@@ -133,8 +133,18 @@ function App() {
     () => buildDemoPending(approvalDecisions),
     [approvalDecisions],
   );
-  const turns = storeTurns.length > 0 ? storeTurns : demoTurns;
-  const pendingApprovals = storePending.length > 0 ? storePending : demoPending;
+  // Single "is the user in a real conversation" signal drives both
+  // turns and pendingApprovals. Earlier code keyed each off its own
+  // length (`storeTurns.length` / `storePending.length`), which had
+  // a sharp edge: as soon as the user sent a real message that
+  // didn't trigger any tool dispatch (e.g. plain "你好"), turns
+  // came from the store but pendingApprovals fell back to demo
+  // because storePending was still []. Result: a fake "Patch file
+  // at —" Approval Card appearing out of nowhere on a chit-chat
+  // turn. Anchor both decisions on storeTurns.length.
+  const conversationStarted = storeTurns.length > 0;
+  const turns = conversationStarted ? storeTurns : demoTurns;
+  const pendingApprovals = conversationStarted ? storePending : demoPending;
   // Composer Stop-mode is driven by the real `agentRunning` store flag
   // (set when user submits, cleared on turn_end / error / run_complete).
   // Keep the demo heuristic OR'd in so the pre-bridge demo flow still
