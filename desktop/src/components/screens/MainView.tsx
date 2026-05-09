@@ -1,6 +1,6 @@
 import { ApprovalDock } from "@/components/conversation/ApprovalDock";
 import { Composer } from "@/components/conversation/Composer";
-import { Conversation } from "@/components/conversation/Conversation";
+import { Conversation, TurnMarker } from "@/components/conversation/Conversation";
 import { ThinkingSummary } from "@/components/conversation/ThinkingSummary";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
 import type {
@@ -22,6 +22,13 @@ export interface MainViewProps {
   /** When true, the agent is mid-run; the Composer hides Submit and
    * shows Stop, the LLM switcher disables. */
   isRunning?: boolean;
+  /**
+   * GA-side turn currently being run, surfaced into the thinking
+   * placeholder (Turn N · 思考中…) and into pending Approval Card
+   * headers when the agent has a request mid-turn. `null` / undefined
+   * during quiet states.
+   */
+  currentTurnIndex?: number | null;
 }
 
 /**
@@ -47,6 +54,7 @@ export function MainView({
   onAdvanceApproval,
   onStop,
   isRunning = false,
+  currentTurnIndex,
 }: MainViewProps) {
   const stillWaiting = pendingApprovals.length > 0;
 
@@ -71,6 +79,9 @@ export function MainView({
               brings the same tool back as part of a finalized turn. */}
           {stillWaiting && (
             <div className="mt-4 space-y-2">
+              {currentTurnIndex != null && (
+                <TurnMarker index={currentTurnIndex} />
+              )}
               {pendingApprovals.map((p) => (
                 <ToolCallout
                   key={p.approvalId}
@@ -88,7 +99,12 @@ export function MainView({
               Approval Card shows up — that already covers the "agent
               waiting on you" state. */}
           {isRunning && !stillWaiting && (
-            <ThinkingSummary>思考中…</ThinkingSummary>
+            <div className="mt-4">
+              {currentTurnIndex != null && (
+                <TurnMarker index={currentTurnIndex} />
+              )}
+              <ThinkingSummary>思考中…</ThinkingSummary>
+            </div>
           )}
         </div>
       </div>

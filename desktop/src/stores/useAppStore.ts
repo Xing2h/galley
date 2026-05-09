@@ -88,6 +88,15 @@ interface State {
    * `run_complete`.
    */
   agentRunning: boolean;
+  /**
+   * GA-side turn number currently running (1-based). One user
+   * message can drive multiple agent turns — each LLM call +
+   * dispatch is one. Set when `turn_start` arrives, cleared on
+   * `run_complete` / `error`. Lets the thinking placeholder show
+   * "Turn 3 · 思考中…" so users can track progress on long tasks.
+   * `null` when no turn is in flight.
+   */
+  currentTurnIndex: number | null;
 
   // ---- Approval ----
   approvalDecisions: Record<string, ApprovalDecision>;
@@ -153,6 +162,7 @@ interface Actions {
   removePendingApproval: (approvalId: string) => void;
   clearConversation: () => void;
   setAgentRunning: (running: boolean) => void;
+  setCurrentTurnIndex: (idx: number | null) => void;
 
   // Bridge runtime
   setBridgeStatus: (status: BridgeStatus) => void;
@@ -202,6 +212,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   turns: [],
   pendingApprovals: [],
   agentRunning: false,
+  currentTurnIndex: null,
 
   toasts: [],
 
@@ -332,9 +343,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       pendingApprovals: [],
       approvalDecisions: {},
       agentRunning: false,
+      currentTurnIndex: null,
     }),
 
   setAgentRunning: (running) => set({ agentRunning: running }),
+  setCurrentTurnIndex: (idx) => set({ currentTurnIndex: idx }),
 
   // ---- Bridge runtime ----
   setBridgeStatus: (status) => set({ bridgeStatus: status }),

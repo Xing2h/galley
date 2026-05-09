@@ -72,9 +72,10 @@ export function EmptyState({
           ))}
         </div>
 
-        <div className="mt-10 text-center text-[12px] text-ink-muted">
-          ⌘K 打开命令面板 · ⌘N 新建对话 · ⌘\ 折叠 sidebar
-        </div>
+        {/* Keyboard hints intentionally not shown here. Empty state
+            is the user's first impression; loading it with shortcut
+            chrome dilutes the focus on "你想做什么?". The full
+            shortcut list lives in Settings → Shortcuts. */}
       </div>
     </div>
   );

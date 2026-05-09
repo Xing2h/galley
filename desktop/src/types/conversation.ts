@@ -68,6 +68,15 @@ export interface AgentTurn {
   /** Final answer markdown. null when the agent is still working
    * (e.g., waiting on approval). */
   finalAnswer: string | null;
+  /**
+   * GA-side turn number (1-based). One user message can produce
+   * multiple agent turns — each LLM call + dispatch cycle is one
+   * turn. Surfaced in the conversation as a "Turn N" header so
+   * users can track agent progress on long-running tasks. Comes
+   * from `turn_end` event's turnIndex; optional because legacy
+   * demo turns and unit tests may construct AgentTurns without it.
+   */
+  turnIndex?: number;
 }
 
 export type Turn = UserTurn | AgentTurn;

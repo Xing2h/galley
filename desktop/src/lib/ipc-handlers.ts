@@ -91,6 +91,7 @@ export function dispatchIPCEvent(
       // don't get stuck on. Categories like `quota_exceeded` /
       // `network` show the error toast instead.
       s.setAgentRunning(false);
+      s.setCurrentTurnIndex(null);
       return;
     }
 
@@ -129,12 +130,22 @@ export function dispatchIPCEvent(
       // the normal happy path; this catches ABORTED / DENIED exits
       // where turn_end_callback didn't fire on the GA side.
       s.setAgentRunning(false);
+      s.setCurrentTurnIndex(null);
+      return;
+    }
+
+    case "turn_start": {
+      // Reflects which GA-side iteration the agent is currently on.
+      // The thinking placeholder reads this to render
+      // "Turn N · 思考中…" so users can see progress on long
+      // multi-turn tasks. Cleared on run_complete / error.
+      console.debug("[ipc] turn_start", event);
+      s.setCurrentTurnIndex(event.turnIndex);
       return;
     }
 
     case "ask_user":
     case "history_loaded":
-    case "turn_start":
     case "tool_call_start":
     case "tool_call_progress": {
       console.debug(`[ipc] ${event.kind}`, event);
@@ -151,6 +162,7 @@ export function dispatchIPCEvent(
 // ---------------- Turn-end → AgentTurn ----------------
 
 function turnFromTurnEnd(event: {
+  turnIndex: number;
   toolCalls: IPCToolCall[];
   toolResults: IPCToolResult[];
   responseContent: string;
@@ -163,6 +175,7 @@ function turnFromTurnEnd(event: {
     thinking: extractThinking(event.responseContent),
     tools,
     finalAnswer: cleanFinalAnswer(event.responseContent),
+    turnIndex: event.turnIndex,
   };
 }
 

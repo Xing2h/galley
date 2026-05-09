@@ -48,10 +48,12 @@ export function Conversation({
               onApprove={onApprove}
             />
           )}
-          {/* SoftHr separates turns. The label is the *next* turn's
-              number — the divider visually announces "Turn N below".
-              First turn gets no marker (it's already on screen). */}
-          {i < turns.length - 1 && <SoftHr label={`Turn ${i + 2}`} />}
+          {/* SoftHr separates turns visually. The "Turn N" label
+              lives on each AgentTurn header (see AgentTurnView) —
+              that uses the GA-side turnIndex from turn_end events,
+              not the array position, because a single user message
+              can produce multiple agent turns. */}
+          {i < turns.length - 1 && <SoftHr />}
         </Fragment>
       ))}
     </div>
@@ -71,6 +73,8 @@ function AgentTurnView({
 
   return (
     <div>
+      {turn.turnIndex !== undefined && <TurnMarker index={turn.turnIndex} />}
+
       {turn.thinking && <ThinkingSummary>{turn.thinking}</ThinkingSummary>}
 
       {turn.tools.map((tool) => (
@@ -96,6 +100,21 @@ function AgentTurnView({
   );
 }
 
+/**
+ * "Turn N" header — sits above each agent turn's thinking summary.
+ * 11px Inter mono uppercase muted; reads as a chapter waypoint
+ * without competing with the content. The N is the GA-side turn
+ * index (one user message can produce multiple agent turns), not
+ * the array position.
+ */
+export function TurnMarker({ index }: { index: number }) {
+  return (
+    <div className="mb-1.5 mt-1 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-muted">
+      Turn {index}
+    </div>
+  );
+}
+
 function StrongHr() {
   return (
     <hr className="my-4 border-0 border-t border-line-strong" aria-hidden />
@@ -103,35 +122,16 @@ function StrongHr() {
 }
 
 /**
- * Turn-divider rule. With a `label`, splits into two short rules
- * with the label centered between them ("──── Turn 2 ────"); the
- * label is the next turn's number, giving the conversation chapter-
- * style waypoints. Without a label (legacy callers) the rule is
- * unbroken, mirroring the v0.1 prototype.
- *
- * Spacing: `my-6` (48px). Earlier `my-9` (72px) felt too sparse
- * during dogfood — DESIGN.md §4.3 documents the change rationale.
+ * Turn-divider rule. Spacing: `my-6` (48px). Earlier `my-9` (72px)
+ * felt too sparse during dogfood — DESIGN.md §4.3 documents the
+ * change rationale. The "Turn N" waypoint lives on each agent
+ * turn's header (AgentTurnView), not on the divider.
  */
-function SoftHr({ label }: { label?: string } = {}) {
-  if (!label) {
-    return (
-      <hr
-        className="mx-[12%] my-6 border-0 border-t border-line opacity-60"
-        aria-hidden
-      />
-    );
-  }
+function SoftHr() {
   return (
-    <div
-      className="mx-[12%] my-6 flex items-center gap-3 text-[11px] text-ink-muted"
-      role="separator"
-      aria-label={label}
-    >
-      <span className="h-px flex-1 bg-line opacity-60" aria-hidden />
-      <span className="shrink-0 font-mono uppercase tracking-[0.08em]">
-        {label}
-      </span>
-      <span className="h-px flex-1 bg-line opacity-60" aria-hidden />
-    </div>
+    <hr
+      className="mx-[12%] my-6 border-0 border-t border-line opacity-60"
+      aria-hidden
+    />
   );
 }

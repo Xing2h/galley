@@ -1,14 +1,21 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { Cpu, Info, ShieldCheck, X as XIcon } from "@phosphor-icons/react";
+import {
+  Cpu,
+  Info,
+  Keyboard,
+  ShieldCheck,
+  X as XIcon,
+} from "@phosphor-icons/react";
 import { useState } from "react";
 
 import { SettingsAbout } from "@/components/screens/settings/SettingsAbout";
 import { SettingsApproval } from "@/components/screens/settings/SettingsApproval";
 import { SettingsRuntime } from "@/components/screens/settings/SettingsRuntime";
+import { SettingsShortcuts } from "@/components/screens/settings/SettingsShortcuts";
 import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
 
-export type SettingsTab = "runtime" | "approval" | "about";
+export type SettingsTab = "runtime" | "approval" | "shortcuts" | "about";
 
 export interface ApprovalConfig {
   /** Tools that require approval before dispatch. */
@@ -116,6 +123,7 @@ export function Settings({
                   onRemoveAlwaysAllow={onRemoveAlwaysAllow}
                 />
               )}
+              {tab === "shortcuts" && <SettingsShortcuts />}
               {tab === "about" && (
                 <SettingsAbout
                   workbenchVersion={runtimeInfo.workbenchVersion}
@@ -152,6 +160,12 @@ function SettingsTabList({
         Icon={ShieldCheck}
         label="Approval"
         onClick={() => onChange("approval")}
+      />
+      <SettingsTabButton
+        active={tab === "shortcuts"}
+        Icon={Keyboard}
+        label="Shortcuts"
+        onClick={() => onChange("shortcuts")}
       />
       <SettingsTabButton
         active={tab === "about"}
