@@ -78,7 +78,10 @@ export function MainView({
               store removes the pending entry; the eventual turn_end
               brings the same tool back as part of a finalized turn. */}
           {stillWaiting && (
-            <div className="mt-4 space-y-2">
+            // No wrapper margin — TurnMarker provides its own
+            // mt-7, and ToolCallout's my-3 spaces successive cards.
+            // space-y-2 stays for the multi-pending case.
+            <div className="space-y-2">
               {currentTurnIndex != null && (
                 <TurnMarker index={currentTurnIndex} />
               )}
@@ -99,7 +102,7 @@ export function MainView({
               Approval Card shows up — that already covers the "agent
               waiting on you" state. */}
           {isRunning && !stillWaiting && (
-            <div className="mt-4">
+            <div>
               {currentTurnIndex != null && (
                 <TurnMarker index={currentTurnIndex} />
               )}

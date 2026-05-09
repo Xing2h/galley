@@ -336,17 +336,18 @@ PROJECTS 是 sidebar 的次要 section（保持在 timeline 之下），但 codi
 #### Turn 结构
 
 ```
-Turn 1                                           ← 11px mono uppercase muted（来自 GA turnIndex）
+Turn 1                                           ← 11px mono uppercase soft（来自 GA turnIndex）
 [💭 Thinking summary callout]                    ← 序列最前，emoji 锚点
 [Tool callout 1]                                 ← 行动序列
 [Tool callout 2]
 ─────────────────                                ← 稍深 1px 全宽 hr（行动 → 结论）
 [Final answer，浮在文档里]                       ← 不放 callout
-─────────                                        ← 极淡 1px 60% 居中 hr（turn 间分隔）
-Turn 2                                           ← 下一 turn 的编号
+Turn 2                                           ← 自带 mt-7 (28px) 的 chapter-mark，承担 turn 间分隔
 [💭 Thinking summary callout]
 ...
 ```
+
+**没有 turn 之间的 SoftHr** —— TurnMarker 自带视觉重量 + 上方间距，承担 turn-to-turn 的章节分隔。不再有水平横线。
 
 #### User vs Agent 三重区分（不用气泡）
 
@@ -377,24 +378,27 @@ Turn 2                                           ← 下一 turn 的编号
 
 Composer 状态同步：`agentRunning = true` 时 Submit 按钮切到 Stop 模式，LLM dropdown disable。
 
-#### Turn 编号
+#### Turn 编号 + 间距
 
 **不是**用户↔agent 对话轮次，**是 GA 内部 agent loop 的 turn 计数**——每次 LLM call + dispatch = 1 turn。一个 user message 可以触发 GA 跑 N 个 turn（agent 不断 reflect + 调 tool 直到出 final answer）。这跟 PRD §7.5 sidebar session row 显示的 "Turn N · summary" 同一个 N。
 
 - 数据来源：每个 IPC `turn_start` / `turn_end` event 都带 `turnIndex` 字段
 - AgentTurn type 持有 `turnIndex`（一个 user message 在 conversation 里可能产生多个 AgentTurn）
-- 渲染位置：每个 AgentTurn 的 thinking summary 之上一行，`Turn N` 11px Inter mono uppercase muted
+- 渲染：每个 AgentTurn 的 thinking summary 之上一行，`Turn N` 11px Inter mono uppercase soft（`text-ink-soft`，比 muted 重一档），`tracking-[0.12em]` 大字距增强 chapter-mark 仪式感，`mt-7`（28px）上方间距承担 turn 间章节分隔
 - in-flight 状态：`currentTurnIndex` 从 `turn_start` 读取；thinking placeholder 顶部也显示 `Turn N` 标记让用户感知 agent 当前跑到第几迭代
 - `run_complete` / `error` 时清空 currentTurnIndex
-- SoftHr **不**嵌 turn 编号（曾尝试 `── Turn 2 ──` 中间嵌入，但语义错误：用 array index 当 turn 编号 → 一个 user message 多个 GA turn 时数对不上。改为标记在每个 AgentTurn 头部，编号即 GA 端真值）
+- **没有 turn 之间的 SoftHr**——TurnMarker 自带 chapter-break 视觉重量，水平横线已删除
 
-#### Spacing
+#### 间距演化历史
 
-- SoftHr 上下间距 `my-5`（40px）—— 给 turn 之间的呼吸感，但不浪费视觉空间
-- 调整历史：
-  - v0.1 初版 `my-9`（72px）→ dogfood 反馈"每个 turn 浪费 1/3 屏" → 改 `my-6`（48px）
-  - my-6 仍反馈"还是大" → 改 `my-5`（40px），现行
-- 不应小于 32px (`my-4`)——hr 失去章节分隔感，turn 之间挤成一团；如真要更紧凑，应该考虑去掉 hr 让 TurnMarker + 颜色对比承担分隔，而不是继续缩 hr 间距
+`turn 间分隔`经过四次调整：
+
+1. v0.1 初版：SoftHr `my-9`（72px）—— dogfood 反馈"每个 turn 浪费 1/3 屏"
+2. SoftHr `my-6`（48px）—— 仍反馈"还是大"
+3. SoftHr `my-5`（40px）—— 仍反馈"还是大"
+4. **现行**：删除 SoftHr，TurnMarker `mt-7`（28px）+ tracking 加大承担分隔
+
+教训：当用户反复反馈"间距大"时，缩 hr 到极小已经不是答案；该思考"分隔信号"是不是必须靠 hr 承担。结果：TurnMarker 的章节标识 + 间距 + 字号已经足够。
 
 ### 4.4 Composer
 

@@ -48,12 +48,12 @@ export function Conversation({
               onApprove={onApprove}
             />
           )}
-          {/* SoftHr separates turns visually. The "Turn N" label
-              lives on each AgentTurn header (see AgentTurnView) —
-              that uses the GA-side turnIndex from turn_end events,
-              not the array position, because a single user message
-              can produce multiple agent turns. */}
-          {i < turns.length - 1 && <SoftHr />}
+          {/* No divider between turns — the TurnMarker on each
+              AgentTurn carries the chapter-break feel via its own
+              top-margin and visual weight. Earlier iterations had
+              a SoftHr here (my-9 → my-6 → my-5); even at 40px the
+              hr-plus-marker stack felt like wasted vertical space.
+              Removed in favour of marker-only separation. */}
         </Fragment>
       ))}
     </div>
@@ -101,15 +101,22 @@ function AgentTurnView({
 }
 
 /**
- * "Turn N" header — sits above each agent turn's thinking summary.
- * 11px Inter mono uppercase muted; reads as a chapter waypoint
- * without competing with the content. The N is the GA-side turn
- * index (one user message can produce multiple agent turns), not
- * the array position.
+ * "Turn N" header — sits above each agent turn's thinking summary
+ * AND carries the chapter-break weight between turns now that
+ * SoftHr is gone. Tuned for that double role:
+ *   - mt-7 (28px) gives turn-to-turn breathing room comparable to
+ *     the old SoftHr's my-5 (40px) without the visual noise of an
+ *     actual rule
+ *   - tracking-[0.12em] + uppercase + soft (not muted) ink lets it
+ *     read as a section header rather than fine-print metadata
+ *   - 11px keeps it from competing with the thinking summary that
+ *     follows
+ * The N is the GA-side turn index (one user message can produce
+ * multiple agent turns), not the array position.
  */
 export function TurnMarker({ index }: { index: number }) {
   return (
-    <div className="mb-1.5 mt-1 font-mono text-[11px] uppercase tracking-[0.08em] text-ink-muted">
+    <div className="mb-2 mt-7 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-soft">
       Turn {index}
     </div>
   );
@@ -121,20 +128,6 @@ function StrongHr() {
   );
 }
 
-/**
- * Turn-divider rule. Spacing: `my-5` (40px). History:
- *   - my-9 (72px) original — too sparse, felt like every turn ate a
- *     third of the screen
- *   - my-6 (48px) first tightening — still felt large in dogfood
- *   - my-5 (40px) current — DESIGN.md §4.3's stated floor
- * The "Turn N" waypoint lives on each agent turn's header
- * (AgentTurnView), not on the divider.
- */
-function SoftHr() {
-  return (
-    <hr
-      className="mx-[12%] my-5 border-0 border-t border-line opacity-60"
-      aria-hidden
-    />
-  );
-}
+// SoftHr removed (2026-05-09): even at my-5 (40px) the hr+marker
+// stack between turns felt heavy. TurnMarker's own top margin +
+// uppercase tracking now carries the chapter-break feel.
