@@ -222,14 +222,18 @@ export function MainView({
               this the conversation looks frozen. We hide it once an
               Approval Card shows up (already covers "agent waiting
               on you") OR once streaming content has begun (the
-              partial render is itself the live signal). */}
+              partial render is itself the live signal).
+              The turn number folds into the ThinkingSummary line
+              ("第 N 轮 · 思考中…") rather than sitting as a separate
+              header — keeps the placeholder a single soft prompt
+              instead of header + body. */}
           {isRunning && !stillWaiting && !visiblePartial && (
-            <div>
-              {currentTurnIndex != null && (
-                <TurnMarker index={currentTurnIndex} />
-              )}
-              <ThinkingSummary>思考中…</ThinkingSummary>
-            </div>
+            <ThinkingSummary>
+              <>
+                {currentTurnIndex != null && `第 ${currentTurnIndex} 轮 · `}
+                思考中…
+              </>
+            </ThinkingSummary>
           )}
 
           {/* In-flight streaming partial (DESIGN.md §4.3 streaming

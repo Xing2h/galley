@@ -107,17 +107,21 @@ function AgentTurnView({
  *   - mt-7 (28px) gives turn-to-turn breathing room comparable to
  *     the old SoftHr's my-5 (40px) without the visual noise of an
  *     actual rule
- *   - tracking-[0.12em] + uppercase + soft (not muted) ink lets it
- *     read as a section header rather than fine-print metadata
- *   - 11px keeps it from competing with the thinking summary that
- *     follows
+ *   - serif italic + muted ink puts it in the same voice family as
+ *     the other "soft prompt" UI text in the product
+ *     ("你想做什么？" / "这里会出现你的 sessions" / TopBar
+ *     placeholder). The previous mono+uppercase+tracking treatment
+ *     read as a sysmon log line and clashed with the Notion+Claude
+ *     register the product is aiming for.
+ *   - 12px keeps it from competing with the thinking summary that
+ *     follows.
  * The N is the GA-side turn index (one user message can produce
  * multiple agent turns), not the array position.
  */
 export function TurnMarker({ index }: { index: number }) {
   return (
-    <div className="mb-2 mt-7 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-soft">
-      Turn {index}
+    <div className="mb-2 mt-7 font-serif text-[12px] italic text-ink-muted">
+      第 {index} 轮
     </div>
   );
 }
