@@ -1,7 +1,12 @@
 import Database from "@tauri-apps/plugin-sql";
 
 import type { Project, Session, SessionStatus } from "@/types/session";
-import type { ProjectRow, SessionRow, ToolEventRow } from "@/types/db";
+import type {
+  MessageRow,
+  ProjectRow,
+  SessionRow,
+  ToolEventRow,
+} from "@/types/db";
 import type { ApprovalDecision } from "@/types/ipc";
 
 /**
@@ -183,6 +188,73 @@ function projectFromRow(r: ProjectRow): Project {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+// ---------------- messages ----------------
+//
+// Stage 3 Task 3 (Session Restore) — `messages` is the source of truth
+// for conversation history that survives restart. Two writers:
+//
+//   - `persistUserMessage` (this file) — called from store
+//     `appendUserTurn` the moment the user submits, so a crash before
+//     turn_end doesn't lose the question.
+//   - `persistTurnEndToMessages` (lib/ipc-handlers.ts) — called on
+//     `turn_end`, writes the assistant row with thinking / tool_calls /
+//     tool_results / final_answer + GA's raw responseContent (the latter
+//     is what the bridge replays on `load_history`).
+//
+// `turn_index` is GA's 1-based turn counter. Store derives the user
+// row's turn_index from `session.turnCount + 1` because the user
+// message is submitted *before* GA emits turn_start. GA's turn_end
+// later writes the assistant row at the matching turn_index — they
+// align because GA always pairs one user message with one turn cycle.
+//
+// `sequence` is the order *within* a turn: user is always 0, assistant
+// always 1. Tool rows would be 2+ but V0.1 collapses them into the
+// assistant row's tool_calls / tool_results JSON columns.
+
+export interface PersistUserMessageParams {
+  sessionId: string;
+  turnIndex: number;
+  content: string;
+}
+
+export async function persistUserMessage(
+  p: PersistUserMessageParams,
+): Promise<void> {
+  const db = await getDB();
+  const id = `msg_${p.sessionId}_${p.turnIndex}_user`;
+  const createdAt = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO messages (
+       id, session_id, turn_index, sequence, role, content,
+       tool_calls, tool_results, thinking, final_answer, created_at
+     ) VALUES ($1, $2, $3, 0, 'user', $4,
+               NULL, NULL, NULL, NULL, $5)
+     ON CONFLICT(id) DO UPDATE SET
+       content    = excluded.content,
+       created_at = excluded.created_at`,
+    [id, p.sessionId, p.turnIndex, p.content, createdAt],
+  );
+}
+
+/**
+ * Load all messages for a session in conversation order. Returns raw
+ * SQLite rows; callers convert to either `Turn[]` (for UI hydration
+ * via `restoreSessionTurns`) or `ConversationMessage[]` (for GA
+ * `load_history` IPC). The two consumers need slightly different
+ * shapes — keep the conversion out of this primitive.
+ */
+export async function loadMessagesBySession(
+  sessionId: string,
+): Promise<MessageRow[]> {
+  const db = await getDB();
+  return db.select<MessageRow[]>(
+    `SELECT * FROM messages
+     WHERE session_id = $1
+     ORDER BY turn_index ASC, sequence ASC`,
+    [sessionId],
+  );
 }
 
 // ---------------- tool_events ----------------

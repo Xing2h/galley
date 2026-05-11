@@ -4,7 +4,9 @@ import type {
   ConversationToolEvent,
   PendingApproval,
 } from "@/types/conversation";
+import type { MessageRow } from "@/types/db";
 import type {
+  ConversationMessage,
   IPCEvent,
   ToolCall as IPCToolCall,
   ToolResult as IPCToolResult,
@@ -73,6 +75,22 @@ export function dispatchIPCEvent(
           kind: "set_yolo_mode",
           enabled: true,
         });
+      }
+      // Session Restore (Stage 3 Task 3). If this session has prior
+      // turn history on disk, replay it into GA `backend.history` via
+      // load_history. Bridge processes commands in FIFO order — even
+      // if the user submits a `user_message` immediately, this lands
+      // first.
+      //
+      // The session-list check uses `turnCount > 0` rather than the
+      // SQLite query result so we skip the round-trip for newly
+      // created sessions (the common case). For the cold-start case
+      // turnCount comes from `loadSessions` during hydrate.
+      const session = store
+        .getState()
+        .sessions.find((x) => x.id === event.sessionId);
+      if (session && (session.turnCount ?? 0) > 0) {
+        void replayHistoryToBridge(event.sessionId, store);
       }
       return;
     }
@@ -447,7 +465,12 @@ async function persistTurnEndToMessages(event: {
         id,
         event.sessionId,
         event.turnIndex,
-        0,
+        // Sequence within turn: user is 0 (persistUserMessage in
+        // db.ts), assistant is 1. `loadMessagesBySession` orders by
+        // (turn_index, sequence) — both halves of a turn need
+        // distinct sequences for restore to come out in the right
+        // order.
+        1,
         event.responseContent,
         JSON.stringify(event.toolCalls),
         JSON.stringify(event.toolResults),
@@ -459,4 +482,57 @@ async function persistTurnEndToMessages(event: {
   } catch (e) {
     console.debug("[ipc] persistTurnEndToMessages: SQLite unavailable.", e);
   }
+}
+
+// ---------------- Session restore ----------------
+
+/**
+ * Replay this session's SQLite message history into the bridge's
+ * GA backend via `load_history` IPC. Called from the `ready` event
+ * handler when `session.turnCount > 0` indicates prior conversation.
+ *
+ * GA's `_load_history` (bridge/workbench_bridge.py L739) wraps the
+ * `{role, content: string}` shape into NativeClaudeSession's native
+ * blocks format. The assistant `content` column we wrote on turn_end
+ * is GA's raw `responseContent` (with <thinking>/<tool_use> tags
+ * intact) — exactly what GA's backend expects to see for full context
+ * fidelity. User content is the verbatim text we wrote on
+ * `appendUserTurn`.
+ *
+ * Best-effort: errors swallowed. A failed restore leaves the bridge
+ * with empty history; the user can still continue the conversation,
+ * just without GA remembering earlier turns. We log at debug so dev
+ * builds see the failure without polluting the console for users.
+ */
+async function replayHistoryToBridge(
+  sessionId: string,
+  store: typeof useAppStore,
+): Promise<void> {
+  try {
+    const { loadMessagesBySession } = await import("@/lib/db");
+    const rows = await loadMessagesBySession(sessionId);
+    if (rows.length === 0) return;
+    const messages = rowsToConversationMessages(rows);
+    await store.getState().sendIPCCommand(sessionId, {
+      kind: "load_history",
+      messages,
+    });
+    console.info("[ipc] load_history sent", {
+      sessionId,
+      messageCount: messages.length,
+    });
+  } catch (e) {
+    console.debug("[ipc] replayHistoryToBridge failed.", e);
+  }
+}
+
+function rowsToConversationMessages(
+  rows: MessageRow[],
+): ConversationMessage[] {
+  return rows
+    .filter((r) => r.role === "user" || r.role === "assistant")
+    .map((r) => ({
+      role: r.role as "user" | "assistant",
+      content: r.content,
+    }));
 }

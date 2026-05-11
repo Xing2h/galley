@@ -8,9 +8,11 @@ import {
 } from "@/lib/bridge";
 import {
   getPref,
+  loadMessagesBySession,
   loadSessions,
   persistSession,
   persistToolEventApprovalDecision,
+  persistUserMessage,
   setPref,
 } from "@/lib/db";
 import { dispatchIPCEvent } from "@/lib/ipc-handlers";
@@ -27,10 +29,12 @@ import {
 import { type AppError, makeAppError } from "@/types/app-error";
 import type {
   AgentTurn,
+  ConversationToolEvent,
   PendingApproval,
   Turn,
   UserTurn,
 } from "@/types/conversation";
+import type { MessageRow } from "@/types/db";
 import type { ApprovalRecord, RuntimeInfo } from "@/types/inspector";
 import type { ApprovalDecision, IPCCommand } from "@/types/ipc";
 import type { Session } from "@/types/session";
@@ -134,6 +138,81 @@ function truncateSummary(text: string): string {
  * — once the user (or restoration) renames the session we leave it
  * alone. */
 const DEFAULT_NEW_SESSION_TITLE = "新对话";
+
+/**
+ * Convert SQLite `messages` rows back into UI `Turn[]`. Walks rows in
+ * (turn_index, sequence) order — user rows (sequence=0) become
+ * UserTurn; assistant rows (sequence=1) become AgentTurn with
+ * tool_calls / tool_results JSON re-hydrated into
+ * ConversationToolEvent[].
+ *
+ * `system` and `tool` rows are skipped — V0.1 collapses tools into the
+ * assistant row's JSON columns; future Memory Inspector work can
+ * surface them.
+ *
+ * Tools restored from history are always marked `success-historical`:
+ * by the time a turn is persisted, every dispatched tool has
+ * completed (turn_end is the canonical "finished" signal). The
+ * conversation view fades them appropriately.
+ */
+function rowsToTurns(rows: MessageRow[]): Turn[] {
+  const turns: Turn[] = [];
+  for (const row of rows) {
+    if (row.role === "user") {
+      turns.push({ role: "user", content: row.content } as UserTurn);
+    } else if (row.role === "assistant") {
+      const toolCalls = safeParseJsonArray(row.tool_calls);
+      const toolResults = safeParseJsonArray(row.tool_results);
+      const tools: ConversationToolEvent[] = toolCalls.map((tc, i) => {
+        const result = toolResults[i];
+        const resultPreview = previewFromContent(result?.content);
+        const id =
+          (typeof result?.toolUseId === "string" && result.toolUseId) ||
+          (typeof tc.toolUseId === "string" && tc.toolUseId) ||
+          `t-${row.turn_index}-${i}`;
+        return {
+          id,
+          name: typeof tc.toolName === "string" ? tc.toolName : "(unknown)",
+          status: "success-historical",
+          args: (tc.args as Record<string, unknown>) ?? {},
+          resultPreview,
+        };
+      });
+      const turn: AgentTurn = {
+        role: "agent",
+        thinking: row.thinking ?? undefined,
+        tools,
+        finalAnswer: row.final_answer ?? null,
+        turnIndex: row.turn_index,
+      };
+      turns.push(turn);
+    }
+    // system / tool rows: skipped at v0.1.
+  }
+  return turns;
+}
+
+/** Defensive JSON.parse — returns `[]` on malformed / null / non-array. */
+function safeParseJsonArray(raw: string | null): Record<string, unknown>[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Mirror of ipc-handlers' resultPreview logic — keep ≤500 char preview. */
+function previewFromContent(content: unknown): string | undefined {
+  if (content === undefined || content === null) return undefined;
+  if (typeof content === "string") return content.slice(0, 500);
+  try {
+    return JSON.stringify(content).slice(0, 500);
+  } catch {
+    return String(content).slice(0, 500);
+  }
+}
 
 function emptyRuntime(): SessionRuntime {
   return {
@@ -273,6 +352,20 @@ interface Actions {
    * single-row.
    */
   bumpSessionAfterTurn: (sessionId: string, summary?: string) => void;
+  /**
+   * Restore a session's `turns` from SQLite — Stage 3 Task 3 Session
+   * Restore. Called by `activateSession` when the runtime is fresh
+   * (no in-memory turns yet) and the session has prior turn history
+   * on disk. Idempotent: safe to call when there are no rows.
+   *
+   * Only writes to `_runtimes[sessionId].turns`; does NOT touch GA
+   * `backend.history`. The bridge-side history injection happens in
+   * the IPC `ready` handler, which reads the same messages table and
+   * sends `load_history` — keeping the two halves decoupled so a
+   * bridge crash + respawn re-injects history without needing to
+   * touch the UI state.
+   */
+  restoreSessionTurns: (sessionId: string) => Promise<void>;
 
   // Approval (global)
   setApprovalRequiredTools: (tools: string[]) => void;
@@ -598,21 +691,60 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // setActiveSession lazy-inits the runtime and refreshes the
     // top-level projection from _runtimes[id].
     get().setActiveSession(id);
+    // Restore conversation turns from SQLite when this is the first
+    // time we're touching this session in the current app instance.
+    // `_runtimes[id].turns.length === 0` is a safe proxy for "fresh
+    // runtime" because once IPC starts streaming, even an empty
+    // SQLite history won't keep turns at zero. We skip restoration
+    // for sessions that already have in-memory turns to avoid
+    // duplicating rows across multiple activations.
+    const rt = get()._runtimes[id];
+    const session = get().sessions.find((s) => s.id === id);
+    const looksFresh = !rt || rt.turns.length === 0;
+    const hasHistory = (session?.turnCount ?? 0) > 0;
+    if (looksFresh && hasHistory) {
+      try {
+        await get().restoreSessionTurns(id);
+      } catch (e) {
+        console.warn("[store] activateSession restoreSessionTurns failed.", e);
+      }
+    }
     // Auto-spawn the bridge when this session has no live one.
     // Re-spawn on `closed` / `error` lets a kill or crash recover
     // by simply re-clicking the session.
-    const rt = get()._runtimes[id];
+    const rtAfter = get()._runtimes[id];
     const needsSpawn =
-      !rt ||
-      rt.bridgeStatus === "idle" ||
-      rt.bridgeStatus === "closed" ||
-      rt.bridgeStatus === "error";
+      !rtAfter ||
+      rtAfter.bridgeStatus === "idle" ||
+      rtAfter.bridgeStatus === "closed" ||
+      rtAfter.bridgeStatus === "error";
     if (needsSpawn) {
       await get().spawnBridge({
         ...DEMO_GA_CONFIG,
         sessionId: id,
       });
     }
+  },
+
+  restoreSessionTurns: async (sessionId) => {
+    let rows: MessageRow[];
+    try {
+      rows = await loadMessagesBySession(sessionId);
+    } catch (e) {
+      console.debug(
+        "[store] restoreSessionTurns: SQLite unavailable.",
+        e,
+      );
+      return;
+    }
+    if (rows.length === 0) return;
+    const turns = rowsToTurns(rows);
+    set((state) =>
+      applyRuntimeUpdate(state, sessionId, (rt) => ({
+        ...rt,
+        turns,
+      })),
+    );
   },
 
   // ---- Approval (global) ----
@@ -737,6 +869,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
         });
       }
     }
+    // Persist the user message to SQLite for Session Restore. turnIndex
+    // is derived as `turnCount + 1` because GA hasn't emitted turn_start
+    // yet — that event arrives after the bridge starts processing
+    // user_message and confirms our local guess. The pairing holds
+    // because GA always assigns one turn per user message.
+    const sessionSnap = get().sessions.find((s) => s.id === sessionId);
+    const nextTurnIndex = (sessionSnap?.turnCount ?? 0) + 1;
+    void persistUserMessage({
+      sessionId,
+      turnIndex: nextTurnIndex,
+      content: text,
+    }).catch((e) => {
+      console.debug("[store] appendUserTurn persistUserMessage failed.", e);
+    });
   },
 
   appendAgentTurn: (sessionId, turn) =>
