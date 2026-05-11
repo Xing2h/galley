@@ -73,7 +73,9 @@ function AgentTurnView({
 
   return (
     <div>
-      {turn.turnIndex !== undefined && <TurnMarker index={turn.turnIndex} />}
+      {turn.turnIndex !== undefined && (
+        <TurnMarker index={turn.turnIndex} summary={turn.summary} />
+      )}
 
       {turn.thinking && <ThinkingSummary>{turn.thinking}</ThinkingSummary>}
 
@@ -125,10 +127,30 @@ function AgentTurnView({
  * granularity. The N is GA's turn_index (one user message can
  * trigger multiple steps), not the array position.
  */
-export function TurnMarker({ index }: { index: number }) {
+export function TurnMarker({
+  index,
+  summary,
+}: {
+  index: number;
+  /**
+   * GA-side third-person turn summary (from turn_end event's
+   * `summary` field). When present, rendered on the same line after
+   * a separator — mirrors the Sidebar two-liner format so the user
+   * sees the same recap there and in the conversation document.
+   * Omitted: marker shows just the step number, which is the right
+   * minimum when GA didn't produce a summary.
+   */
+  summary?: string;
+}) {
   return (
     <div className="mb-2 mt-7 font-serif text-[12px] italic text-ink-muted">
       第 {index} 步
+      {summary && (
+        <>
+          {" · "}
+          <span className="text-ink-soft">{summary}</span>
+        </>
+      )}
     </div>
   );
 }

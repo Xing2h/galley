@@ -229,6 +229,7 @@ export function dispatchIPCEvent(
 
 function turnFromTurnEnd(event: {
   turnIndex: number;
+  summary: string;
   toolCalls: IPCToolCall[];
   toolResults: IPCToolResult[];
   responseContent: string;
@@ -236,12 +237,17 @@ function turnFromTurnEnd(event: {
   const tools = event.toolCalls.map((tc, i) =>
     toolEventFromIPC(tc, event.toolResults[i], i),
   );
+  // GA's summary occasionally arrives as the literal placeholder
+  // text when the LLM didn't produce a meaningful one. Trim + treat
+  // empty as undefined so the UI doesn't render a hollow line.
+  const trimmedSummary = event.summary?.trim();
   return {
     role: "agent",
     thinking: extractThinking(event.responseContent),
     tools,
     finalAnswer: cleanFinalAnswer(event.responseContent),
     turnIndex: event.turnIndex,
+    summary: trimmedSummary ? trimmedSummary : undefined,
   };
 }
 
