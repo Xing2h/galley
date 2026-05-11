@@ -59,6 +59,77 @@ export function getBridgeClient(sessionId: string): BridgeClient | null {
   return _bridgeClients.get(sessionId) ?? null;
 }
 
+/**
+ * LRU resource governor for multi-session bridges (Stage 3 Task 2.5).
+ *
+ * Power users open dozens of sessions in a day. Keeping every session's
+ * GA subprocess alive forever is a resource bomb (~150MB RSS + an LLM
+ * client per process). 1-active was rejected (background tasks must
+ * keep running — see 2026-05-11 devlog). The middle ground: cap the
+ * concurrent alive count, suspend the least-recently-used to make
+ * room. Re-activating a suspended session re-spawns + replays
+ * `load_history` from SQLite, which Stage 3 Task 3 just made viable.
+ *
+ * `_lruOrder` holds session ids of every alive bridge with the most-
+ * recently-activated at the END (push to end on touch). Suspending
+ * pulls from the FRONT.
+ *
+ * Cap is 5 alive bridges — wide enough that the working set
+ * ("today's active sessions") stays hot, tight enough that opening
+ * a 20th session doesn't grind the machine. User-facing: silent in
+ * the happy path; the suspended bridge's session row stays in the
+ * sidebar so the user can re-click to bring it back.
+ */
+const _lruOrder: string[] = [];
+const LRU_CAP = 5;
+
+/** Mark `sessionId` as most-recently-used. Idempotent + safe to call
+ * before `_bridgeClients.set` (touch tracks intent, not actual liveness). */
+function _lruTouch(sessionId: string): void {
+  const idx = _lruOrder.indexOf(sessionId);
+  if (idx !== -1) _lruOrder.splice(idx, 1);
+  _lruOrder.push(sessionId);
+}
+
+/** Remove `sessionId` from the LRU. Called when a bridge actually
+ * shuts down (planned suspend OR external crash via onClose). */
+function _lruRemove(sessionId: string): void {
+  const idx = _lruOrder.indexOf(sessionId);
+  if (idx !== -1) _lruOrder.splice(idx, 1);
+}
+
+/**
+ * Shut down the oldest alive bridges until the LRU is at or under cap.
+ * Awaited so the caller can sequence subsequent work after suspended
+ * processes are actually gone. Errors are caught per-victim — one
+ * failing shutdown shouldn't block the rest.
+ *
+ * Skips the active session — suspending the one the user is looking
+ * at would be the worst possible UX. If the user somehow has > LRU_CAP
+ * other-than-active alive (rare: rapid clicking), enforcement still
+ * trims everyone else.
+ */
+async function _enforceLRUCap(): Promise<void> {
+  const activeId = useAppStore.getState().activeSessionId;
+  while (_lruOrder.length > LRU_CAP) {
+    // Find the oldest non-active candidate. The active session is
+    // typically at the end (most-recently-touched), but defensive
+    // check covers edge orderings.
+    const victim = _lruOrder.find((id) => id !== activeId);
+    if (!victim) return; // only the active session is alive — leave it
+    try {
+      await useAppStore.getState().shutdownBridge(victim);
+    } catch (e) {
+      console.warn(`[lru] suspend ${victim} failed.`, e);
+      // shutdownBridge calls _lruRemove on success only — for failed
+      // shutdowns we still pull from the LRU so the loop can progress;
+      // the leaked bridge will at least disappear on app exit's
+      // shutdownAllBridges.
+      _lruRemove(victim);
+    }
+  }
+}
+
 export type Screen = "onboarding" | "empty" | "main";
 
 export interface LLMOption {
@@ -711,7 +782,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
     // Auto-spawn the bridge when this session has no live one.
     // Re-spawn on `closed` / `error` lets a kill or crash recover
-    // by simply re-clicking the session.
+    // by simply re-clicking the session. `closed` is also how the
+    // LRU governor signals "suspended" — re-activation regenerates
+    // the bridge and the IPC `ready` handler replays SQLite history.
     const rtAfter = get()._runtimes[id];
     const needsSpawn =
       !rtAfter ||
@@ -723,6 +796,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ...DEMO_GA_CONFIG,
         sessionId: id,
       });
+    } else {
+      // Already alive — mark as most-recently-used so the LRU
+      // governor protects it on the next overflow.
+      _lruTouch(id);
     }
   },
 
@@ -1028,6 +1105,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
         onClose: (code, signal) => {
           console.info(`[bridge ${sessionId}] closed`, { code, signal });
           _bridgeClients.delete(sessionId);
+          // Drop from LRU regardless of why it closed — planned
+          // shutdownBridge already removed it; crashes / external
+          // kills get cleaned up here. Defensive: indexOf check
+          // makes the second remove a no-op.
+          _lruRemove(sessionId);
           useAppStore.setState((state) =>
             applyRuntimeUpdate(state, sessionId, (rt) => ({
               ...rt,
@@ -1053,6 +1135,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ),
       });
       _bridgeClients.set(sessionId, client);
+      _lruTouch(sessionId);
       // Status flips to "connected" only after the bridge sends its
       // `ready` event (handled in ipc-handlers). Keep "spawning"
       // here so the UI knows to show a loading affordance.
@@ -1062,6 +1145,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
           bridgePid: client.pid,
         })),
       );
+      // Enforce LRU cap — suspend the oldest non-active bridges so
+      // resource use stays bounded even after the user opens 20+
+      // sessions. The suspended session's row keeps showing in the
+      // sidebar; clicking it later re-spawns + replays history.
+      // Fire-and-forget so spawn returns to the caller promptly;
+      // overflow shutdown happens in the background.
+      void _enforceLRUCap();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       _bridgeClients.delete(sessionId);
@@ -1083,6 +1173,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       await client.shutdown();
     } finally {
       _bridgeClients.delete(sessionId);
+      _lruRemove(sessionId);
       set((state) =>
         applyRuntimeUpdate(state, sessionId, (rt) => ({
           ...rt,
