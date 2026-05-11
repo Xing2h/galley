@@ -82,8 +82,21 @@ export async function spawnBridge(
   if (args.cwd) argv.push("--cwd", args.cwd);
   if (args.llmIndex !== undefined) argv.push("--llm-no", String(args.llmIndex));
 
+  // bridgeCwd resolution:
+  //   - production (packaged .app): we bundle the `bridge/` package
+  //     into Resources/ via tauri.conf.json's bundle.resources
+  //     mapping. Python's `-m bridge.workbench_bridge` needs that
+  //     Resources/ dir as cwd to discover the package. resourceDir()
+  //     points at .app/Contents/Resources/.
+  //   - dev (`pnpm tauri dev`): args.bridgeCwd is the workbench repo
+  //     root (set by demo / store gaConfig), which contains the
+  //     real `bridge/` source.
+  const bridgeCwd = import.meta.env.PROD
+    ? await resolveProductionBridgeCwd(args.bridgeCwd)
+    : args.bridgeCwd;
+
   const command = Command.create(program, argv, {
-    cwd: args.bridgeCwd,
+    cwd: bridgeCwd,
     env: args.env,
   });
 
@@ -157,4 +170,29 @@ export async function spawnBridge(
       }
     },
   };
+}
+
+/**
+ * Resolve the cwd for the Python bridge process in a packaged build.
+ * Tauri's `bundle.resources` maps `../../bridge` → `bridge` under
+ * `<.app>/Contents/Resources/`; we point cwd at the Resources dir so
+ * `python -m bridge.workbench_bridge` finds the package.
+ *
+ * Falls back to the passed `dev` value if `resourceDir()` somehow
+ * fails (very unlikely in a real Tauri runtime — we still want a
+ * sensible behavior rather than throw).
+ */
+async function resolveProductionBridgeCwd(
+  dev: string | undefined,
+): Promise<string | undefined> {
+  try {
+    const { resourceDir } = await import("@tauri-apps/api/path");
+    return await resourceDir();
+  } catch (e) {
+    console.warn(
+      "[bridge] resolveProductionBridgeCwd failed; falling back to dev path.",
+      e,
+    );
+    return dev;
+  }
 }
