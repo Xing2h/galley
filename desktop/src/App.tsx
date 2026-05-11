@@ -193,7 +193,17 @@ function App() {
   if (screen === "onboarding") {
     return (
       <>
-        <Onboarding onComplete={() => setScreen("empty")} />
+        <Onboarding
+          onComplete={(gaPath) => {
+            // Persist the validated path so subsequent bridge spawns
+            // use the user-chosen GA install, not the demo fallback.
+            // Best-effort: setGAConfig pushes a "重启 Workbench"
+            // toast on success — fine for onboarding since there's
+            // no bridge alive yet.
+            void setGAConfig({ gaPath });
+            setScreen("empty");
+          }}
+        />
         {import.meta.env.DEV && (
           <DevScreenToggle
             screen={screen}

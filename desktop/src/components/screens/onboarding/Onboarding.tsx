@@ -6,6 +6,10 @@ import {
 } from "@/components/screens/onboarding/StepAttach";
 import { StepHealth } from "@/components/screens/onboarding/StepHealth";
 import { StepWelcome } from "@/components/screens/onboarding/StepWelcome";
+import {
+  runHealthChecks,
+  validateGAPath,
+} from "@/lib/onboarding-validation";
 import { cn } from "@/lib/utils";
 import type { HealthCheckItem } from "@/types/inspector";
 
@@ -42,12 +46,11 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const [path, setPath] = useState("~/Documents/GenericAgent");
   const [validation, setValidation] = useState<PathValidation>(null);
 
-  // Debounced mock path validation. Real validation routes through a
-  // Tauri command in #10.
-  //
-  // All setState calls are scheduled on a tick so we satisfy the
-  // react-hooks/set-state-in-effect rule (no synchronous setState
-  // inside the effect body).
+  // Debounced real path validation via Tauri fs plugin. The
+  // setTimeout pacing keeps the UI responsive while the user is still
+  // typing; we don't fire a probe on every keystroke. setState calls
+  // are scheduled on a tick to satisfy the
+  // react-hooks/set-state-in-effect rule.
   useEffect(() => {
     let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -73,16 +76,13 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     timers.push(
       setTimeout(() => {
         if (cancelled) return;
-        // Mock: path containing "GenericAgent" or "GA" is valid;
-        // ending with "incomplete" triggers the missing-agentmain
-        // warning state for visual demo; otherwise not-found.
-        if (path.endsWith("incomplete")) {
-          setValidation({ kind: "missing-agentmain", rawPath: path });
-        } else if (path.includes("GenericAgent") || path.includes("GA")) {
-          setValidation({ kind: "ok", foundAgentmain: true, rawPath: path });
-        } else {
-          setValidation({ kind: "not-found", rawPath: path });
-        }
+        // Real fs check. Errors fall through to "not-found" — same UX
+        // since either way the path isn't usable. The picker is the
+        // happy path; manual typing surfaces typos here.
+        void validateGAPath(path).then((result) => {
+          if (cancelled) return;
+          setValidation(result);
+        });
       }, 350),
     );
 
@@ -92,57 +92,17 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     };
   }, [path]);
 
-  // Health check progression. Each check transitions
-  // pending -> running -> success in sequence with short delays.
-  const [healthChecks, setHealthChecks] = useState<HealthCheckItem[]>(() =>
-    initialHealthChecks(path),
-  );
+  // Health check progression. Driven by real fs probes via
+  // runHealthChecks(); each check transitions pending → running →
+  // success/warning/failed in sequence. The runner does its own
+  // pacing so we don't need a manual setTimeout cascade here.
+  const [healthChecks, setHealthChecks] = useState<HealthCheckItem[]>([]);
 
   useEffect(() => {
     if (step !== "health") return;
-
-    // All state writes are inside setTimeout callbacks (so the
-    // synchronous-setState-in-effect rule stays happy).
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    let cancelled = false;
-    const baseDelay = 100;
-    const runDelay = 350;
-    const interTick = 220;
-
-    // Reset to pending at the start of the run.
-    timers.push(
-      setTimeout(() => {
-        if (!cancelled) setHealthChecks(initialHealthChecks(path));
-      }, 0),
-    );
-
-    const tickAt = (i: number, atMs: number) => {
-      timers.push(
-        setTimeout(() => {
-          if (cancelled) return;
-          setHealthChecks((prev) =>
-            prev.map((c, idx) => (idx === i ? { ...c, state: "running" } : c)),
-          );
-        }, atMs),
-      );
-      timers.push(
-        setTimeout(() => {
-          if (cancelled) return;
-          setHealthChecks((prev) =>
-            prev.map((c, idx) => (idx === i ? { ...c, state: "success" } : c)),
-          );
-        }, atMs + runDelay),
-      );
-    };
-
-    for (let i = 0; i < 5; i++) {
-      tickAt(i, baseDelay + i * (runDelay + interTick));
-    }
-
-    return () => {
-      cancelled = true;
-      timers.forEach(clearTimeout);
-    };
+    const controller = new AbortController();
+    void runHealthChecks(path, setHealthChecks, controller.signal);
+    return () => controller.abort();
   }, [step, path]);
 
   const handleContinueAttach = () => {
@@ -168,9 +128,11 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               path={path}
               validation={validation}
               onPathChange={setPath}
-              onPickFolder={() =>
-                console.info("[onboarding] folder picker — wired in #10")
-              }
+              onPickFolder={() => {
+                void pickFolder().then((picked) => {
+                  if (picked) setPath(picked);
+                });
+              }}
               onBack={() => setStep("welcome")}
               onContinue={handleContinueAttach}
             />
@@ -237,30 +199,27 @@ function StepProgress({ step }: { step: OnboardingStep }) {
   );
 }
 
-// ---------------- Mock data ----------------
+// ---------------- Folder picker ----------------
 
-function initialHealthChecks(path: string): HealthCheckItem[] {
-  return [
-    { name: "路径存在", detail: path, state: "pending" },
-    {
-      name: "Python 可用",
-      detail: "Python 3.11.9 (system)",
-      state: "pending",
-    },
-    {
-      name: "agentmain.py 可 import",
-      detail: "GA baseline 6a3eecc · OK",
-      state: "pending",
-    },
-    {
-      name: "mykey.py 存在",
-      detail: `${path}/mykey.py · 5 LLM`,
-      state: "pending",
-    },
-    {
-      name: "至少一个 LLM 配置可解析",
-      detail: "Claude / OAI / Gemini · parse OK",
-      state: "pending",
-    },
-  ];
+/**
+ * Tauri dialog folder picker. Lazy import keeps Vite-only dev from
+ * choking on the plugin shim. Returns the picked path or null on
+ * cancel / error.
+ */
+async function pickFolder(): Promise<string | null> {
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "选择 GenericAgent 仓库目录",
+    });
+    return typeof selected === "string" && selected.length > 0
+      ? selected
+      : null;
+  } catch (e) {
+    console.warn("[onboarding] pickFolder failed.", e);
+    return null;
+  }
 }
+

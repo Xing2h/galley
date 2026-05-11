@@ -27,6 +27,8 @@
     "dialog:default",
     "dialog:allow-save",
     "dialog:allow-open",
+    "fs:default",
+    "fs:allow-exists",
     "fs:allow-write-text-file",
     {
       "identifier": "fs:scope",
