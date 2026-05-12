@@ -131,12 +131,23 @@ export function dispatchIPCEvent(
     }
 
     case "turn_end": {
+      // GA's agent_runner_loop resets turn=1 on every put_task
+      // (per-message), so event.turnIndex is local to the current
+      // user_message run. Add the runtime's offset (set in
+      // appendUserTurn = turnCount before this run) to get an
+      // absolute session-wide turn index. See SessionRuntime
+      // doc comment for the full bug + fix rationale.
+      const offset = s._runtimes[event.sessionId]?.turnIndexOffset ?? 0;
+      const absoluteTurnIndex = event.turnIndex + offset;
+      const normalized = { ...event, turnIndex: absoluteTurnIndex };
       console.info("[ipc] turn_end", {
-        turnIndex: event.turnIndex,
+        gaTurnIndex: event.turnIndex,
+        absoluteTurnIndex,
+        offset,
         toolCallCount: event.toolCalls?.length ?? 0,
         hasFinalAnswer: !!event.responseContent,
       });
-      const turn = turnFromTurnEnd(event);
+      const turn = turnFromTurnEnd(normalized);
       s.appendAgentTurn(event.sessionId, turn);
       // Defensive: appendAgentTurn already sets agentRunning=false in
       // its reducer, but call it again here so the IPC layer is
@@ -144,18 +155,21 @@ export function dispatchIPCEvent(
       // the store action sees the state transition explicitly.
       s.setAgentRunning(event.sessionId, false);
       // Update the session row (turn_count + last_activity_at +
-      // summary) so the Sidebar bucketing + "Turn N · {summary}" badge
+      // summary) so the Sidebar bucketing + "第 N 步 · {summary}" badge
       // stay current across app restarts. SQLite write is best-effort.
       // `event.summary` is GA's per-turn one-liner from
       // `agent._turn_end_hooks`; bridge passes it through verbatim.
       s.bumpSessionAfterTurn(event.sessionId, event.summary);
-      // Best-effort SQLite double-write. Silently swallow when the
-      // backend isn't available (Vite dev / first launch / migration).
-      void persistTurnEndToMessages(event);
+      // Best-effort SQLite double-write. Persisted under the
+      // ABSOLUTE turn index — using the raw GA index would let
+      // back-to-back user messages collide on the same
+      // `msg_${sessionId}_1_assistant` row and silently overwrite.
+      void persistTurnEndToMessages(normalized);
       return;
     }
 
     case "tool_call_pending": {
+      const offset = s._runtimes[event.sessionId]?.turnIndexOffset ?? 0;
       const target = pickTarget(event.args);
       const pending: PendingApproval = {
         approvalId: event.approvalId,
@@ -165,9 +179,13 @@ export function dispatchIPCEvent(
         args: event.args,
       };
       s.addPendingApproval(event.sessionId, pending);
-      // Best-effort SQLite double-write for audit trail. Silently
-      // swallow when SQLite isn't available (Vite dev / first launch).
-      void persistToolEventPendingFromIPC(event);
+      // Best-effort SQLite double-write for audit trail. tool_events
+      // joins to messages by (session_id, turn_index) — must use
+      // absolute turn index so the join works after restore.
+      void persistToolEventPendingFromIPC({
+        ...event,
+        turnIndex: event.turnIndex + offset,
+      });
       return;
     }
 
@@ -192,10 +210,14 @@ export function dispatchIPCEvent(
     case "turn_start": {
       // Reflects which GA-side iteration the agent is currently on.
       // The thinking placeholder reads this to render
-      // "Turn N · 思考中…" so users can see progress on long
-      // multi-turn tasks. Cleared on run_complete / error.
-      console.debug("[ipc] turn_start", event);
-      s.setCurrentTurnIndex(event.sessionId, event.turnIndex);
+      // "第 N 步 · 思考中…" so users can see progress on long
+      // multi-turn tasks. N is the absolute (session-wide) step
+      // number, matching what appears in completed TurnMarkers and
+      // the Sidebar "第 N 步 · {summary}" preview — so we add the
+      // runtime's offset to GA's per-message-local index.
+      const offset = s._runtimes[event.sessionId]?.turnIndexOffset ?? 0;
+      console.debug("[ipc] turn_start", { ...event, offset });
+      s.setCurrentTurnIndex(event.sessionId, event.turnIndex + offset);
       // New turn starts → drop whatever streaming buffer the previous
       // turn left, so the in-flight render doesn't bleed across turns.
       s.clearInFlightContent(event.sessionId);

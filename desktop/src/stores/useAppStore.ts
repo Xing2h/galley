@@ -202,6 +202,32 @@ export interface SessionRuntime {
    */
   llms: LLMOption[];
   llmDisplayName: string;
+  /**
+   * Base offset added to every `turnIndex` from this session's
+   * bridge (turn_end / turn_start / tool_call_*) before
+   * persisting or rendering. Set by `appendUserTurn` to the
+   * session's current turnCount.
+   *
+   * Why: GA's `agent_runner_loop` (agent_loop.py) declares
+   * `turn = 0` locally and increments per LLM call within one
+   * invocation. Each new `put_task(user_message)` starts a fresh
+   * loop, so the very first turn of every user message arrives as
+   * `turnIndex=1` — regardless of how many prior turns the
+   * session has accumulated. Without the offset, two consecutive
+   * user messages each produce an assistant row with the same
+   * `msg_${sessionId}_1_assistant` primary key; the SQLite ON
+   * CONFLICT UPDATE then silently overwrites the older one.
+   * Restore reads back a single assistant covering both turns,
+   * manifesting as "the conversation lost some replies and the
+   * rest is out of order" — the dev-verify regression that
+   * surfaced this bug.
+   *
+   * Offset = current turnCount means turn 1 of a new user_message
+   * lands at `turnCount + 1`, which equals the user row's own
+   * turn_index (also `turnCount + 1`) — pairing them correctly in
+   * the (turn_index, sequence) ordering used by restore.
+   */
+  turnIndexOffset: number;
 }
 
 /**
@@ -322,6 +348,7 @@ function emptyRuntime(): SessionRuntime {
     bridgePid: null,
     llms: DEMO_LLMS,
     llmDisplayName: DEMO_LLM_DISPLAY_NAME,
+    turnIndexOffset: 0,
   };
 }
 
@@ -1179,6 +1206,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // ---- Conversation (per-session) ----
   appendUserTurn: (sessionId, text) => {
     let titleDerived: { sessionId: string; title: string } | null = null;
+    // Snapshot turnCount before any state mutation; this is the
+    // offset that should map GA's 1-based per-loop turn indices
+    // onto absolute session-wide indices. See SessionRuntime
+    // doc comment for the full rationale.
+    const currentTurnCount =
+      get().sessions.find((s) => s.id === sessionId)?.turnCount ?? 0;
     set((state) => {
       const update = applyRuntimeUpdate(state, sessionId, (rt) => ({
         ...rt,
@@ -1193,6 +1226,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
         userSubmitTick: rt.userSubmitTick + 1,
         // Wipe leftover streaming buffer from a previous turn.
         inFlightContent: "",
+        // Anchor the offset for the upcoming agent_runner_loop's
+        // turn indices. GA will emit turn_end with turnIndex=1,2,3
+        // for this user_message; we add this offset to get absolute
+        // session-wide turn indices used by SQLite and the UI.
+        turnIndexOffset: currentTurnCount,
       }));
       // Derive a Sidebar title from the first user message — but only
       // once, and only when the row is still wearing the seed
