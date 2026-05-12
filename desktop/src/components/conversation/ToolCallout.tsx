@@ -26,8 +26,76 @@ interface ToolCalloutProps {
 }
 
 /**
- * Tool callout block — one tool invocation as an independent Notion-
- * style callout. Per DESIGN.md §4.5.
+ * Tool visual tier — picks one of three rendering paths based on
+ * GA's tool taxonomy and current status:
+ *
+ *   "hidden"  — `no_tool`. GA's null-op tool; its semantic ("agent
+ *               chose not to dispatch") is already covered by the
+ *               TurnMarker's GA summary. Rendering a callout for
+ *               it would only crowd the conversation.
+ *
+ *   "inline"  — read-only / agent-internal tools in a settled
+ *               success state. file_read / web_scan / recall /
+ *               start_long_term_update. Their args are usually
+ *               1-line (path / query / memory key) and their
+ *               results have already been folded into the agent's
+ *               final answer; users rarely revisit them. A compact
+ *               pill keeps the conversation continuous.
+ *
+ *   "block"   — everything else: external-world tools in any state
+ *               (file_patch / file_write / code_run) where users
+ *               will want to see the diff / output for audit and
+ *               trust; plus any tool in waiting_approval / failed /
+ *               running / denied — those statuses need visual
+ *               prominence regardless of which tool produced them.
+ *
+ * The split mirrors GA's design philosophy: agents are continuous
+ * reasoning processes, but users only need to see *consequential
+ * decision points* (the tools that change the outside world or
+ * demand user input). Read-only tools are scaffolding the agent
+ * uses, not nodes the user audits.
+ */
+const INLINE_TOOL_NAMES = new Set([
+  "file_read",
+  "web_scan",
+  "recall",
+  "start_long_term_update",
+]);
+
+function pickToolTier(tool: ConversationToolEvent): "hidden" | "inline" | "block" {
+  if (tool.name === "no_tool") return "hidden";
+  const isSettledSuccess =
+    tool.status === "success-current" || tool.status === "success-historical";
+  if (isSettledSuccess && INLINE_TOOL_NAMES.has(tool.name)) return "inline";
+  return "block";
+}
+
+/**
+ * Tool callout — dispatcher between the three visual tiers. See
+ * `pickToolTier` for the rationale behind the split.
+ */
+export function ToolCallout({
+  tool,
+  onApprove,
+  approvalDecision,
+}: ToolCalloutProps) {
+  const tier = pickToolTier(tool);
+  if (tier === "hidden") return null;
+  if (tier === "inline") return <InlineToolPill tool={tool} />;
+  return (
+    <BlockToolCallout
+      tool={tool}
+      onApprove={onApprove}
+      approvalDecision={approvalDecision}
+    />
+  );
+}
+
+/**
+ * Block-form tool callout — the original "Notion callout" treatment.
+ * Used for external-world tools (file_patch / file_write / code_run)
+ * in settled state, and for ANY tool in attention-demanding states
+ * (waiting_approval / failed / running / denied). Per DESIGN.md §4.5.
  *
  * Six visual states (see ToolEventStatus):
  *
@@ -38,12 +106,8 @@ interface ToolCalloutProps {
  *   waiting_approval    amber bar + pause + amber 4% tint + FORCED OPEN
  *   failed              red bar + X + red 4% tint + FORCED OPEN
  *   denied              muted bar + prohibit + auto-collapse
- *
- * The body shows: lead summary, optional args mono block (fallback when
- * no tool-specific renderer applies — file_patch / file_write specific
- * renderers land in #6), and the inline ApprovalForm when waiting.
  */
-export function ToolCallout({
+function BlockToolCallout({
   tool,
   onApprove,
   approvalDecision,
@@ -276,4 +340,96 @@ function ResultBlock({ content }: { content: string }) {
       </pre>
     </div>
   );
+}
+
+// ---------- inline pill ----------
+
+/**
+ * Compact single-line representation of a settled, read-only tool
+ * invocation. The body of the conversation reads as continuous
+ * narrative rather than a sequence of callout blocks; users who
+ * want the full args / result can click to expand.
+ *
+ *   ✓ file_read · docs/PRD.md (L180-230)             ▾
+ *
+ * Visual register sits between the TurnMarker (L2) and the ambient
+ * body text — supplementary metadata, not a focal point. Compare to
+ * BlockToolCallout which deliberately interrupts the reading flow
+ * for high-stakes operations (file_patch / waiting_approval / etc.).
+ */
+function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
+  const [open, setOpen] = useState(false);
+  const preview = previewArgs(tool.name, tool.args);
+
+  return (
+    <div className="my-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "group inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[12px] transition-colors",
+          "text-ink-soft hover:bg-hover hover:text-ink",
+        )}
+      >
+        <CheckCircle
+          size={12}
+          weight="thin"
+          className="shrink-0 text-ink-muted group-hover:text-brand-strong"
+        />
+        <span className="font-mono">{tool.name}</span>
+        {preview && (
+          <span className="truncate text-ink-muted">
+            <span className="mx-0.5">·</span>
+            {preview}
+          </span>
+        )}
+        <CaretDown
+          size={10}
+          weight="thin"
+          className={cn(
+            "shrink-0 text-ink-muted transition-transform duration-150",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+
+      {open && (
+        <div className="ml-3 mt-1 animate-fade-in border-l border-line/60 pl-3">
+          {tool.args && Object.keys(tool.args).length > 0 && (
+            <ArgsBlock args={tool.args} />
+          )}
+          {tool.resultPreview && <ResultBlock content={tool.resultPreview} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Pick the most useful single-line arg preview for a given tool.
+ * Each inline-tier tool has a "primary" arg the user would want
+ * to see at a glance — path for file_read, query for web_scan, etc.
+ */
+function previewArgs(
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+): string | null {
+  if (!args) return null;
+  const get = (k: string): string | null => {
+    const v = args[k];
+    return typeof v === "string" && v.length > 0 ? v : null;
+  };
+  // Tool-specific primary arg picks.
+  switch (toolName) {
+    case "file_read":
+      return get("path");
+    case "web_scan":
+      return get("query") ?? get("url");
+    case "recall":
+      return get("query") ?? get("key");
+    case "start_long_term_update":
+      return get("key") ?? get("topic");
+    default:
+      return get("path") ?? get("query") ?? get("command");
+  }
 }
