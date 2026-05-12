@@ -52,6 +52,10 @@ export interface MessageRow {
   tool_results: string | null; // JSON array
   thinking: string | null;
   final_answer: string | null;
+  /** GA's third-person turn summary (assistant rows only). Added
+   * in migration v3; pre-v3 rows have NULL. Drives the TurnMarker
+   * subline "第 N 步 · {summary}" after restore. */
+  summary: string | null;
   created_at: string;
 }
 

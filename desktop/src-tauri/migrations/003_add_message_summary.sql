@@ -1,0 +1,23 @@
+-- 003_add_message_summary.sql · GA Workbench v0.1
+-- Persist per-turn summary on assistant message rows (dev-verify
+-- round 11 follow-up).
+--
+-- Background: AgentTurn carries a `summary` field — GA's third-
+-- person turn summary from `agent._turn_end_hooks` (e.g. "用户分享
+-- 喜欢《银翼杀手》"). It powers the conversation TurnMarker subline
+-- "第 N 步 · {summary}" alongside the Sidebar two-liner.
+--
+-- Pre-v3 schema had no `summary` column on `messages`, so the field
+-- only lived in-memory and got lost on restart: Sidebar still
+-- looked right (it reads from `sessions.summary`, a separate
+-- column) but the main-view TurnMarker for restored turns
+-- collapsed to just "第 N 步".
+--
+-- Add the column on `messages` so persistTurnEndToMessages can
+-- write it on every turn_end and rowsToTurns can re-hydrate it
+-- on restore. Pre-existing rows get NULL — those turns will keep
+-- showing the bare step number until a future agent run
+-- regenerates them, which is acceptable: the data was never
+-- persisted to begin with.
+
+ALTER TABLE messages ADD COLUMN summary TEXT;

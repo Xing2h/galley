@@ -304,6 +304,11 @@ function rowsToTurns(rows: MessageRow[]): Turn[] {
         tools,
         finalAnswer: row.final_answer ?? null,
         turnIndex: row.turn_index,
+        // GA turn summary (added in migration v3). Pre-v3 rows
+        // have NULL — TurnMarker collapses to just "第 N 步"
+        // when summary is undefined, which is the right behavior
+        // for those rows since the data never existed on disk.
+        summary: row.summary ?? undefined,
       };
       turns.push(turn);
     }

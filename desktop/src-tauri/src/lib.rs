@@ -24,6 +24,12 @@ pub fn run() {
             sql: include_str!("../migrations/002_add_has_unread.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add messages.summary",
+            sql: include_str!("../migrations/003_add_message_summary.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

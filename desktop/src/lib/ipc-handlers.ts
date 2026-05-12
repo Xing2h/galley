@@ -504,18 +504,22 @@ async function persistTurnEndToMessages(event: {
     const db = await getDB();
     const id = `msg_${event.sessionId}_${event.turnIndex}_assistant`;
     const createdAt = new Date().toISOString();
+    const trimmedSummary = event.summary?.trim() ?? "";
     await db.execute(
       `INSERT INTO messages (
          id, session_id, turn_index, sequence, role, content,
-         tool_calls, tool_results, thinking, final_answer, created_at
+         tool_calls, tool_results, thinking, final_answer, summary,
+         created_at
        ) VALUES ($1, $2, $3, $4, 'assistant', $5,
-                 $6, $7, $8, $9, $10)
+                 $6, $7, $8, $9, $10,
+                 $11)
        ON CONFLICT(id) DO UPDATE SET
          content       = excluded.content,
          tool_calls    = excluded.tool_calls,
          tool_results  = excluded.tool_results,
          thinking      = excluded.thinking,
-         final_answer  = excluded.final_answer`,
+         final_answer  = excluded.final_answer,
+         summary       = excluded.summary`,
       [
         id,
         event.sessionId,
@@ -531,6 +535,10 @@ async function persistTurnEndToMessages(event: {
         JSON.stringify(event.toolResults),
         extractThinking(event.responseContent) ?? null,
         cleanFinalAnswer(event.responseContent),
+        // GA's third-person turn summary. NULL when empty so the
+        // TurnMarker renders the bare "第 N 步" instead of an
+        // empty separator.
+        trimmedSummary ? trimmedSummary : null,
         createdAt,
       ],
     );
