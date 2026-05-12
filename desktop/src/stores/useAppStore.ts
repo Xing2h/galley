@@ -1205,7 +1205,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })),
 
   // ---- LLMs ----
-  replaceLLMs: (sessionId, llms) =>
+  replaceLLMs: (sessionId, llms) => {
     set((state) => {
       // displayName follows isCurrent. If for some reason no entry
       // is flagged current, keep the previous displayName to avoid
@@ -1216,7 +1216,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
         llms,
         llmDisplayName: current?.displayName ?? rt.llmDisplayName,
       }));
-    }),
+    });
+    // Cache LLM list to prefs so future cold-starts (before any
+    // bridge has spawned) can show the real model names instead
+    // of the DEMO_LLMS seed. The LLM list is GA-install-wide
+    // (mykey.py is one file shared across sessions), so any one
+    // bridge's `ready` event is a faithful snapshot.
+    void setPref("llm_list", llms).catch((e) => {
+      console.debug("[store] replaceLLMs llm_list cache failed.", e);
+    });
+  },
 
   // ---- Conversation (per-session) ----
   appendUserTurn: (sessionId, text) => {
@@ -1607,6 +1616,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (yolo === true) set({ yoloMode: true });
     } catch (e) {
       console.warn("[store] hydrateFromDB: yolo pref load failed.", e);
+    }
+    // Restore cached LLM list (written by replaceLLMs whenever a
+    // bridge's `ready` event arrives). Lets cold-start cosmetics
+    // — Composer's LLM picker dropdown, the model pill — show
+    // the user's real GA-configured models instead of DEMO_LLMS
+    // before any bridge has spawned in this session.
+    try {
+      const cachedLLMs = await getPref<LLMOption[]>("llm_list");
+      if (cachedLLMs && cachedLLMs.length > 0) {
+        const current = cachedLLMs.find((l) => l.isCurrent);
+        set((state) => ({
+          llms: cachedLLMs,
+          llmDisplayName: current?.displayName ?? state.llmDisplayName,
+        }));
+      }
+    } catch (e) {
+      console.warn("[store] hydrateFromDB: llm_list pref load failed.", e);
     }
     // GA spawn config (Stage 3 Task 4). Fall back to DEMO_GA_CONFIG in
     // initial state when missing — first launch sees the demo path
