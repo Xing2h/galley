@@ -164,7 +164,7 @@ export function EditProjectDialog({
 
             <Field
               label="项目文件夹"
-              hint="修改后已有对话需重启 Workbench 后生效"
+              hint="修改后已有对话需重启 Workbench 生效"
             >
               <div className="flex gap-2">
                 <input

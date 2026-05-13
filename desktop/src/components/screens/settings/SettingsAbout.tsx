@@ -8,13 +8,17 @@ interface SettingsAboutProps {
 /**
  * Settings → About tab. DESIGN.md §9 About tab.
  *
- * Static content: app title + tagline, version table, single GitHub
- * link, MIT license note, attribution footer.
- *
- * V0.1 Links section is just the repo URL (was: GitHub / docs /
- * report issue). The other two pointed at the same repo's README
- * and Issues page — redundant click work for users who already
- * know how to find them on GitHub.
+ * Structure:
+ *   1. Title + tagline
+ *   2. Version table (Workbench + GA verified-commit; label aligned
+ *      with Settings → Runtime's "已验证版本" terminology)
+ *   3. Privacy stance — local-first / no telemetry / direct LLM calls.
+ *      Surfaced as a real USP for a desktop dev tool audience.
+ *   4. Links — Workbench source + GenericAgent upstream (explicit
+ *      credit; Workbench is a shell around lsdefine/GenericAgent) +
+ *      Issues for feedback.
+ *   5. Footer with MIT license + warmer "欢迎 PR" line so the project
+ *      reads as "ours" rather than "mine".
  */
 export function SettingsAbout({
   workbenchVersion,
@@ -32,15 +36,37 @@ export function SettingsAbout({
       </div>
 
       <dl className="m-0 grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
-        <dt className="text-ink-muted">Version</dt>
+        <dt className="text-ink-muted">Workbench 版本</dt>
         <dd className="m-0 font-mono text-ink">v{workbenchVersion}</dd>
 
-        <dt className="text-ink-muted">GA baseline</dt>
+        <dt className="text-ink-muted">已验证 GA 版本</dt>
         <dd className="m-0 font-mono text-ink">{gaBaseline.slice(0, 7)}</dd>
-
-        <dt className="text-ink-muted">License</dt>
-        <dd className="m-0 text-ink">MIT</dd>
       </dl>
+
+      {/* Privacy stance — structured as a bulleted list under a
+          「本地优先」 SubLabel so it reads as a proper section
+          parallel to Links below, rather than orphaning at the
+          tail of the version table. Three discrete claims (data
+          storage / telemetry / LLM calls) deserve three discrete
+          bullets — easier to scan and each can be mentally checked
+          off independently. Middle-dot bullet (·) matches the
+          rest of the app's separator vocabulary rather than the
+          web-default disc. mt-10 mirrors the Links section's
+          deliberate 40px section break above. */}
+      <div className="mt-10">
+        <SubLabel>本地优先</SubLabel>
+        <ul className="mt-3 space-y-1.5 text-[12.5px] text-ink-soft">
+          <li className="before:mr-2 before:text-ink-muted before:content-['·']">
+            数据本地存储
+          </li>
+          <li className="before:mr-2 before:text-ink-muted before:content-['·']">
+            不收集使用数据
+          </li>
+          <li className="before:mr-2 before:text-ink-muted before:content-['·']">
+            LLM 调用直达你配置的 API
+          </li>
+        </ul>
+      </div>
 
       {/* Links section gets explicit `mt-10` instead of relying on
           the parent's `space-y-7`. The dl above is visually dense
@@ -50,15 +76,41 @@ export function SettingsAbout({
           that visual coupling cleanly. */}
       <div className="mt-10">
         <SubLabel>Links</SubLabel>
-        <div className="mt-3">
+        <div className="mt-3 space-y-1.5">
           <ExternalLink href="https://github.com/wangjc683/genericagent-workbench">
-            github.com/wangjc683/genericagent-workbench
+            Workbench · github.com/wangjc683/genericagent-workbench
+          </ExternalLink>
+          <ExternalLink href="https://github.com/lsdefine/GenericAgent">
+            GenericAgent · github.com/lsdefine/GenericAgent
+          </ExternalLink>
+          <ExternalLink href="https://github.com/wangjc683/genericagent-workbench/issues">
+            反馈建议 · GitHub Issues
+          </ExternalLink>
+        </div>
+      </div>
+
+      {/* "Also by" section — indie / single-maker convention: tells
+          users this is a real person who builds things, builds trust
+          for an open-source project. Mt-10 mirrors the Links section's
+          spacing so the page reads as a uniform rhythm of breaks.
+          SubSage listed first (adjacent domain, more likely useful to
+          Workbench's AI-builder audience); 15perf70mm second
+          (off-topic but adds personality — signals the maker has
+          interests beyond AI). */}
+      <div className="mt-10">
+        <SubLabel>Also by wangjc683</SubLabel>
+        <div className="mt-3 space-y-1.5">
+          <ExternalLink href="https://subsage.top">
+            SubSage · AI Agent 原生订阅管家 · subsage.top
+          </ExternalLink>
+          <ExternalLink href="https://15perf70mm.com">
+            15perf70mm · IMAX 胶片电影资料库 · 15perf70mm.com
           </ExternalLink>
         </div>
       </div>
 
       <div className="border-t border-line pt-4 text-[12px] text-ink-muted">
-        Made by wangjc683 · Open source
+        Made by wangjc683 · MIT licensed · 欢迎 PR
       </div>
     </div>
   );
