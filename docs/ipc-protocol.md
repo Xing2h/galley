@@ -1,6 +1,6 @@
 # IPC Protocol v0.1
 
-GenericAgent Workbench (GA Workbench) bridge 与 desktop 之间的通信契约。本文件是**唯一真相**——bridge 与 desktop 实现必须以本文件为准；改协议先改本文件。
+Galley (Galley) bridge 与 desktop 之间的通信契约。本文件是**唯一真相**——bridge 与 desktop 实现必须以本文件为准；改协议先改本文件。
 
 ## 1. Overview
 
@@ -301,7 +301,7 @@ agent 主动调用 `ask_user` 工具时发出。bridge 此时 agent_runner_loop 
 - `category`：`"bridge" | "runtime" | "business"` —— 决定 desktop 显示位置
   - `"bridge"`：bridge 自身故障（IPC 协议 mismatch、handler 崩溃）→ desktop 渲染为 toast
   - `"runtime"`：GA / LLM / tool 执行错误 → desktop 渲染为 conversation inline message bubble
-  - `"business"`：Workbench 业务错误（attach 路径非法、SQLite 损坏、历史恢复失败）→ desktop 渲染为 toast
+  - `"business"`：Galley 业务错误（attach 路径非法、SQLite 损坏、历史恢复失败）→ desktop 渲染为 toast
 - `severity`：`"error" | "warning" | "info"` —— 决定颜色与 icon（详见 DESIGN.md §6.2）
 - `retryable`：是否值得让用户重试。`true` 时 desktop 显示 Retry button；点击 = 触发新的 `user_message`（参数复用上次）。**bridge 自身不主动 retry**
 - `hint`：可选；bridge 端检测错误类型后给出的引导线索，desktop 用于渲染专用引导卡片：
@@ -314,7 +314,7 @@ agent 主动调用 `ask_user` 工具时发出。bridge 此时 agent_runner_loop 
 
 **为什么 bridge 给结构化字段而不是 desktop 推断**：bridge 离异常源最近，分类最准；desktop 做字符串模式匹配是反模式，新增错误类型时容易漏判。一致原则：bridge 是 truth，desktop 是 view。
 
-**hint 的产品意义**：普通用户看到原始错误（"401 Unauthorized"）不知道下一步。bridge 把"哪里出错"翻译成"怎么解决"是 Workbench 比裸跑 GA 增值的关键点。
+**hint 的产品意义**：普通用户看到原始错误（"401 Unauthorized"）不知道下一步。bridge 把"哪里出错"翻译成"怎么解决"是 Galley 比裸跑 GA 增值的关键点。
 
 致命错误：bridge 直接 exit，desktop 通过 stdout EOF + 进程退出码感知。
 
@@ -347,6 +347,53 @@ agent 主动调用 `ask_user` 工具时发出。bridge 此时 agent_runner_loop 
 ```
 
 GA 在切换时会把 `backend.history` 从旧 client 复制到新 client，**对话上下文不丢**。desktop UI 应在收到此事件后更新 LLM 选择器显示并解除 dropdown 的 disabled 状态。
+
+### 4.13 `tools_reinjected`
+
+`reinject_tools` 命令完成后发出。bridge 已读取 GA `assets/tool_usable_history.json` 并把其中的工具定义 blocks append 到 `backend.history`。
+
+```json
+{
+  "kind": "tools_reinjected",
+  "sessionId": "sess_abc123",
+  "blocksAdded": 12,
+  "timestamp": "..."
+}
+```
+
+字段说明：
+- `blocksAdded`：实际添加到 history 的 entry 数（每个 entry 对应一个工具定义 block）
+
+失败情况走 `error` 事件（如 GA assets 路径不存在、JSON parse 失败、history 写入失败），并标 `context: "reinject_tools"`。
+
+### 4.14 `pet_attached`
+
+`attach_pet` 命令成功后发出。Bridge 已 spawn `<ga_path>/frontends/desktop_pet_v2.pyw` 子进程并在该 session 的 agent 上注册了 `_turn_end_hooks['galley_pet_{sessionId}']`。
+
+```json
+{
+  "kind": "pet_attached",
+  "sessionId": "sess_abc123",
+  "port": 41983,
+  "timestamp": "..."
+}
+```
+
+desktop 收到后把 store 顶层 `petAttachedSessionId` 标为该 session id；TopBar `⋯` 菜单的 Desktop Pet 项变成"已附着"状态。
+
+### 4.15 `pet_detached`
+
+`detach_pet` 命令完成后发出，或在 bridge 收到 `shutdown` 时主动清理 pet 进程也会 emit（除非走 silent 路径）。
+
+```json
+{
+  "kind": "pet_detached",
+  "sessionId": "sess_abc123",
+  "timestamp": "..."
+}
+```
+
+bridge 已终止 pet 子进程 + 解除 `_turn_end_hooks` 中对应 entry。
 
 ## 5. Commands (workbench → bridge)
 
@@ -488,6 +535,64 @@ bridge 收到后更新 `SessionState.yolo_mode`。下一个 tool dispatch 时 `W
 ```json
 { "kind": "shutdown" }
 ```
+
+### 5.10 `reinject_tools`
+
+重新把 GA 的工具定义注入到当前 session 的 LLM history。对应 GA 官方前端 `stapp.py` 的 "Reinject Tools" 按钮——长 session 跑久了 agent 对工具的认知漂移时使用。
+
+```json
+{ "kind": "reinject_tools" }
+```
+
+Bridge 行为：
+
+1. 读取 `<ga_path>/assets/tool_usable_history.json`（**non-invasive 第 §"关于读取" 条款允许的 read-only 操作**，路径是 coupling point，GA baseline 升级时审计）
+2. 解析为 history blocks 列表
+3. 重置 `agent.llmclient.last_tools = ""`（让 GA 下次 prompt 重建工具 block）
+4. `agent.llmclient.backend.history.extend(blocks)`
+5. emit `tools_reinjected { blocksAdded: N }`
+
+错误场景：assets 路径不存在 / JSON 解析失败 / history 写入失败 → 走 `error` 事件，`context: "reinject_tools"`。
+
+### 5.11 `attach_pet`
+
+启动 GA 的桌面宠物子进程 + 注册 turn_end hook 把进展实时推送给宠物。
+
+```json
+{
+  "kind": "attach_pet",
+  "port": 41983
+}
+```
+
+字段说明：
+- `port`：宠物子进程绑定的本地 HTTP 端口。GA 默认 41983，跟 `stapp.py` 同。**只能同时跑一个**（pet 绑定固定端口）
+
+Bridge 行为：
+
+1. 如已有 pet 在跑，先 silent detach
+2. 在 `<ga_path>/frontends/desktop_pet_v2.pyw`（fallback `desktop_pet.pyw`）spawn 子进程
+3. 注册 `agent._turn_end_hooks[f"galley_pet_{sessionId}"]`——每个 turn_end 用 `urllib.request.urlopen` POST 进展到 `http://127.0.0.1:{port}/?msg=...`
+4. emit `pet_attached { port }`
+
+Sticky-B 行为：pet 绑定到点击 attach 时的 session，之后切换 active session **不会**重新 attach。要换 session 上的 pet，必须先 detach 再在新 session 上 attach。
+
+错误场景：pet 脚本不存在 / subprocess.Popen 失败 → emit `error`，`context: "attach_pet"`。
+
+### 5.12 `detach_pet`
+
+终止 pet 子进程 + 解除 turn_end hook。无论之前是否有 pet 在跑都安全调用（detach 一个不存在的 pet 是 no-op）。
+
+```json
+{ "kind": "detach_pet" }
+```
+
+Bridge 行为：
+1. 从 `agent._turn_end_hooks` 删除对应 entry
+2. 对 pet subprocess 调 `terminate()` + `wait(timeout=1.0)` + fallback `kill()`
+3. emit `pet_detached`（除非走 silent 路径）
+
+`shutdown` 命令路径下 bridge 自动调用 `_handle_detach_pet(silent=True)`，避免 pet 进程随 bridge 死后变 orphan。
 
 ## 6. Approval Flow（端到端示例）
 

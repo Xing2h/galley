@@ -15,7 +15,7 @@ export function StepWelcome({ onStart }: StepWelcomeProps) {
   return (
     <div className="max-w-[580px]">
       <h1 className="m-0 font-serif text-[36px] font-medium leading-[1.1] tracking-[0.005em] text-ink">
-        GenericAgent Workbench
+        Galley
       </h1>
       <p className="mb-9 mt-3 font-serif text-[18px] italic leading-[1.55] text-ink-soft">
         GenericAgent 的本地桌面工作台。
@@ -37,7 +37,7 @@ export function StepWelcome({ onStart }: StepWelcomeProps) {
       </button>
 
       <div className="mt-12 text-[12px] text-ink-muted">
-        Workbench 不会修改你的 GA。删除 Workbench 后 GA 独立可用。
+        Galley 不会修改你的 GA。删除 Galley 后 GA 独立可用。
       </div>
     </div>
   );

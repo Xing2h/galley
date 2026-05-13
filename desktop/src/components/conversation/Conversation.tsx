@@ -98,7 +98,15 @@ function AgentTurnView({
   // conclusion-rhetoric StrongHr.
   const hasAnswerText =
     turn.finalAnswer !== null && turn.finalAnswer.trim() !== "";
-  const isFinalTurn = turn.tools.every((t) => t.name === "no_tool");
+  // `ask_user` is GA's interaction tool — bridge already emitted an
+  // AskUserEvent (rendered separately as AskUserBubble at the
+  // conversation tail). Showing it as a tool callout here would
+  // duplicate the question on screen, so we filter it out for BOTH
+  // live and replay paths (rowsToTurns produces the same shape).
+  // We keep it in the underlying turn.tools (SQLite audit trail) and
+  // only drop it at render time.
+  const visibleTools = turn.tools.filter((t) => t.name !== "ask_user");
+  const isFinalTurn = visibleTools.every((t) => t.name === "no_tool");
 
   return (
     <div>
@@ -108,7 +116,7 @@ function AgentTurnView({
 
       {turn.thinking && <ThinkingSummary>{turn.thinking}</ThinkingSummary>}
 
-      {turn.tools.map((tool) => (
+      {visibleTools.map((tool) => (
         <ToolCallout
           key={tool.id}
           tool={tool}

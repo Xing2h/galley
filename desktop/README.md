@@ -1,4 +1,4 @@
-# GA Workbench Desktop
+# Galley Desktop
 
 Tauri v2 + React 19 + TypeScript + Tailwind v4. macOS-first.
 

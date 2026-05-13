@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from bridge.workbench_bridge import _classify_error, _simplify_llm_name
+from bridge.workbench_bridge import (
+    Bridge,
+    _classify_error,
+    _simplify_llm_name,
+)
 
 # ---------------- _classify_error ----------------
 
@@ -102,3 +106,53 @@ def test_classify_case_insensitive() -> None:
 )
 def test_simplify_llm_name(raw: str, expected: str) -> None:
     assert _simplify_llm_name(raw) == expected
+
+
+# ---------------- _extract_ask_user ----------------
+
+
+def test_extract_ask_user_matches_first_ask_user_call() -> None:
+    tool_calls = [
+        {
+            "tool_name": "ask_user",
+            "args": {
+                "question": "Continue with React 19?",
+                "candidates": ["yes", "no, use 18"],
+            },
+        },
+    ]
+    result = Bridge._extract_ask_user(tool_calls)
+    assert result == ("Continue with React 19?", ["yes", "no, use 18"])
+
+
+def test_extract_ask_user_returns_none_when_absent() -> None:
+    tool_calls = [
+        {"tool_name": "file_read", "args": {"path": "agentmain.py"}},
+        {"tool_name": "code_run", "args": {"code": "print('hi')"}},
+    ]
+    assert Bridge._extract_ask_user(tool_calls) is None
+
+
+def test_extract_ask_user_handles_missing_candidates() -> None:
+    """GA's ask_user accepts an open-ended question (no candidates).
+    Bridge must coerce missing candidates to an empty list — desktop
+    AskUserBubble renders the question without chips in that case."""
+    tool_calls = [
+        {"tool_name": "ask_user", "args": {"question": "What now?"}},
+    ]
+    result = Bridge._extract_ask_user(tool_calls)
+    assert result == ("What now?", [])
+
+
+def test_extract_ask_user_coerces_non_string_candidates() -> None:
+    """Defensive: tool args come from LLM JSON and could in principle
+    arrive with non-string entries. `_extract_ask_user` should str()
+    them so downstream `[str(c) for c in candidates]` doesn't crash."""
+    tool_calls = [
+        {
+            "tool_name": "ask_user",
+            "args": {"question": "Pick one", "candidates": [1, "two", 3.0]},
+        },
+    ]
+    result = Bridge._extract_ask_user(tool_calls)
+    assert result == ("Pick one", ["1", "two", "3.0"])

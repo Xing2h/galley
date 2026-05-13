@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "GA Workbench",
+  "productName": "Galley",
   "version": "0.1.0",
-  "identifier": "app.gaworkbench",
+  "identifier": "app.galley",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "GA Workbench",
+        "title": "Galley",
         "width": 1480,
         "height": 920,
         "minWidth": 1120,

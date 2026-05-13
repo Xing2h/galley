@@ -1,1 +1,1 @@
-"""GA Workbench bridge package."""
+"""Galley bridge package."""

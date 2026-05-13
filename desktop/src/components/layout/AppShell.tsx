@@ -48,10 +48,12 @@ import {
  * scrolling when content overflows, which would otherwise push
  * Composer out of view.
  *
- * Sidebar collapse / ⌘\ shortcut is intentionally NOT wired here yet —
- * the toggle button in Sidebar.tsx header is currently a noop. Wiring
- * collapse via Panel.collapse() (with collapsedSize ≈ 3% rail) lands
- * in a follow-up commit.
+ * Sidebar is intentionally non-collapsible. The dragable separator
+ * (ResizeSeparator below) lets users shrink it down to 14% if they
+ * want less chrome; full collapse was considered and rejected on
+ * 2026-05-13 — sidebar is the physical embodiment of multi-session,
+ * which is the product's core differentiator. Hiding it hides the
+ * value prop. See devlog for the full reasoning.
  */
 export function AppShell({
   topBar,

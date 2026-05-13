@@ -180,7 +180,7 @@ const DEMO_FINAL_ANSWER_ALLOWED =
 const DEMO_FINAL_ANSWER_DENIED =
   "收到 denied 信号。已切换方案 — 把 schema 输出为 markdown 放在回复里，由你手动落盘。";
 
-const DEMO_PATCH_NEW_CONTENT = `-- 001_init.sql · GA Workbench v0.1
+const DEMO_PATCH_NEW_CONTENT = `-- 001_init.sql · Galley v0.1
 -- Created by GA agent · 2026-05-08
 
 CREATE TABLE projects (

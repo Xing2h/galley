@@ -1,4 +1,4 @@
-import { fromIPCError } from "@/types/app-error";
+import { fromIPCError, makeAppError } from "@/types/app-error";
 import type {
   AgentTurn,
   ConversationToolEvent,
@@ -250,7 +250,91 @@ export function dispatchIPCEvent(
       return;
     }
 
-    case "ask_user":
+    case "ask_user": {
+      // GA called the `ask_user` tool — bridge has already EXITED the
+      // agent loop and is waiting for an `ask_user_response` (or
+      // equivalent `user_message`). Surface the question via the
+      // inline AskUserBubble + Sidebar yellow "⏸ 等你回复" dot.
+      // Conversation history will also show this turn's regular
+      // assistant content + tool callouts; the ask_user tool callout
+      // itself is suppressed at render time (see Conversation.tsx).
+      console.info("[ipc] ask_user", {
+        sessionId: event.sessionId,
+        candidateCount: event.candidates.length,
+      });
+      s.setPendingAskUser(event.sessionId, {
+        question: event.question,
+        candidates: event.candidates,
+      });
+      return;
+    }
+
+    case "tools_reinjected": {
+      console.info("[ipc] tools_reinjected", {
+        sessionId: event.sessionId,
+        blocksAdded: event.blocksAdded,
+      });
+      s.pushToast(
+        makeAppError({
+          category: "business",
+          severity: "info",
+          title: "工具已重新注入",
+          message: `已为本 session 注入 ${event.blocksAdded} 条工具定义。`,
+          hint: null,
+          retryable: false,
+          context: "reinject_tools",
+          traceback: null,
+        }),
+      );
+      return;
+    }
+
+    case "pet_attached": {
+      console.info("[ipc] pet_attached", {
+        sessionId: event.sessionId,
+        port: event.port,
+      });
+      s.setPetAttachedSession(event.sessionId);
+      s.pushToast(
+        makeAppError({
+          category: "business",
+          severity: "info",
+          title: "Desktop Pet 已启动",
+          message: "宠物会实时显示本 session 的进展。",
+          hint: null,
+          retryable: false,
+          context: "attach_pet",
+          traceback: null,
+        }),
+      );
+      return;
+    }
+
+    case "pet_detached": {
+      console.info("[ipc] pet_detached", {
+        sessionId: event.sessionId,
+      });
+      // Only clear top-level if it was attached to this session —
+      // defensive against out-of-order events. In practice the bridge
+      // only emits pet_detached for the session it was attached to.
+      if (s.petAttachedSessionId === event.sessionId) {
+        s.setPetAttachedSession(null);
+      }
+      s.pushToast(
+        makeAppError({
+          category: "business",
+          severity: "info",
+          title: "Desktop Pet 已关闭",
+          message: "",
+          hint: null,
+          retryable: false,
+          context: "detach_pet",
+          traceback: null,
+        }),
+      );
+      return;
+    }
+
     case "history_loaded":
     case "tool_call_start":
     case "tool_call_progress": {

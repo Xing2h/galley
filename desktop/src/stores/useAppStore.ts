@@ -37,6 +37,7 @@ import type {
   AgentTurn,
   ConversationToolEvent,
   PendingApproval,
+  PendingAskUser,
   Turn,
   UserTurn,
 } from "@/types/conversation";
@@ -204,6 +205,15 @@ export interface SessionRuntime {
    */
   llms: LLMOption[];
   llmDisplayName: string;
+  /**
+   * GA-initiated question awaiting reply (V0.2 ask_user wiring).
+   * Set when bridge emits an `ask_user` IPC event; cleared when
+   * the user submits a reply (either by clicking a candidate chip
+   * or by sending text through the Composer). Not persisted —
+   * across app restarts, the conversation history still shows the
+   * question text but `pendingAskUser` returns to null.
+   */
+  pendingAskUser: PendingAskUser | null;
   /**
    * Base offset added to every `turnIndex` from this session's
    * bridge (turn_end / turn_start / tool_call_*) before
@@ -379,6 +389,7 @@ function emptyRuntime(): SessionRuntime {
     bridgePid: null,
     llms: DEMO_LLMS,
     llmDisplayName: DEMO_LLM_DISPLAY_NAME,
+    pendingAskUser: null,
     turnIndexOffset: 0,
   };
 }
@@ -456,6 +467,45 @@ interface State {
    * this notifies every alive bridge.
    */
   yoloMode: boolean;
+  /**
+   * Desktop Pet attached session id. Pet is a global feature (only
+   * one instance can run at a time since it binds a fixed local
+   * port), so we store one session id at the top level rather than
+   * on a per-session runtime. `null` when no pet is attached. When
+   * non-null, the TopBar menu's "Desktop Pet" entry shows a "已附着"
+   * suffix and a click sends `detach_pet` to that session's bridge.
+   *
+   * Sticky-B behavior: pet attaches to the session that was active
+   * when the user clicked the menu item. Switching active session
+   * later does NOT re-attach; user must explicitly detach + re-attach.
+   * See discussion thread 2026-05-13.
+   *
+   * Not persisted: pet's subprocess dies on app exit anyway, so
+   * "remember it across restart" would lie about state.
+   */
+  petAttachedSessionId: string | null;
+  /**
+   * Conversation reading column width. Notion-style two-mode toggle
+   * (DESIGN.md tbd):
+   *   - "compact": 760px max-width — typographic sweet spot
+   *     (~70-78 chars/line at 16.5px Newsreader), preserves the
+   *     "document you're reading" feel that anchors the product
+   *     register. The default on first launch.
+   *   - "wide":   1400px max-width — for wide-monitor users who
+   *     don't want most of the screen to be empty margin, and for
+   *     sessions with lots of long code blocks / tool callouts /
+   *     file_read outputs that get cramped at 760.
+   *
+   * Applies ONLY to the scrollable conversation column. The bottom
+   * stack (ApprovalDock + Composer + hint) stays at 760 regardless
+   * — the input zone is fixed-width so the textarea doesn't grow
+   * into hard-to-track horizontal sweep when toggled wide.
+   *
+   * Global preference, not per-session: your monitor doesn't change
+   * between sessions so your preference shouldn't either. Persisted
+   * to prefs `conversation_width`.
+   */
+  conversationWidth: "compact" | "wide";
 
   // ---- Errors (global) ----
   toasts: AppError[];
@@ -500,6 +550,11 @@ interface State {
    */
   userSubmitTick: number;
   inFlightContent: string;
+  /** Projection of `_runtimes[activeSessionId].pendingAskUser`. Reads
+   * fine from any component that already subscribes to the top-level
+   * fields; non-active sessions surface "yellow dot" via the
+   * session.hasPendingAskUser mirror written by applyRuntimeUpdate. */
+  pendingAskUser: PendingAskUser | null;
   /**
    * Per-app-instance flag: have we successfully fetched a fresh LLM
    * list from GA's mykey.py this session? Cold start hydrates
@@ -591,6 +646,19 @@ interface Actions {
   archiveSession: (sessionId: string) => void;
   /** Reverse archiveSession: status back to "idle" + persist. */
   unarchiveSession: (sessionId: string) => void;
+  /**
+   * Rename a session's title (user-facing label in the sidebar /
+   * TopBar). Trims input + falls back to the default placeholder on
+   * empty. Persists best-effort to SQLite.
+   *
+   * Interaction with first-message auto-derivation: `appendUserTurn`
+   * only auto-derives the title when it's still equal to
+   * DEFAULT_NEW_SESSION_TITLE. Once the user manually sets ANY other
+   * title (including their own choice), auto-derive stops touching
+   * the row — manual rename wins. No extra "manually-named" flag is
+   * needed.
+   */
+  renameSession: (sessionId: string, newTitle: string) => void;
   /**
    * Toggle the `pinned` flag on a session. Pinned sessions move to
    * the Sidebar's Pinned bucket regardless of date — the user's
@@ -687,6 +755,14 @@ interface Actions {
    */
   setYoloMode: (enabled: boolean) => Promise<void>;
   /**
+   * Toggle / set the conversation column width mode. Persists to
+   * prefs (`conversation_width`) so the choice survives restart.
+   * The TopBar icon button calls this with the opposite of the
+   * current mode; other callers (Settings, palette commands) can
+   * set explicitly.
+   */
+  setConversationWidth: (mode: "compact" | "wide") => Promise<void>;
+  /**
    * Update the GA spawn config and persist to prefs. `partial` lets
    * callers pick one field at a time (Settings has separate pickers
    * for python vs gaPath). Also writes through to runtimeInfo so the
@@ -749,6 +825,21 @@ interface Actions {
   setCurrentTurnIndex: (sessionId: string, idx: number | null) => void;
   appendInFlightDelta: (sessionId: string, delta: string) => void;
   clearInFlightContent: (sessionId: string) => void;
+  /**
+   * Set / clear the GA-side pending question for a session. `null`
+   * clears (typically after the user submits a reply). Also lights
+   * up the Sidebar yellow "⏸ 等你回复" indicator via the session row
+   * mirror written in applyRuntimeUpdate.
+   */
+  setPendingAskUser: (sessionId: string, value: PendingAskUser | null) => void;
+  /**
+   * Set the session id that Desktop Pet is currently attached to.
+   * `null` means no pet is running. Called from the IPC handlers
+   * when `pet_attached` / `pet_detached` events arrive — never call
+   * directly from UI; UI should send the IPC command and let the
+   * bridge's response flip this flag.
+   */
+  setPetAttachedSession: (sessionId: string | null) => void;
 
   // Bridge runtime (per-session — sessionId required)
   setBridgeStatus: (sessionId: string, status: BridgeStatus) => void;
@@ -823,6 +914,7 @@ function applyRuntimeUpdate(
     const session = state.sessions[sessionIndex];
     const newStatus = deriveSessionStatus(session, newRt);
     const newCount = newRt.pendingApprovals.length;
+    const newHasAsk = newRt.pendingAskUser !== null;
     // Sidebar's running subline used to sync runtime.currentTurnIndex
     // → session.currentStepIndex here to show the live "正在工作 ·
     // 第 N 步" header. That field is gone now — the sidebar reads
@@ -834,13 +926,15 @@ function applyRuntimeUpdate(
     // actually matters.
     if (
       session.status !== newStatus ||
-      session.pendingApprovalCount !== newCount
+      session.pendingApprovalCount !== newCount ||
+      (session.hasPendingAskUser ?? false) !== newHasAsk
     ) {
       const sessions = state.sessions.slice();
       sessions[sessionIndex] = {
         ...session,
         status: newStatus,
         pendingApprovalCount: newCount,
+        hasPendingAskUser: newHasAsk,
       };
       out.sessions = sessions;
     }
@@ -865,6 +959,7 @@ function projectionFrom(rt: SessionRuntime): {
   bridgePid: number | null;
   llms: LLMOption[];
   llmDisplayName: string;
+  pendingAskUser: PendingAskUser | null;
 } {
   return {
     turns: rt.turns,
@@ -878,6 +973,7 @@ function projectionFrom(rt: SessionRuntime): {
     bridgePid: rt.bridgePid,
     llms: rt.llms,
     llmDisplayName: rt.llmDisplayName,
+    pendingAskUser: rt.pendingAskUser,
   };
 }
 
@@ -1047,6 +1143,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   approvalConfig: DEMO_APPROVAL_CONFIG,
   yoloMode: false,
+  conversationWidth: "compact",
+  petAttachedSessionId: null,
 
   toasts: [],
 
@@ -1370,6 +1468,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (updated) {
       void persistSession(updated).catch((e) => {
         console.debug("[store] unarchiveSession persistSession failed.", e);
+      });
+    }
+  },
+
+  renameSession: (sessionId, newTitle) => {
+    // Trim + sanitize. Empty after trim → fall back to default
+    // placeholder so we never persist a literally-empty title (which
+    // would render the sidebar row as a blank line with no anchor).
+    const cleaned = newTitle.trim();
+    const finalTitle = cleaned === "" ? DEFAULT_NEW_SESSION_TITLE : cleaned;
+    const now = new Date().toISOString();
+    let updated: Session | null = null;
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s;
+        if (s.title === finalTitle) return s; // no-op if unchanged
+        updated = { ...s, title: finalTitle, updatedAt: now };
+        return updated;
+      }),
+    }));
+    if (updated) {
+      void persistSession(updated).catch((e) => {
+        console.debug("[store] renameSession persistSession failed.", e);
       });
     }
   },
@@ -1767,6 +1888,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
+  setConversationWidth: async (mode) => {
+    set({ conversationWidth: mode });
+    try {
+      await setPref("conversation_width", mode);
+    } catch (e) {
+      console.warn("[store] setConversationWidth: pref persistence failed.", e);
+    }
+  },
+
   setGAConfig: async (partial) => {
     const merged = { ...get().gaConfig, ...partial };
     set((state) => ({
@@ -1971,6 +2101,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         // the new agent_runner_loop's turn_start arrives. New
         // message = new loop = step counter restarts at 1.
         currentTurnIndex: null,
+        // Any GA-initiated ask_user is by definition answered by
+        // this submission — clear the bubble + yellow sidebar dot
+        // so the conversation reverts to normal running visuals.
+        pendingAskUser: null,
         // Anchor the offset for the upcoming agent_runner_loop's
         // turn indices. GA will emit turn_end with turnIndex=1,2,3
         // for this user_message; we add this offset to get absolute
@@ -2143,6 +2277,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
         inFlightContent: "",
       })),
     ),
+
+  setPendingAskUser: (sessionId, value) =>
+    set((state) =>
+      applyRuntimeUpdate(state, sessionId, (rt) => ({
+        ...rt,
+        pendingAskUser: value,
+      })),
+    ),
+
+  setPetAttachedSession: (sessionId) =>
+    set({ petAttachedSessionId: sessionId }),
 
   // ---- Bridge runtime ----
   setBridgeStatus: (sessionId, status) =>
@@ -2380,6 +2525,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (yolo === true) set({ yoloMode: true });
     } catch (e) {
       console.warn("[store] hydrateFromDB: yolo pref load failed.", e);
+    }
+    try {
+      const width = await getPref<"compact" | "wide">("conversation_width");
+      // Defensive: only honor known values, fall back to the
+      // "compact" default for anything else (corrupt prefs / older
+      // schema / future "fluid" mode that this build doesn't know).
+      if (width === "wide" || width === "compact") {
+        set({ conversationWidth: width });
+      }
+    } catch (e) {
+      console.warn("[store] hydrateFromDB: conversation_width pref load failed.", e);
     }
     // Restore cached LLM list (written by replaceLLMs whenever a
     // bridge's `ready` event arrives). Lets cold-start cosmetics

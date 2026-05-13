@@ -66,6 +66,7 @@ function App() {
   const archiveSession = useAppStore((s) => s.archiveSession);
   const unarchiveSession = useAppStore((s) => s.unarchiveSession);
   const togglePinSession = useAppStore((s) => s.togglePinSession);
+  const renameSession = useAppStore((s) => s.renameSession);
   const projects = useAppStore((s) => s.projects);
   const activeProjectFilter = useAppStore((s) => s.activeProjectFilter);
   const createProject = useAppStore((s) => s.createProject);
@@ -99,6 +100,9 @@ function App() {
   const removeAlwaysAllow = useAppStore((s) => s.removeAlwaysAllow);
   const yoloMode = useAppStore((s) => s.yoloMode);
   const setYoloMode = useAppStore((s) => s.setYoloMode);
+  const conversationWidth = useAppStore((s) => s.conversationWidth);
+  const setConversationWidth = useAppStore((s) => s.setConversationWidth);
+  const petAttachedSessionId = useAppStore((s) => s.petAttachedSessionId);
 
   const toasts = useAppStore((s) => s.toasts);
   const pushToast = useAppStore((s) => s.pushToast);
@@ -108,6 +112,17 @@ function App() {
   const shutdownAllBridges = useAppStore((s) => s.shutdownAllBridges);
   const sendIPCCommand = useAppStore((s) => s.sendIPCCommand);
   const setGAConfig = useAppStore((s) => s.setGAConfig);
+  const gaConfig = useAppStore((s) => s.gaConfig);
+  // Sidebar runtime indicator. Two states for V0.1 — see Sidebar.tsx
+  // `RuntimeStatus` type for the rationale. The previous indicator
+  // was a stub: defaulted to "healthy" and never wired up to a real
+  // signal. Now reflects whether the user has configured GA paths
+  // (which onboarding gates on, so post-onboarding this should
+  // almost always be "ready").
+  const runtimeStatus: "ready" | "unconfigured" =
+    gaConfig.gaPath.trim() !== "" && gaConfig.python.trim() !== ""
+      ? "ready"
+      : "unconfigured";
 
   const storeTurns = useAppStore((s) => s.turns);
   const storePending = useAppStore((s) => s.pendingApprovals);
@@ -115,6 +130,7 @@ function App() {
   const currentTurnIndex = useAppStore((s) => s.currentTurnIndex);
   const userSubmitTick = useAppStore((s) => s.userSubmitTick);
   const inFlightContent = useAppStore((s) => s.inFlightContent);
+  const pendingAskUser = useAppStore((s) => s.pendingAskUser);
   const appendUserTurn = useAppStore((s) => s.appendUserTurn);
   const removePendingApproval = useAppStore((s) => s.removePendingApproval);
 
@@ -313,12 +329,53 @@ function App() {
             onDisableYolo={() => {
               void setYoloMode(false);
             }}
+            conversationWidth={conversationWidth}
+            onToggleConversationWidth={() => {
+              void setConversationWidth(
+                conversationWidth === "wide" ? "compact" : "wide",
+              );
+            }}
+            onReinjectTools={() => {
+              // Reinject targets the currently active session — that's
+              // the conversation the user is reading when they notice
+              // tool drift. No-op if no active session (button is
+              // available but does nothing rather than throwing).
+              if (!activeSessionId) return;
+              if (bridgeStatus !== "connected") return;
+              void sendIPCCommand(activeSessionId, {
+                kind: "reinject_tools",
+              });
+            }}
+            onTogglePet={() => {
+              // Pet toggle:
+              //   - If a pet is already attached (anywhere): detach it.
+              //     Send detach to THAT session's bridge, not the
+              //     active one, so the hook gets cleared on the right
+              //     agent instance.
+              //   - Else: attach to the currently active session.
+              // Sticky-B per discussion: switching active sessions
+              // doesn't re-attach.
+              if (petAttachedSessionId) {
+                void sendIPCCommand(petAttachedSessionId, {
+                  kind: "detach_pet",
+                });
+                return;
+              }
+              if (!activeSessionId) return;
+              if (bridgeStatus !== "connected") return;
+              void sendIPCCommand(activeSessionId, {
+                kind: "attach_pet",
+                port: 41983,
+              });
+            }}
+            petAttachedSessionId={petAttachedSessionId}
             onOpenSettings={() => setSettingsOpen(true)}
-            onOpenCommandPalette={() => setPaletteOpen(true)}
           />
         }
         sidebar={
           <Sidebar
+            runtimeStatus={runtimeStatus}
+            onOpenRuntimeSettings={() => setSettingsOpen(true)}
             sessions={visibleSessions}
             activeId={effectiveActiveId}
             onNewChat={() => {
@@ -340,6 +397,7 @@ function App() {
               setScreen("main");
             }}
             onArchiveSession={(id) => archiveSession(id)}
+            onRenameSession={(id, newTitle) => renameSession(id, newTitle)}
             onTogglePinSession={(id) => togglePinSession(id)}
             onOpenArchived={() => setArchivedOpen(true)}
             onOpenEarlier={() => setEarlierOpen(true)}
@@ -366,6 +424,7 @@ function App() {
           screen === "empty" ? (
             <EmptyState
               llmDisplayName={llmDisplayName}
+              conversationWidth={conversationWidth}
               llms={llms}
               onSelectLLM={(idx) => {
                 // EmptyState always configures the *next* new
@@ -429,12 +488,28 @@ function App() {
                 // / EmptyState set it before transitioning here.
                 if (!activeSessionId) return;
                 if (bridgeStatus === "connected") {
+                  // Snapshot pendingAskUser **before** appendUserTurn
+                  // clears it — we need to know which IPC command to
+                  // send. ask_user_response and user_message both
+                  // ultimately call agent.put_task on the bridge side
+                  // (same agent_runner_loop kickoff), but keeping
+                  // them distinct preserves audit-trail clarity:
+                  // "this user message was a reply to a specific
+                  // question" vs "this was a fresh prompt".
+                  const wasAskUser = pendingAskUser !== null;
                   appendUserTurn(activeSessionId, t);
-                  sendIPCCommand(activeSessionId, {
-                    kind: "user_message",
-                    text: t,
-                    images: [],
-                  });
+                  if (wasAskUser) {
+                    sendIPCCommand(activeSessionId, {
+                      kind: "ask_user_response",
+                      text: t,
+                    });
+                  } else {
+                    sendIPCCommand(activeSessionId, {
+                      kind: "user_message",
+                      text: t,
+                      images: [],
+                    });
+                  }
                 } else {
                   console.info("[main] submit (bridge not ready):", t);
                 }
@@ -465,6 +540,8 @@ function App() {
               currentTurnIndex={currentTurnIndex}
               userSubmitTick={userSubmitTick}
               inFlightContent={inFlightContent}
+              pendingAskUser={pendingAskUser}
+              conversationWidth={conversationWidth}
               activeSessionId={activeSessionId}
             />
           )

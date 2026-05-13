@@ -52,6 +52,15 @@ export interface Session {
    */
   hasUnread?: boolean;
   /**
+   * Transient: GA called `ask_user` and is waiting for the user to reply.
+   * Surfaces as the sidebar's fourth state (yellow "⏸ 等你回复"). Mirror
+   * of the runtime's `pendingAskUser` — synced via applyRuntimeUpdate
+   * so the sidebar can flip without reading runtime state directly.
+   * NOT persisted (pending questions are cleared on app restart;
+   * the conversation history still shows the question text).
+   */
+  hasPendingAskUser?: boolean;
+  /**
    * GA-side per-message step the agent **most recently finished**
    * (the turnIndex passed in the last `turn_end` event for the
    * current user_message's loop). Surfaced by the Sidebar running

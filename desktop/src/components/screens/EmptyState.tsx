@@ -40,6 +40,14 @@ export interface EmptyStateProps {
   onSelectLLM?: (index: number) => void;
   /** Fallback for pre-bridge / dev when `llms` is empty. */
   onOpenLLMSwitcher?: () => void;
+  /**
+   * Width mode from the TopBar toggle. EmptyState's hero block tracks
+   * the same setting so the toggle has a visible effect even when no
+   * conversation column exists yet (otherwise the user clicking the
+   * button on the welcome screen sees nothing change — looks broken).
+   * compact = 560 (intimate hero feel), wide = 1200 (matches MainView).
+   */
+  conversationWidth?: "compact" | "wide";
 }
 
 /**
@@ -59,10 +67,16 @@ export function EmptyState({
   llms,
   onSelectLLM,
   onOpenLLMSwitcher,
+  conversationWidth = "compact",
 }: EmptyStateProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-app px-16 py-12">
-      <div className="w-full max-w-[560px]">
+      <div
+        className={cn(
+          "w-full",
+          conversationWidth === "wide" ? "max-w-[1200px]" : "max-w-[560px]",
+        )}
+      >
         <div className="mb-6 text-center font-serif text-[22px] italic leading-tight tracking-[0.005em] text-ink-soft">
           你想做什么？
         </div>

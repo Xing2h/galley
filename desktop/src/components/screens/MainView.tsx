@@ -2,6 +2,7 @@ import { ArrowDown } from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { ApprovalDock } from "@/components/conversation/ApprovalDock";
+import { AskUserBubble } from "@/components/conversation/AskUserBubble";
 import {
   Composer,
   type ComposerLLMOption,
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 import type {
   ConversationToolEvent,
   PendingApproval,
+  PendingAskUser,
   Turn,
 } from "@/types/conversation";
 import type { ApprovalDecision } from "@/types/ipc";
@@ -72,6 +74,34 @@ export interface MainViewProps {
   onSelectLLM?: (index: number) => void;
   /** Fallback for pre-bridge / dev when `llms` is empty. */
   onOpenLLMSwitcher?: () => void;
+  /**
+   * GA-initiated question waiting for a user reply. When non-null,
+   * the AskUserBubble renders at the conversation tail (with chip
+   * candidates) and the Composer's placeholder switches to a reply
+   * prompt. Submitting (chip click OR Composer text) routes through
+   * `onSubmit` — App.tsx checks the same flag to send
+   * `ask_user_response` instead of `user_message`.
+   */
+  pendingAskUser?: PendingAskUser | null;
+  /**
+   * Conversation column width mode (TopBar toggle). "compact" caps
+   * the scrollable reading column at 760px (typography sweet spot
+   * for 16.5px Newsreader prose); "wide" caps it at 1200px — a
+   * compromise between Notion's prose-only 1040 and the original
+   * 1400 proposal, sized for Workbench's mixed prose + code block
+   * + tool callout content (~108ch prose / ~135ch code per line).
+   *
+   * Both the scrollable conversation column AND the bottom stack
+   * (ApprovalDock + Composer + hint) follow this mode in lockstep.
+   * Earlier iterations kept the bottom stack narrow on the
+   * "input doesn't need to be wide" theory; this turned out to be
+   * wrong: (a) the EmptyState toggle then had no visible effect
+   * since EmptyState only contains a Composer, and (b) the Dock and
+   * Composer at different widths produced visual misalignment in
+   * MainView. Single width keeps the affordance consistent and
+   * predictable across all screens.
+   */
+  conversationWidth?: "compact" | "wide";
 }
 
 /**
@@ -105,6 +135,8 @@ export function MainView({
   llms,
   onSelectLLM,
   onOpenLLMSwitcher,
+  pendingAskUser,
+  conversationWidth = "compact",
 }: MainViewProps) {
   const stillWaiting = pendingApprovals.length > 0;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -282,12 +314,20 @@ export function MainView({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-app">
-      {/* Scrollable conversation column */}
+      {/* Scrollable conversation column. Width follows the TopBar
+          toggle: 760px (typography sweet spot) by default, 1200px
+          in wide mode. Bottom stack matches — see MainViewProps doc
+          for the lockstep rationale. */}
       <div
         ref={scrollContainerRef}
         className="min-h-0 flex-1 overflow-y-auto px-8 py-6"
       >
-        <div className="mx-auto max-w-[760px]">
+        <div
+          className={cn(
+            "mx-auto",
+            conversationWidth === "wide" ? "max-w-[1200px]" : "max-w-[760px]",
+          )}
+        >
           <Conversation
             turns={turns}
             approvalDecisions={approvalDecisions}
@@ -370,6 +410,19 @@ export function MainView({
               </div>
             </div>
           )}
+
+          {/* GA-initiated question awaiting reply. Always at the
+              conversation tail — by the time ask_user fires, the
+              agent has EXITED its run loop so `isRunning` is false
+              and the placeholder / streaming partial above won't
+              render. Submitting (chip OR Composer text) clears this
+              via store.appendUserTurn. */}
+          {pendingAskUser && (
+            <AskUserBubble
+              pending={pendingAskUser}
+              onPickCandidate={(text) => onSubmit?.(text)}
+            />
+          )}
         </div>
       </div>
 
@@ -393,9 +446,16 @@ export function MainView({
         </button>
       )}
 
-      {/* Bottom stack: dock + composer + hint */}
+      {/* Bottom stack: dock + composer + hint. Matches the conversation
+          column width in lockstep — see MainViewProps `conversationWidth`
+          doc for why we don't keep this narrower. */}
       <div className="bg-app px-8 pb-4">
-        <div className="mx-auto max-w-[760px]">
+        <div
+          className={cn(
+            "mx-auto",
+            conversationWidth === "wide" ? "max-w-[1200px]" : "max-w-[760px]",
+          )}
+        >
           <ApprovalDock
             pending={pendingApprovals}
             onAdvance={onAdvanceApproval}
@@ -403,7 +463,11 @@ export function MainView({
 
           <Composer
             llmDisplayName={llmDisplayName}
-            placeholder="继续这个对话…"
+            placeholder={
+              pendingAskUser
+                ? "回复以继续，或选择上方候选"
+                : "继续这个对话…"
+            }
             onSubmit={onSubmit}
             stopMode={isRunning}
             onStop={onStop}

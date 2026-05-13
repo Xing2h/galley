@@ -114,3 +114,22 @@ export interface PendingApproval {
 
 /** Decision callback shape used by the Approval form / Dock. */
 export type OnApprove = (decision: ApprovalDecision) => void;
+
+/**
+ * GA-initiated question awaiting a user reply (V0.2). Set on the
+ * session runtime by the `ask_user` IPC event; cleared when the user
+ * submits a response (or switches sessions / app restarts — pending
+ * questions are NOT persisted across launches, the conversation
+ * history still shows the question so the user can answer via the
+ * Composer naturally).
+ *
+ * Rendered as an inline bubble at the bottom of the conversation
+ * (AskUserBubble) plus a yellow "⏸ 等你回复" indicator on the sidebar
+ * row. Candidates surface as quick-fill chips; the Composer remains
+ * fully open for free-form replies.
+ */
+export interface PendingAskUser {
+  question: string;
+  /** Quick-fill suggestions. Empty array = open-ended question (no chips). */
+  candidates: string[];
+}

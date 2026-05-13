@@ -1,8 +1,13 @@
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import {
+  ArrowsClockwise,
+  ArrowsInLineHorizontal,
+  ArrowsOutLineHorizontal,
+  Cat,
+  DotsThree,
   Gear,
   Lightning,
-  MagnifyingGlass,
 } from "@phosphor-icons/react";
 
 import { cn } from "@/lib/utils";
@@ -14,7 +19,6 @@ export interface TopBarProps {
    * italic muted "新对话" placeholder so the bar always has a title slot.
    */
   sessionTitle?: string;
-  onOpenCommandPalette?: () => void;
   /**
    * YOLO mode (PRD §11.5). When true, render a persistent badge in
    * the right cluster — clicking it opens a popover with a one-click
@@ -25,6 +29,32 @@ export interface TopBarProps {
   yoloMode?: boolean;
   onDisableYolo?: () => void;
   onOpenSettings?: () => void;
+  /**
+   * Conversation column width mode. "compact" = 760px (default), "wide"
+   * = 1400px. Renders an icon button next to Settings that flips
+   * between the two modes.
+   */
+  conversationWidth?: "compact" | "wide";
+  onToggleConversationWidth?: () => void;
+  /**
+   * Session-level overflow menu items (`⋯` button). The menu holds
+   * actions that operate on the current session and don't deserve a
+   * dedicated TopBar slot:
+   *
+   *   - Reinject Tools: re-injects GA's tool definitions into the
+   *     active session's LLM history. Low-frequency power-user fix
+   *     for "agent forgot its tools" after long runs.
+   *   - Desktop Pet: launches GA's `desktop_pet_v2.pyw` subprocess
+   *     and attaches a turn_end hook to the active session. Sticky
+   *     to the session active at click time.
+   *
+   * `petAttachedSessionId` non-null = pet is currently running
+   * (attached to that session). Used to flip the menu item label
+   * to indicate the running state.
+   */
+  onReinjectTools?: () => void;
+  onTogglePet?: () => void;
+  petAttachedSessionId?: string | null;
   /**
    * Padding on the left to clear the macOS traffic light (which is
    * positioned at {16, 16} via tauri.conf.json titleBarStyle "Overlay").
@@ -72,10 +102,14 @@ export interface TopBarProps {
  */
 export function TopBar({
   sessionTitle,
-  onOpenCommandPalette,
   yoloMode = false,
   onDisableYolo,
   onOpenSettings,
+  conversationWidth = "compact",
+  onToggleConversationWidth,
+  onReinjectTools,
+  onTogglePet,
+  petAttachedSessionId,
   trafficLightPadding = 70,
 }: TopBarProps) {
   return (
@@ -90,11 +124,19 @@ export function TopBar({
         style={{ width: trafficLightPadding }}
       />
 
-      {/* Center: title centered in remaining space. flex-1 so it
-          consumes whatever the action cluster doesn't. */}
+      {/* Center: title + session-level actions, centered together.
+          `⋯` lives next to the title (not the right cluster) because
+          it's session-scoped (Reinject Tools / Desktop Pet operate
+          on the active session), and the right cluster holds global
+          chrome (YOLO / width toggle / Settings). Visually grouping
+          session-action with session-identity preserves macOS-style
+          center-title chrome while making the scope hierarchy
+          legible. `⋯` is hidden entirely when no session is active
+          — same "affordance only when usable" rule we use elsewhere
+          (ApprovalDock / Composer Stop / AskUserBubble). */}
       <div
         data-tauri-drag-region
-        className="flex min-w-0 flex-1 items-center justify-center px-3"
+        className="flex min-w-0 flex-1 items-center justify-center gap-2 px-3"
       >
         {sessionTitle ? (
           <span
@@ -111,10 +153,19 @@ export function TopBar({
             新对话
           </span>
         )}
+        {sessionTitle && (
+          <SessionActionsMenu
+            onReinjectTools={onReinjectTools}
+            onTogglePet={onTogglePet}
+            petAttachedSessionId={petAttachedSessionId}
+          />
+        )}
       </div>
 
-      {/* Right: action cluster. Buttons are auto-excluded from drag
-          region by Tauri so they remain clickable. */}
+      {/* Right: action cluster. Global controls only — session-level
+          actions live next to the title (see comment above). Buttons
+          are auto-excluded from drag region by Tauri so they remain
+          clickable. */}
       <div className="flex shrink-0 items-center gap-2">
         {yoloMode && (
           <YoloIndicator
@@ -123,13 +174,14 @@ export function TopBar({
           />
         )}
         <div className="flex items-center gap-1">
-          <IconButton
-            title="Search · ⌘K"
-            onClick={onOpenCommandPalette}
-            ariaLabel="Open command palette"
-          >
-            <MagnifyingGlass size={16} weight="thin" />
-          </IconButton>
+          {/* No Search button here — the Sidebar's Quick Actions has
+              its own search affordance, and ⌘K opens the palette from
+              anywhere. Two click affordances for the same thing was
+              chrome clutter without payoff. */}
+          <WidthToggleButton
+            mode={conversationWidth}
+            onToggle={onToggleConversationWidth}
+          />
           <IconButton
             title="Settings · ⌘,"
             onClick={onOpenSettings}
@@ -221,6 +273,93 @@ function YoloIndicator({
   );
 }
 
+/**
+ * `⋯` overflow menu for session-level actions. Holds the rare /
+ * power-user features that don't deserve always-visible TopBar chrome
+ * but ARE conceptually attached to "this current session":
+ *
+ *   - 🔄 重新注入工具 (Reinject Tools): one-shot — re-injects GA's
+ *     tool definitions into the active session's LLM history.
+ *   - 🐱 Desktop Pet: toggle — spawns GA's pet subprocess and binds
+ *     turn-end progress to it. The label flips to "已附着" suffix
+ *     when running.
+ *
+ * Future V0.2 entries (`/branch`, `/rewind` etc.) slot in here too —
+ * see discussion thread 2026-05-13.
+ */
+function SessionActionsMenu({
+  onReinjectTools,
+  onTogglePet,
+  petAttachedSessionId,
+}: {
+  onReinjectTools?: () => void;
+  onTogglePet?: () => void;
+  petAttachedSessionId?: string | null;
+}) {
+  const petRunning = !!petAttachedSessionId;
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          title="更多 session 操作"
+          aria-label="更多 session 操作"
+          className="flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
+        >
+          <DotsThree size={18} weight="bold" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={6}
+          className={cn(
+            // z-[70] is above the dev-toggle panel (z-[60] in
+            // App.tsx) — without this, the menu opens BEHIND the
+            // dev INTRO/EMPTY/MAIN/+toast/+mock buttons in dev mode.
+            // Production build has no dev panel so z-50 would
+            // suffice, but the higher value is harmless there.
+            "z-[70] min-w-[200px] rounded-md border border-line bg-elevated p-1",
+            "text-[13px] text-ink shadow-elevated",
+          )}
+        >
+          <DropdownMenu.Item
+            onSelect={() => onReinjectTools?.()}
+            className={cn(
+              "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none",
+              "data-[highlighted]:bg-hover",
+            )}
+          >
+            <ArrowsClockwise size={14} weight="thin" className="text-ink-soft" />
+            <span>重新注入工具</span>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            onSelect={() => onTogglePet?.()}
+            className={cn(
+              "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none",
+              "data-[highlighted]:bg-hover",
+            )}
+          >
+            <Cat
+              size={14}
+              weight="thin"
+              className={petRunning ? "text-brand" : "text-ink-soft"}
+            />
+            <span className={petRunning ? "text-ink" : "text-ink"}>
+              Desktop Pet
+            </span>
+            {petRunning && (
+              <span className="ml-auto text-[11px] text-ink-muted">
+                · 已附着
+              </span>
+            )}
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
 function IconButton({
   children,
   onClick,
@@ -246,6 +385,68 @@ function IconButton({
       )}
     >
       {children}
+    </button>
+  );
+}
+
+/**
+ * Conversation width toggle — icon + state label pill, visually a
+ * sibling of YoloIndicator (below). Same geometry / icon size /
+ * padding / weight; only the accent color differs (brand apricot for
+ * "this toggle is on" instead of warning amber for "YOLO active").
+ *
+ * Two reasons it's a labeled pill rather than a plain icon button:
+ *
+ *   1. Function legibility — "this button is about reading width"
+ *      isn't obvious from arrow icons alone; the label "紧凑 / 宽松"
+ *      removes the guesswork
+ *   2. State legibility — without a label, the only signal for current
+ *      state is which direction the arrow points (out vs in), which is
+ *      too subtle at thin weight to scan at a glance
+ *
+ * Inactive (compact) state shares the pill GEOMETRY with the active
+ * state — same padding / gap / icon size — but with transparent
+ * background and muted ink, hovering to the standard chrome tint.
+ * That makes the on/off transition a pure fill swap, not a layout
+ * shift.
+ *
+ * Icon flips direction to reinforce the action verb (arrows-out when
+ * compact = "click to expand"; arrows-in when wide = "click to
+ * collapse"). Slight redundancy with the label is intentional —
+ * function + state read at a glance from any one of the three cues
+ * (icon direction / label text / bg fill).
+ */
+function WidthToggleButton({
+  mode,
+  onToggle,
+}: {
+  mode: "compact" | "wide";
+  onToggle?: () => void;
+}) {
+  const isWide = mode === "wide";
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={
+        isWide
+          ? "切到紧凑（760px 阅读宽度）"
+          : "切到宽松（1200px 阅读宽度）"
+      }
+      aria-label={isWide ? "切到紧凑阅读宽度" : "切到宽松阅读宽度"}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors",
+        isWide
+          ? "border border-brand/30 bg-brand/10 text-brand hover:bg-brand/20"
+          : "border border-transparent text-ink-soft hover:bg-hover hover:text-ink",
+      )}
+    >
+      {isWide ? (
+        <ArrowsInLineHorizontal size={14} weight="thin" />
+      ) : (
+        <ArrowsOutLineHorizontal size={14} weight="thin" />
+      )}
+      {isWide ? "宽松" : "紧凑"}
     </button>
   );
 }

@@ -27,16 +27,33 @@ export function SettingsAbout({
   return (
     <div className="space-y-7">
       <div>
-        <h2 className="m-0 font-serif text-[20px] font-medium tracking-[0.005em] text-ink">
-          GenericAgent Workbench
+        {/* Wordmark uppercase treatment matches the Sidebar header
+            (also a "small wordmark" size). Onboarding's 36px hero
+            heading stays sentence-case because uppercase at that
+            scale tips from "logotype mark" into "marketing banner"
+            — see brand notes in CLAUDE.md / discussion thread
+            2026-05-13. */}
+        <h2 className="m-0 font-serif text-[20px] font-semibold uppercase tracking-[0.04em] text-ink">
+          Galley
         </h2>
         <p className="mt-1 font-serif text-[14px] italic text-ink-soft">
-          GA 的本地桌面工作台。
+          多 session AI agent 的本地桌面工作台。
         </p>
       </div>
 
+      {/* Origin story — the "Why Galley?" easter egg. Putting it in
+          About means: insiders / curious users find the GenericAgent
+          heritage when they look; new users see a clean standalone
+          brand on the welcome screen. The GA capitalization is a
+          quiet bow, not a billboard. */}
+      <div className="rounded-md border border-line bg-elevated px-4 py-3 font-serif text-[13.5px] italic leading-[1.65] text-ink-soft">
+        Galley started as a workbench for{" "}
+        <span className="not-italic">GenericAgent</span>. The first two
+        letters of our name are a quiet bow to where we came from.
+      </div>
+
       <dl className="m-0 grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
-        <dt className="text-ink-muted">Workbench 版本</dt>
+        <dt className="text-ink-muted">Galley 版本</dt>
         <dd className="m-0 font-mono text-ink">v{workbenchVersion}</dd>
 
         <dt className="text-ink-muted">已验证 GA 版本</dt>
@@ -78,7 +95,7 @@ export function SettingsAbout({
         <SubLabel>Links</SubLabel>
         <div className="mt-3 space-y-1.5">
           <ExternalLink href="https://github.com/wangjc683/genericagent-workbench">
-            Workbench · github.com/wangjc683/genericagent-workbench
+            Galley · github.com/wangjc683/genericagent-workbench
           </ExternalLink>
           <ExternalLink href="https://github.com/lsdefine/GenericAgent">
             GenericAgent · github.com/lsdefine/GenericAgent
