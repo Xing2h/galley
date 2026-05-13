@@ -10,13 +10,28 @@ the GA installation path on sys.path before importing this module.
 """
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Generator
 from typing import Any
 
 # These imports require GA on sys.path. The bridge entrypoint and the
 # pytest conftest both arrange for that before this module loads.
-from agent_loop import StepOutcome
+from agent_loop import BaseHandler, StepOutcome
 from ga import GenericAgentHandler
+
+# Upstream GA commit 3205f4a (post-cf65515 baseline) added a `tool_num`
+# kwarg to `BaseHandler.dispatch` so do_* tools can scale output length
+# by the number of parallel calls. Workbench's baseline is past that
+# commit, but the user's local GA repo may not be — and we are
+# explicitly non-invasive (CLAUDE.md "GA upgrade cadence is the user's
+# call"). So we detect support at import time and forward `tool_num`
+# only when the actually-loaded BaseHandler supports it. Without this
+# guard, an older GA crashes the agent loop with `TypeError: dispatch()
+# takes from 4 to 5 positional arguments but 6 were given` on the
+# first tool dispatch, leaving the desktop stuck on "思考中".
+_BASE_DISPATCH_SUPPORTS_TOOL_NUM: bool = (
+    "tool_num" in inspect.signature(BaseHandler.dispatch).parameters
+)
 
 # Tools that require user approval by default. See PRD §11.2.
 DEFAULT_APPROVAL_TOOLS: frozenset[str] = frozenset(
@@ -183,17 +198,17 @@ class WorkbenchHandler(GenericAgentHandler):  # type: ignore[misc]  # GA has no 
         index: int = 0,
         tool_num: int = 1,
     ) -> Generator[Any, None, Any]:
-        # `tool_num` was added by upstream GA in commit 3205f4a (baseline
-        # cf65515 → 6bb3104 upgrade): the count of parallel tool calls in
-        # this turn, used by GenericAgentHandler's tool implementations
-        # to scale down per-tool output length so the combined response
-        # doesn't blow past the LLM context. We don't read it ourselves
-        # but must forward it unchanged so the underlying do_* methods
-        # see the same `_tool_num` arg they expect.
+        # `tool_num` reaches us only on GA versions ≥ 3205f4a (post-
+        # cf65515 baseline). Older GA's `agent_runner_loop` doesn't
+        # pass it; default `1` keeps us valid in that case. Forwarding
+        # to super is the asymmetric path: older BaseHandler.dispatch
+        # only takes 4 positional args, so we feature-detect and drop
+        # the kwarg when unsupported. See module-level
+        # _BASE_DISPATCH_SUPPORTS_TOOL_NUM for rationale.
         if self.needs_approval(tool_name):
             # Defensive copy: super().dispatch mutates args (adds _index,
-            # _tool_num). Approval Cards in the desktop UI must show the
-            # user-facing args, not GA's internal bookkeeping state.
+            # and _tool_num on newer GA). Approval Cards in the desktop
+            # UI must show the user-facing args, not GA's bookkeeping.
             decision = self._request_approval(tool_name, dict(args))
             if decision == "deny":
                 yield f"[Approval] User denied: {tool_name}\n"
@@ -213,8 +228,10 @@ class WorkbenchHandler(GenericAgentHandler):  # type: ignore[misc]  # GA has no 
                     {"status": "denied", "msg": f"Unknown approval decision: {decision}"},
                     next_prompt="\n",
                 )
-        return (
-            yield from super().dispatch(
-                tool_name, args, response, index, tool_num
+        if _BASE_DISPATCH_SUPPORTS_TOOL_NUM:
+            return (
+                yield from super().dispatch(
+                    tool_name, args, response, index, tool_num
+                )
             )
-        )
+        return (yield from super().dispatch(tool_name, args, response, index))

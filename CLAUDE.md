@@ -32,9 +32,9 @@ GA 升级时，Workbench 只依赖 `BaseHandler` / `ToolClient` 这一层公开 
 锁定 commit: `6bb31046cc29981f3fd0ce0b22a6af8c9741e850`（upstream/main HEAD，2026-05-13）
 
 - 来源：`lsdefine/GenericAgent` upstream main 分支
-- **5 个 commits** 升级自旧 baseline `cf65515`（2026-05-12），其中 1 处接口表面变化已在桥接层适配（详见 [2026-05-13 devlog](docs/devlog/2026-05-13-ga-baseline-upgrade-cf65515-to-6bb3104.md)）：
+- **5 个 commits** 升级自旧 baseline `cf65515`（2026-05-12），其中 1 处接口表面变化在桥接层做了**版本兼容适配**（详见 [baseline 升级 devlog](docs/devlog/2026-05-13-ga-baseline-upgrade-cf65515-to-6bb3104.md) + [regression 修复 devlog](docs/devlog/2026-05-13-baseline-regression-and-feature-detection.md)）：
   - `BaseHandler.dispatch` 签名新增 `tool_num=1` 参数（commit 3205f4a）—— **breaking**
-    - 适配：`bridge/handlers.py` 的 `WorkbenchHandler.dispatch` 加 `tool_num=1` 参数透传给 super
+    - 适配：`bridge/handlers.py` 用 `inspect.signature` 在模块加载时探测当前 GA 的 `BaseHandler.dispatch` 是否支持 `tool_num`，运行时按结果选择 4 参或 5 参调用 super。**对 baseline 6bb3104 + 旧版（cf65515 之前）都正确**，桥接层不强制用户跟着升级 GA
     - 用途：upstream 用 `_tool_num = len(tool_calls)` 让 do_* 工具实现按并行调用数等比缩减输出长度，避免 context blow up
   - `_turn_end_hooks` 字典扩展点 + `hook(locals())` 调用约定保持
   - `agentmain.GenericAgentHandler` 导入路径保持
@@ -75,22 +75,39 @@ GA baseline 锁死一个 commit，但需要定期升级 —— 否则用户 `git
    - llmclient.backend.history 列表读写语义
    ↳ 任一项变化 = breaking change，需评估桥接层 / handlers.py 适配成本
 
-3. cd ~/Documents/genericagent-webui && .venv/bin/python -m pytest bridge/tests/
-   ↳ e2e smoke test 必须全过（test_e2e.py 验证上述四个接口表面）
+3. 接口适配：**优先用 inspect.signature 做 feature detection**，不要硬绑某一版本签名
+   ↳ 用户的本地 GA 可能落后于 baseline（CLAUDE.md 项目宪法：不政策化 GA 升级节奏）
+   ↳ 桥接适配既要兼容 new baseline，也要兼容 old GA。两端都跑测试
+   ↳ 例（cf65515 → 6bb3104 升级）：
+     _BASE_DISPATCH_SUPPORTS_TOOL_NUM = "tool_num" in inspect.signature(
+         BaseHandler.dispatch
+     ).parameters
+     # 然后 if _BASE_DISPATCH_SUPPORTS_TOOL_NUM: super().dispatch(..., tool_num)
+     # 否则:                                       super().dispatch(...)
+   ↳ 强制硬绑会导致 regression：用户没升 GA，桥接层就 crash（见 baseline-regression devlog）
 
-4. dev mode 起 Workbench，跑一个 5+ 步骤的多步任务，
+4. 跑测试矩阵 —— 必须**两个 GA 版本都过**:
+   a. cd ~/Documents/GenericAgent && git checkout upstream/main
+      cd ~/Documents/genericagent-webui && .venv/bin/python -m pytest bridge/tests/
+      ↳ 验证新 baseline 兼容（forward compat）
+   b. cd ~/Documents/GenericAgent && git checkout main
+      cd ~/Documents/genericagent-webui && .venv/bin/python -m pytest bridge/tests/
+      ↳ 验证用户当前 GA 兼容（backward compat）—— 这一步**容易漏**
+   ↳ 只跑 a. 是 cf65515 → 6bb3104 升级踩的坑
+
+5. dev mode 起 Workbench，跑一个 5+ 步骤的多步任务，
    确认行为没退化（thinking placeholder / streaming / approval / tool dispatch）
 
-5. 更新 baseline 引用：
+6. 更新 baseline 引用：
    - 本文件「GA Baseline」section 改 commit hash + 日期 + N commits since previous baseline
    - 如有 bridge 代码里 hardcode 的 baseline 常量也一并更新
 
-6. 写 devlog: docs/devlog/YYYY-MM-DD-ga-baseline-upgrade-{old_short}-to-{new_short}.md
+7. 写 devlog: docs/devlog/YYYY-MM-DD-ga-baseline-upgrade-{old_short}-to-{new_short}.md
    - N 个 commits 的分类（feat/fix/refactor）
    - 接口表面审计结论（"零 breaking change" 或 "调整了 X、桥接层做了 Y 适配"）
-   - e2e + 真跑结果
+   - 测试矩阵两端结果
 
-7. Commit message: "Baseline upgrade {old_short} → {new_short}: N commits"
+8. Commit message: "Baseline upgrade {old_short} → {new_short}: N commits"
    ↳ baseline 升级独立成一个 commit，不混进其它功能 commit，方便回滚
 ```
 
