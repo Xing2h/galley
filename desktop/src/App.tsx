@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ToastHost } from "@/components/error-card/ToastHost";
-import { Inspector } from "@/components/inspector/Inspector";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
@@ -11,11 +10,18 @@ import { MainView } from "@/components/screens/MainView";
 import { Onboarding } from "@/components/screens/onboarding/Onboarding";
 import { Settings } from "@/components/screens/settings/Settings";
 import { ArchivedDialog } from "@/components/screens/archived/ArchivedDialog";
+import { EarlierDialog } from "@/components/screens/earlier/EarlierDialog";
+import { CreateProjectDialog } from "@/components/screens/project/CreateProjectDialog";
+import {
+  ConfirmDeleteProjectDialog,
+  EditProjectDialog,
+} from "@/components/screens/project/EditProjectDialog";
+import { ProjectsDialog } from "@/components/screens/project/ProjectsDialog";
+import { bucketSession } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 import {
   buildDemoPending,
   buildDemoTurns,
-  demoSelection,
   makeDemoToast,
 } from "@/stores/demo";
 import { useAppStore, type Screen } from "@/stores/useAppStore";
@@ -45,9 +51,6 @@ function App() {
   const settingsOpen = useAppStore((s) => s.settingsOpen);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
 
-  const inspectorVisible = useAppStore((s) => s.inspectorVisible);
-  const toggleInspector = useAppStore((s) => s.toggleInspector);
-
   // Sidebar live-status comes from `sessions` directly: the store's
   // `applyRuntimeUpdate` syncs sidebar-visible fields (status,
   // pendingApprovalCount) onto each session row whenever its
@@ -62,6 +65,20 @@ function App() {
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const archiveSession = useAppStore((s) => s.archiveSession);
   const unarchiveSession = useAppStore((s) => s.unarchiveSession);
+  const togglePinSession = useAppStore((s) => s.togglePinSession);
+  const projects = useAppStore((s) => s.projects);
+  const activeProjectFilter = useAppStore((s) => s.activeProjectFilter);
+  const createProject = useAppStore((s) => s.createProject);
+  const setActiveProjectFilter = useAppStore((s) => s.setActiveProjectFilter);
+  const assignSessionToProject = useAppStore((s) => s.assignSessionToProject);
+  const updateProject = useAppStore((s) => s.updateProject);
+  const deleteProject = useAppStore((s) => s.deleteProject);
+  const archiveSessionsBulk = useAppStore((s) => s.archiveSessionsBulk);
+  const unarchiveSessionsBulk = useAppStore((s) => s.unarchiveSessionsBulk);
+  const deleteSessionsPermanentlyBulk = useAppStore(
+    (s) => s.deleteSessionsPermanentlyBulk,
+  );
+  const seedMockSessions = useAppStore((s) => s.seedMockSessions);
   const deleteSessionPermanently = useAppStore(
     (s) => s.deleteSessionPermanently,
   );
@@ -73,7 +90,6 @@ function App() {
   const approvalDecisions = useAppStore((s) => s.approvalDecisions);
   const recordApprovalDecision = useAppStore((s) => s.recordApprovalDecision);
   const approvalConfig = useAppStore((s) => s.approvalConfig);
-  const approvalRecords = useAppStore((s) => s.approvalRecords);
   const setApprovalRequiredTools = useAppStore(
     (s) => s.setApprovalRequiredTools,
   );
@@ -118,9 +134,10 @@ function App() {
   // creates an explicit session immediately, because that click
   // *is* the intent.
 
-  // Global keyboard shortcuts: ⌘K palette, ⌘, settings, ⌘E inspector,
-  // ⌘N new chat. Esc handled by Radix Dialog (Settings) and cmdk
-  // (CommandPalette) themselves.
+  // Global keyboard shortcuts: ⌘K palette, ⌘, settings, ⌘N new chat.
+  // Esc handled by Radix Dialog (Settings) and cmdk (CommandPalette)
+  // themselves. ⌘E (Toggle inspector) retired 2026-05-12 with the
+  // Inspector panel.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey && !e.ctrlKey) return;
@@ -130,9 +147,6 @@ function App() {
       } else if (e.key === ",") {
         e.preventDefault();
         setSettingsOpen(true);
-      } else if (e.key === "e" || e.key === "E") {
-        e.preventDefault();
-        toggleInspector();
       } else if (e.key === "n" || e.key === "N") {
         e.preventDefault();
         setScreen("empty");
@@ -140,7 +154,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [togglePalette, setSettingsOpen, toggleInspector, setScreen]);
+  }, [togglePalette, setSettingsOpen, setScreen]);
 
   // Conversation source-of-truth precedence:
   //   1. store.turns + store.pendingApprovals — populated by IPC
@@ -168,8 +182,17 @@ function App() {
   // came from the store but pendingApprovals fell back to demo
   // because storePending was still []. Result: a fake "Patch file
   // at —" Approval Card appearing out of nowhere on a chit-chat
-  // turn. Anchor both decisions on storeTurns.length.
-  const conversationStarted = storeTurns.length > 0;
+  // turn.
+  //
+  // We also short-circuit demo whenever an active session exists at
+  // all — even with empty turns. Activating a real session (mock
+  // fixture, freshly-created untyped session, or one whose bridge
+  // history hasn't finished replaying) used to surface the demo
+  // conversation because storeTurns was still []. The demo is only
+  // meaningful as a layout placeholder when there's literally no
+  // session selected (DevScreenToggle visual review of main view).
+  const conversationStarted =
+    activeSessionId != null || storeTurns.length > 0;
   const turns = conversationStarted ? storeTurns : demoTurns;
   const pendingApprovals = conversationStarted ? storePending : demoPending;
   // Composer Stop-mode is driven by the real `agentRunning` store flag
@@ -200,6 +223,41 @@ function App() {
   // the global store. Persisting across reloads would be confusing
   // (user expects modals to be closed on app re-open).
   const [archivedOpen, setArchivedOpen] = useState(false);
+  // EarlierDialog: opens when the user clicks the collapsed
+  // "Earlier (N)" row in the sidebar. Same local-state rationale as
+  // archivedOpen.
+  const [earlierOpen, setEarlierOpen] = useState(false);
+  const earlierSessions = useMemo(
+    () =>
+      visibleSessions.filter((s) => bucketSession(s) === "earlier"),
+    [visibleSessions],
+  );
+  // CreateProjectDialog open state. Local for the same reason as the
+  // other dialogs above — modal visibility shouldn't persist across
+  // launches.
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  // ProjectsDialog: opens when the sidebar's "查看全部 (N)" link is
+  // clicked at 9+ projects. Sibling to EarlierDialog in role.
+  const [projectsBrowserOpen, setProjectsBrowserOpen] = useState(false);
+  // EditProjectDialog: stores the full project being edited so the
+  // dialog can reset its inputs from the row that triggered it.
+  // `null` = closed.
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(
+    null,
+  );
+  const editingProject = useMemo(
+    () => projects.find((p) => p.id === editingProjectId) ?? null,
+    [projects, editingProjectId],
+  );
+  // ConfirmDeleteProject dialog — opens from inside EditProject when
+  // the user clicks "删除 Project". Same null-or-project pattern.
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
+    null,
+  );
+  const deletingProject = useMemo(
+    () => projects.find((p) => p.id === deletingProjectId) ?? null,
+    [projects, deletingProjectId],
+  );
 
   // Onboarding takeover: no AppShell, no overlays besides the dev
   // toggle.
@@ -253,6 +311,7 @@ function App() {
               void setYoloMode(false);
             }}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenCommandPalette={() => setPaletteOpen(true)}
           />
         }
         sidebar={
@@ -278,8 +337,26 @@ function App() {
               setScreen("main");
             }}
             onArchiveSession={(id) => archiveSession(id)}
+            onTogglePinSession={(id) => togglePinSession(id)}
             onOpenArchived={() => setArchivedOpen(true)}
+            onOpenEarlier={() => setEarlierOpen(true)}
             archivedCount={archivedCount}
+            onSearch={() => setPaletteOpen(true)}
+            projects={projects}
+            activeProjectFilter={activeProjectFilter}
+            onNewProject={() => setCreateProjectOpen(true)}
+            onSelectProject={(id) => setActiveProjectFilter(id)}
+            onClearProjectFilter={() => setActiveProjectFilter(undefined)}
+            onAssignSessionToProject={(sessionId, projectId) => {
+              void assignSessionToProject(sessionId, projectId);
+            }}
+            onTogglePinProject={(id) => {
+              const p = projects.find((x) => x.id === id);
+              if (p) void updateProject(id, { pinned: !p.pinned });
+            }}
+            onEditProject={(id) => setEditingProjectId(id)}
+            onDeleteProject={(id) => setDeletingProjectId(id)}
+            onOpenProjectsBrowser={() => setProjectsBrowserOpen(true)}
           />
         }
         main={
@@ -306,6 +383,7 @@ function App() {
                   appendUserTurn,
                   sendIPCCommand,
                   setScreen,
+                  activeProjectFilter,
                 );
               }}
               onQuickPrompt={(p) => {
@@ -317,6 +395,7 @@ function App() {
                   appendUserTurn,
                   sendIPCCommand,
                   setScreen,
+                  activeProjectFilter,
                 );
               }}
             />
@@ -324,6 +403,11 @@ function App() {
             <MainView
               turns={turns}
               llmDisplayName={llmDisplayName}
+              projectName={
+                activeSession?.projectId
+                  ? projects.find((p) => p.id === activeSession.projectId)?.name
+                  : undefined
+              }
               llms={llms}
               onSelectLLM={(idx) => {
                 if (!activeSessionId) return;
@@ -381,23 +465,6 @@ function App() {
             />
           )
         }
-        inspector={
-          screen === "main" ? (
-            <Inspector
-              selection={demoSelection(turns)}
-              pendingApprovals={pendingApprovals}
-              approvalRecords={approvalRecords}
-              runtimeInfo={runtimeInfo}
-              onJumpToApproval={(id) =>
-                console.info("[inspector] jump to:", id)
-              }
-              onReRunHealthCheck={() =>
-                console.info("[inspector] re-run health check")
-              }
-            />
-          ) : null
-        }
-        inspectorVisible={screen === "main" && inspectorVisible}
       />
 
       <CommandPalette
@@ -406,6 +473,7 @@ function App() {
         sessions={visibleSessions}
         llms={llms}
         onNewChat={() => setScreen("empty")}
+        onNewProject={() => setCreateProjectOpen(true)}
         onOpenSession={(id) => {
           void activateSession(id);
           setScreen("main");
@@ -435,7 +503,6 @@ function App() {
         }}
         onReRunHealthCheck={() => console.info("[palette] re-run health check")}
         onOpenSettings={() => setSettingsOpen(true)}
-        onToggleInspector={toggleInspector}
         onAttachGAFolder={() =>
           console.info("[palette] attach GA folder — wired in #10")
         }
@@ -450,6 +517,7 @@ function App() {
         onOpenChange={setSettingsOpen}
         runtimeInfo={runtimeInfo}
         approval={approvalConfig}
+        projectCount={projects.length}
         yoloMode={yoloMode}
         onChangeYoloMode={(enabled) => {
           // Fire-and-forget: setYoloMode persists + notifies bridge,
@@ -476,6 +544,77 @@ function App() {
         onRestore={(id) => unarchiveSession(id)}
         onDeletePermanently={(id) => deleteSessionPermanently(id)}
         onEmptyAll={() => emptyArchive()}
+        onRestoreBulk={(ids) => unarchiveSessionsBulk(ids)}
+        onDeletePermanentlyBulk={(ids) => deleteSessionsPermanentlyBulk(ids)}
+      />
+
+      <EarlierDialog
+        open={earlierOpen}
+        onOpenChange={setEarlierOpen}
+        sessions={earlierSessions}
+        onSelectSession={(id) => {
+          void activateSession(id);
+          setScreen("main");
+        }}
+        onArchiveSession={(id) => archiveSession(id)}
+        onTogglePinSession={(id) => togglePinSession(id)}
+        onArchiveSessionsBulk={(ids) => archiveSessionsBulk(ids)}
+      />
+
+      <CreateProjectDialog
+        open={createProjectOpen}
+        onOpenChange={setCreateProjectOpen}
+        onCreate={async (input) => {
+          // Create + immediately enter filter mode for the new
+          // project. Feels right for the "I just made this drawer,
+          // now show me it" instinct; the empty-project view is the
+          // implicit "drop sessions in here" prompt.
+          const created = await createProject(input);
+          setActiveProjectFilter(created.id);
+        }}
+      />
+
+      <EditProjectDialog
+        project={editingProject}
+        onClose={() => setEditingProjectId(null)}
+        onSave={async (id, partial) => {
+          await updateProject(id, partial);
+        }}
+        onRequestDelete={(p) => {
+          // Hand off to ConfirmDeleteProjectDialog while keeping
+          // the Edit dialog state — when the user cancels the
+          // confirm, they're back in Edit naturally. On confirm,
+          // both close together.
+          setDeletingProjectId(p.id);
+        }}
+      />
+
+      <ConfirmDeleteProjectDialog
+        project={deletingProject}
+        onCancel={() => setDeletingProjectId(null)}
+        onConfirm={async () => {
+          if (!deletingProject) return;
+          await deleteProject(deletingProject.id);
+          setDeletingProjectId(null);
+          setEditingProjectId(null);
+        }}
+      />
+
+      <ProjectsDialog
+        open={projectsBrowserOpen}
+        onOpenChange={setProjectsBrowserOpen}
+        projects={projects}
+        sessions={sessions}
+        onSelectProject={(id) => {
+          setActiveProjectFilter(id);
+        }}
+        onTogglePinProject={(id) => {
+          const p = projects.find((x) => x.id === id);
+          if (p) void updateProject(id, { pinned: !p.pinned });
+        }}
+        onEditProject={(id) => setEditingProjectId(id)}
+        onDeleteProject={(id) => setDeletingProjectId(id)}
+        onNewProject={() => setCreateProjectOpen(true)}
       />
 
       <ToastHost
@@ -492,6 +631,9 @@ function App() {
           screen={screen}
           setScreen={setScreen}
           onTriggerToast={() => pushToast(makeDemoToast())}
+          onSeedMockSessions={() => {
+            void seedMockSessions();
+          }}
         />
       )}
     </>
@@ -525,7 +667,7 @@ export default App;
 async function submitOnEmpty(
   text: string,
   existingId: string | undefined,
-  createSession: () => string,
+  createSession: (projectId?: string) => string,
   activateSession: (id: string) => Promise<void>,
   appendUserTurn: (sessionId: string, text: string) => void,
   sendIPCCommand: (
@@ -533,10 +675,14 @@ async function submitOnEmpty(
     cmd: { kind: "user_message"; text: string; images?: string[] },
   ) => Promise<void>,
   setScreen: (s: import("@/stores/useAppStore").Screen) => void,
+  inheritProjectId?: string,
 ): Promise<void> {
   let id = existingId;
   if (!id) {
-    id = createSession();
+    // Inherit project assignment when the EmptyState composer fires
+    // while a project filter is active. New chat instantly belongs
+    // to the same drawer the user is looking at.
+    id = createSession(inheritProjectId);
     await activateSession(id);
   }
   setScreen("main");
@@ -586,6 +732,7 @@ function DevScreenToggle({
   screen,
   setScreen,
   onTriggerToast,
+  onSeedMockSessions,
   bridgeStatus,
   onSpawnBridge,
   onShutdownBridge,
@@ -593,6 +740,7 @@ function DevScreenToggle({
   screen: Screen;
   setScreen: (s: Screen) => void;
   onTriggerToast?: () => void;
+  onSeedMockSessions?: () => void;
   bridgeStatus?: import("@/stores/useAppStore").BridgeStatus;
   onSpawnBridge?: () => void;
   onShutdownBridge?: () => void;
@@ -609,6 +757,11 @@ function DevScreenToggle({
       {onTriggerToast && (
         <DevSegment>
           <DevButton onClick={onTriggerToast}>+ toast</DevButton>
+        </DevSegment>
+      )}
+      {onSeedMockSessions && (
+        <DevSegment>
+          <DevButton onClick={onSeedMockSessions}>+ mock</DevButton>
         </DevSegment>
       )}
       {bridgeStatus !== undefined && onSpawnBridge && onShutdownBridge && (

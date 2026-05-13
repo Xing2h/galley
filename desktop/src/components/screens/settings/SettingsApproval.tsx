@@ -8,6 +8,12 @@ import type { ApprovalConfig } from "@/components/screens/settings/Settings";
 interface SettingsApprovalProps {
   config: ApprovalConfig;
   yoloMode: boolean;
+  /** Total project count. Used to conditionally render the
+   * "Per-project" section — hidden when user has no projects AND no
+   * existing per-project rules (don't surface a feature that points
+   * at nothing). When projects exist OR there are legacy rules, the
+   * section shows so the user can manage / clean up. */
+  projectCount?: number;
   onChangeYoloMode: (enabled: boolean) => void;
   onChangeRequiredTools?: (tools: string[]) => void;
   onRemoveAlwaysAllow?: (scope: "project" | "global", tool: string) => void;
@@ -31,10 +37,13 @@ interface SettingsApprovalProps {
 export function SettingsApproval({
   config,
   yoloMode,
+  projectCount = 0,
   onChangeYoloMode,
   onChangeRequiredTools,
   onRemoveAlwaysAllow,
 }: SettingsApprovalProps) {
+  const showPerProject =
+    projectCount > 0 || config.alwaysAllowProject.length > 0;
   const [activationOpen, setActivationOpen] = useState(false);
   const toggleRequired = (tool: string, checked: boolean) => {
     const next = checked
@@ -115,16 +124,18 @@ export function SettingsApproval({
           </div>
         </div>
 
-        <div>
-          <SubLabel>
-            Always allow · Per-project ({config.alwaysAllowProject.length})
-          </SubLabel>
-          <RuleList
-            rules={config.alwaysAllowProject}
-            onRemove={(tool) => onRemoveAlwaysAllow?.("project", tool)}
-            empty="没有 project 级白名单"
-          />
-        </div>
+        {showPerProject && (
+          <div>
+            <SubLabel>
+              Always allow · Per-project ({config.alwaysAllowProject.length})
+            </SubLabel>
+            <RuleList
+              rules={config.alwaysAllowProject}
+              onRemove={(tool) => onRemoveAlwaysAllow?.("project", tool)}
+              empty="没有 project 级白名单"
+            />
+          </div>
+        )}
 
         <div>
           <SubLabel>

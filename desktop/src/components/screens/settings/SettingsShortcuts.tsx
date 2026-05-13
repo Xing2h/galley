@@ -30,7 +30,6 @@ const GROUPS: ShortcutGroup[] = [
       { combo: "⌘K", action: "打开命令面板（Command Palette）" },
       { combo: "⌘N", action: "新建对话" },
       { combo: "⌘\\", action: "折叠 / 展开 Sidebar", note: "V0.1 已规划，wiring 待补" },
-      { combo: "⌘E", action: "切换 Inspector 显隐" },
       { combo: "⌘,", action: "打开 Settings" },
     ],
   },

@@ -28,6 +28,10 @@ class ReadyEvent:
     sessionId: str
     protocolVersion: str
     gaCommit: str
+    # ISO 8601 commit date from `git log -1 --format=%cI`. `"unknown"`
+    # when ga_path isn't a git checkout (tarball/zip install). Pairs
+    # with gaCommit for Settings → Runtime "GA 版本" row.
+    gaCommitDate: str
     gaPath: str
     llmName: str
     cwd: str

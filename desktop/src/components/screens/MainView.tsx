@@ -29,6 +29,10 @@ export interface MainViewProps {
   llmDisplayName: string;
   pendingApprovals?: PendingApproval[];
   approvalDecisions?: Record<string, ApprovalDecision>;
+  /** Name of the project the active session belongs to (if any).
+   * Threaded through to ToolCallout → ApprovalForm so the "Always
+   * allow in {projectName}" decision button can show context. */
+  projectName?: string;
   onSubmit?: (text: string) => void;
   onApprove?: (approvalId: string, decision: ApprovalDecision) => void;
   onAdvanceApproval?: (next: PendingApproval) => void;
@@ -82,6 +86,7 @@ export function MainView({
   llmDisplayName,
   pendingApprovals = [],
   approvalDecisions,
+  projectName,
   onSubmit,
   onApprove,
   onAdvanceApproval,
@@ -205,6 +210,7 @@ export function MainView({
             turns={turns}
             approvalDecisions={approvalDecisions}
             onApprove={onApprove}
+            projectName={projectName}
           />
           {/* In-flight pending approvals — rendered after the
               completed turns. The agent has emitted tool_call_pending
@@ -228,6 +234,7 @@ export function MainView({
                   key={p.approvalId}
                   tool={pendingToToolEvent(p)}
                   onApprove={(decision) => onApprove?.(p.approvalId, decision)}
+                  projectName={projectName}
                 />
               ))}
             </div>

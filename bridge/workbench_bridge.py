@@ -214,19 +214,32 @@ def _classify_error(message: str, category: str) -> tuple[str | None, bool]:
     return None, True
 
 
-def _resolve_ga_commit(ga_path: str) -> str:
+def _resolve_ga_commit(ga_path: str) -> tuple[str, str]:
+    """Return (commit_hash, commit_iso_date) for the GA install at ga_path.
+
+    Both default to ``"unknown"`` when ga_path is not a git checkout (e.g.
+    a tarball/zip download). Desktop renders that gracefully — Settings →
+    Runtime shows ``GA 版本: unknown`` and skips the baseline-comparison
+    row. Surfaces this in a single subprocess call when possible so the
+    `ready` event isn't slowed by two separate git invocations.
+    """
     import subprocess
 
     try:
         out = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
+            ["git", "log", "-1", "--format=%H%n%cI"],
             cwd=ga_path,
             text=True,
             stderr=subprocess.DEVNULL,
         )
-        return out.strip()
+        lines = out.strip().splitlines()
+        if len(lines) >= 2:
+            return lines[0].strip(), lines[1].strip()
+        if len(lines) == 1:
+            return lines[0].strip(), "unknown"
+        return "unknown", "unknown"
     except Exception:
-        return "unknown"
+        return "unknown", "unknown"
 
 
 # ---------------- Pending approval ----------------
@@ -376,11 +389,13 @@ class Bridge:
     # ---------------- Event emission ----------------
 
     def _emit_ready(self) -> None:
+        ga_commit, ga_commit_date = _resolve_ga_commit(self.ga_path)
         self._emit(
             ReadyEvent(
                 sessionId=self.session_id,
                 protocolVersion=PROTOCOL_VERSION,
-                gaCommit=_resolve_ga_commit(self.ga_path),
+                gaCommit=ga_commit,
+                gaCommitDate=ga_commit_date,
                 gaPath=self.ga_path,
                 llmName=self.agent.get_llm_name(),
                 cwd=os.getcwd(),

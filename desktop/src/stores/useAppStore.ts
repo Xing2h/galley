@@ -7,12 +7,16 @@ import {
   spawnBridge as spawnBridgeProcess,
 } from "@/lib/bridge";
 import {
+  backfillFtsIfEmpty,
   deleteDemoSessions,
   deleteEmptyNewSessions,
+  deleteProject as deleteProjectFromDB,
   deleteSession as deleteSessionFromDB,
   getPref,
   loadMessagesBySession,
+  loadProjects,
   loadSessions,
+  persistProject,
   persistSession,
   persistToolEventApprovalDecision,
   persistUserMessage,
@@ -22,7 +26,6 @@ import { dispatchIPCEvent } from "@/lib/ipc-handlers";
 import { deriveSessionStatus } from "@/lib/sessions";
 import {
   DEMO_APPROVAL_CONFIG,
-  DEMO_APPROVAL_RECORDS,
   DEMO_GA_CONFIG,
   DEMO_LLM_DISPLAY_NAME,
   DEMO_LLMS,
@@ -38,9 +41,9 @@ import type {
   UserTurn,
 } from "@/types/conversation";
 import type { MessageRow } from "@/types/db";
-import type { ApprovalRecord, RuntimeInfo } from "@/types/inspector";
+import type { RuntimeInfo } from "@/types/inspector";
 import type { ApprovalDecision, IPCCommand } from "@/types/ipc";
-import type { Session } from "@/types/session";
+import type { Project, Session } from "@/types/session";
 
 /**
  * Multi-session bridge subprocess map (V0.1 #10b N-active model).
@@ -387,11 +390,26 @@ interface State {
   screen: Screen;
   paletteOpen: boolean;
   settingsOpen: boolean;
-  inspectorVisible: boolean;
 
   // ---- Sessions ----
   sessions: Session[];
   activeSessionId: string | undefined;
+  /**
+   * Projects: user-defined drawers for grouping sessions, optionally
+   * with a bound `rootPath` that gets injected as the GA bridge's cwd
+   * when a session in this project spawns. Hydrated from SQLite once
+   * on startup; mutations persist via best-effort writes (same pattern
+   * as sessions). Per PRD §7.3, Projects are pure 归类 — never alter
+   * GA's agent behavior.
+   */
+  projects: Project[];
+  /**
+   * When set, the Sidebar filters to show only sessions assigned to
+   * this project (plus the "Showing: ProjectName ×" banner). Not
+   * persisted across launches — fresh start = global view, fewer
+   * "where did my recents go?" moments.
+   */
+  activeProjectFilter: string | undefined;
   /**
    * Projection of `_runtimes[activeSessionId].llms` — see SessionRuntime
    * for the rationale (LLM list is per-bridge in N-active).
@@ -421,7 +439,6 @@ interface State {
   };
 
   approvalConfig: ApprovalConfig;
-  approvalRecords: ApprovalRecord[];
   /**
    * YOLO mode (PRD §11.5). When true, every tool dispatch on every
    * alive bridge bypasses the approval gate. Persisted to prefs
@@ -480,8 +497,6 @@ interface Actions {
   togglePalette: () => void;
   setSettingsOpen: (o: boolean) => void;
   toggleSettings: () => void;
-  setInspectorVisible: (v: boolean) => void;
-  toggleInspector: () => void;
 
   // Sessions
   setActiveSession: (id: string | undefined) => void;
@@ -493,7 +508,11 @@ interface Actions {
    * exceeds 10 — the architecture supports more, but the UX scales
    * poorly past that and the LLM-API budget grows linearly.
    */
-  createSession: () => string;
+  /** Create a session row + activate it. Optional `projectId` ties
+   * the session to a project at birth — used when "+ New Chat" fires
+   * while the sidebar is in project-filter mode, so the new chat
+   * inherits the same drawer (and, in Phase 4, the project's cwd). */
+  createSession: (projectId?: string) => string;
   /**
    * Make `id` the active session and ensure its bridge is alive.
    * Idempotent — if a connected bridge already exists for `id`,
@@ -545,6 +564,15 @@ interface Actions {
   /** Reverse archiveSession: status back to "idle" + persist. */
   unarchiveSession: (sessionId: string) => void;
   /**
+   * Toggle the `pinned` flag on a session. Pinned sessions move to
+   * the Sidebar's Pinned bucket regardless of date — the user's
+   * escape valve for "this isn't recent but I still need it visible".
+   * Persisted to SQLite (column `pinned`) so the pin survives
+   * restart. No-op for archived sessions (they're not in the
+   * bucketed list anyway).
+   */
+  togglePinSession: (sessionId: string) => void;
+  /**
    * Permanently delete an archived session. Cascades to its
    * `messages` and `tool_events` rows via the SQLite FK ON DELETE
    * CASCADE clause (001_init.sql). Destructive — UI must confirm
@@ -556,6 +584,47 @@ interface Actions {
    * alive bridge for the session id (very rare; defensive).
    */
   deleteSessionPermanently: (sessionId: string) => Promise<void>;
+  /**
+   * Bulk variants for multi-select operations in EarlierDialog and
+   * ArchivedDialog. Each batches the in-memory state update into a
+   * single `set(...)` call so a 50-row archive doesn't trigger 50
+   * cascading re-renders, and dispatches all SQLite writes in
+   * parallel (the connection is async but cheap; serialization
+   * isn't needed). Single-row paths above stay untouched — they
+   * carry richer side-effects like the post-archive toast that
+   * doesn't translate cleanly to bulk.
+   */
+  archiveSessionsBulk: (sessionIds: string[]) => void;
+  unarchiveSessionsBulk: (sessionIds: string[]) => void;
+  deleteSessionsPermanentlyBulk: (sessionIds: string[]) => Promise<void>;
+
+  // ---- Projects ----
+  /**
+   * Create a new project. Returns the persisted Project so the UI
+   * (CreateProjectDialog) can optimistically navigate / select it.
+   * rootPath is optional; when set, sessions assigned to this project
+   * spawn their GA bridge with that cwd.
+   */
+  createProject: (input: { name: string; rootPath?: string }) => Promise<Project>;
+  /** Rename / re-bind rootPath / toggle pin via a partial update. */
+  updateProject: (
+    id: string,
+    partial: Partial<Pick<Project, "name" | "rootPath" | "pinned">>,
+  ) => Promise<void>;
+  /** Permanent delete; sessions auto-unassigned via FK SET NULL. */
+  deleteProject: (id: string) => Promise<void>;
+  /**
+   * Assign a session to a project (or pass `null` to unassign).
+   * Updates the session row + emits a toast on rootPath-bound moves
+   * so the user knows the cwd change applies on next bridge spawn,
+   * not immediately (Q1 option c from the design doc).
+   */
+  assignSessionToProject: (
+    sessionId: string,
+    projectId: string | null,
+  ) => Promise<void>;
+  /** Enter / exit filter mode. `undefined` clears the filter. */
+  setActiveProjectFilter: (projectId: string | undefined) => void;
   /**
    * Permanently delete every archived session. Destructive — UI
    * must double-confirm (checkbox + destructive button) before
@@ -647,6 +716,16 @@ interface Actions {
 
   // Persistence
   hydrateFromDB: () => Promise<void>;
+
+  /**
+   * DEV-only: seed a batch of mock sessions across all sidebar
+   * buckets (pinned / today / week / earlier) so the developer can
+   * dogfood the Earlier-fold + Pin/Unpin flow without waiting for
+   * real sessions to age. Each mock session is persisted to SQLite
+   * with id prefix `mock-` so it survives reload; calling repeatedly
+   * appends fresh batches (does not de-duplicate).
+   */
+  seedMockSessions: () => Promise<void>;
 }
 
 export type AppStore = State & Actions;
@@ -773,15 +852,142 @@ function projectionFrom(rt: SessionRuntime): {
  * The initial state is seeded with demo fixtures so the dev build
  * has something to render before bridge is connected.
  */
+
+// ---------------- Mock session builder (dev only) ----------------
+
+const MOCK_TITLES_TODAY = [
+  "重构 IPC 协议的 dataclass 验证",
+  "调研 Tauri v2 plugin-shell sidecar",
+  "整理本周设计评审纪要",
+];
+const MOCK_TITLES_WEEK = [
+  "修复 turn_end summary 偶尔丢失",
+  "shadcn Command 组件样式对齐",
+  "Sidebar 状态机的三态可视化",
+  "Bridge LRU 5 alive 行为验证",
+];
+const MOCK_TITLES_EARLIER = [
+  "Tauri vs Electron 调研结论",
+  "DESIGN.md v0.2 token 表定稿",
+  "SQLite FTS5 中文分词调研",
+  "PRD §11 审批模型补完",
+  "Stage 2 desktop skeleton 完成总结",
+  "Onboarding fs.exists health check",
+  "TopBar drag region 与 traffic light 冲突",
+  "ApprovalDock 二段确认的交互草稿",
+  "Composer auto-grow 行高计算",
+  "Sidebar bucket grouping 时区边界 bug",
+  "GA agent._turn_end_hooks 兼容测试",
+  "Inspector 面板的 tool event 时序",
+  "Settings → Approval tab 信息架构",
+  "Error Card 四种 hint 变体定稿",
+  "macOS DMG 公证流程笔记",
+];
+const MOCK_TITLES_PINNED = [
+  "GA 0.4 升级 baseline 评估",
+  "V0.2 路线图（Pin / Project / Search）",
+];
+
+const MOCK_SUMMARIES = [
+  "GA 同意按方案 B 推进",
+  "拆成 4 个独立 PR",
+  "结论是先做 trigram 兜底",
+  "等用户回 spec 后再继续",
+  "已落 commit 9c3aa1f",
+  "切到下一个 session 处理",
+  "需要补一个 e2e case",
+  "讨论后决定先不做",
+];
+
+const MOCK_STATUSES: Array<Session["status"]> = [
+  "idle",
+  "idle",
+  "idle",
+  "idle",
+  "completed",
+  "completed",
+  "error",
+];
+
+let mockBatchCounter = 0;
+
+function buildMockSessions(): Session[] {
+  const batchId = ++mockBatchCounter;
+  const now = Date.now();
+  const day = 86_400_000;
+  let titleCursor = 0;
+  let summaryCursor = 0;
+  let statusCursor = 0;
+  let idCursor = 0;
+  const make = (
+    titlePool: string[],
+    activityAtMs: number,
+    overrides: Partial<Session> = {},
+  ): Session => {
+    const title = titlePool[titleCursor++ % titlePool.length]!;
+    const summary = MOCK_SUMMARIES[summaryCursor++ % MOCK_SUMMARIES.length];
+    const status =
+      overrides.status ??
+      MOCK_STATUSES[statusCursor++ % MOCK_STATUSES.length]!;
+    const iso = new Date(activityAtMs).toISOString();
+    const id = `mock-${batchId}-${++idCursor}`;
+    return {
+      id,
+      title,
+      status,
+      summary,
+      turnCount: 2 + ((idCursor * 7) % 12),
+      pendingApprovalCount: status === "waiting_approval" ? 1 : 0,
+      errorCount: status === "error" ? 1 : 0,
+      lastActivityAt: iso,
+      createdAt: iso,
+      updatedAt: iso,
+      ...overrides,
+    };
+  };
+
+  const out: Session[] = [];
+  // Pinned: 2 rows (dates don't matter, pinned wins)
+  MOCK_TITLES_PINNED.forEach((_, i) =>
+    out.push(
+      make(MOCK_TITLES_PINNED, now - (5 + i * 3) * day, {
+        pinned: true,
+        status: "idle",
+      }),
+    ),
+  );
+  // Today: 3 rows, mix one running + one waiting_approval for icon variety
+  out.push(make(MOCK_TITLES_TODAY, now - 30 * 60_000, { status: "running" }));
+  out.push(
+    make(MOCK_TITLES_TODAY, now - 2 * 3_600_000, {
+      status: "waiting_approval",
+    }),
+  );
+  out.push(make(MOCK_TITLES_TODAY, now - 5 * 3_600_000, { status: "idle" }));
+  // This week: 4 rows spread across days 1-6
+  [1, 2, 4, 6].forEach((d) =>
+    out.push(make(MOCK_TITLES_WEEK, now - d * day - 2 * 3_600_000)),
+  );
+  // Earlier: 15 rows, days 8 .. ~420 (spans >1 year for realism)
+  const earlierDayOffsets = [
+    8, 11, 14, 19, 24, 32, 45, 58, 73, 95, 130, 180, 240, 330, 420,
+  ];
+  earlierDayOffsets.forEach((d) =>
+    out.push(make(MOCK_TITLES_EARLIER, now - d * day)),
+  );
+  return out;
+}
+
 export const useAppStore = create<AppStore>((set, get) => ({
   // ---- Initial state (demo fixtures) ----
   screen: "empty",
   paletteOpen: false,
   settingsOpen: false,
-  inspectorVisible: true,
 
   sessions: DEMO_SESSIONS,
   activeSessionId: undefined,
+  projects: [],
+  activeProjectFilter: undefined,
   // llms / llmDisplayName are populated by the trailing
   // `...projectionFrom(emptyRuntime())` spread below — emptyRuntime
   // seeds DEMO_LLMS / DEMO_LLM_DISPLAY_NAME so Composer renders a
@@ -791,7 +997,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   gaConfig: DEMO_GA_CONFIG,
 
   approvalConfig: DEMO_APPROVAL_CONFIG,
-  approvalRecords: DEMO_APPROVAL_RECORDS,
   yoloMode: false,
 
   toasts: [],
@@ -808,8 +1013,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   togglePalette: () => set({ paletteOpen: !get().paletteOpen }),
   setSettingsOpen: (o) => set({ settingsOpen: o }),
   toggleSettings: () => set({ settingsOpen: !get().settingsOpen }),
-  setInspectorVisible: (v) => set({ inspectorVisible: v }),
-  toggleInspector: () => set({ inspectorVisible: !get().inspectorVisible }),
 
   // ---- Sessions actions ----
   setActiveSession: (id) => {
@@ -870,7 +1073,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  createSession: () => {
+  createSession: (projectId) => {
     const id = `s-${Date.now().toString(36)}-${Math.random()
       .toString(36)
       .slice(2, 6)}`;
@@ -879,6 +1082,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       id,
       title: DEFAULT_NEW_SESSION_TITLE,
       status: "idle",
+      // Inherit project assignment at birth when caller passes it
+      // (Sidebar "+ New Chat" while in filter mode, or EmptyState
+      // composer submit). The session row carries the projectId from
+      // the start, so subsequent bridge spawn picks up the
+      // project's rootPath as cwd (Phase 4).
+      projectId: projectId,
       pendingApprovalCount: 0,
       errorCount: 0,
       lastActivityAt: now,
@@ -998,9 +1207,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       rtAfter.bridgeStatus === "closed" ||
       rtAfter.bridgeStatus === "error";
     if (needsSpawn) {
+      // Project cwd binding (the "wow" moment): if this session
+      // belongs to a project with a rootPath, the bridge spawns
+      // with that as its working directory — GA's file_read /
+      // file_write / code_run tools then operate against the
+      // project folder by default, mirroring Cursor's "workspace =
+      // folder" feel. If the session has no project, or the
+      // project has no rootPath, the bridge's own default cwd
+      // (gaConfig.bridgeCwd) applies via the existing fallback in
+      // workbench_bridge._setup_ga.
+      const session = get().sessions.find((s) => s.id === id);
+      const project = session?.projectId
+        ? get().projects.find((p) => p.id === session.projectId)
+        : undefined;
       await get().spawnBridge({
         ...get().gaConfig,
         sessionId: id,
+        cwd: project?.rootPath ?? undefined,
       });
     } else {
       // Already alive — mark as most-recently-used so the LRU
@@ -1066,6 +1289,269 @@ export const useAppStore = create<AppStore>((set, get) => ({
         console.debug("[store] unarchiveSession persistSession failed.", e);
       });
     }
+  },
+
+  togglePinSession: (sessionId) => {
+    const now = new Date().toISOString();
+    let updated: Session | null = null;
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s;
+        if (s.status === "archived") return s;
+        updated = { ...s, pinned: !s.pinned, updatedAt: now };
+        return updated;
+      }),
+    }));
+    if (updated) {
+      void persistSession(updated).catch((e) => {
+        console.debug("[store] togglePinSession persistSession failed.", e);
+      });
+    }
+  },
+
+  // ---- Projects ----
+
+  createProject: async ({ name, rootPath }) => {
+    const now = new Date().toISOString();
+    const id = `proj_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const next: Project = {
+      id,
+      name: name.trim(),
+      rootPath: rootPath?.trim() || undefined,
+      pinned: false,
+      lastActivityAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+    set((state) => ({ projects: [next, ...state.projects] }));
+    try {
+      await persistProject(next);
+    } catch (e) {
+      console.debug("[store] createProject persistProject failed.", e);
+    }
+    return next;
+  },
+
+  updateProject: async (id, partial) => {
+    const now = new Date().toISOString();
+    let updated: Project | null = null;
+    set((state) => ({
+      projects: state.projects.map((p) => {
+        if (p.id !== id) return p;
+        updated = {
+          ...p,
+          ...partial,
+          // Normalise empty rootPath to undefined so the cwd-injection
+          // path can rely on `rootPath ? rootPath : defaultBridgeCwd`.
+          rootPath:
+            partial.rootPath !== undefined
+              ? partial.rootPath?.trim() || undefined
+              : p.rootPath,
+          name: partial.name !== undefined ? partial.name.trim() : p.name,
+          updatedAt: now,
+        };
+        return updated;
+      }),
+    }));
+    if (updated) {
+      try {
+        await persistProject(updated);
+      } catch (e) {
+        console.debug("[store] updateProject persistProject failed.", e);
+      }
+    }
+  },
+
+  deleteProject: async (id) => {
+    // FK `ON DELETE SET NULL` on sessions.project_id auto-unassigns
+    // any rows that pointed here — sessions stay, just lose their
+    // project. We mirror that in memory so the sidebar doesn't show
+    // ghost assignments after the row is gone.
+    set((state) => ({
+      projects: state.projects.filter((p) => p.id !== id),
+      sessions: state.sessions.map((s) =>
+        s.projectId === id ? { ...s, projectId: undefined } : s,
+      ),
+      activeProjectFilter:
+        state.activeProjectFilter === id ? undefined : state.activeProjectFilter,
+    }));
+    try {
+      await deleteProjectFromDB(id);
+    } catch (e) {
+      console.debug("[store] deleteProject DB failed.", e);
+    }
+  },
+
+  assignSessionToProject: async (sessionId, projectId) => {
+    const now = new Date().toISOString();
+    let updated: Session | null = null;
+    let toastTitle: string | null = null;
+    set((state) => {
+      const target = projectId
+        ? state.projects.find((p) => p.id === projectId)
+        : null;
+      // Only fire the toast when the move actually changes the bound
+      // cwd from the session's perspective — moving into a project
+      // with no rootPath, or unassigning from a no-rootPath project,
+      // is a no-op for the bridge.
+      const sessions = state.sessions.map((s) => {
+        if (s.id !== sessionId) return s;
+        if (target && target.rootPath) {
+          toastTitle = `下次启动该 session 时会用 ${target.name} 的目录`;
+        }
+        updated = {
+          ...s,
+          projectId: projectId ?? undefined,
+          updatedAt: now,
+        };
+        return updated;
+      });
+      return { sessions };
+    });
+    if (updated) {
+      try {
+        await persistSession(updated);
+      } catch (e) {
+        console.debug("[store] assignSessionToProject persistSession failed.", e);
+      }
+    }
+    if (toastTitle) {
+      get().pushToast(
+        makeAppError({
+          category: "business",
+          severity: "info",
+          title: toastTitle,
+          message: "",
+          hint: null,
+          retryable: false,
+          context: "assignSessionToProject",
+          traceback: null,
+        }),
+      );
+    }
+  },
+
+  setActiveProjectFilter: (projectId) =>
+    set({ activeProjectFilter: projectId }),
+
+  // ---- Bulk variants (multi-select in EarlierDialog / ArchivedDialog) ----
+  //
+  // Each one does the in-memory update in a single `set` so the
+  // sidebar doesn't re-render N times when the user archives a big
+  // batch, then persists each row to SQLite in parallel. Toast
+  // feedback for archive uses a single rolled-up message rather
+  // than N individual ones.
+
+  archiveSessionsBulk: (sessionIds) => {
+    if (sessionIds.length === 0) return;
+    const now = new Date().toISOString();
+    const idSet = new Set(sessionIds);
+    const updatedRows: Session[] = [];
+    set((state) => {
+      const sessions = state.sessions.map((s) => {
+        if (!idSet.has(s.id)) return s;
+        if (s.status === "archived") return s;
+        const next: Session = { ...s, status: "archived", updatedAt: now };
+        updatedRows.push(next);
+        return next;
+      });
+      const activeSessionId =
+        state.activeSessionId && idSet.has(state.activeSessionId)
+          ? undefined
+          : state.activeSessionId;
+      return { sessions, activeSessionId };
+    });
+    void Promise.all(
+      updatedRows.map((s) =>
+        persistSession(s).catch((e) => {
+          console.debug(
+            `[store] archiveSessionsBulk persistSession failed for ${s.id}.`,
+            e,
+          );
+        }),
+      ),
+    );
+    if (updatedRows.length > 0) {
+      get().pushToast(
+        makeAppError({
+          category: "business",
+          severity: "info",
+          title: `已归档 ${updatedRows.length} 个对话`,
+          message: "",
+          hint: null,
+          retryable: false,
+          context: "archiveSessionsBulk",
+          traceback: null,
+        }),
+      );
+    }
+  },
+
+  unarchiveSessionsBulk: (sessionIds) => {
+    if (sessionIds.length === 0) return;
+    const now = new Date().toISOString();
+    const idSet = new Set(sessionIds);
+    const updatedRows: Session[] = [];
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (!idSet.has(s.id)) return s;
+        if (s.status !== "archived") return s;
+        const next: Session = { ...s, status: "idle", updatedAt: now };
+        updatedRows.push(next);
+        return next;
+      }),
+    }));
+    void Promise.all(
+      updatedRows.map((s) =>
+        persistSession(s).catch((e) => {
+          console.debug(
+            `[store] unarchiveSessionsBulk persistSession failed for ${s.id}.`,
+            e,
+          );
+        }),
+      ),
+    );
+  },
+
+  deleteSessionsPermanentlyBulk: async (sessionIds) => {
+    if (sessionIds.length === 0) return;
+    // Defensive bridge teardown for each — the same guard the
+    // single-row path does. Done sequentially with awaits so we
+    // don't fire N parallel shutdowns racing the same process tree.
+    for (const id of sessionIds) {
+      if (getBridgeClient(id)) {
+        try {
+          await useAppStore.getState().shutdownBridge(id);
+        } catch (e) {
+          console.warn(
+            `[store] deleteSessionsPermanentlyBulk shutdownBridge failed for ${id}.`,
+            e,
+          );
+        }
+      }
+    }
+    const idSet = new Set(sessionIds);
+    set((state) => {
+      const sessions = state.sessions.filter((s) => !idSet.has(s.id));
+      const _runtimes = { ...state._runtimes };
+      for (const id of sessionIds) delete _runtimes[id];
+      const out: Partial<typeof state> = { sessions, _runtimes };
+      if (state.activeSessionId && idSet.has(state.activeSessionId)) {
+        out.activeSessionId = undefined;
+        Object.assign(out, projectionFrom(emptyRuntime()));
+      }
+      return out;
+    });
+    await Promise.all(
+      sessionIds.map((id) =>
+        deleteSessionFromDB(id).catch((e) => {
+          console.warn(
+            `[store] deleteSessionsPermanentlyBulk SQLite delete failed for ${id}.`,
+            e,
+          );
+        }),
+      ),
+    );
   },
 
   deleteSessionPermanently: async (sessionId) => {
@@ -1651,6 +2137,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // hydrate resolves; if the user has zero real sessions, the
       // sidebar shows its empty-state hint and prompts a "New chat".
       set({ sessions });
+      // Projects hydrate alongside sessions — they're the drawers
+      // sessions can live in, so loading them in the same pass keeps
+      // the sidebar render path consistent (no half-state where
+      // sessions reference projectIds that aren't in memory yet).
+      try {
+        const projects = await loadProjects();
+        set({ projects });
+      } catch (e) {
+        console.debug("[store] hydrateFromDB: loadProjects failed.", e);
+      }
+      // One-time backfill of the FTS index for users upgrading
+      // past the 004 migration. Idempotent — returns immediately
+      // when the index is already in sync.
+      try {
+        const indexed = await backfillFtsIfEmpty();
+        if (indexed > 0) {
+          console.info(
+            `[store] hydrateFromDB: backfilled ${indexed} message(s) into messages_fts.`,
+          );
+        }
+      } catch (e) {
+        console.debug("[store] hydrateFromDB: backfillFtsIfEmpty failed.", e);
+      }
     } catch (e) {
       // Non-Tauri context (Vite dev) or migration not yet applied.
       console.warn(
@@ -1709,6 +2218,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (e) {
       console.warn("[store] hydrateFromDB: ga_config pref load failed.", e);
     }
+  },
+
+  seedMockSessions: async () => {
+    const batch = buildMockSessions();
+    set((state) => ({ sessions: [...batch, ...state.sessions] }));
+    // Persist sequentially — the batch is small (~20 rows) and
+    // SQLite writes are fast; parallel awaits would just race on
+    // the same connection.
+    for (const s of batch) {
+      try {
+        await persistSession(s);
+      } catch (e) {
+        console.debug("[store] seedMockSessions persistSession failed.", e);
+      }
+    }
+    console.info(`[store] seedMockSessions: inserted ${batch.length} rows.`);
   },
 }));
 

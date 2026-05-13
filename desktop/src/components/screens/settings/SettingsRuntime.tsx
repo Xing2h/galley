@@ -1,6 +1,12 @@
-import { ArrowsClockwise, FolderOpen } from "@phosphor-icons/react";
+import {
+  ArrowsClockwise,
+  CheckCircle,
+  FolderOpen,
+  Info,
+} from "@phosphor-icons/react";
 
 import { HealthCheckCard } from "@/components/health-check/HealthCheckCard";
+import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
 
 interface SettingsRuntimeProps {
@@ -51,6 +57,12 @@ export function SettingsRuntime({
         hint="使用 PATH 中的 python3 · 自定义路径需编辑 capabilities/default.json"
       />
 
+      <GAVersionCard
+        gaCommit={info.gaCommit}
+        gaCommitDate={info.gaCommitDate}
+        gaBaseline={info.gaBaseline}
+      />
+
       <div>
         <SubLabel>Health Check</SubLabel>
         <div className="mt-2">
@@ -71,11 +83,100 @@ export function SettingsRuntime({
       </div>
 
       <div className="border-t border-line pt-4 font-mono text-[11px] text-ink-muted">
-        GA baseline: {info.gaBaseline.slice(0, 7)} · Workbench v
-        {info.workbenchVersion}
+        Workbench v{info.workbenchVersion}
       </div>
     </div>
   );
+}
+
+// ---------------- GA Version ----------------
+
+/**
+ * "GA Version" card — surfaces what GA commit the user is actually
+ * running (gaCommit / gaCommitDate from the ReadyEvent) alongside the
+ * workbench-tested baseline. Per the 2026-05-12 product decision:
+ * users drive GA's upgrade cadence via `git pull` on their local
+ * GenericAgent repo. This row makes the version legible without
+ * pretending to police it — no auto-update, no "outdated" badge.
+ *
+ * Match states:
+ *   - Equal commits      → green check ✓ "已对齐 baseline"
+ *   - Different commits  → muted info dot "你已自行升级"
+ *   - "unknown" commit   → no comparison row (ga_path isn't a git
+ *                          checkout — tarball/zip install)
+ */
+function GAVersionCard({
+  gaCommit,
+  gaCommitDate,
+  gaBaseline,
+}: {
+  gaCommit: string;
+  gaCommitDate: string;
+  gaBaseline: string;
+}) {
+  const isUnknown = gaCommit === "unknown" || gaCommit === "";
+  const isMatched = !isUnknown && gaCommit === gaBaseline;
+  const currentShort = isUnknown ? "unknown" : gaCommit.slice(0, 7);
+  const baselineShort = gaBaseline.slice(0, 7);
+  const currentDate = formatCommitDate(gaCommitDate);
+
+  return (
+    <div>
+      <SubLabel>GA Version</SubLabel>
+      <div className="mt-2 rounded-sm border border-line bg-surface px-3 py-2.5">
+        <div className="flex items-center gap-2 font-mono text-[12.5px] text-ink">
+          <span className="text-ink-muted">当前</span>
+          <span>{currentShort}</span>
+          {currentDate && (
+            <span className="text-ink-muted">· {currentDate}</span>
+          )}
+        </div>
+        {!isUnknown && (
+          <div className="mt-1 flex items-center gap-2 font-mono text-[12px] text-ink-soft">
+            <span className="text-ink-muted">Baseline</span>
+            <span>{baselineShort}</span>
+            <span
+              className={cn(
+                "ml-1 inline-flex items-center gap-1 rounded-sm px-1.5 py-px text-[11px] not-italic",
+                isMatched
+                  ? "bg-success/10 text-success"
+                  : "bg-hover text-ink-muted",
+              )}
+            >
+              {isMatched ? (
+                <>
+                  <CheckCircle size={11} weight="fill" />
+                  已对齐
+                </>
+              ) : (
+                <>
+                  <Info size={11} weight="bold" />
+                  你已自行升级
+                </>
+              )}
+            </span>
+          </div>
+        )}
+      </div>
+      <p className="mt-2 text-[11.5px] leading-[1.55] text-ink-muted">
+        新 commit 可能引入兼容问题，bridge 启动体检会报告。
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Extract YYYY-MM-DD from the commit's own ISO timestamp without
+ * routing through `new Date()` — that would convert to the viewer's
+ * local timezone and silently shift a commit authored late at +08 to
+ * "yesterday" for a PST viewer. The commit is a single artifact with
+ * one authored date; we display it as the author wrote it, matching
+ * what `git log` shows.
+ */
+function formatCommitDate(iso: string): string {
+  if (!iso || iso === "unknown") return "";
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
 }
 
 // ---------------- atoms ----------------

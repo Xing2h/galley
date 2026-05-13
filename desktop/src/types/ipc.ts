@@ -57,7 +57,13 @@ export interface ReadyEvent {
   kind: "ready";
   sessionId: string;
   protocolVersion: string;
+  /** Full SHA-1 hash from `git rev-parse HEAD` of the user's GA repo.
+   * `"unknown"` when ga_path isn't a git checkout. */
   gaCommit: string;
+  /** ISO 8601 commit date of the GA HEAD. `"unknown"` when not a git
+   * checkout. Pairs with gaCommit for the Settings → Runtime version
+   * row + baseline comparison. */
+  gaCommitDate: string;
   gaPath: string;
   llmName: string;
   cwd: string;

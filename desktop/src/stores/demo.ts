@@ -16,11 +16,7 @@ import type {
   PendingApproval,
   Turn,
 } from "@/types/conversation";
-import type {
-  ApprovalRecord,
-  InspectorSelection,
-  RuntimeInfo,
-} from "@/types/inspector";
+import type { RuntimeInfo } from "@/types/inspector";
 import type { ApprovalDecision } from "@/types/ipc";
 import type { Session } from "@/types/session";
 
@@ -62,30 +58,17 @@ export const DEMO_APPROVAL_CONFIG: ApprovalConfig = {
   alwaysAllowGlobal: [],
 };
 
-export const DEMO_APPROVAL_RECORDS: ApprovalRecord[] = [
-  {
-    approvalId: "appr_demo_t1",
-    toolName: "file_read",
-    target: "desktop/src/db/migrations/",
-    decision: "auto_allowed",
-    decidedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
-  },
-  {
-    approvalId: "appr_demo_t2",
-    toolName: "file_read",
-    target: "docs/PRD.md",
-    decision: "auto_allowed",
-    decidedAt: new Date(Date.now() - 90_000).toISOString(),
-  },
-];
-
 export const DEMO_RUNTIME_INFO: RuntimeInfo = {
   gaPath: "~/Documents/GenericAgent",
   pythonVersion: "3.11.9 (system)",
   llmDisplayName: DEMO_LLM_DISPLAY_NAME,
   bridgePid: 48213,
-  cwd: "~/Code/ga-workbench",
-  gaBaseline: "6a3eecc07eb7dbdde823c0095842c829925e3e64",
+  gaCommit: "cf6551516fcc836f21dcdad592b07c703d09e1d8",
+  // Matches cf65515's actual `git log -1 --format=%cI` so the demo
+  // fixture doesn't lie before bridge connects. Bump alongside the
+  // baseline pin in CLAUDE.md whenever the baseline moves.
+  gaCommitDate: "2026-05-12T12:59:30+08:00",
+  gaBaseline: "cf6551516fcc836f21dcdad592b07c703d09e1d8",
   workbenchVersion: "0.1.0",
   healthChecks: [
     { name: "GA path", detail: "~/Documents/GenericAgent", state: "success" },
@@ -96,7 +79,7 @@ export const DEMO_RUNTIME_INFO: RuntimeInfo = {
     },
     {
       name: "agentmain.py 可 import",
-      detail: "GA baseline 6a3eecc · OK",
+      detail: "GA baseline cf65515 · OK",
       state: "success",
     },
     {
@@ -315,25 +298,6 @@ export function buildDemoPending(
       riskLevel: "medium",
     },
   ];
-}
-
-/**
- * Pick the most recent tool from the most recent agent turn as the
- * Inspector's selection, so opening the Details tab actually shows
- * something. In real life this comes from a click on a callout.
- */
-export function demoSelection(turns: Turn[]): InspectorSelection {
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const t = turns[i];
-    if (t.role === "agent" && t.tools.length > 0) {
-      return {
-        type: "tool",
-        tool: t.tools[t.tools.length - 1],
-        turnIndex: i,
-      };
-    }
-  }
-  return { type: "none" };
 }
 
 // ---------------- Toast variants ----------------

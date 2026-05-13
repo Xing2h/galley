@@ -32,6 +32,9 @@ export interface SettingsProps {
 
   runtimeInfo: RuntimeInfo;
   approval: ApprovalConfig;
+  /** Total project count — drives whether the Approval tab's
+   * "Per-project" section renders. */
+  projectCount?: number;
   /** PRD §11.5 / DESIGN.md §9 Approval. */
   yoloMode: boolean;
 
@@ -70,6 +73,7 @@ export function Settings({
   onOpenChange,
   runtimeInfo,
   approval,
+  projectCount,
   yoloMode,
   defaultTab = "runtime",
   onChangeRequiredTools,
@@ -118,6 +122,7 @@ export function Settings({
                 <SettingsApproval
                   config={approval}
                   yoloMode={yoloMode}
+                  projectCount={projectCount}
                   onChangeYoloMode={onChangeYoloMode}
                   onChangeRequiredTools={onChangeRequiredTools}
                   onRemoveAlwaysAllow={onRemoveAlwaysAllow}

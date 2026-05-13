@@ -3,6 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { useEffect, useRef, useState } from "react";
 
+import { IconTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,6 +24,13 @@ import { cn } from "@/lib/utils";
  * Always-visible (not hover-only): per dogfood feedback, hover-only
  * affordances make users hunt around. The buttons are muted enough
  * that they recede during reading and surface on intent.
+ *
+ * Icon-only (no "Copy" / "Save" text labels): text labels at the left
+ * edge of the reading column visually competed with the next
+ * paragraph — eyes parsed them as part of the prose. Matching
+ * ChatGPT/Claude's icon-only convention removes that interference
+ * while keeping affordances discoverable via tooltip + Phosphor's
+ * widely-recognised Copy / FloppyDisk glyphs.
  *
  * State machine per button: idle → done (1.5s) → idle. Two refs
  * so timers can be cleared on unmount or rapid re-clicks.
@@ -88,20 +96,20 @@ export function MessageActions({ source }: MessageActionsProps) {
   };
 
   return (
-    <div className="mt-2 flex items-center gap-2">
+    <div className="mt-1.5 flex items-center gap-0.5">
       <ActionButton
         active={copied}
-        idleIcon={<Copy size={13} weight="thin" />}
+        idleIcon={<Copy size={14} weight="thin" />}
         idleLabel="Copy"
-        activeIcon={<Check size={13} weight="bold" />}
+        activeIcon={<Check size={14} weight="bold" />}
         activeLabel="Copied"
         onClick={onCopy}
       />
       <ActionButton
         active={saved}
-        idleIcon={<FloppyDisk size={13} weight="thin" />}
+        idleIcon={<FloppyDisk size={14} weight="thin" />}
         idleLabel="Save"
-        activeIcon={<Check size={13} weight="bold" />}
+        activeIcon={<Check size={14} weight="bold" />}
         activeLabel="Saved"
         onClick={onSave}
       />
@@ -124,19 +132,30 @@ function ActionButton({
   activeLabel: string;
   onClick: () => void;
 }) {
+  // Icon-only: Radix-backed IconTooltip handles the hover label
+  // (~100ms, see main.tsx Provider). `aria-label` carries the
+  // semantic name for screen readers, and `aria-live="polite"`
+  // on a hidden span announces the post-click state change since
+  // the success feedback is purely visual (Check + tint swap).
+  const label = active ? activeLabel : idleLabel;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-sm px-1.5 py-1 text-[12px] transition-colors",
-        active
-          ? "text-success"
-          : "text-ink-muted hover:bg-hover hover:text-ink-soft",
-      )}
-    >
-      {active ? activeIcon : idleIcon}
-      <span>{active ? activeLabel : idleLabel}</span>
-    </button>
+    <IconTooltip text={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        className={cn(
+          "inline-flex size-6 items-center justify-center rounded-sm transition-colors",
+          active
+            ? "text-success"
+            : "text-ink-muted hover:bg-hover hover:text-ink-soft",
+        )}
+      >
+        {active ? activeIcon : idleIcon}
+        <span className="sr-only" aria-live="polite">
+          {label}
+        </span>
+      </button>
+    </IconTooltip>
   );
 }

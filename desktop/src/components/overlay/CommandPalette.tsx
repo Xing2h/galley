@@ -2,16 +2,18 @@ import { Command } from "cmdk";
 import {
   ArrowLeft,
   ArrowsClockwise,
+  ChatCircleText,
   Cube,
-  Eye,
   FolderOpen,
   Gear,
   MagnifyingGlass,
   Plus,
+  User,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
+import { searchMessages, type MessageSearchHit } from "@/lib/db";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
 import type { Session } from "@/types/session";
@@ -32,11 +34,11 @@ export interface CommandPaletteProps {
   llms?: LLMOption[];
 
   onNewChat?: () => void;
+  onNewProject?: () => void;
   onOpenSession?: (id: string) => void;
   onSwitchLLM?: (index: number) => void;
   onReRunHealthCheck?: () => void;
   onOpenSettings?: () => void;
-  onToggleInspector?: () => void;
   onAttachGAFolder?: () => void;
 
   /** Called when the user presses Enter on an empty/no-match palette
@@ -63,7 +65,7 @@ export interface CommandPaletteProps {
  *   - "New chat" (always first)
  *   - Recent sessions (≤8, fuzzy on title)
  *   - Actions: Switch LLM (nested submenu) / Re-run health check /
- *     Open settings / Toggle inspector / Attach GA folder
+ *     Open settings / Attach GA folder
  *
  * Deliberately excluded: cross-session full-text search, theme
  * switcher, quick prompt insertion, destructive actions. See
@@ -72,6 +74,7 @@ export interface CommandPaletteProps {
 export function CommandPalette(props: CommandPaletteProps) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState<"root" | "switch-llm">("root");
+  const [messageHits, setMessageHits] = useState<MessageSearchHit[]>([]);
 
   // Reset internal state every time the palette opens — feels less
   // surprising than persisting across opens (DESIGN.md §8: no recent-
@@ -82,9 +85,37 @@ export function CommandPalette(props: CommandPaletteProps) {
     const t = setTimeout(() => {
       setSearch("");
       setPage("root");
+      setMessageHits([]);
     }, 0);
     return () => clearTimeout(t);
   }, [props.open]);
+
+  // Debounced full-text content search via SQLite FTS5. Fires only
+  // on the root page so the LLM-switcher subpage isn't burning DB
+  // queries. The query.length < 2 guard mirrors `searchMessages`
+  // itself, but doing it here avoids touching the DB at all for
+  // tiny inputs.
+  useEffect(() => {
+    if (!props.open || page !== "root") return;
+    const q = search.trim();
+    if (q.length < 2) {
+      // Defer clearing so this effect doesn't setState synchronously
+      // (react-hooks/set-state-in-effect). Same pattern as the
+      // open-reset effect above.
+      const clear = setTimeout(() => setMessageHits([]), 0);
+      return () => clearTimeout(clear);
+    }
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      void searchMessages(q, 8).then((hits) => {
+        if (!cancelled) setMessageHits(hits);
+      });
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [search, props.open, page]);
 
   const close = () => props.onOpenChange(false);
 
@@ -119,8 +150,13 @@ export function CommandPalette(props: CommandPaletteProps) {
           <RootPage
             search={search}
             sessions={props.sessions}
+            messageHits={messageHits}
             onNewChat={() => {
               props.onNewChat?.();
+              close();
+            }}
+            onNewProject={() => {
+              props.onNewProject?.();
               close();
             }}
             onOpenSession={(id) => {
@@ -136,10 +172,6 @@ export function CommandPalette(props: CommandPaletteProps) {
             }}
             onOpenSettings={() => {
               props.onOpenSettings?.();
-              close();
-            }}
-            onToggleInspector={() => {
-              props.onToggleInspector?.();
               close();
             }}
             onAttachGAFolder={() => {
@@ -171,27 +203,29 @@ export function CommandPalette(props: CommandPaletteProps) {
 function RootPage({
   search,
   sessions,
+  messageHits,
   onNewChat,
+  onNewProject,
   onOpenSession,
   onEnterSwitchLLM,
   llmCount,
   currentLLM,
   onReRunHealthCheck,
   onOpenSettings,
-  onToggleInspector,
   onAttachGAFolder,
   onSubmitFreeText,
 }: {
   search: string;
   sessions: Session[];
+  messageHits: MessageSearchHit[];
   onNewChat: () => void;
+  onNewProject: () => void;
   onOpenSession: (id: string) => void;
   onEnterSwitchLLM: () => void;
   llmCount: number;
   currentLLM?: string;
   onReRunHealthCheck: () => void;
   onOpenSettings: () => void;
-  onToggleInspector: () => void;
   onAttachGAFolder: () => void;
   onSubmitFreeText: (text: string) => void;
 }) {
@@ -209,6 +243,12 @@ function RootPage({
       <Command.Item value="new-chat new chat 新建对话" onSelect={onNewChat}>
         <PaletteRow Icon={Plus} label="New Chat" shortcut="⌘N" />
       </Command.Item>
+      <Command.Item
+        value="new-project new project 新建 project 项目"
+        onSelect={onNewProject}
+      >
+        <PaletteRow Icon={FolderOpen} label="New Project" />
+      </Command.Item>
 
       {/* Sessions */}
       {recentSessions.map((s) => (
@@ -224,6 +264,28 @@ function RootPage({
           />
         </Command.Item>
       ))}
+
+      {/* Matches in conversations — populated only when query >= 2
+          chars. forceMount keeps cmdk's fuzzy filter from hiding
+          these (our SQL match is already authoritative). Group
+          header renders only when there's content. */}
+      {messageHits.length > 0 && (
+        <>
+          <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+            在对话内容中
+          </div>
+          {messageHits.map((h) => (
+            <Command.Item
+              key={h.messageId}
+              forceMount
+              value={`msg-hit ${h.messageId} ${search}`}
+              onSelect={() => onOpenSession(h.sessionId)}
+            >
+              <MessageHitRow hit={h} />
+            </Command.Item>
+          ))}
+        </>
+      )}
 
       {/* Actions */}
       <Command.Item
@@ -246,9 +308,6 @@ function RootPage({
       </Command.Item>
       <Command.Item value="open settings 设置" onSelect={onOpenSettings}>
         <PaletteRow Icon={Gear} label="Open settings" shortcut="⌘," />
-      </Command.Item>
-      <Command.Item value="toggle inspector" onSelect={onToggleInspector}>
-        <PaletteRow Icon={Eye} label="Toggle inspector" shortcut="⌘E" />
       </Command.Item>
       <Command.Item
         value="attach ga folder 切换 GA 路径"
@@ -327,6 +386,59 @@ function SwitchLLMPage({
             没有可用的 LLM 配置。
           </div>
         </Command.Empty>
+      )}
+    </>
+  );
+}
+
+// ---------------- Message hit row ----------------
+
+function MessageHitRow({ hit }: { hit: MessageSearchHit }) {
+  return (
+    <div className="flex w-full items-start gap-2.5">
+      <span
+        className="inline-flex shrink-0 pt-0.5 text-ink-soft"
+        title={hit.role === "user" ? "你的提问" : "Agent 回复"}
+      >
+        {hit.role === "user" ? (
+          <User size={14} weight="thin" />
+        ) : (
+          <ChatCircleText size={14} weight="thin" />
+        )}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[12.5px] text-ink-soft">
+          {hit.sessionTitle}
+        </div>
+        <div className="mt-0.5 line-clamp-2 text-[12px] leading-[1.45] text-ink">
+          <HighlightedSnippet raw={hit.snippet} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * FTS5's `snippet()` returns text with `«` / `»` delimiters around
+ * the matched fragments. Split on them and wrap matches in <mark>
+ * with a brand tint. Odd-indexed parts are hits, even-indexed are
+ * surrounding context.
+ */
+function HighlightedSnippet({ raw }: { raw: string }) {
+  const parts = raw.split(/«([^»]*)»/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <mark
+            key={i}
+            className="rounded-sm bg-brand/20 px-0.5 text-ink"
+          >
+            {p}
+          </mark>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
       )}
     </>
   );

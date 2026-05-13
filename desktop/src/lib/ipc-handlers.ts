@@ -65,6 +65,20 @@ export function dispatchIPCEvent(
         })),
       );
       s.setBridgeStatus(event.sessionId, "connected");
+      // Sync the user's actual GA HEAD into runtimeInfo so the
+      // Settings → Runtime panel shows "GA 版本: cf65515 · 2026-05-11"
+      // alongside the workbench-tested baseline. gaCommit/Date are
+      // the same across every bridge (they all run against the same
+      // ga_path), so writing on every `ready` is safe — N-active
+      // background bridges don't conflict.
+      store.setState((state) => ({
+        runtimeInfo: {
+          ...state.runtimeInfo,
+          gaCommit: event.gaCommit,
+          gaCommitDate: event.gaCommitDate,
+          bridgePid: event.pid,
+        },
+      }));
       // Sync session-scoped state to the freshly-spawned bridge.
       // YOLO mode (PRD §11.5): the bridge boots with yolo_mode=false;
       // if the user has it persisted as on, push the override now —
@@ -509,11 +523,12 @@ async function persistTurnEndToMessages(event: {
   summary: string;
 }): Promise<void> {
   try {
-    const { getDB } = await import("@/lib/db");
+    const { getDB, indexMessageFts } = await import("@/lib/db");
     const db = await getDB();
     const id = `msg_${event.sessionId}_${event.turnIndex}_assistant`;
     const createdAt = new Date().toISOString();
     const trimmedSummary = event.summary?.trim() ?? "";
+    const finalAnswer = cleanFinalAnswer(event.responseContent);
     await db.execute(
       `INSERT INTO messages (
          id, session_id, turn_index, sequence, role, content,
@@ -543,7 +558,7 @@ async function persistTurnEndToMessages(event: {
         JSON.stringify(event.toolCalls),
         JSON.stringify(event.toolResults),
         extractThinking(event.responseContent) ?? null,
-        cleanFinalAnswer(event.responseContent),
+        finalAnswer,
         // GA's third-person turn summary. NULL when empty so the
         // TurnMarker renders the bare "第 N 步" instead of an
         // empty separator.
@@ -551,6 +566,23 @@ async function persistTurnEndToMessages(event: {
         createdAt,
       ],
     );
+    // Index the markdown body for CommandPalette content search.
+    // We index `final_answer` rather than raw `content` so raw
+    // <thinking> blocks don't pollute search hits. Best-effort —
+    // a failure here shouldn't unwind the message write.
+    try {
+      if (finalAnswer && finalAnswer.trim() !== "") {
+        await indexMessageFts({
+          messageId: id,
+          sessionId: event.sessionId,
+          role: "assistant",
+          turnIndex: event.turnIndex,
+          body: finalAnswer,
+        });
+      }
+    } catch (e) {
+      console.debug("[ipc] persistTurnEndToMessages indexMessageFts failed.", e);
+    }
   } catch (e) {
     console.debug("[ipc] persistTurnEndToMessages: SQLite unavailable.", e);
   }

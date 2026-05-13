@@ -177,6 +177,18 @@ export async function loadProjects(): Promise<Project[]> {
   return rows.map(projectFromRow);
 }
 
+/**
+ * Permanently remove a project row. SQLite's FK `ON DELETE SET NULL`
+ * on `sessions.project_id` auto-unassigns any sessions that belonged
+ * to it — the sessions themselves stay (per PRD §7.3 "删除 Project
+ * 时，里面的 sessions 不删除"). Idempotent: deleting a non-existent
+ * id is a no-op.
+ */
+export async function deleteProject(id: string): Promise<void> {
+  const db = await getDB();
+  await db.execute("DELETE FROM projects WHERE id = $1", [id]);
+}
+
 export async function persistProject(p: Project): Promise<void> {
   const db = await getDB();
   await db.execute(
@@ -289,6 +301,241 @@ export async function persistUserMessage(
        created_at = excluded.created_at`,
     [id, p.sessionId, p.turnIndex, p.content, createdAt],
   );
+  // Index for CommandPalette content search. Best-effort: a failure
+  // here shouldn't roll back the user message write.
+  try {
+    await indexMessageFts({
+      messageId: id,
+      sessionId: p.sessionId,
+      role: "user",
+      turnIndex: p.turnIndex,
+      body: p.content,
+    });
+  } catch (e) {
+    console.debug("[db] persistUserMessage indexMessageFts failed.", e);
+  }
+}
+
+/**
+ * Maintain the messages_fts index for a single message. Called on
+ * every persistUserMessage / persistTurnEndToMessages write. We
+ * DELETE then INSERT (instead of using ON CONFLICT) because FTS5
+ * external-content tables don't enforce uniqueness on UNINDEXED
+ * columns; the delete/insert pair is the documented update pattern.
+ *
+ * Empty `body` is skipped (no point indexing nothing). This means
+ * tool-only assistant turns whose `final_answer` is empty don't
+ * pollute the index.
+ */
+export async function indexMessageFts(p: {
+  messageId: string;
+  sessionId: string;
+  role: "user" | "assistant";
+  turnIndex: number;
+  body: string;
+}): Promise<void> {
+  if (!p.body || p.body.trim() === "") return;
+  const db = await getDB();
+  await db.execute("DELETE FROM messages_fts WHERE message_id = $1", [
+    p.messageId,
+  ]);
+  await db.execute(
+    `INSERT INTO messages_fts (message_id, session_id, role, turn_index, body)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [p.messageId, p.sessionId, p.role, p.turnIndex, p.body],
+  );
+}
+
+/**
+ * One-time backfill of messages_fts from existing messages rows.
+ * Runs on hydrate when the FTS table is empty but `messages` has
+ * content — covers (a) fresh upgrade to the FTS migration, and
+ * (b) recovery if the index ever gets out of sync (deleted from
+ * SQLite shell, etc.).
+ *
+ * Idempotent: returns immediately if FTS row count >= eligible
+ * message count, so subsequent hydrates skip the scan.
+ *
+ * Assistant rows index `final_answer` rather than raw `content` —
+ * the markdown the user reads, not the response wrapper that
+ * contains raw <thinking> blocks (which would inflate the index
+ * with text that isn't user-facing).
+ */
+export async function backfillFtsIfEmpty(): Promise<number> {
+  const db = await getDB();
+  const [msgCnt] = await db.select<Array<{ cnt: number }>>(
+    `SELECT COUNT(*) AS cnt FROM messages
+     WHERE role IN ('user','assistant')
+       AND COALESCE(NULLIF(TRIM(CASE
+         WHEN role = 'user' THEN content
+         WHEN role = 'assistant' THEN COALESCE(final_answer, content)
+       END), ''), '') != ''`,
+  );
+  const [ftsCnt] = await db.select<Array<{ cnt: number }>>(
+    "SELECT COUNT(*) AS cnt FROM messages_fts",
+  );
+  if (ftsCnt.cnt >= msgCnt.cnt) return 0;
+  await db.execute("DELETE FROM messages_fts");
+  const result = await db.execute(
+    `INSERT INTO messages_fts (message_id, session_id, role, turn_index, body)
+     SELECT
+       id,
+       session_id,
+       role,
+       turn_index,
+       CASE
+         WHEN role = 'user' THEN content
+         WHEN role = 'assistant' THEN COALESCE(final_answer, content)
+       END AS body
+     FROM messages
+     WHERE role IN ('user','assistant')
+       AND COALESCE(NULLIF(TRIM(CASE
+         WHEN role = 'user' THEN content
+         WHEN role = 'assistant' THEN COALESCE(final_answer, content)
+       END), ''), '') != ''`,
+  );
+  return result.rowsAffected ?? 0;
+}
+
+/**
+ * Message hit returned by `searchMessages`. Snippet markers `«` /
+ * `»` come from SQLite FTS5's `snippet()` function and wrap the
+ * matched substring(s); the renderer splits on these to overlay
+ * <mark> tags.
+ */
+export interface MessageSearchHit {
+  messageId: string;
+  sessionId: string;
+  sessionTitle: string;
+  role: "user" | "assistant";
+  turnIndex: number;
+  /** Snippet with `«` / `»` delimiters around match windows. */
+  snippet: string;
+  /** Session's last activity, used for ordering and rendering. */
+  sessionActivityAt: string;
+}
+
+/**
+ * Full-text search across persisted message bodies. Two paths:
+ *
+ *   - query.length >= 3 → FTS5 MATCH with trigram tokenizer. Fast
+ *     even on tens of thousands of rows; supports CJK + ASCII
+ *     uniformly.
+ *   - query.length === 2 → LIKE substring fallback. Trigram can't
+ *     match 2-char queries, but they're common in Chinese ("审批",
+ *     "调研"). LIKE is slower (full table scan) but acceptable for
+ *     V1 message volumes.
+ *   - query.length < 2 → returns [] (no implicit broad scan).
+ *
+ * Results JOIN sessions for the title + recency ordering. Hits are
+ * deduped at the message level — one message produces one hit even
+ * if its body matches multiple times.
+ */
+export async function searchMessages(
+  query: string,
+  limit = 20,
+): Promise<MessageSearchHit[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const db = await getDB();
+
+  if (q.length >= 3) {
+    // Wrap as an FTS5 phrase. Escape embedded double-quotes by
+    // doubling them per SQLite's standard escape rule.
+    const escaped = `"${q.replace(/"/g, '""')}"`;
+    try {
+      const rows = await db.select<RawHitRow[]>(
+        `SELECT
+           fts.message_id    AS message_id,
+           fts.session_id    AS session_id,
+           fts.role          AS role,
+           fts.turn_index    AS turn_index,
+           snippet(messages_fts, 4, '«', '»', '…', 16) AS snippet,
+           s.title           AS session_title,
+           s.last_activity_at AS session_activity_at
+         FROM messages_fts fts
+         JOIN sessions s ON s.id = fts.session_id
+         WHERE messages_fts MATCH $1
+           AND s.status != 'archived'
+         ORDER BY s.last_activity_at DESC
+         LIMIT $2`,
+        [escaped, limit],
+      );
+      return rows.map(rowToHit);
+    } catch (e) {
+      // FTS5 MATCH can throw on malformed input (rare with our
+      // phrase wrapping but possible with weird unicode). Fall
+      // through to LIKE so the search still returns something.
+      console.debug("[db] searchMessages FTS5 query failed.", e);
+    }
+  }
+
+  // 2-char fallback (or FTS error recovery) — LIKE substring.
+  const like = `%${q.replace(/[\\%_]/g, "\\$&")}%`;
+  const rows = await db.select<RawHitRow[]>(
+    `SELECT
+       m.id              AS message_id,
+       m.session_id      AS session_id,
+       m.role            AS role,
+       m.turn_index      AS turn_index,
+       substr(
+         CASE
+           WHEN m.role = 'user' THEN m.content
+           WHEN m.role = 'assistant' THEN COALESCE(m.final_answer, m.content)
+         END,
+         1, 200
+       )                 AS snippet,
+       s.title           AS session_title,
+       s.last_activity_at AS session_activity_at
+     FROM messages m
+     JOIN sessions s ON s.id = m.session_id
+     WHERE m.role IN ('user','assistant')
+       AND s.status != 'archived'
+       AND (
+         m.content LIKE $1 ESCAPE '\\'
+         OR m.final_answer LIKE $1 ESCAPE '\\'
+       )
+     ORDER BY s.last_activity_at DESC
+     LIMIT $2`,
+    [like, limit],
+  );
+  return rows.map((r) => rowToHit({ ...r, snippet: highlightLike(r.snippet, q) }));
+}
+
+interface RawHitRow {
+  message_id: string;
+  session_id: string;
+  role: string;
+  turn_index: number;
+  snippet: string;
+  session_title: string;
+  session_activity_at: string;
+}
+
+function rowToHit(r: RawHitRow): MessageSearchHit {
+  return {
+    messageId: r.message_id,
+    sessionId: r.session_id,
+    sessionTitle: r.session_title,
+    role: r.role === "user" ? "user" : "assistant",
+    turnIndex: r.turn_index,
+    snippet: r.snippet,
+    sessionActivityAt: r.session_activity_at,
+  };
+}
+
+/**
+ * Wrap the first occurrence of `q` in the LIKE-fallback snippet
+ * with FTS5-style `«` `»` delimiters so both paths produce
+ * uniformly-renderable output. Case-insensitive match.
+ */
+function highlightLike(snippet: string, q: string): string {
+  const idx = snippet.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return snippet;
+  const before = snippet.slice(0, idx);
+  const hit = snippet.slice(idx, idx + q.length);
+  const after = snippet.slice(idx + q.length);
+  return `${before}«${hit}»${after}`;
 }
 
 /**
@@ -441,6 +688,7 @@ export async function loadToolEventsBySession(
     [sessionId],
   );
 }
+
 
 // ---------------- prefs ----------------
 //

@@ -22,6 +22,13 @@ interface ApprovalFormProps {
   onApprove?: OnApprove;
   /** Once a decision is recorded, lock the form into the result state. */
   approvalDecision?: string;
+  /** Name of the project the active session belongs to, if any.
+   * When set, the "Always allow in this Project" button shows the
+   * actual project name ("Always allow in {projectName}") and the
+   * always_allow_project decision becomes available. When
+   * undefined, the button is hidden — at V0.1 we don't expose a
+   * scoping affordance that points at nothing. */
+  projectName?: string;
 }
 
 /**
@@ -44,6 +51,7 @@ export function ApprovalForm({
   tool,
   onApprove,
   approvalDecision,
+  projectName,
 }: ApprovalFormProps) {
   const decided = approvalDecision !== undefined && approvalDecision !== null;
   const reason = APPROVAL_REASON[tool.name] ?? GENERIC_REASON;
@@ -91,13 +99,15 @@ export function ApprovalForm({
           >
             Deny
           </DecisionButton>
-          <DecisionButton
-            variant="brand-ghost"
-            icon={<FolderSimple size={13} weight="thin" />}
-            onClick={() => onApprove?.("always_allow_project")}
-          >
-            Always allow in this Project
-          </DecisionButton>
+          {projectName && (
+            <DecisionButton
+              variant="brand-ghost"
+              icon={<FolderSimple size={13} weight="thin" />}
+              onClick={() => onApprove?.("always_allow_project")}
+            >
+              Always allow in {projectName}
+            </DecisionButton>
+          )}
           <DecisionButton
             variant="brand-ghost"
             icon={<Globe size={13} weight="thin" />}

@@ -23,6 +23,10 @@ interface ToolCalloutProps {
   /** Approval form's currently-recorded decision (for the "decided"
    * post-state look). Pass undefined while still pending. */
   approvalDecision?: string;
+  /** Name of the project the active session belongs to (if any) —
+   * powers the "Always allow in {projectName}" button label and
+   * controls whether the project-scoped decision is offered at all. */
+  projectName?: string;
 }
 
 /**
@@ -70,6 +74,7 @@ export function ToolCallout({
   tool,
   onApprove,
   approvalDecision,
+  projectName,
 }: ToolCalloutProps) {
   const tier = pickToolTier(tool);
   if (tier === "hidden") return null;
@@ -79,6 +84,7 @@ export function ToolCallout({
       tool={tool}
       onApprove={onApprove}
       approvalDecision={approvalDecision}
+      projectName={projectName}
     />
   );
 }
@@ -103,6 +109,7 @@ function BlockToolCallout({
   tool,
   onApprove,
   approvalDecision,
+  projectName,
 }: ToolCalloutProps) {
   const cfg = STATUS_CONFIG[tool.status];
   const forcedOpen = cfg.forcedOpen;
@@ -170,6 +177,7 @@ function BlockToolCallout({
               tool={tool}
               onApprove={onApprove}
               approvalDecision={approvalDecision}
+              projectName={projectName}
             />
           ) : (
             <>

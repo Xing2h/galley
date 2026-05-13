@@ -30,6 +30,12 @@ pub fn run() {
             sql: include_str!("../migrations/003_add_message_summary.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "add messages_fts (full-text search)",
+            sql: include_str!("../migrations/004_add_messages_fts.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

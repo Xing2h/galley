@@ -14,6 +14,10 @@ export interface ConversationProps {
   approvalDecisions?: Record<string, ApprovalDecision>;
   /** Decision callback. Receives the approval id and the user's choice. */
   onApprove?: (approvalId: string, decision: ApprovalDecision) => void;
+  /** Name of the project the active session belongs to (if any) —
+   * threaded down to ToolCallout → ApprovalForm so the "Always
+   * allow in {projectName}" button reflects context. */
+  projectName?: string;
 }
 
 /**
@@ -34,6 +38,7 @@ export function Conversation({
   turns,
   approvalDecisions,
   onApprove,
+  projectName,
 }: ConversationProps) {
   return (
     <div>
@@ -46,6 +51,7 @@ export function Conversation({
               turn={t}
               approvalDecisions={approvalDecisions}
               onApprove={onApprove}
+              projectName={projectName}
             />
           )}
           {/* No divider between turns — the TurnMarker on each
@@ -64,10 +70,12 @@ function AgentTurnView({
   turn,
   approvalDecisions,
   onApprove,
+  projectName,
 }: {
   turn: AgentTurn;
   approvalDecisions?: Record<string, ApprovalDecision>;
   onApprove?: (approvalId: string, decision: ApprovalDecision) => void;
+  projectName?: string;
 }) {
   // Hide MessageAgent + Copy/Save actions for intermediate turns
   // that have no user-facing answer. ipc-handlers normalizes empty
@@ -94,6 +102,7 @@ function AgentTurnView({
           onApprove={(decision) => {
             if (tool.approvalId) onApprove?.(tool.approvalId, decision);
           }}
+          projectName={projectName}
         />
       ))}
 
