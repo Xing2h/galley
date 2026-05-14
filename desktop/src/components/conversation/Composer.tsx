@@ -212,10 +212,22 @@ export function Composer({
     onChange?.(next);
   };
 
+  // `/btw` side questions deliberately bypass the stopMode gate
+  // below — they're the explicit "ask while agent is running"
+  // affordance. Detection lives at this level (not at the
+  // App.tsx onSubmit) so the Composer can also flip the submit
+  // button back from Stop to Send when /btw is staged.
+  const isSideQuestion =
+    text.trimStart().startsWith("/btw ") ||
+    text.trimStart() === "/btw" ||
+    text.trimStart().startsWith("/btw\t");
+
   const handleSubmit = () => {
     const expanded = expandPastePlaceholders(text);
     const trimmed = expanded.trim();
-    if (!trimmed || disabled || stopMode) return;
+    if (!trimmed || disabled) return;
+    // Allow /btw through stopMode; everything else stays gated.
+    if (stopMode && !isSideQuestion) return;
     onSubmit?.(trimmed);
     if (!isControlled) {
       setInternal("");
@@ -273,7 +285,7 @@ export function Composer({
           stopMode={stopMode}
         />
 
-        {stopMode ? (
+        {stopMode && !isSideQuestion ? (
           <button
             type="button"
             onClick={onStop}
