@@ -177,22 +177,39 @@ export function MainView({
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Stream-follow: while atBottom, pin scroll position to the bottom
-  // as the partial grows. useLayoutEffect runs synchronously after
-  // the new content renders, before the browser paints — so the
-  // user never sees a glimpse of the bottom-having-moved-up before
-  // we snap it back.
+  // Follow-the-bottom: while atBottom, pin scroll position to the
+  // bottom whenever the conversation grows. useLayoutEffect runs
+  // synchronously after the new content renders, before the browser
+  // paints — so the user never sees a glimpse of the
+  // bottom-having-moved-up before we snap it back.
   //
-  // Depends on `typedPartial` (not raw `inFlightContent`) so the
-  // scroll keeps pace with the typewriter's per-frame reveals
-  // rather than only updating on GA's coarser ~50-char chunk
-  // arrivals. scrollTop assignment is O(1) so 60fps is fine.
+  // Deps cover every source of bottom-anchored growth:
+  //   - typedPartial:           streaming chunks (typewriter-revealed)
+  //   - turns.length:           each turn_end commits a new AgentTurn
+  //   - pendingApprovals.length: approval card lands
+  //   - pendingAskUser:         AskUserBubble appears
+  //
+  // Originally this only watched typedPartial — fine for the
+  // single-turn / streaming-heavy case, but in multi-step runs where
+  // the partial stays empty for stretches (tool-heavy turns,
+  // dispatch markers stripped) each new step would commit invisibly
+  // below the fold. User would only see progress when the final
+  // turn's streaming naturally triggered a snap. Widening the deps
+  // makes follow-mode catch every step's structural commit too.
+  //
+  // scrollTop assignment is O(1) so re-firing per render is fine.
   useLayoutEffect(() => {
     if (!atBottom) return;
     const el = scrollContainerRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [typedPartial, atBottom]);
+  }, [
+    typedPartial,
+    atBottom,
+    turns.length,
+    pendingApprovals.length,
+    pendingAskUser,
+  ]);
 
   const onClickScrollToBottom = () => {
     const el = scrollContainerRef.current;
