@@ -11,9 +11,10 @@ import { Conversation, TurnMarker } from "@/components/conversation/Conversation
 import { StreamingCursor } from "@/components/conversation/LiveIndicators";
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
+import { TurnTicker } from "@/components/conversation/TurnTicker";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useTypewriter } from "@/hooks/useTypewriter";
-import { cleanPartialContent } from "@/lib/ipc-handlers";
+import { cleanPartialContent, extractPreamble } from "@/lib/ipc-handlers";
 import { cn } from "@/lib/utils";
 import type {
   ConversationToolEvent,
@@ -144,6 +145,12 @@ export function MainView({
   const visiblePartial = inFlightContent
     ? cleanPartialContent(inFlightContent).trim()
     : "";
+  // Live preamble for the streaming-step TurnTicker. Read from the
+  // raw buffer (not visiblePartial — preamble is stripped from that
+  // path so it doesn't double-render with the answer prose).
+  const livePreamble = inFlightContent
+    ? extractPreamble(inFlightContent)
+    : undefined;
   // Fake-typewriter pass to smooth over GA's ~50-char chunked
   // delta pushes. See useTypewriter docs for the mitigation
   // rationale. When the GA-side throttle is eventually fixed and
@@ -473,11 +480,14 @@ export function MainView({
             // key flips, the placeholder remounts, and the clock
             // resets there too — which is fine since the user just
             // saw "思考中" for that brief window.
-            <TurnMarker
-              key={currentTurnIndex ?? "pending"}
-              index={currentTurnIndex ?? undefined}
-              thinking
-            />
+            <div>
+              <TurnMarker
+                key={currentTurnIndex ?? "pending"}
+                index={currentTurnIndex ?? undefined}
+                thinking
+              />
+              {livePreamble && <TurnTicker text={livePreamble} />}
+            </div>
           )}
 
           {/* In-flight streaming partial (DESIGN.md §4.3 streaming
@@ -495,6 +505,7 @@ export function MainView({
               {currentTurnIndex != null && (
                 <TurnMarker index={currentTurnIndex} />
               )}
+              {livePreamble && <TurnTicker text={livePreamble} />}
               {/* `typedPartial` is the typewriter-throttled view of
                   `visiblePartial`. The condition above gates on
                   visiblePartial (so the placeholder→partial swap

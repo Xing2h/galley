@@ -1,11 +1,13 @@
+import { CaretDown } from "@phosphor-icons/react";
 import { Fragment, useEffect, useState } from "react";
 
 import { TypingDots } from "@/components/conversation/LiveIndicators";
+import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { MessageAgent } from "@/components/conversation/MessageAgent";
 import { MessageUser } from "@/components/conversation/MessageUser";
 import { SystemMessageBubble } from "@/components/conversation/SystemMessageBubble";
-import { ThinkingSummary } from "@/components/conversation/ThinkingSummary";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
+import { cn } from "@/lib/utils";
 import type { AgentTurn, Turn } from "@/types/conversation";
 import type { ApprovalDecision } from "@/types/ipc";
 
@@ -115,10 +117,13 @@ function AgentTurnView({
   return (
     <div>
       {turn.turnIndex !== undefined && (
-        <TurnMarker index={turn.turnIndex} summary={turn.summary} />
+        <TurnMarker
+          index={turn.turnIndex}
+          summary={turn.summary}
+          thinkingContent={turn.thinking}
+          preamble={turn.preamble}
+        />
       )}
-
-      {turn.thinking && <ThinkingSummary>{turn.thinking}</ThinkingSummary>}
 
       {visibleTools.map((tool) => (
         <ToolCallout
@@ -154,35 +159,40 @@ function AgentTurnView({
  *     the old SoftHr's my-5 (40px) without the visual noise of an
  *     actual rule
  *   - serif italic + muted ink puts it in the same voice family as
- *     the other "soft prompt" UI text in the product
- *     ("你想做什么？" / "这里会出现你的 sessions" / TopBar
- *     placeholder). The previous mono+uppercase+tracking treatment
- *     read as a sysmon log line and clashed with the Notion+Claude
- *     register the product is aiming for.
- *   - 12px keeps it from competing with the thinking summary that
- *     follows.
+ *     the other "soft prompt" UI text in the product. The previous
+ *     mono+uppercase+tracking treatment read as a sysmon log line
+ *     and clashed with the Notion+Claude register.
+ *   - 12px keeps it from competing with the body content below.
  *
- * Why "第 N 步" and not "第 N 轮": Chinese 「轮」 collides with
- * conversational round (user message N), which is the natural
- * mental model — users seeing "第 1 轮" on their second message
- * would be confused. GA's turn is a finer-grained concept (one
- * LLM call + tool dispatch cycle inside agent_runner_loop), and
- * 「步」 (step) is the natural Chinese word for that level of
- * granularity. The N is GA's turn_index (one user message can
- * trigger multiple steps), not the array position.
+ * Why "第 N 步" and not "第 N 轮": Chinese 「轮」 collides with the
+ * conversational round (user message N) mental model. GA's turn is
+ * the finer-grained "one LLM call + tool dispatch" cycle, and 「步」
+ * is the natural Chinese word for that level of granularity.
  *
- * Two-state component: `thinking` (in-flight, with TypingDots) and
- * settled (with optional summary). Sharing the same visual register
- * across both states makes the step's before/after read as a
- * single per-step rhythm rather than two unrelated UI elements.
- * Previously the in-flight state lived inside a ThinkingSummary
- * callout block — that chrome was sized for multi-paragraph agent
- * thinking content, not a one-liner "still working" placeholder.
+ * Three rendering modes:
+ *
+ *   thinking placeholder (`thinking={true}`):
+ *     In-flight state — TypingDots + elapsed counter. No chevron,
+ *     no expand. Mounted when the user submits and unmounted when
+ *     turn_progress / turn_end takes over the row.
+ *
+ *   settled, no detail (`thinking={false}`, no thinking/preamble):
+ *     Plain `第 N 步 · {summary}` line. No interaction.
+ *
+ *   settled, expandable (`thinking={false}` + thinkingContent or preamble):
+ *     Same line + trailing chevron. Whole row is clickable: click
+ *     toggles an inline DetailPanel that renders the LLM's thinking
+ *     and "当前阶段：..." preamble below the step row, in the same
+ *     italic ink-soft register as TurnMarker itself. Reveals the
+ *     reasoning the LLM wrote before dispatching the tool, on demand
+ *     — without forcing it onto users who don't care.
  */
 export function TurnMarker({
   index,
   summary,
   thinking = false,
+  thinkingContent,
+  preamble,
 }: {
   /**
    * GA-side step number. Optional because the thinking placeholder
@@ -216,30 +226,99 @@ export function TurnMarker({
    * the elapsed clock resets per step.
    */
   thinking?: boolean;
+  /**
+   * `<thinking>...</thinking>` block content if the LLM emitted one.
+   * Drives the DetailPanel along with `preamble`. Ignored when
+   * `thinking` (placeholder) is true.
+   */
+  thinkingContent?: string;
+  /**
+   * "当前阶段：..." preamble paragraph the LLM wrote before dispatching
+   * the tool. Drives the DetailPanel along with `thinkingContent`.
+   * Ignored when `thinking` (placeholder) is true.
+   */
+  preamble?: string;
 }) {
   const elapsedSec = useElapsedSeconds(thinking);
   const elapsedLabel = thinking && elapsedSec >= 5
     ? formatElapsedSeconds(elapsedSec)
     : null;
   const hasStepNumber = index != null;
+  const hasDetail = !thinking && Boolean(thinkingContent || preamble);
+  const [open, setOpen] = useState(false);
 
   return (
-    <div className="mb-2 mt-7 font-serif text-[12px] italic text-ink-muted">
-      {hasStepNumber && <>第 {index} 步</>}
-      {thinking ? (
-        <>
-          {hasStepNumber ? " · 思考中" : "思考中"}
-          <TypingDots />
-          {elapsedLabel && (
-            <span className="text-ink-muted">{" · "}{elapsedLabel}</span>
-          )}
-        </>
-      ) : summary ? (
-        <>
-          {" · "}
-          <span className="text-ink-soft">{summary}</span>
-        </>
-      ) : null}
+    <div>
+      <div
+        onClick={hasDetail ? () => setOpen((v) => !v) : undefined}
+        className={cn(
+          "mb-2 mt-7 select-none font-serif text-[12px] italic text-ink-muted",
+          hasDetail && "cursor-pointer transition-colors hover:text-ink-soft",
+        )}
+      >
+        {hasStepNumber && <>第 {index} 步</>}
+        {thinking ? (
+          <>
+            {hasStepNumber ? " · 思考中" : "思考中"}
+            <TypingDots />
+            {elapsedLabel && (
+              <span className="text-ink-muted">{" · "}{elapsedLabel}</span>
+            )}
+          </>
+        ) : summary ? (
+          <>
+            {" · "}
+            <span className="text-ink-soft">{summary}</span>
+          </>
+        ) : null}
+        {hasDetail && (
+          <CaretDown
+            size={11}
+            weight="thin"
+            className={cn(
+              "ml-1.5 inline-block align-baseline text-ink-muted transition-transform duration-150",
+              open && "rotate-180",
+            )}
+          />
+        )}
+      </div>
+      {hasDetail && open && (
+        <DetailPanel thinking={thinkingContent} preamble={preamble} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Inline expansion of TurnMarker — surfaces the LLM's per-step
+ * reasoning on demand. Reuses MarkdownView "thinking" variant so the
+ * typography (italic serif ink-soft) matches the TurnMarker row above
+ * and the content reads as a continuation of the same voice rather
+ * than a separate callout block. No border, no background, no leading
+ * icon — keeps the chrome out of the way so the prose stays the focus.
+ *
+ * Source order: thinking → preamble. Mirrors how the LLM actually
+ * writes them inside `response.content` (thinking is the internal
+ * monologue; preamble is the natural-language pre-tool reasoning).
+ * If only one is present we just render that one; both null/undefined
+ * means TurnMarker shouldn't have offered the chevron in the first
+ * place (caller's `hasDetail` check gates the render path).
+ */
+function DetailPanel({
+  thinking,
+  preamble,
+}: {
+  thinking?: string;
+  preamble?: string;
+}) {
+  return (
+    <div className="mb-3 animate-fade-in space-y-2">
+      {thinking && (
+        <MarkdownView source={thinking} variant="thinking" />
+      )}
+      {preamble && (
+        <MarkdownView source={preamble} variant="thinking" />
+      )}
     </div>
   );
 }

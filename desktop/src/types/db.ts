@@ -56,6 +56,10 @@ export interface MessageRow {
    * in migration v3; pre-v3 rows have NULL. Drives the TurnMarker
    * subline "第 N 步 · {summary}" after restore. */
   summary: string | null;
+  /** LLM-written "当前阶段：..." preamble paragraph (assistant rows
+   * only). Added in migration v5; pre-v5 rows have NULL. Drives the
+   * TurnMarker DetailPanel content after restore. */
+  preamble: string | null;
   created_at: string;
 }
 

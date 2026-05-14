@@ -36,6 +36,12 @@ pub fn run() {
             sql: include_str!("../migrations/004_add_messages_fts.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "add messages.preamble",
+            sql: include_str!("../migrations/005_add_message_preamble.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

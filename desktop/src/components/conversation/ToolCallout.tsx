@@ -1,9 +1,18 @@
 import {
+  BookmarkSimple,
+  Brain,
   CaretDown,
   CheckCircle,
   CircleNotch,
+  CursorClick,
+  FilePlus,
+  FileText,
+  GlobeSimple,
+  type Icon,
   PauseCircle,
+  PencilSimpleLine,
   Prohibit,
+  Terminal,
   XCircle,
 } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
@@ -345,25 +354,64 @@ function ResultBlock({ content }: { content: string }) {
 // ---------- inline pill ----------
 
 /**
+ * Per-tool display metadata for the inline pill. Maps GA's native
+ * tool name to (Phosphor icon, Chinese friendly label).
+ *
+ * The pill renders Chinese as the left-zone primary label (matches
+ * the conversation document's Chinese serif register) and surfaces
+ * the GA name as right-zone mono metadata — so audit-minded users
+ * can still scan the wire-level tool that ran without losing the
+ * prose-friendly main view. See pill render below for the layout.
+ *
+ * Icons: web_scan (read) vs web_execute_js (act) get different
+ * glyphs (GlobeSimple vs CursorClick) so the two browser tools are
+ * distinguishable at a glance — query/script arg differentiation
+ * alone is unreliable when arg-preview is empty.
+ *
+ * Unknown / future GA tools fall back to a name-only pill via
+ * `TOOL_META[name] ?? null`; no icon, no Chinese label, just the
+ * raw GA name in mono — visually quieter than an arbitrary icon
+ * picked under uncertainty.
+ */
+const TOOL_META: Record<string, { icon: Icon; zh: string }> = {
+  web_scan: { icon: GlobeSimple, zh: "读取网页" },
+  web_execute_js: { icon: CursorClick, zh: "执行网页脚本" },
+  file_read: { icon: FileText, zh: "读取文件" },
+  file_write: { icon: FilePlus, zh: "写入文件" },
+  file_patch: { icon: PencilSimpleLine, zh: "修改文件" },
+  code_run: { icon: Terminal, zh: "运行代码" },
+  update_working_checkpoint: { icon: BookmarkSimple, zh: "保存关键上下文" },
+  start_long_term_update: { icon: Brain, zh: "写入长期记忆" },
+};
+
+/**
  * Compact single-line representation of a settled, read-only tool
- * invocation. The body of the conversation reads as continuous
- * narrative rather than a sequence of callout blocks; users who
- * want the full args / result can click to expand.
+ * invocation. Two-zone layout:
  *
- *   file_read · docs/PRD.md (L180-230)               ▾
+ *   [Icon] 读取网页 · "电影 Drama 评价"            web_scan  ▾
+ *   └─ left zone (flex-grow): icon + zh label + arg preview
+ *                              └─ user-facing prose register
+ *                                                          └─ right zone
+ *                                                              (shrink-0):
+ *                                                              mono GA
+ *                                                              name + chevron
  *
- * Visual register sits between the TurnMarker (L2) and the ambient
- * body text — supplementary metadata, not a focal point. Compare to
- * BlockToolCallout which deliberately interrupts the reading flow
- * for high-stakes operations (file_patch / waiting_approval / etc.).
+ * Visual hierarchy via typography rather than chrome: 13px serif
+ * ink-soft for the primary label, 11px mono ink-muted for the GA
+ * name. A reader's eye walks the left zone in the conversation's
+ * natural reading register; an auditor scanning for "did web_scan
+ * really run?" hits the mono ID on the right.
  *
- * No leading success icon: the inline tier is *only* reached by
- * already-succeeded tools (see pickToolTier), so a check mark would
- * be redundant noise. Failure / running / awaiting-approval renders
- * via BlockToolCallout, where the status bit carries real signal.
+ * Inline tier is *only* reached by settled-success tools (see
+ * pickToolTier), so no leading status icon — the tool-specific
+ * Phosphor glyph carries the slot. Failure / running /
+ * awaiting-approval renders via BlockToolCallout where the status
+ * bit carries real signal.
  */
 function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
   const [open, setOpen] = useState(false);
+  const meta = TOOL_META[tool.name];
+  const ToolIcon = meta?.icon;
   const preview = previewArgs(tool.name, tool.args);
 
   return (
@@ -372,25 +420,49 @@ function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "group inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[12px] transition-colors",
+          "group flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left transition-colors",
           "text-ink-soft hover:bg-hover hover:text-ink",
         )}
       >
-        <span className="font-mono">{tool.name}</span>
-        {preview && (
-          <span className="truncate text-ink-muted">
-            <span className="mx-0.5">·</span>
-            {preview}
-          </span>
-        )}
-        <CaretDown
-          size={10}
-          weight="thin"
-          className={cn(
-            "shrink-0 text-ink-muted transition-transform duration-150",
-            open && "rotate-180",
+        {/* Left zone — friendly prose register. */}
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          {ToolIcon && (
+            <ToolIcon
+              size={14}
+              weight="thin"
+              className="shrink-0 text-ink-soft"
+            />
           )}
-        />
+          <span className="truncate font-serif text-[13px]">
+            {meta?.zh ?? (
+              // Unknown tool: surface the GA name itself as the
+              // primary label (mono) so the pill still has a usable
+              // identity — better than a blank chip.
+              <span className="font-mono">{tool.name}</span>
+            )}
+            {preview && (
+              <span className="ml-1.5 text-ink-muted">· {preview}</span>
+            )}
+          </span>
+        </span>
+        {/* Right zone — audit metadata. Hidden for the unknown-tool
+            fallback above, since the GA name already took the
+            primary label slot. */}
+        <span className="flex shrink-0 items-center gap-1.5">
+          {meta && (
+            <span className="font-mono text-[11px] text-ink-muted">
+              {tool.name}
+            </span>
+          )}
+          <CaretDown
+            size={10}
+            weight="thin"
+            className={cn(
+              "text-ink-muted transition-transform duration-150",
+              open && "rotate-180",
+            )}
+          />
+        </span>
       </button>
 
       {open && (
@@ -407,11 +479,14 @@ function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
 
 /**
  * Pick the most useful single-line arg preview for a given tool.
- * Each tool has a "primary" arg the user wants to see at a glance —
- * path for file ops, script for code_run, query for searches.
+ * Tool-specific rules — each tool exposes its primary input
+ * differently and some tools (web_execute_js's JS code,
+ * update_working_checkpoint's nested args) have no preview worth
+ * showing.
  *
- * Truncates long values (e.g. code_run scripts) since the pill is
- * single-line; the full content lives in the expanded ArgsBlock.
+ * Returns null = no preview, render pill without the trailing
+ * "· {preview}" segment. The icon + zh label already carries
+ * enough identity in those cases.
  */
 const PREVIEW_MAX_LEN = 80;
 
@@ -426,30 +501,56 @@ function previewArgs(
   };
   const truncate = (s: string | null): string | null =>
     s && s.length > PREVIEW_MAX_LEN ? s.slice(0, PREVIEW_MAX_LEN) + "…" : s;
-  // Tool-specific primary arg picks.
-  let raw: string | null;
   switch (toolName) {
     case "file_read":
     case "file_write":
     case "file_patch":
-      raw = get("path");
-      break;
-    case "web_scan":
-      raw = get("query") ?? get("url");
-      break;
-    case "recall":
-      raw = get("query") ?? get("key");
-      break;
-    case "start_long_term_update":
-      raw = get("key") ?? get("topic");
-      break;
+      return truncate(get("path"));
+    case "web_scan": {
+      // Quote-wrap query so it reads as user-typed text vs raw URL.
+      const q = get("query");
+      if (q) return truncate(`"${q}"`);
+      return truncate(get("url"));
+    }
+    case "web_execute_js":
+      // JS code as a preview is uninformative (long, syntax-heavy)
+      // — the icon + "执行网页脚本" label already conveys the action.
+      // Full code lives one click away in the expanded ArgsBlock.
+      return null;
     case "code_run":
-      // GA's code_run args carry `type` + `script` — script is the
-      // useful preview; type (bash / python) is implicit in context.
-      raw = get("script") ?? get("command");
-      break;
+      // First non-comment, non-empty line of the script. GA scripts
+      // are bash or python; both use `#` for comments.
+      return truncate(firstCodeLine(get("script") ?? get("command")));
+    case "update_working_checkpoint":
+      // Args are structured nested context; no single-line preview
+      // captures the intent. Action label suffices.
+      return null;
+    case "start_long_term_update": {
+      const q = get("query") ?? get("topic") ?? get("key");
+      return truncate(q);
+    }
+    case "recall":
+      return truncate(get("query") ?? get("key"));
     default:
-      raw = get("path") ?? get("query") ?? get("command");
+      return truncate(get("path") ?? get("query") ?? get("command"));
   }
-  return truncate(raw);
+}
+
+/**
+ * For code_run: skip leading shebangs / comment lines / blank lines
+ * and return the first line of actual code. Falls back to the raw
+ * first line if no non-comment line is found within the first 20
+ * (defensive cap so a 5000-line script of pure comments doesn't
+ * scan to the end).
+ */
+function firstCodeLine(src: string | null): string | null {
+  if (!src) return null;
+  const lines = src.split("\n", 20);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("#")) continue;
+    return trimmed;
+  }
+  return src.split("\n", 1)[0]?.trim() || null;
 }

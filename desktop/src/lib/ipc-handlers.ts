@@ -403,9 +403,19 @@ function turnFromTurnEnd(event: {
   // `showFinalAnswer = finalAnswer !== null` check correctly hides
   // the MessageAgent + its Copy/Save actions for these turns.
   const cleanedAnswer = cleanFinalAnswer(event.responseContent);
+  // Detect "final-answer turn" (GA's synthetic `no_tool` placeholder
+  // or zero real tools). For those, the surviving narrator IS the
+  // final answer and renders through MessageAgent — capturing it
+  // also as preamble would double-render the same prose under
+  // TurnMarker. Intermediate turns keep the preamble extraction.
+  const isFinalTurn =
+    tools.length === 0 || tools.every((t) => t.name === "no_tool");
   return {
     role: "agent",
     thinking: extractThinking(event.responseContent),
+    preamble: isFinalTurn
+      ? undefined
+      : extractPreamble(event.responseContent),
     tools,
     finalAnswer: cleanedAnswer.trim() ? cleanedAnswer : null,
     turnIndex: event.turnIndex,
@@ -757,6 +767,63 @@ function extractThinking(text: string): string | undefined {
   return inner || undefined;
 }
 
+/**
+ * Pull the LLM's natural-language pre-tool reasoning prose out of a
+ * raw response.content. GA's sys_prompt asks the LLM to "推演：当前阶
+ * 段、上步结果是否符合预期、下步策略" before each tool call but
+ * doesn't pin a specific format — different LLMs surface this as:
+ *
+ *   - "当前阶段：xxx；上一步：yyy；下一步：zzz"  (some Claude variants)
+ *   - "我需要先 X 因为 Y，然后再 Z"            (freeform narrator)
+ *   - "1. 当前阶段...\n2. 上一步..."           (bullet-numbered)
+ *   - Nothing outside <summary> at all          (terse models)
+ *
+ * Instead of pattern-matching one specific phrase, we strip every
+ * structured tag and known frontend marker — whatever natural-
+ * language prose remains IS the preamble. Captures all of the above
+ * styles uniformly; empty result (LLM wrote nothing outside tags)
+ * naturally returns undefined and the TurnMarker chevron stays
+ * hidden — correct UX, nothing to expand.
+ *
+ * Used in two paths:
+ *   - turn_end (settled): callers gate on "is this an intermediate
+ *     turn" so a final-answer turn's prose doesn't double-render as
+ *     both preamble AND finalAnswer.
+ *   - turn_progress (streaming): MainView feeds the in-flight buffer
+ *     directly; the TurnTicker shows whatever's available as live
+ *     process feedback.
+ */
+export function extractPreamble(text: string): string | undefined {
+  if (!text) return undefined;
+  let segment = text;
+  // Structured-tag blocks: stripped wholesale so the remainder is
+  // pure narrator prose.
+  segment = segment.replace(/<thinking>[\s\S]*?<\/thinking>/g, "");
+  segment = segment.replace(/<summary>[\s\S]*?<\/summary>/g, "");
+  segment = segment.replace(/<tool_use>[\s\S]*?<\/tool_use>/g, "");
+  segment = segment.replace(
+    /<file_content[^>]*>[\s\S]*?<\/file_content>/g,
+    "",
+  );
+  // Frontend / dispatch markers that occasionally leak into raw
+  // response content (see cleanPartialContent for the full set; we
+  // care about the ones that produce text noise).
+  segment = segment.replace(LLM_RUNNING_MARKER, "");
+  segment = segment.replace(TOOL_DISPATCH_MARKER_LINE, "");
+  segment = segment.replace(TOOL_ACTION_LINE, "");
+  segment = segment.replace(FILE_REF_PATTERN, "");
+  // Streaming-partial case: an open tag without a matching close
+  // means the chunk fell mid-block. Truncate at the open so we
+  // don't leak partial tag content into the preamble display.
+  segment = segment.replace(
+    /<(thinking|summary|tool_use|file_content)(?:\s[^>]*)?>[\s\S]*$/,
+    "",
+  );
+  segment = segment.replace(/\n{3,}/g, "\n\n");
+  const trimmed = segment.trim();
+  return trimmed || undefined;
+}
+
 // ---------------- SQLite persistence (best-effort) ----------------
 
 /**
@@ -817,21 +884,32 @@ async function persistTurnEndToMessages(event: {
     const createdAt = new Date().toISOString();
     const trimmedSummary = event.summary?.trim() ?? "";
     const finalAnswer = cleanFinalAnswer(event.responseContent);
+    // Mirrors turnFromTurnEnd's gate: only intermediate turns persist
+    // a preamble. Final-answer turn's narrator IS the final answer
+    // and lives in `final_answer`; storing it again as `preamble`
+    // would double-render on restore.
+    const isFinalTurn =
+      event.toolCalls.length === 0 ||
+      event.toolCalls.every((tc) => tc.toolName === "no_tool");
+    const persistedPreamble = isFinalTurn
+      ? null
+      : (extractPreamble(event.responseContent) ?? null);
     await db.execute(
       `INSERT INTO messages (
          id, session_id, turn_index, sequence, role, content,
          tool_calls, tool_results, thinking, final_answer, summary,
-         created_at
+         preamble, created_at
        ) VALUES ($1, $2, $3, $4, 'assistant', $5,
                  $6, $7, $8, $9, $10,
-                 $11)
+                 $11, $12)
        ON CONFLICT(id) DO UPDATE SET
          content       = excluded.content,
          tool_calls    = excluded.tool_calls,
          tool_results  = excluded.tool_results,
          thinking      = excluded.thinking,
          final_answer  = excluded.final_answer,
-         summary       = excluded.summary`,
+         summary       = excluded.summary,
+         preamble      = excluded.preamble`,
       [
         id,
         event.sessionId,
@@ -851,6 +929,9 @@ async function persistTurnEndToMessages(event: {
         // TurnMarker renders the bare "第 N 步" instead of an
         // empty separator.
         trimmedSummary ? trimmedSummary : null,
+        // LLM pre-tool reasoning prose for DetailPanel restore. See
+        // isFinalTurn gate above — final answers don't persist here.
+        persistedPreamble,
         createdAt,
       ],
     );

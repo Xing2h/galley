@@ -80,8 +80,20 @@ export interface SystemTurn {
 
 export interface AgentTurn {
   role: "agent";
-  /** Optional 💭 thinking summary that opens the turn. */
+  /** Optional `<thinking>...</thinking>` block from the LLM — first-
+   * person inner monologue. Rendered in the TurnMarker DetailPanel
+   * alongside `preamble`. */
   thinking?: string;
+  /** Optional "当前阶段：..." paragraph the LLM writes before each
+   * tool call (per GA's sys_prompt). Distinct from `summary`:
+   *   - `summary` is a one-liner third-person recap, surfaced on the
+   *     TurnMarker row itself.
+   *   - `preamble` is the multi-line prose reasoning that led to the
+   *     tool dispatch — surfaced inline under TurnMarker via the
+   *     DetailPanel when the user clicks to expand. Also feeds the
+   *     TurnTicker during streaming so the live process is visible.
+   */
+  preamble?: string;
   tools: ConversationToolEvent[];
   /** Final answer markdown. null when the agent is still working
    * (e.g., waiting on approval). */

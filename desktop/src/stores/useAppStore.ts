@@ -339,6 +339,11 @@ function rowsToTurns(rows: MessageRow[]): Turn[] {
       const turn: AgentTurn = {
         role: "agent",
         thinking: row.thinking ?? undefined,
+        // LLM "当前阶段：..." preamble (added in migration v5). Pre-
+        // v5 rows have NULL — TurnMarker DetailPanel chevron stays
+        // hidden when preamble is undefined and there's no
+        // thinking either.
+        preamble: row.preamble ?? undefined,
         tools,
         finalAnswer,
         turnIndex: displayStep,

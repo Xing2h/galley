@@ -1,0 +1,22 @@
+-- 005_add_message_preamble.sql · Galley
+-- Persist per-turn LLM preamble ("当前阶段：..." paragraph) on
+-- assistant message rows.
+--
+-- Background: GA's sys_prompt obliges the LLM to write a natural-
+-- language preamble before every tool call describing current phase,
+-- whether the previous step matched expectations, and the next-step
+-- strategy. Up to this migration the bridge sent the preamble as part
+-- of `responseContent`; ipc-handlers stripped it via PHASE_PREAMBLE on
+-- the way to `final_answer` and the text was lost.
+--
+-- The conversation redesign (TurnMarker DetailPanel, TurnTicker) needs
+-- the preamble as its own displayable field — surfaced inline under
+-- each step on demand. Adding the column lets persistTurnEndToMessages
+-- write it on every turn_end and rowsToTurns re-hydrate on restore.
+--
+-- Pre-v5 assistant rows get NULL — those restored turns will not
+-- offer the DetailPanel for the preamble portion (only `<thinking>`
+-- if present). Acceptable: the data was never persisted before this
+-- migration, and future runs accumulate complete data.
+
+ALTER TABLE messages ADD COLUMN preamble TEXT;
