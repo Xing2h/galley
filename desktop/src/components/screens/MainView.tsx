@@ -466,7 +466,15 @@ export function MainView({
             !stillWaiting &&
             !visiblePartial &&
             currentTurnIndex != null && (
-              <TurnMarker index={currentTurnIndex} thinking />
+              // `key={currentTurnIndex}` so each step gets a fresh
+              // TurnMarker instance — the elapsed clock inside resets
+              // when the step changes (step 1 took 30s; step 2's
+              // clock starts at 0 again).
+              <TurnMarker
+                key={currentTurnIndex}
+                index={currentTurnIndex}
+                thinking
+              />
             )}
 
           {/* In-flight streaming partial (DESIGN.md §4.3 streaming

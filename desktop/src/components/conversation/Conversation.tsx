@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { TypingDots } from "@/components/conversation/LiveIndicators";
 import { MessageAgent } from "@/components/conversation/MessageAgent";
@@ -195,10 +195,22 @@ export function TurnMarker({
    * True while this step is in flight and we have nothing else to
    * show yet (no streaming partial, no approval card). Renders
    * "· 思考中" + TypingDots in place of the summary so the user
-   * gets a live signal during LLM TTFT / tool dispatch gaps.
+   * gets a live signal during LLM TTFT / tool dispatch gaps. An
+   * elapsed-seconds counter joins after 5s so long waits (thinking
+   * models, large generations) read as "system still running" not
+   * "system frozen" — see useElapsedSeconds for details.
+   *
+   * Caller is expected to pass `key={index}` when the marker can
+   * outlive multiple steps' worth of placeholder transitions, so
+   * the elapsed clock resets per step.
    */
   thinking?: boolean;
 }) {
+  const elapsedSec = useElapsedSeconds(thinking);
+  const elapsedLabel = thinking && elapsedSec >= 5
+    ? formatElapsedSeconds(elapsedSec)
+    : null;
+
   return (
     <div className="mb-2 mt-7 font-serif text-[12px] italic text-ink-muted">
       第 {index} 步
@@ -206,6 +218,9 @@ export function TurnMarker({
         <>
           {" · 思考中"}
           <TypingDots />
+          {elapsedLabel && (
+            <span className="text-ink-muted">{" · "}{elapsedLabel}</span>
+          )}
         </>
       ) : summary ? (
         <>
@@ -215,6 +230,50 @@ export function TurnMarker({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Tick once per second while `active` is true; reports total seconds
+ * elapsed since the hook started ticking. Returns 0 when inactive.
+ *
+ * Reset semantics: a fresh component mount = clock at 0 (via the
+ * initial state of `useState`). Callers that need the clock to
+ * reset between logical "occurrences" (e.g. each step's thinking
+ * placeholder) should re-mount via React `key` rather than toggling
+ * the active flag — toggling on the same instance would leave a
+ * stale `sec` value between the false→true transition and the
+ * first setInterval tick.
+ */
+function useElapsedSeconds(active: boolean): number {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const start = Date.now();
+    const id = window.setInterval(() => {
+      setSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [active]);
+  return active ? sec : 0;
+}
+
+/**
+ * Elapsed-time formatter for the thinking placeholder.
+ *
+ *   5-59s  → "23 秒"             (neutral info — "this is how long")
+ *   60s+   → "已 1 分 23 秒"     ("已" prefix softens the longer wait,
+ *                                  acknowledging the duration without
+ *                                  alarming the user)
+ *
+ * Seconds component always shown past the minute boundary (including
+ * "已 1 分 0 秒") so the display ticks continuously each second
+ * rather than briefly flashing a shorter form on the round-minute.
+ */
+function formatElapsedSeconds(sec: number): string {
+  if (sec < 60) return `${sec} 秒`;
+  const minutes = Math.floor(sec / 60);
+  const remainder = sec % 60;
+  return `已 ${minutes} 分 ${remainder} 秒`;
 }
 
 function StrongHr() {
