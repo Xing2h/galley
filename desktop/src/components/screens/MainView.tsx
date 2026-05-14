@@ -462,20 +462,23 @@ export function MainView({
               thinking content, not a one-liner "still working"
               line. Sharing visual register with TurnMarker collapses
               the before/after into one per-step rhythm. */}
-          {isRunning &&
-            !stillWaiting &&
-            !visiblePartial &&
-            currentTurnIndex != null && (
-              // `key={currentTurnIndex}` so each step gets a fresh
-              // TurnMarker instance — the elapsed clock inside resets
-              // when the step changes (step 1 took 30s; step 2's
-              // clock starts at 0 again).
-              <TurnMarker
-                key={currentTurnIndex}
-                index={currentTurnIndex}
-                thinking
-              />
-            )}
+          {isRunning && !stillWaiting && !visiblePartial && (
+            // `key` ties the TurnMarker instance to the current step
+            // (when known) so the elapsed clock inside resets when
+            // the step changes — step 1 took 30s; step 2's clock
+            // starts at 0 again. Falls back to "pending" while we
+            // wait for the bridge's first `turn_start` to land
+            // (synchronously-set `agentRunning` outruns it by a
+            // few hundred ms); when `currentTurnIndex` arrives the
+            // key flips, the placeholder remounts, and the clock
+            // resets there too — which is fine since the user just
+            // saw "思考中" for that brief window.
+            <TurnMarker
+              key={currentTurnIndex ?? "pending"}
+              index={currentTurnIndex ?? undefined}
+              thinking
+            />
+          )}
 
           {/* In-flight streaming partial (DESIGN.md §4.3 streaming
               generation). Renders the LLM's tokens as they arrive

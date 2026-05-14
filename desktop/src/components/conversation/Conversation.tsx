@@ -181,7 +181,15 @@ export function TurnMarker({
   summary,
   thinking = false,
 }: {
-  index: number;
+  /**
+   * GA-side step number. Optional because the thinking placeholder
+   * mounts the instant the user submits (store sets `agentRunning`
+   * synchronously) but the bridge's first `turn_start` IPC carrying
+   * the step number arrives ~50-200ms later. Rendering during that
+   * gap with `index` undefined just drops the "第 N 步" prefix and
+   * shows "思考中" alone — better than not rendering at all.
+   */
+  index?: number;
   /**
    * GA-side third-person turn summary (from turn_end event's
    * `summary` field). When present, rendered on the same line after
@@ -210,13 +218,14 @@ export function TurnMarker({
   const elapsedLabel = thinking && elapsedSec >= 5
     ? formatElapsedSeconds(elapsedSec)
     : null;
+  const hasStepNumber = index != null;
 
   return (
     <div className="mb-2 mt-7 font-serif text-[12px] italic text-ink-muted">
-      第 {index} 步
+      {hasStepNumber && <>第 {index} 步</>}
       {thinking ? (
         <>
-          {" · 思考中"}
+          {hasStepNumber ? " · 思考中" : "思考中"}
           <TypingDots />
           {elapsedLabel && (
             <span className="text-ink-muted">{" · "}{elapsedLabel}</span>
