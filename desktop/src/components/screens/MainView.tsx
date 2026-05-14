@@ -312,6 +312,77 @@ export function MainView({
     return () => cancelAnimationFrame(handle);
   }, [userSubmitTick]);
 
+  // ⌥↑ / ⌥↓ jump to previous / next user message. The user-msg
+  // block is now a strong visual anchor (apricot fill, see 2026-05-14
+  // commit) — power users in long conversations want a fast keyboard
+  // path between their own questions without trackpad-scrolling
+  // through dozens of agent steps.
+  //
+  // Bound to document, not the container — the conversation column
+  // doesn't take focus naturally (it isn't tabbable). We bail out
+  // when an editable element is focused so we don't steal Option+Up
+  // from text-cursor-by-paragraph navigation inside Composer.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.metaKey || e.ctrlKey) return;
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+
+      const active = document.activeElement as HTMLElement | null;
+      if (active) {
+        const tag = active.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          active.isContentEditable
+        ) {
+          return;
+        }
+      }
+
+      const container = scrollContainerRef.current;
+      if (!container) return;
+
+      const userMsgs = Array.from(
+        container.querySelectorAll<HTMLElement>('[data-role="user-msg"]'),
+      );
+      if (userMsgs.length === 0) return;
+
+      const containerRect = container.getBoundingClientRect();
+      const TOP_PADDING = 32;
+      // ±8px tolerance so the message currently parked at ~32px
+      // below container top doesn't count as both "above" and
+      // "below" the cursor when rounding error nudges it.
+      const TOLERANCE = 8;
+
+      const tops = userMsgs.map(
+        (el) => el.getBoundingClientRect().top - containerRect.top,
+      );
+
+      let target: HTMLElement | undefined;
+      if (e.key === "ArrowDown") {
+        // Next user-msg whose top is below the current anchor line.
+        target = userMsgs.find((_, i) => tops[i] > TOP_PADDING + TOLERANCE);
+      } else {
+        // Previous user-msg whose top is above the current anchor line.
+        for (let i = userMsgs.length - 1; i >= 0; i--) {
+          if (tops[i] < TOP_PADDING - TOLERANCE) {
+            target = userMsgs[i];
+            break;
+          }
+        }
+      }
+      if (!target) return;
+
+      e.preventDefault();
+      const delta =
+        target.getBoundingClientRect().top - containerRect.top - TOP_PADDING;
+      container.scrollBy({ top: delta, behavior: "smooth" });
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-app">
       {/* Scrollable conversation column. Width follows the TopBar
