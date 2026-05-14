@@ -8,12 +8,8 @@ import {
   type ComposerLLMOption,
 } from "@/components/conversation/Composer";
 import { Conversation, TurnMarker } from "@/components/conversation/Conversation";
-import {
-  StreamingCursor,
-  TypingDots,
-} from "@/components/conversation/LiveIndicators";
+import { StreamingCursor } from "@/components/conversation/LiveIndicators";
 import { MarkdownView } from "@/components/conversation/MarkdownView";
-import { ThinkingSummary } from "@/components/conversation/ThinkingSummary";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useTypewriter } from "@/hooks/useTypewriter";
@@ -450,26 +446,28 @@ export function MainView({
             </div>
           )}
 
-          {/* Thinking placeholder (DESIGN.md §4.3). User sent a
-              message; the bridge is dispatching but turn_end hasn't
-              come back yet (LLM TTFT can be several seconds). Without
-              this the conversation looks frozen. We hide it once an
-              Approval Card shows up (already covers "agent waiting
-              on you") OR once streaming content has begun (the
-              partial render is itself the live signal).
-              The turn number folds into the ThinkingSummary line
-              ("第 N 轮 · 思考中…") rather than sitting as a separate
-              header — keeps the placeholder a single soft prompt
-              instead of header + body. */}
-          {isRunning && !stillWaiting && !visiblePartial && (
-            <ThinkingSummary>
-              <>
-                {currentTurnIndex != null && `第 ${currentTurnIndex} 步 · `}
-                思考中
-                <TypingDots />
-              </>
-            </ThinkingSummary>
-          )}
+          {/* In-flight placeholder. User sent a message; the bridge
+              is dispatching but turn_end hasn't come back yet (LLM
+              TTFT can be several seconds). Without this the
+              conversation looks frozen. Hidden once an Approval Card
+              shows up (already covers "agent waiting on you") OR
+              once streaming content has begun (the partial render
+              is itself the live signal).
+
+              Renders as TurnMarker in thinking mode — same italic
+              serif 12px register as the settled marker, just with
+              "· 思考中" + TypingDots in place of the summary. Used
+              to live inside a ThinkingSummary callout (bg-surface
+              + bar) but that chrome was sized for multi-paragraph
+              thinking content, not a one-liner "still working"
+              line. Sharing visual register with TurnMarker collapses
+              the before/after into one per-step rhythm. */}
+          {isRunning &&
+            !stillWaiting &&
+            !visiblePartial &&
+            currentTurnIndex != null && (
+              <TurnMarker index={currentTurnIndex} thinking />
+            )}
 
           {/* In-flight streaming partial (DESIGN.md §4.3 streaming
               generation). Renders the LLM's tokens as they arrive

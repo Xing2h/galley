@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 
+import { TypingDots } from "@/components/conversation/LiveIndicators";
 import { MessageAgent } from "@/components/conversation/MessageAgent";
 import { MessageUser } from "@/components/conversation/MessageUser";
 import { ThinkingSummary } from "@/components/conversation/ThinkingSummary";
@@ -166,10 +167,19 @@ function AgentTurnView({
  * 「步」 (step) is the natural Chinese word for that level of
  * granularity. The N is GA's turn_index (one user message can
  * trigger multiple steps), not the array position.
+ *
+ * Two-state component: `thinking` (in-flight, with TypingDots) and
+ * settled (with optional summary). Sharing the same visual register
+ * across both states makes the step's before/after read as a
+ * single per-step rhythm rather than two unrelated UI elements.
+ * Previously the in-flight state lived inside a ThinkingSummary
+ * callout block — that chrome was sized for multi-paragraph agent
+ * thinking content, not a one-liner "still working" placeholder.
  */
 export function TurnMarker({
   index,
   summary,
+  thinking = false,
 }: {
   index: number;
   /**
@@ -181,16 +191,28 @@ export function TurnMarker({
    * minimum when GA didn't produce a summary.
    */
   summary?: string;
+  /**
+   * True while this step is in flight and we have nothing else to
+   * show yet (no streaming partial, no approval card). Renders
+   * "· 思考中" + TypingDots in place of the summary so the user
+   * gets a live signal during LLM TTFT / tool dispatch gaps.
+   */
+  thinking?: boolean;
 }) {
   return (
     <div className="mb-2 mt-7 font-serif text-[12px] italic text-ink-muted">
       第 {index} 步
-      {summary && (
+      {thinking ? (
+        <>
+          {" · 思考中"}
+          <TypingDots />
+        </>
+      ) : summary ? (
         <>
           {" · "}
           <span className="text-ink-soft">{summary}</span>
         </>
-      )}
+      ) : null}
     </div>
   );
 }
