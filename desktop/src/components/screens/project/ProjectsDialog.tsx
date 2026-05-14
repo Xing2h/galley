@@ -52,9 +52,7 @@ export interface ProjectsDialogProps {
  *
  * Sort order matches the sidebar: pinned first (newest pin first
  * via lastActivityAt), then non-pinned by lastActivityAt desc. The
- * search filter applies to the project name only — rootPath is a
- * power-user detail and matching against it produces surprising
- * results (the user thinks they typed a project name, gets paths).
+ * search filter applies to the project name only.
  *
  * No "全选 + bulk archive" pattern from EarlierDialog — projects
  * don't accumulate as junk the same way sessions do (typical user
@@ -287,11 +285,7 @@ function ProjectRow({
       className="group flex cursor-pointer items-start gap-3 px-5 py-3 transition-colors hover:bg-hover"
     >
       <span className="pt-0.5">
-        {project.rootPath ? (
-          <FolderOpen size={14} weight="thin" className="text-ink-soft" />
-        ) : (
-          <Folder size={14} weight="thin" className="text-ink-muted" />
-        )}
+        <Folder size={14} weight="thin" className="text-ink-muted" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -314,11 +308,6 @@ function ProjectRow({
             />
           )}
         </div>
-        {project.rootPath && (
-          <div className="mt-0.5 truncate font-mono text-[11px] text-ink-muted">
-            {project.rootPath}
-          </div>
-        )}
         <div className="mt-1 text-[10.5px] text-ink-muted">
           {sessionCount === 0
             ? "暂无对话"

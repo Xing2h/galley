@@ -404,12 +404,12 @@ interface State {
   sessions: Session[];
   activeSessionId: string | undefined;
   /**
-   * Projects: user-defined drawers for grouping sessions, optionally
-   * with a bound `rootPath` that gets injected as the GA bridge's cwd
-   * when a session in this project spawns. Hydrated from SQLite once
+   * Projects: user-defined drawers for grouping sessions. Pure 归类 —
+   * no cwd binding (the rootPath field is preserved on the DB row for
+   * possible future live-sync IPC, but is no longer injected into the
+   * bridge spawn; see devlog 2026-05-14). Hydrated from SQLite once
    * on startup; mutations persist via best-effort writes (same pattern
-   * as sessions). Per PRD §7.3, Projects are pure 归类 — never alter
-   * GA's agent behavior.
+   * as sessions). Per PRD §7.3, Projects never alter GA's behavior.
    */
   projects: Project[];
   /**
@@ -698,11 +698,13 @@ interface Actions {
   /**
    * Create a new project. Returns the persisted Project so the UI
    * (CreateProjectDialog) can optimistically navigate / select it.
-   * rootPath is optional; when set, sessions assigned to this project
-   * spawn their GA bridge with that cwd.
+   * `rootPath` is preserved in the type for forward compatibility but
+   * is no longer wired to bridge cwd; see devlog 2026-05-14.
    */
   createProject: (input: { name: string; rootPath?: string }) => Promise<Project>;
-  /** Rename / re-bind rootPath / toggle pin via a partial update. */
+  /** Rename / toggle pin via a partial update. `rootPath` is still
+   * accepted to keep DB rows round-trippable but has no runtime
+   * effect; see devlog 2026-05-14. */
   updateProject: (
     id: string,
     partial: Partial<Pick<Project, "name" | "rootPath" | "pinned">>,
@@ -711,9 +713,7 @@ interface Actions {
   deleteProject: (id: string) => Promise<void>;
   /**
    * Assign a session to a project (or pass `null` to unassign).
-   * Updates the session row + emits a toast on rootPath-bound moves
-   * so the user knows the cwd change applies on next bridge spawn,
-   * not immediately (Q1 option c from the design doc).
+   * Updates the session row only — no bridge restart, no cwd change.
    */
   assignSessionToProject: (
     sessionId: string,
@@ -1237,9 +1237,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       status: "idle",
       // Inherit project assignment at birth when caller passes it
       // (Sidebar "+ New Chat" while in filter mode, or EmptyState
-      // composer submit). The session row carries the projectId from
-      // the start, so subsequent bridge spawn picks up the
-      // project's rootPath as cwd (Phase 4).
+      // composer submit). Project = grouping only — bridge cwd is
+      // unaffected (see devlog 2026-05-14).
       projectId: projectId,
       pendingApprovalCount: 0,
       errorCount: 0,
@@ -1369,19 +1368,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       rtAfter.bridgeStatus === "closed" ||
       rtAfter.bridgeStatus === "error";
     if (needsSpawn) {
-      // Project cwd binding (the "wow" moment): if this session
-      // belongs to a project with a rootPath, the bridge spawns
-      // with that as its working directory — GA's file_read /
-      // file_write / code_run tools then operate against the
-      // project folder by default, mirroring Cursor's "workspace =
-      // folder" feel. If the session has no project, or the
-      // project has no rootPath, the bridge's own default cwd
-      // (gaConfig.bridgeCwd) applies via the existing fallback in
-      // workbench_bridge._setup_ga.
+      // Project = pure grouping. We deliberately do NOT inject the
+      // project's rootPath as the bridge cwd here — doing so would
+      // chdir away from the GA install dir and silently break GA's
+      // relative `./memory/...` reads (memory_management_sop, any
+      // user SOP, etc.). See devlog 2026-05-14 rootPath rollback.
       const session = get().sessions.find((s) => s.id === id);
-      const project = session?.projectId
-        ? get().projects.find((p) => p.id === session.projectId)
-        : undefined;
       // EmptyState's inline LLM picker stashes `pendingLLMIndex`
       // because there was no live bridge to set_llm against. Apply
       // it here as `--llm-no` only when the session is genuinely
@@ -1403,7 +1395,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       await get().spawnBridge({
         ...get().gaConfig,
         sessionId: id,
-        cwd: project?.rootPath ?? undefined,
+        cwd: undefined,
         llmIndex: consumePending ? pendingLLMIndex : undefined,
       });
     } else {
@@ -1545,8 +1537,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         updated = {
           ...p,
           ...partial,
-          // Normalise empty rootPath to undefined so the cwd-injection
-          // path can rely on `rootPath ? rootPath : defaultBridgeCwd`.
+          // Normalise empty rootPath to undefined for DB tidiness.
+          // The field has no runtime effect post-2026-05-14 rollback.
           rootPath:
             partial.rootPath !== undefined
               ? partial.rootPath?.trim() || undefined
@@ -1589,20 +1581,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   assignSessionToProject: async (sessionId, projectId) => {
     const now = new Date().toISOString();
     let updated: Session | null = null;
-    let toastTitle: string | null = null;
     set((state) => {
-      const target = projectId
-        ? state.projects.find((p) => p.id === projectId)
-        : null;
-      // Only fire the toast when the move actually changes the bound
-      // cwd from the session's perspective — moving into a project
-      // with no rootPath, or unassigning from a no-rootPath project,
-      // is a no-op for the bridge.
       const sessions = state.sessions.map((s) => {
         if (s.id !== sessionId) return s;
-        if (target && target.rootPath) {
-          toastTitle = `下次启动该 session 时会用 ${target.name} 的目录`;
-        }
         updated = {
           ...s,
           projectId: projectId ?? undefined,
@@ -1618,20 +1599,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       } catch (e) {
         console.debug("[store] assignSessionToProject persistSession failed.", e);
       }
-    }
-    if (toastTitle) {
-      get().pushToast(
-        makeAppError({
-          category: "business",
-          severity: "info",
-          title: toastTitle,
-          message: "",
-          hint: null,
-          retryable: false,
-          context: "assignSessionToProject",
-          traceback: null,
-        }),
-      );
     }
   },
 

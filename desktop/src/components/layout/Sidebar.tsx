@@ -758,11 +758,7 @@ function SidebarSessionRow({
                             "data-[disabled]:cursor-default data-[disabled]:opacity-50",
                           )}
                         >
-                          {p.rootPath ? (
-                            <FolderOpen size={13} weight="thin" />
-                          ) : (
-                            <Folder size={13} weight="thin" />
-                          )}
+                          <Folder size={13} weight="thin" />
                           <span className="min-w-0 flex-1 truncate">{p.name}</span>
                           {isCurrent && (
                             <span className="text-[10px] text-brand-strong">
@@ -1054,19 +1050,11 @@ function SidebarProjectRow({
         active ? "bg-selected text-ink" : "text-ink hover:bg-hover",
       )}
     >
-      {project.rootPath ? (
-        <FolderOpen
-          size={14}
-          weight="thin"
-          className="shrink-0 text-ink-soft"
-        />
-      ) : (
-        <Folder
-          size={14}
-          weight="thin"
-          className="shrink-0 text-ink-muted"
-        />
-      )}
+      <Folder
+        size={14}
+        weight="thin"
+        className="shrink-0 text-ink-muted"
+      />
       <span className="min-w-0 flex-1 truncate">{project.name}</span>
       {project.pinned && (
         <PushPin
@@ -1145,12 +1133,6 @@ function SidebarProjectRow({
  * the user has a one-click exit; the active project in the Projects
  * section above also retains its bg-selected highlight as a second
  * visual anchor.
- *
- * When the project has a bound rootPath, a second muted-mono line
- * surfaces it directly — this is the only persistent UI surface
- * where the user can verify "which folder is this project bound
- * to" without opening the Edit dialog. Full path on hover via
- * `title`; mid-truncate via CSS for narrow sidebars.
  */
 function SidebarFilterBanner({
   project,
@@ -1159,9 +1141,6 @@ function SidebarFilterBanner({
   project: Project;
   onClear?: () => void;
 }) {
-  const displayPath = project.rootPath
-    ? shortenHomeDir(project.rootPath)
-    : null;
   return (
     <div
       className={cn(
@@ -1187,32 +1166,8 @@ function SidebarFilterBanner({
           <XIcon size={11} weight="thin" />
         </button>
       </div>
-      {displayPath && (
-        <div
-          className="mt-0.5 truncate pl-[18px] font-mono text-[10.5px] text-ink-muted"
-          title={project.rootPath}
-        >
-          {displayPath}
-        </div>
-      )}
     </div>
   );
-}
-
-/**
- * Best-effort home-dir abbreviation. We don't know the user's $HOME
- * at render time (Tauri's path API is async and we don't want to
- * thread that here), so we infer it from the path itself: anything
- * matching `/Users/<name>/...` (macOS) or `/home/<name>/...` (Linux)
- * gets folded to `~/...`. Windows paths pass through unchanged.
- * Returns the input as-is if no match.
- */
-function shortenHomeDir(path: string): string {
-  const mac = path.match(/^\/Users\/[^/]+(\/.*)?$/);
-  if (mac) return `~${mac[1] ?? ""}`;
-  const linux = path.match(/^\/home\/[^/]+(\/.*)?$/);
-  if (linux) return `~${linux[1] ?? ""}`;
-  return path;
 }
 
 /**

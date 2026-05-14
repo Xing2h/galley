@@ -1,5 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { FolderOpen, X as XIcon } from "@phosphor-icons/react";
+import { X as XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -16,11 +16,10 @@ export interface CreateProjectDialogProps {
 }
 
 /**
- * Create a new Project. Per PRD §7.3 Project = pure 归类 + optional
- * cwd binding. The dialog reflects that with just two inputs — name
- * (required) and folder (optional via native picker). Icon / color
- * customisation lives in V0.2 polish; V0.1 ships with a single 📂
- * default to keep first-create friction near zero.
+ * Create a new Project. Per PRD §7.3 (as amended by devlog
+ * 2026-05-14) Project = pure 归类. The dialog has exactly one input:
+ * name. The legacy `rootPath` / cwd-binding entry was rolled back to
+ * avoid silently breaking GA's relative `./memory/...` reads.
  *
  * Sized smaller than EarlierDialog (420 vs 640) — this is a quick
  * create flow, not a browser. Esc / click-outside dismiss via Radix.
@@ -31,7 +30,6 @@ export function CreateProjectDialog({
   onCreate,
 }: CreateProjectDialogProps) {
   const [name, setName] = useState("");
-  const [rootPath, setRootPath] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,7 +40,6 @@ export function CreateProjectDialog({
     if (!open) return;
     const t = setTimeout(() => {
       setName("");
-      setRootPath("");
       setSubmitting(false);
       nameInputRef.current?.focus();
     }, 0);
@@ -56,30 +53,11 @@ export function CreateProjectDialog({
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await onCreate({
-        name: trimmedName,
-        rootPath: rootPath.trim() || undefined,
-      });
+      await onCreate({ name: trimmedName });
       onOpenChange(false);
     } catch (e) {
       console.warn("[CreateProjectDialog] onCreate failed.", e);
       setSubmitting(false);
-    }
-  };
-
-  const handlePickFolder = async () => {
-    try {
-      const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
-      const selected = await openDialog({
-        directory: true,
-        multiple: false,
-        title: "选择项目根目录",
-      });
-      if (typeof selected === "string" && selected.length > 0) {
-        setRootPath(selected);
-      }
-    } catch (e) {
-      console.warn("[CreateProjectDialog] folder pick failed.", e);
     }
   };
 
@@ -135,35 +113,6 @@ export function CreateProjectDialog({
                   "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
                 )}
               />
-            </Field>
-
-            <Field
-              label="项目文件夹"
-              hint="可选 · 项目里的对话以此文件夹为工作区"
-            >
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={rootPath}
-                  onChange={(e) => setRootPath(e.target.value)}
-                  placeholder="未绑定文件夹"
-                  className={cn(
-                    "h-9 min-w-0 flex-1 rounded-sm border border-line bg-app px-3 font-mono text-[12.5px] text-ink",
-                    "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
-                  )}
-                />
-                <button
-                  type="button"
-                  onClick={() => void handlePickFolder()}
-                  className={cn(
-                    "inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-line bg-elevated px-3 text-[12.5px] text-ink-soft",
-                    "transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink",
-                  )}
-                >
-                  <FolderOpen size={13} weight="thin" />
-                  选择
-                </button>
-              </div>
             </Field>
 
             <div className="flex justify-end gap-2 pt-1">

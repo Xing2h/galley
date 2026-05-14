@@ -1,6 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  FolderOpen,
   Trash,
   WarningCircle,
   X as XIcon,
@@ -16,8 +15,10 @@ export interface EditProjectDialogProps {
    * without a full unmount/remount cycle. */
   project: Project | null;
   onClose: () => void;
-  /** Persist name / rootPath edits. Resolves after the store action
-   * completes so the dialog can close synchronously. */
+  /** Persist name edits. Resolves after the store action completes
+   * so the dialog can close synchronously. `rootPath` stays on the
+   * type for forward compat but is no longer surfaced in the UI;
+   * see devlog 2026-05-14. */
   onSave: (
     id: string,
     partial: { name: string; rootPath?: string },
@@ -30,15 +31,15 @@ export interface EditProjectDialogProps {
 }
 
 /**
- * Edit Project — rename + re-bind rootPath. Same 420px frame as
- * CreateProjectDialog so the two read as siblings; the only
- * structural difference is the destructive "删除 Project" row at
- * the bottom (separated by a divider so a stray click doesn't slip
- * into it).
+ * Edit Project — rename only (post devlog 2026-05-14). Same 420px
+ * frame as CreateProjectDialog so the two read as siblings; the
+ * only structural difference is the destructive "删除 Project" row
+ * at the bottom (separated by a divider so a stray click doesn't
+ * slip into it).
  *
- * Per Q2 in the design plan: deleting a project unassigns its
- * sessions (projectId → NULL) but doesn't delete them. The actual
- * delete confirm dialog is owned by the parent.
+ * Deleting a project unassigns its sessions (projectId → NULL) but
+ * doesn't delete them. The actual delete confirm dialog is owned by
+ * the parent.
  */
 export function EditProjectDialog({
   project,
@@ -47,7 +48,6 @@ export function EditProjectDialog({
   onRequestDelete,
 }: EditProjectDialogProps) {
   const [name, setName] = useState("");
-  const [rootPath, setRootPath] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,7 +55,6 @@ export function EditProjectDialog({
     if (!project) return;
     const t = setTimeout(() => {
       setName(project.name);
-      setRootPath(project.rootPath ?? "");
       setSubmitting(false);
       nameInputRef.current?.focus();
       nameInputRef.current?.select();
@@ -68,40 +67,17 @@ export function EditProjectDialog({
     !!project &&
     trimmedName.length > 0 &&
     !submitting &&
-    // No-op detection: same name + same rootPath = don't bother
-    // round-tripping the store. Lets the user use Esc / close
-    // without thinking "did I change anything?".
-    (trimmedName !== project.name ||
-      (rootPath.trim() || undefined) !== project.rootPath);
+    trimmedName !== project.name;
 
   const handleSubmit = async () => {
     if (!project || !canSubmit) return;
     setSubmitting(true);
     try {
-      await onSave(project.id, {
-        name: trimmedName,
-        rootPath: rootPath.trim() || undefined,
-      });
+      await onSave(project.id, { name: trimmedName });
       onClose();
     } catch (e) {
       console.warn("[EditProjectDialog] onSave failed.", e);
       setSubmitting(false);
-    }
-  };
-
-  const handlePickFolder = async () => {
-    try {
-      const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
-      const selected = await openDialog({
-        directory: true,
-        multiple: false,
-        title: "选择项目根目录",
-      });
-      if (typeof selected === "string" && selected.length > 0) {
-        setRootPath(selected);
-      }
-    } catch (e) {
-      console.warn("[EditProjectDialog] folder pick failed.", e);
     }
   };
 
@@ -160,35 +136,6 @@ export function EditProjectDialog({
                   "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
                 )}
               />
-            </Field>
-
-            <Field
-              label="项目文件夹"
-              hint="修改后已有对话需重启 Galley 生效"
-            >
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={rootPath}
-                  onChange={(e) => setRootPath(e.target.value)}
-                  placeholder="未绑定文件夹"
-                  className={cn(
-                    "h-9 min-w-0 flex-1 rounded-sm border border-line bg-app px-3 font-mono text-[12.5px] text-ink",
-                    "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
-                  )}
-                />
-                <button
-                  type="button"
-                  onClick={() => void handlePickFolder()}
-                  className={cn(
-                    "inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-line bg-elevated px-3 text-[12.5px] text-ink-soft",
-                    "transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink",
-                  )}
-                >
-                  <FolderOpen size={13} weight="thin" />
-                  选择
-                </button>
-              </div>
             </Field>
 
             <div className="flex justify-end gap-2 pt-1">

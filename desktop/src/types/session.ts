@@ -94,10 +94,13 @@ export interface Session {
 export interface Project {
   id: string;
   name: string;
-  /** Bound cwd; sessions launched in this project use it as their
-   * subprocess working dir. PRD §7.3 "B. cwd". */
+  /** Historical bound cwd. Preserved on the DB row for forward
+   * compatibility but no longer injected at bridge spawn time; see
+   * devlog 2026-05-14 (rolled back to avoid breaking GA's relative
+   * `./memory/...` reads). PRD §7.3 "B. cwd" describes the original
+   * intent. */
   rootPath?: string;
-  /** Default emoji: 📁 when no cwd, 📂 when cwd is set. */
+  /** Default emoji: 📁. */
   icon?: string;
   color?: string;
   /** Pin to top in sidebar PROJECTS section. PRD §8.2. */
