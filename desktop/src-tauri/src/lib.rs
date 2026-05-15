@@ -64,14 +64,14 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 use tauri::Manager;
-                use window_shadows_v2::set_shadow;
+                use window_shadows_v2::set_shadows;
                 let window = _app
                     .get_webview_window("main")
                     .expect("main webview window must exist at setup time");
                 window
                     .set_decorations(false)
                     .expect("failed to disable native decorations on Windows");
-                set_shadow(&window, true)
+                set_shadows(&window, true)
                     .expect("failed to enable drop shadow on Windows");
             }
 
