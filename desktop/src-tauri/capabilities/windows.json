@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "windows-chrome",
+  "description": "Windows-only: permissions for custom window chrome (min / max-restore / close + isMaximized state subscription). Mac never receives these — its traffic light is native.",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "permissions": [
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-internal-on-resized"
+  ]
+}

@@ -15,6 +15,8 @@ import { useEffect, useRef, useState } from "react";
 import { isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
+import { WindowControls } from "./WindowControls";
+
 export interface TopBarProps {
   /**
    * Current session title to display in the center-left.
@@ -224,6 +226,11 @@ export function TopBar({
             <Gear size={16} weight="thin" />
           </IconButton>
         </div>
+        {/* Windows-only custom chrome: min / max-restore / close. Hugs
+            the window's right edge (TopBar drops pr-3 on Win for this).
+            Mac path renders nothing — the traffic light on the left
+            already owns the window-control role. */}
+        {!isMac && <WindowControls />}
       </div>
     </div>
   );
