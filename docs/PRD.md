@@ -1,734 +1,582 @@
-# Galley PRD v0.2
+# Galley PRD v0.3
 
-> 创建时间：2026-05-07 CST
-> 状态：Draft v0.2
-> 作者：JCONE + Hermes
-> 替代：v0.1（保留为历史对照）
+> 创建时间：2026-05-15 CST
+> 状态：Active
+> 作者：JC + Hermes
+> 替代：v0.2（保留在 git 历史，previous commit hash 可查）
 >
-> **v0.2 主要变化**：
-> - Non-invasive 原则字面收紧、工程实现路径明确化（扩展式 attach）
-> - 信息架构去 Spaces，改为 Sessions + 可选 Projects
-> - V0.1 Scope 从 16 项收紧到 5 项
-> - 新增附录 A：与 GA 的集成边界（基于源码事实）
-> - Context Window Indicator / Follow-up Queue / Artifacts 一等公民化推到 V0.2 (产品)
+> **v0.3 核心变化**：产品定位从「GA 的本地桌面工作台」reframe 为「**本地 agent team orchestrator，dual-native for human and agent**」。新增 Galley CLI 一等公民地位、Supervisor Agent 概念、localhost-only 架构原则、CLI 公开契约面（agent-api）。详细决策叙事见 [2026-05-15 vision pivot devlog](./devlog/2026-05-15-vision-pivot-to-orchestrator.md)。
 >
-> **本文件与 design.md 的关系**：本 PRD 第 7 / 13 / 15 节关于信息架构、布局、设计方向的部分，已被 [DESIGN.md v0.2 draft](./DESIGN.md) 中的最新决策覆盖（Light-first / Notion + Claude 气质 / 时间分组 sidebar 等）。本 PRD 的下一次 revision 会同步 DESIGN 的最新结论。
+> **本文件与 DESIGN.md 的关系**：DESIGN.md 继续负责 GUI 视觉与交互设计规则。CLI 设计契约见独立的 [docs/agent-api.md](./agent-api.md)（v0.5 ship 时 publish）。
 
 ## 1. 一句话定位
 
-**Galley** 是 GenericAgent 的本地桌面工作台，为 GA 提供 IM 与官方前端做不到的三件事：**多 session 并行、高风险动作审批、历史会话快捷查看与恢复**。
+**Galley** is a **local agent team orchestrator, native for both human and agent**.
+
+中文：**本地 agent team 编排器，人和 agent 都是一等公民**。
+
+它有两个对等的前端：
+
+- **Galley GUI**——给坐在桌前的 human operator 看进度、写指令、审批
+- **Galley CLI**——给 **Supervisor Agent**（外部 agent，可能是另一个 GA、可能是 Claude，可能是用户自己写的）远程操作整个 session team
+
+两个前端共享同一个 **Galley Core**（Rust 端权威层），数据 / 状态 / 命令调度都从这里走。
 
 > *Galley started as a workbench for GenericAgent. The first two letters of our name are a quiet bow to where we came from.*
 
 ## 2. 产品摘要
 
-GenericAgent（lsdefine/GenericAgent，MIT，~10K star）是一个能力强、社区活跃的开源 Agent framework，但其官方前端（Streamlit）与 IM 集成（Feishu/微信/Telegram）在三个核心需求上是缺位的：
+GenericAgent (lsdefine/GenericAgent, MIT, ~10K star) 是个能力强、社区活跃的开源 Agent framework，官方支持 Streamlit / WeChat / Lark / Telegram 等多个前端。但所有这些前端在以下场景上是缺位的：
 
-1. **多 session 并行**：所有 IM 都做不到。
-2. **高风险动作审批**：IM 没有结构化审批 UI。
-3. **历史会话快捷查看与恢复**：IM 是聊天历史而不是任务列表；GA 自带的 `/resume` 是让 LLM 自助扫文件，不是真正意义的 session checkpoint。
+1. **多 session 并行**：所有 IM 都是单线对话框，几件事必须串在同一个 context 里
+2. **手机 ↔ 桌面 session 是隔离的**：外出用 IM 跟 GA 跑的事不在桌面工作台里，回到桌面看不到
+3. **手机上用户期待是"管理"而不是"工作"**：更像总监 / 管家，而不是工作台
 
-Galley 不重写 GA、不改造 GA，而是为 GA 提供一个**外挂式的桌面工作台**：让重度用户能流畅地多任务、可控地放手、随时回到上一次。
+v0.1 Galley 解决了第 1 个（multi-session 桌面 GUI），第 2 / 3 个是 v0.5 通过 dual-native 架构解决：
+
+- **桌面**：human operator 用 Galley GUI 像 v0.1 一样管 session team
+- **远端**：human 通过 IM 跟 Supervisor Agent 对话，Supervisor Agent 通过 localhost CLI 控制 Galley，所有 session 落到同一个 Galley 数据库
+- **回桌面**：所有外面派的任务都在 Galley GUI 里一目了然，可以手动接管继续
+
+Galley 自身永远是本地应用，远程传输不是 Galley 的责任——那部分由 Supervisor Agent 的外部传输层（如 GA 自己的 IM frontend）负责。
 
 ## 3. 产品定位
 
-不是 IDE，不是 ChatGPT 替代品，不是 IM 客户端。它是：
+不是 IDE，不是 ChatGPT 替代品，不是 IM 客户端，不是 GA 的前端。它是：
 
-- 通用 Agent 桌面工作台（macOS-first，长期跨平台）
-- 多 session 控制中心
-- 可观察执行界面 + Human-in-the-loop 审批层
-- GA 的 companion app：扩展体验，不替代核心，**删除即恢复**
+- **本地 agent team orchestrator**（macOS + Windows，long-term Linux）
+- **dual-native**：GUI 和 CLI 是对等消费端
+- **agent-friendly platform**：Supervisor Agent 通过公开 CLI 契约面控制整个 team
+- **Local-first**：所有数据在用户机器，远程传输由 Supervisor 在外部完成
+- **Non-invasive to backend**：v0.5 backend 是 GA，但架构允许将来 plug in 其他 agent runtime
 
-## 4. Non-invasive 原则（核心约束）
+> "GA 的 companion app，删除即恢复" 在 v0.1 是定位；v0.5 升级为 "agent-runtime-agnostic orchestrator，当前 wraps GA"。GA 仍是 v0.5 唯一支持的 runtime，但目录结构 (runner/) 和宪法允许将来扩展。
+
+## 4. 核心架构原则（项目宪法）
+
+### 4.1 Non-invasive to agent runtime
 
 Galley **绝对不**做：
 
-- 修改 GA 源码
-- 修改 GA memory 文件（`global_mem.txt`、`global_mem_insight.txt` 等）
-- 覆盖 GA 配置文件（`mykey.py` 等）
-- 接管 GA 运行环境（不动 venv、不改 PATH）
-- 自动升级 GA
+- 修改 agent runtime 源码（v0.5 = GA：`~/Documents/GenericAgent/` 下任何文件）
+- 修改 runtime memory / 配置文件
+- 接管 runtime 运行环境（不动 venv、不改 PATH）
+- 自动升级 runtime
 
 Galley **可以**做（即「扩展式 attach」）：
 
-- 子类化 GA 提供的 `BaseHandler` / `GenericAgentHandler`，注入 hook
-- 启动 GA 子进程（每个 session 一个独立子进程）
-- 通过 IPC（stdio JSON Lines 起步）和子进程通信
-- 读取 `llmclient.backend.history` 做持久化
+- 子类化 runtime 提供的 handler 类、注入 hook
+- 启动 runtime 子进程（每个 session 一个独立子进程）
+- 通过 IPC 通信
+- 读取 runtime 状态做持久化
 - 通过 IPC 命令注入 history 实现 session 恢复
 
-**保证**：用户随时可以删除 Galley，GA 独立运行不受任何影响；GA 升级时，Galley 只依赖 BaseHandler / ToolClient 这一层公开 API。
+**例外条款（用户显式动作）**：用户在 Galley Settings 内主动点击 "Install Supervisor SOP" 按钮，Galley 把 SOP 文件写入用户的 GA `memory/` 目录——这属于用户主动安装内容、不属于 Galley 偷改 GA 状态，宪法明确允许。
 
-> Non-invasive 是工程层约束。UX 层的三条核心约束（单容器更新 / 渐进式披露 / 结果优先）见 DESIGN.md 中的对应章节。
+**保证**：用户随时可以删除 Galley，GA 独立运行不受影响。
+
+### 4.2 Localhost only
+
+**Galley Core 永远 only listen on AF_UNIX / named pipe，不开 TCP，不持有 token。**
+
+远程访问通过 Supervisor Agent 在外部传输层（IM frontend / SSH / 其他）完成。这是责任边界，不是 v0.5 简化：
+
+```
+┌──────────────────────────────┐
+│  手机 / 远端                  │
+│  ↓ IM / SSH / 其他           │   ← 远程传输：Supervisor Agent 的责任
+└────────────┬─────────────────┘
+             ↓
+┌────────────┴─────────────────┐
+│  桌面（同一台机器）           │
+│  Supervisor Agent            │
+│  ↓ localhost (unix socket)   │
+│  Galley CLI / GUI            │
+│  ↓                           │
+│  Galley Core                 │   ← 本地编排：Galley 的责任
+└──────────────────────────────┘
+```
+
+收益：
+
+- 安全模型 = OS user filesystem permission，无 TLS / token / 证书
+- 复用 Supervisor 平台已有的远程传输（GA 的 IM frontends、Claude 的 web、SSH 等）
+- "Galley 是本地的、数据不离开你的机器" brand 守住
+
+### 4.3 CLI surface 是公开契约
+
+Galley CLI 输出的 JSON schema 是 Galley 对 agent 生态的公开承诺：
+
+- 详细规范见 [docs/agent-api.md](./agent-api.md)（v0.5 ship 时 publish）
+- schema_version 内 additive-only（只加字段不删 / 不改语义）
+- breaking change = schema_version bump，旧版 SOP 仍可用 `?schema=N` 拿老格式
+- exit code 分类稳定，错误码 enum stable
 
 ## 5. 目标用户
 
-V0.1 优先服务现有 GenericAgent 重度用户——能接受本地配置、关心工具执行透明度、有多任务和高风险操作审批需求的人。
+V1.0 优先服务：
 
-不优先服务：完全不懂本地配置的轻度用户、需要团队协作的企业用户、需要托管服务的用户。
+- 现有 GA 重度用户（v0.1 已经在用 Galley 的人，自然过渡）
+- 想用 supervisor agent 远程控制 session team 的 power user
+- 能接受本地配置、关心工具执行透明度的开发者
+
+不优先服务：
+
+- 完全不懂本地配置的轻度用户
+- 需要团队协作的企业用户
+- 需要托管服务的用户
+- 不写代码 / 不用 IM agent 的用户
 
 ## 6. Goals / Non-goals
 
-### 6.1 V0.1 Goals（7 件事）
+### 6.1 V1.0 Goals（5 件事）
 
-1. Attach 已安装的本地 GA 并跑通 Health Check
-2. 用户可以并行开多个 session（每个 session 一个 GA 子进程）
-3. 用户可以查看每个 session 的 Tool Timeline（结构化事件流，不是字符串解析）
-4. 用户**可以**审批或拒绝高风险工具调用——审批系统存在并默认开启，但用户可根据信任度选择 YOLO 模式（一键跳过所有审批）。审批是**出口**而非**强制围栏**，跟 Claude Code 的 `--dangerously-skip-permissions` 同思路，避免长会话 coding agent 用户被审批 fatigue 推走
-5. 用户可以查看历史 session 列表、回看完整记录、并继续聊
-6. 左侧 Session 列表上每个 session 显示当前状态（不点进对话即可知道进展），参考 GA 飞书前端 `_TaskCard` 设计
-7. 用户可以在对话中切换 LLM（Composer 内 LLM dropdown），切换不丢上下文（GA 自动迁移 history）
+继承 v0.1 七件事的成果，v0.5 新增 5 件：
 
-### 6.2 V0.1 Non-goals
+1. **Galley Core**：Rust 端权威层。bridge 管理 / SQLite 写 / 命令调度 / event broadcast 都在 Rust 完成。前端（GUI / CLI / 未来 web / mobile）是 stateless presenter
+2. **Galley CLI v1**：13+ 个子命令覆盖 inventory / 操作 / 项目 / 配置；agent-first 输出（NDJSON / JSON 默认）；schema versioned；公开 [agent-api.md](./agent-api.md) 契约
+3. **Background mode**：menubar daemon 形态。关窗 → 隐藏不退出。Galley Core 没在跑 = CLI 全部命令报错 "Open Galley first"
+4. **Supervisor 行动日志 per-session**：每个 session 的 timeline 里穿插显示 human / supervisor 对此 session 的动作 + reason，回桌面一眼看懂"昨晚干了啥"
+5. **Galley Supervisor SOP for GA** + **galley-supervisor skill** for Claude：两个 adapter artifact 随 v0.5 发布，让用户能立即在 GA 或 Claude 上把 Galley 当作 tool 使用
+
+继承自 v0.1（v0.5 必须仍然成立）：
+
+- v0.1 七件事的所有 acceptance criteria 仍然必须通过（multi-session / Tool Timeline / Approval / Session 历史 / Session 状态展示 / LLM 切换 / GA Attach）
+
+### 6.2 V1.0 Non-goals
+
+- **远程认证 / token 系统**：永远 localhost only（宪法）
+- **Supervisor 注册 / capability 声明 / permission system**：v0.5 不做，留 v0.6++
+- **Galley 作 chat platform**：不存 Supervisor ↔ human 对话，只存动作 + reason
+- **多 agent runtime 同时支持**：v0.5 仍是 GA only。架构允许将来扩展，但 v0.5 不实施
+- **Web / mobile / remote 前端**：不在 v0.5
+- **Telemetry / 用量统计**：永远 no telemetry
+- **Homebrew tap / 包管理**：v0.5 不做，v0.6+ 候选
+
+### 6.3 继承自 v0.1 的 Non-goals（仍然成立）
 
 - 自动安装 / 升级 / 修复 GA
-- 远程 / 多机器 runtime
 - 完整 IDE（文件树、编辑器、git diff）
-- Context Window 占用展示（GA 当前未暴露）
-- Follow-up Queue（依赖暂停/恢复语义，GA 当前是退出再重入模式）
-- Artifacts 一等公民（GA artifact 概念模糊）
+- Context Window 占用展示
+- Follow-up Queue
+- Artifacts 一等公民
 - 完整 tracing / 多人审批 / 复杂 policy / RBAC
 
-## 7. 信息架构
+## 7. 术语表
 
-> 注：本节是 v0.2 PRD 写作时的初步信息架构。在后续设计讨论中已迭代为时间分组主体（TODAY / THIS WEEK / EARLIER）+ Projects 次要 section + Trash 隐蔽布局。详见 DESIGN.md 中的 Sidebar Spec。
+| 概念 | 术语 | 备注 |
+|---|---|---|
+| 一个会话 | **session** | 继承 v0.1 |
+| 一组 session | **session team** | tagline 一致 |
+| 外部 agent 通过 CLI 驱动 Galley | **Supervisor Agent** | 大写 S 首字母正式；小写日常 |
+| 坐桌前用 GUI 的人 | **human operator** | 跟 Supervisor 配对 |
+| Supervisor 远程操作 Galley 这件事 | **agent-driven operation** | 不用 "CEO mode" / "remote control" |
+| Rust 端权威层 | **Galley Core** | 专有名词 |
+| GUI 前端 | **Galley GUI** | 桌面 React app |
+| CLI 前端 | **Galley CLI** | 命令行 binary `galley` |
+| 两个前端的合称 | **GUI surface** + **CLI surface** | 同一 core 的不同 facet |
+| Python session 容器 | **runner** | 重命名自 v0.1 的 bridge |
+| 后台常驻 | **background mode** | 用户文档；开发文档可用 daemon |
+| 设计哲学 | **dual-native** | 人和 agent 都 first-class |
 
-### 7.1 顶层结构
+## 8. 信息架构（不变，继承 v0.1 + v0.2 + sidebar overhaul）
 
-三栏：
+GUI 信息架构跟 v0.2 PRD §7 + DESIGN.md 一致。本节不重复细节，详见：
 
-```
-┌─────────────────────────────────────────┐
-│ Top Bar: Runtime · Status · Controls    │
-├──────────┬───────────────┬──────────────┤
-│ Sidebar  │ Conversation  │ Inspector    │
-│ Sessions │ + Tool Timeline│ Details/Logs│
-│ Projects │               │ /Approval   │
-└──────────┴───────────────┴──────────────┘
-```
+- [DESIGN.md](./DESIGN.md) — Sidebar Spec / Top Bar / Conversation / Approval Dock
+- [2026-05-13 sidebar overhaul devlog](./devlog/2026-05-13-sidebar-overhaul-and-projects.md) — 信息架构最新形态
 
-### 7.2 左侧栏（v0.2 PRD 初版描述；最新见 DESIGN.md）
+v0.5 在 GUI 侧的新增元素（B4 阶段实施）：
 
-- Quick Actions：New Chat、Search
-- All Sessions：Active Runs / Today / Archive
-- Projects（可选归类容器）
-- Unfiled（默认桶）
+- **Background mode menubar icon**：静态 / N active session 时带 badge
+- **Session timeline 的 supervisor 行动条目**：穿插显示 human / supervisor 动作 + reason
+- **Settings → Integration**：CLI install to PATH 按钮 + Install Supervisor SOP 按钮
 
-### 7.3 Projects 模型
+## 9. 数据模型
 
-Project 在 V0.1 是**纯归类容器**，绑定两样东西：
+继承 v0.2 的 Session / Project / Tool Event / ConversationMessage。v0.5 新增字段：
 
-| 绑定项 | 说明 |
-|---|---|
-| **A. 归类** | sessions 在侧边栏分组显示，并可在 Projects view 内独立浏览 |
-| **B. cwd（可选）** | 启动该 Project 下的 session 时，GA 子进程的 working dir 指向此路径 |
-
-明确**不**绑定（V0.1 与 V0.2）：
-
-- **额外 system prompt / project instructions**（即使是 Cursor `.cursor/rules` / Claude Code `CLAUDE.md` 那种"项目事实与约束"也不做）—— Project 必须**完全不改变用户对 GA Agent 内核的使用体验**：GA 在 cwd `~/code/foo` 跟在 cwd `~/code/bar` 行为完全一致，不因属于哪个 Project 而表现不同
-- 知识文件 / RAG（V0.1 不做 attach 文件流；V0.2 候选）
-- 独立 memory（GA memory 是全局的，触碰即违反 non-invasive）
-- 项目级默认 LLM（Composer 内 LLM dropdown 已覆盖 per-session 切换需求）
-
-**Project = 抽屉**，不是"Custom GPT"，不是"ADE workspace"。给 coding agent 用户的核心价值是：**"把同一个项目文件夹相关的所有 sessions 统一管理"**——cwd 共享 + 视觉归类 + 一个独立的 Project view 入口。仅此而已。
-
-**删除 Project 时，里面的 sessions 不删除**：自动解除归属，回到 timeline，仍可独立访问。
-
-### 7.4 Run Dock Area（输入区上方）
-
-V0.1 只保留 **Approval Dock**：当前 session 有 pending approval 时高亮提示。
-
-砍掉：Progress Dock、Follow-up Queue Dock、Question Dock、Error Dock。这些都依赖 GA 暴露更细粒度的状态/控制能力，V0.1 不做。
-
-### 7.5 Session Row 状态展示（参考飞书 `_TaskCard`）
-
-不点进 session，仅看左侧栏即可知道进展。每个 session row 必显示：
-
-| 元素 | 说明 |
-|---|---|
-| **状态指示** | line icon（DESIGN.md 选 Phosphor Thin），颜色区分状态 |
-| **标题** | session title（用户重命名或自动生成） |
-| **当前进展** | `Turn N · {summary}`（直接复用 GA 在 `turn_end_callback` 中从 `<summary>` 标签提取的内容） |
-| **当前工具**（可选） | 当 status=running 且能拿到 currentTool 时显示 |
-| **角标** | pending approval count / error count / unread |
-
-状态来源**全部走 `agent._turn_end_hooks`**（GA 已存在的官方扩展点，详见附录 A.2 与第 10.1 节）。每个 turn 结束 GA 自动调用 hook 并传 `summary` 等字段，Galley 写到 SQLite 的 SessionListProjection，UI 订阅渲染。
-
-参考实现：`fsapp.py` 的 `_TaskCard`（GA 仓库 frontends/fsapp.py 第 467-520 行）——单卡片持续 patch、状态栏 + 折叠 step 面板的模式。
-
-## 8. 数据模型
-
-### 8.1 Session
+### 9.1 Session 新增字段
 
 ```typescript
-type SessionStatus =
-  | "idle" | "connecting" | "running"
-  | "waiting_approval" | "error"
-  | "completed" | "cancelled"
-  | "archived";
-
 type Session = {
-  id: string;
-  projectId?: string;          // 未归类时为空
-  title: string;
-  status: SessionStatus;
-  currentTool?: string;
-  pendingApprovalCount: number;
-  errorCount: number;
-  lastActivityAt: string;
-  createdAt: string;
-  updatedAt: string;
-  pid?: number;                // GA 子进程 PID
-  cwd?: string;
+  // ...v0.2 字段不变
+  createdVia: "manual" | "cli";        // 创建来源
+  createdBySupervisor?: string;          // freeform supervisor 标识
+  createdOriginNote?: string;            // freeform reason at creation
 };
 ```
 
-### 8.2 Project
-
-```typescript
-type Project = {
-  id: string;
-  name: string;
-  rootPath?: string;           // 可选 cwd 绑定
-  icon?: string;               // 默认 emoji（无 cwd → 📁 / 有 cwd → 📂）
-  color?: string;
-  pinned: boolean;             // sidebar 中置顶
-  lastActivityAt: string;      // 该 project 下任一 session 最近活动时间，用于排序
-  createdAt: string;
-  updatedAt: string;
-};
-```
-
-字段约束：
-
-- `pinned` 默认 `false`，置顶时永远在非 pin 之前
-- `lastActivityAt` = `max(sessions.lastActivityAt where projectId = this.id)`；项目无 session 时回退到 `createdAt`
-- 排序规则：`pinned desc, lastActivityAt desc`（详 DESIGN.md §4.2 Project Section Spec）
-
-### 8.3 Tool Event
-
-```typescript
-type ToolEvent = {
-  id: string;
-  sessionId: string;
-  turnIndex: number;
-  toolName: string;
-  status: "pending" | "running" | "success" | "failed" | "waiting_approval" | "cancelled";
-  startedAt: string;
-  endedAt?: string;
-  argsPreview?: string;
-  resultPreview?: string;
-  rawJson?: unknown;
-  riskLevel?: "low" | "medium" | "high";
-  approvalId?: string;
-};
-```
-
-### 8.4 Conversation Message（用于持久化与恢复）
+### 9.2 Message 新增字段
 
 ```typescript
 type ConversationMessage = {
-  id: string;
-  sessionId: string;
-  role: "system" | "user" | "assistant" | "tool";
-  content: string;
-  toolCalls?: any[];
-  toolResults?: any[];
-  createdAt: string;
+  // ...v0.2 字段不变
+  createdVia: "manual" | "cli";
+  supervisor?: string;                    // freeform supervisor 标识
+  originNote?: string;                    // freeform reason for this action
 };
 ```
 
-## 9. Runtime Attach Model
+### 9.3 不新增的字段（明确）
 
-### 9.1 V0.1 拓扑
+- 没有 `supervisor_registry` 表（permission system 雏形，v0.5 拒）
+- 没有 supervisor ↔ human 对话存储表（不做 chat platform）
 
-```
-┌─────────────────────────┐
-│  Galley Main Process │
-│  (Tauri + React)        │
-│  - SQLite               │
-│  - Session Manager      │
-│  - IPC Broker           │
-└────┬────┬────┬──────────┘
-     │    │    │  (stdio JSON Lines)
-     ▼    ▼    ▼
-   GA-1  GA-2  GA-3   (each is a Python subprocess)
-   (session a) (b) (c)
-```
+## 10. Galley Core（Rust 端权威层）
 
-每个 session = 一个 GA 子进程 = 独立 working dir / history / handler 实例。
+### 10.1 职责
 
-### 9.2 Attach 流程
-
-1. 用户首次启动 Galley
-2. Galley 检测 GA 安装路径（默认 `~/Documents/GenericAgent`，可手动指定）
-3. Health Check：路径存在、Python 可用、`agentmain.py` 可 import、`mykey.py` 存在
-4. dry-run 启动一个 GA 子进程验证 LLM session 可初始化
-5. 标记 healthy，进入主界面
-
-### 9.3 Session 启动
-
-启动新 session 时：
-
-1. Galley 起一个 GA 子进程
-2. 通过 `python -m bridge.workbench_bridge --ga-path ... --session-id ...` 注入 Galley 的 bridge 脚本——bridge 内部 import GA 的 `GeneraticAgent` 和 `GenericAgentHandler`，子类化为 `WorkbenchHandler` 注入 hook
-3. bridge 通过 stdin 接收 Galley 指令、stdout 输出结构化 JSON Lines 事件
-4. Galley 主进程订阅 stdout，解析事件，更新 UI
-
-bridge 脚本是 Galley 自己的代码，**不属于 GA 仓库**。
-
-### 9.4 IPC 事件协议
-
-详细字段级 schema 见 [docs/ipc-protocol.md](./ipc-protocol.md)。简述：
-
-事件方向：子进程 → Galley
-
-```typescript
-type IPCEvent =
-  | { kind: "ready"; sessionId: string; protocolVersion: string; gaCommit: string; availableLLMs: LLMInfo[]; ... }
-  | { kind: "turn_start"; turnIndex: number }
-  | { kind: "tool_call_pending"; approvalId: string; toolName: string; args: any; riskLevel: string; ... }
-  | { kind: "tool_call_start"; toolName: string; args: any; ... }
-  | { kind: "tool_call_progress"; text: string }
-  | { kind: "tool_call_end"; status: "success" | "failed" | "denied" | "cancelled"; resultPreview: string; ... }
-  | { kind: "turn_end"; turnIndex: number; summary: string; toolCalls: any[]; toolResults: any[]; exitReason?: any }
-  | { kind: "ask_user"; question: string; candidates?: string[] }
-  | { kind: "run_complete"; exitReason: any; finalContent: string; totalTurns: number }
-  | { kind: "error"; message: string; ... }
-  | { kind: "history_loaded"; messageCount: number }
-  | { kind: "llm_changed"; index: number; name: string; displayName: string };
-
-type LLMInfo = {
-  index: number;
-  name: string;          // raw "ClassName/model" from GA
-  displayName: string;   // bridge-prettified for UI
-  isCurrent: boolean;
-};
-```
-
-指令方向：Galley → 子进程
-
-```typescript
-type IPCCommand =
-  | { kind: "user_message"; text: string; images: string[] }
-  | { kind: "approval_response"; approvalId: string; decision: "allow_once" | "deny" | "always_allow_project" | "always_allow_global" }
-  | { kind: "ask_user_response"; text: string }
-  | { kind: "abort" }
-  | { kind: "load_history"; messages: ConversationMessage[] }
-  | { kind: "set_approval_rules"; alwaysAllowGlobal: string[]; alwaysAllowProject: string[] }
-  | { kind: "set_llm"; llmIndex: number }
-  | { kind: "shutdown" };
-```
-
-### 9.5 数据来源标注
-
-| 事件 | 来源 | 备注 |
+| 职责 | v0.1 在哪 | v0.5 在哪 |
 |---|---|---|
-| `ready` | bridge 启动后立刻 emit | desktop 验证 protocolVersion |
-| `turn_end` | `agent._turn_end_hooks` | GA 官方扩展点，summary 已由 GA 提取 |
-| `tool_call_pending` | `WorkbenchHandler.dispatch` 拦截 | 子类化，generator 阻塞等审批 |
-| `tool_call_start` / `tool_call_end` | 同上 | 仅审批工具走此路径 |
-| `tool_call_progress` | bridge 解析 stdout（兜底） | 非结构化，仅作 raw view |
-| `ask_user` | GA 已有协议 | `should_exit=True` 时检测 |
-| `run_complete` / `error` | bridge 主控 | abort 时 bridge 主动合成 ABORTED |
+| SQLite 读写 | TypeScript (`desktop/src/lib/db.ts` 778 行) | Rust (Galley Core)，TypeScript 改为通过 invoke 调用 |
+| Bridge 子进程 spawn / 管理 | TypeScript (`desktop/src/lib/bridge.ts` 203 行) | Rust (Galley Core) 持有 child handle |
+| IPC event 分发 | TypeScript (`desktop/src/lib/ipc-handlers.ts` 1011 行) | Rust (Galley Core) emit event 到所有 subscriber |
+| 命令调度 | TypeScript (Zustand store actions, 2727 行 store 一部分) | Rust (Galley Core) 暴露 trait |
+| 状态管理 (authority) | TypeScript (Zustand store) | Rust (Galley Core) 内部 state，前端订阅 |
+| UI state (selected session, modals open, etc.) | TypeScript (Zustand store) | TypeScript (拆 slice 后保留) |
 
-### 9.6 Health Check Card
+### 10.2 Core API（trait + 多 transport）
 
-显示：GA 路径 / Python 版本 / GA 入口可 import？/ `mykey.py` 可读？/ 至少一个 LLM session 可初始化？/ 上次 heartbeat 时间。
+**single source of truth**：Rust 用一个 trait 定义 "Galley API surface"：
 
-## 10. Tool Timeline
+```rust
+trait GalleyApi {
+    async fn list_sessions(&self, filter: SessionFilter) -> Result<Vec<SessionBrief>>;
+    async fn get_session_brief(&self, id: SessionId) -> Result<SessionBrief>;
+    async fn send_message(&self, id: SessionId, msg: String, origin: Origin) -> Result<MessageId>;
+    async fn create_session(&self, params: NewSession, origin: Origin) -> Result<SessionId>;
+    async fn archive_session(&self, id: SessionId, origin: Origin) -> Result<()>;
+    async fn watch_session(&self, id: SessionId, filter: EventFilter) -> EventStream;
+    // ... 完整命令表见 §11
+}
 
-### 10.1 实现路径（双轨制）
+struct Origin {
+    via: "manual" | "cli",
+    supervisor: Option<String>,
+    reason: Option<String>,
+}
+```
 
-V0.1 走两条独立链路获取数据，互为兜底：
+两个 transport 都调同一个 trait：
 
-**轨道 A：`agent._turn_end_hooks`（GA 官方扩展点，零侵入）**
+- **Tauri command handlers**（GUI invoke）→ thin wrapper 调 trait
+- **Unix socket handlers**（CLI 连接）→ thin wrapper 调 trait
 
-GA 在 `turn_end_callback` 中遍历所有注册到 `agent._turn_end_hooks` 的 hook 并调用，传入 `response / tool_calls / tool_results / turn / summary / next_prompt / exit_reason`。Galley bridge 注册一个 hook：
+**收益**：新增命令 = 改一处。三个 transport（GUI / CLI / 未来扩展）自动同步。schema 不会漂移。
 
-- 每 turn 结束 emit `turn_end` 事件（含 GA 已提取好的 summary、tool_calls、tool_results）
-- 用于：Session Row 状态展示、Tool Timeline 的 turn-level 视图、最终回答展示
+### 10.3 工程实施（B1-B4）
 
-**轨道 B：子类化 `BaseHandler`（hook 不能拦在 tool 执行前时使用）**
+详细 phase 分解见 [vision pivot devlog](./devlog/2026-05-15-vision-pivot-to-orchestrator.md) §D4。要点：
 
-`WorkbenchHandler(GenericAgentHandler)` 重写 `dispatch`：
+- **B1 (3w)**: 目录重组 + Rust core 骨架 + CLI 只读命令
+- **B2 (3w)**: runner ownership 迁 Rust + CLI 写命令 send_message
+- **B3 (3-4w)**: useAppStore 拆 slice + 改订阅 Rust event
+- **B4 (2-3w)**: CLI feature-complete + background mode + SOP/Skill artifact + agent-api.md
 
-- emit `tool_call_pending`，generator 阻塞等审批
-- 收到 `approval_response` 后决定是否调用真实 tool method
-- 仅用于审批场景；非审批工具无需经过此路径
+**每阶段不能让 dogfood 体验比上一阶段差**——老路径保留 + 新路径并行 + 验证后切流，dogfood 稳定优先于代码 churn。
 
-**优点**：
+## 11. Galley CLI 命令 surface
 
-- 90% Tool Timeline 数据来自轨道 A（GA 官方支持，升级安全）
-- 仅审批拦截需要轨道 B（必要的子类化）
-- 飞书前端 `_make_task_hook` 已验证轨道 A 模式可行
+完整规范见 [docs/agent-api.md](./agent-api.md)（v0.5 ship 时 publish）。本节列 surface。
 
-### 10.2 Tool Event 字段
+### 11.1 命令表
 
-每个 Tool Event 必显示：tool name、status、short summary、elapsed、risk level、approval state、result summary。raw JSON 折叠可展开。
+```bash
+# Inventory (read)
+galley sessions list [--project=X] [--status=...] [--json|--pretty]
+galley sessions search "<kw>" [--scope=all|active]
+galley session brief <id>                # digested 1-2 行
+galley session show <id> [--tail=N]      # 完整 message log
+galley status                            # 一句话 team 总览
+galley health                            # 类似 GUI health check 5 项
+galley version                           # Galley + schema 版本
 
-### 10.3 展示规则
+# Operate session (write)
+galley session new "<task>" [--project=X] [--llm=...] [--supervisor=...] [--reason=...]
+galley session send <id> "<msg>" [--supervisor=...] [--reason=...]
+galley session btw <id> "<q>" [--supervisor=...]
+galley session stop <id>
+galley session archive <id>
+galley session restore <id>
+galley session watch <id> [--filter=...] [--until=idle]   # NDJSON stream
 
-- 当前 step 默认展开
-- 历史成功 step 默认折叠
-- error / waiting_approval step 自动展开
-- 长任务显示 last activity 时间
+# Project
+galley project create / list / move / archive
 
-## 11. Approval System
+# Config
+galley llm list
+galley llm set <session> <llm>
+```
 
-### 11.1 实现路径
+### 11.2 输出契约（6 条规则）
 
-`WorkbenchHandler.dispatch` 是 Python generator，可以 yield 后**阻塞**等待 IPC 回复。Galley 收到 `tool_call_pending` 事件，弹 Approval Card；用户决策后通过 IPC 发回 `approval_response`，子进程 generator 恢复，根据决策决定是否调用真实 tool method。
+1. **默认 JSON / NDJSON**：NDJSON 一行一对象 streaming 友好，single-result 用 JSON 对象。`--pretty` flag 触发 human-readable table
+2. **错误是 JSON**：`{"error": "<code>", "message": "<human>", ...context}`
+3. **Exit code 分类**：0=success / 1=generic / 2=invalid args / 3=not found / 4=backend unavailable / 5=runner error
+4. **Schema versioned, additive-only**：v1 内只加不删，break = bump v2
+5. **Command grammar**：`galley <noun> <verb>`（`session create` 不是 `create-session`）
+6. **`--pretty` 是 derived view**：JSON canonical
 
-这是个**完美契合**：generator 阻塞 = agent 暂停 = 等审批 = 收到回复后恢复。**不需要修改** `agent_runner_loop`。
+### 11.3 Supervisor identity 字段
 
-### 11.2 默认审批列表
+`--supervisor=<freeform-string>` 由 supervisor 自己定（如 `ga-wechat-bot`、`claude-skill-galley-mgr/v1.2`）。Galley 只记录、不校验、不注册。
 
-V0.1 默认需要审批：
+### 11.4 不在 v0.5 surface 的命令
 
-- `code_run`（python / bash / powershell）
-- `file_write`
-- `file_patch`
-- `start_long_term_update`（会改 memory）
+- `galley pet attach / detach`（桌宠，supervisor 用不到）
+- `galley config get/set`（Settings 是 GUI 的事）
+- `galley memory ...`（GA memory 由 GA 自己管，宪法约束）
+- `galley supervisors register / list`（permission system 雏形，v0.6+ 候选）
 
-V0.1 默认免审批：
+## 12. CLI 发包
 
-- `file_read`、`web_scan`、`web_execute_js`（read-only 主导）、`update_working_checkpoint`、`ask_user`、`no_tool`
+### 12.1 默认（agent 用）
 
-### 11.3 审批操作
+CLI binary bundled 进 .app（macOS）/ Program Files（Windows）：
 
-V0.1 提供四个选项：
+```
+macOS:   /Applications/Galley.app/Contents/MacOS/galley
+Windows: C:\Program Files\Galley\galley.exe
+```
 
-- **Allow once** — 只通过本次
-- **Deny** — agent 收到 denied 状态，next_prompt 提示已被拒
-- **Always allow in this Project** — Project 级自动通过（Unfiled 是默认桶，规则单独存）
-- **Always allow globally** — 全局自动通过（power user 选项，给高信任度用户）
+**首启不弹 PATH install 提示**——agent 不用 PATH，认绝对路径。
 
-设置中心提供全局 always allow 列表的查看与撤销入口；高敏感工具（如 `start_long_term_update`）默认禁用 globally 选项，必须 Project 级。
+### 12.2 Discovery file
 
-V0.1 不做：路径级 allow、正则 policy、多人审批。
+GUI 首次启动写入一行 CLI 绝对路径：
 
-### 11.4 Approval Card 必显字段
+```
+macOS / Linux: ~/.config/galley/cli-path
+Windows: %APPDATA%\galley\cli-path
+```
 
-工具名 / 动作说明 / 风险等级 / 目标对象（path / 命令摘要）/ 为什么需要审批 / 四个按钮。
+Supervisor SOP 第一步读这个文件拿 CLI 路径，跨 OS 统一。
 
-**工具特定渲染**：
+### 12.3 Human escape hatch
 
-- **`file_patch`**：渲染 split diff 视图（old_content → new_content）。V0.1 用自研 PatchView（`diff` npm 包计算 line-level changes + 自渲染 split layout），无语法高亮 —— 试过 `@pierre/diffs` 但 Shiki backend 拉所有语言包进 bundle（+400 KB gzip），V0.2 再评估带 scoped 语言注册的引入。args 字典中 `path` / `old_content` / `new_content` 三元组完整可得（GA `file_patch(path, old_content, new_content)` 签名），bridge 不需要额外处理
-- **`file_write`**：显示 `path + mode (overwrite/append/prepend)` + muted 一行 "内容由 LLM 当前回复决定，将写入此文件"。**不做内容预览** —— GA 架构限制：实际内容由 `do_file_write` 跑时从 `response.content` 通过 `extract_robust_content` 提取，dispatch 拦截时还没跑这段；提前预览需要复刻 GA 的 extract 逻辑，违反 non-invasive 第 4 条
-- **`code_run`**：显示完整命令 + 等宽字体 + 语言高亮（bash/python/powershell）
-- **`start_long_term_update`**：显示要写入的 memory key + 内容预览
+Settings → Integration → "Install `galley` to PATH" 按钮：
 
-### 11.5 YOLO Mode（全局跳过审批）
+- macOS：弹 sudo 创建 `/usr/local/bin/galley` → CLI 绝对路径 symlink
+- Windows：写用户级 PATH（不需 admin）
 
-**全局 toggle**：在 Settings → Approval tab。打开后所有 tool 调用直接执行，bridge 不发 `tool_call_pending`，desktop 也不显示 Approval Card。
+### 12.4 v0.6+ 候选
 
-**心智定位**：跟 Claude Code 的 `--dangerously-skip-permissions` 同思路。审批系统是**出口**——为用户提供"信任并跳过"的选择，而不是强制每次点确认。长会话 coding agent 场景下（10+ turn 改代码），不给这个出口用户会回到裸跑 GA。
+- Homebrew tap `brew install galley`
+- Linux AppImage / .deb / .rpm
+- Snap / Flatpak
 
-**命名**：「YOLO 模式」。理由：
+## 13. Background mode
 
-- 用户社区已接受这个 meme（Claude Code / Cursor / Aider 都用）
-- "YOLO" 自带自嘲意味，让用户开启时**潜意识知道在做什么**——比 "自动审批" / "完全信任" 这类正经命名更难误用
+### 13.1 行为
 
-**启用流程**（Settings UI 内）：
+- 关闭主窗口（红色按钮 / Cmd+W）→ **隐藏**，不退出。app 继续在 menubar 跑
+- Cmd+Q 或 menubar "Quit Galley" 才真退
+- Galley Core 完全退出 = CLI 全部命令报错 "Open Galley first"
 
-1. OFF → ON 弹 confirm modal，文案必须解释：YOLO = "You Only Live Once"，跳过所有审批直接执行；风险（file_patch / code_run 等高危操作不再过 Card，错误不可逆）；适用场景（完全信任 agent + 沙盒环境工作，个人 repo / 临时虚拟机）；不适用场景（生产代码 / 共享系统 / 不熟悉的 agent）
-2. 二次确认按钮文案："是的，我知道在做什么"——不写"确定"，用户会条件反射点
-3. ON → OFF 不需要二次确认（关闭无害）
+### 13.2 Menubar 图标状态
 
-**TopBar persistent indicator**（关键）：
+- 静态：什么都不在跑
+- 带数字 badge：N 个 active session
+- 不做 approval 红点（v0.1 已经接受 YOLO 默认，supervisor 场景下 approval 不是主线）
 
-YOLO 开启时，TopBar 必须显示一个 persistent badge——深琥珀色、不闪烁、不可隐藏。点击 badge 弹 popover，写明 "YOLO 已开启，所有审批跳过" + "关闭 YOLO" 按钮（一键直接关）。
+### 13.3 Menubar 下拉菜单
 
-**没有这个 indicator 不能上线 V0.1**——人对自己的状态会忘，桌面 GUI 没有"启动时刻"的强警告（区别于 Claude Code 的 CLI banner），必须靠 persistent indicator 兜底。否则必出"忘了开着 YOLO，agent 跑了 git push --force"类事故。
+- "Open Galley"
+- "5 active · 12 idle" 状态行
+- "Show pending: #3 #12" 有 session 等待输入时（可选）
+- "Launch at login" toggle (default OFF for v0.5)
+- "Quit Galley"
 
-**持久化**：写到 `prefs` 表 key `yolo_mode`。跨启动保留。新 bridge spawn 后 desktop 在收到 `ready` 事件时立即 `set_yolo_mode` 同步当前 state。
+### 13.4 首启引导
 
-**与现有 always_allow 的关系**：YOLO mode 是上位优先级——开启时 always_allow 的 per-tool / per-project 列表不再起作用（也无意义，反正全跳）。关闭 YOLO 后 always_allow 列表照常工作。两者在 bridge 端是独立 state，关闭 YOLO 不会清空 always_allow。
+第一次关窗时弹一次 "Galley 还在 menubar 跑哦，要彻底退按 Cmd+Q" 的引导（写到 `prefs.background_mode_intro_seen`），之后不打扰。
 
-**Per-session YOLO**：V0.1 不做，V0.2 候选。中间层（"YOLO this session"）会让用户搞不清当前在哪个开关上，V0.1 先把粗（全局）+ 细（per-call / per-tool）两层做好。
+## 14. Adapter artifacts（随 v0.5 发布）
 
-## 12. Session 持久化与恢复
+### 14.1 Galley Supervisor SOP for GenericAgent
 
-### 12.1 写入
+文件：`docs/integrations/galley-supervisor-sop.md`（仓库内）+ 可投到 fudankw.cn/sophub
 
-每条 user message / assistant message / tool call / tool result 都通过 IPC 事件落到 Galley SQLite，按 `session_id + turn_index` 索引。
+内容：
 
-### 12.2 恢复
+- 读 discovery file 拿 CLI 路径
+- 列出可用命令 + 典型使用模式
+- 强调："你是 Supervisor，远程帮 human 管理 session team。**重要决策（archive / 切 LLM）问 human 再做**"
+- 调用示例（agent 友好的 JSON 输出 + 怎么读）
 
-用户在 Sessions 列表点开 3 天前的 session：
+**安装路径**：宪法允许 Galley Settings 提供"装到 GA"按钮，读用户配置的 GA path，写入 `~/Documents/GenericAgent/memory/galley-supervisor-sop.md`。Galley 不替换用户已有的同名文件，会先检查 + 提示。
 
-1. Galley 起一个新 GA 子进程
-2. 通过 `load_history` IPC 命令把 SQLite 里的 messages 注入 `client.backend.history`
-3. 用户继续输入，agent_runner_loop 接续
+### 14.2 galley-supervisor skill for Claude
 
-### 12.3 注意
+文件：`.claude/skills/galley-supervisor/`（仓库内 + 可让 JC 发布到 Claude skill marketplace）
 
-- GA 的 `working memory`（key_info、related_sop）不持久化——这是任务进行中的临时状态，恢复跨 session 没意义
-- GA 的 global memory 是 GA 自己管理的，Galley 不动；恢复后 agent 看到的是**当前**的 global memory，可能与原 session 时不同
+类似 SOP 内容，遵循 Claude skill format。
 
-## 13. 主界面布局
+### 14.3 docs/agent-api.md
 
-> 本节是 v0.2 PRD 写作时的初步描述。最新设计（含 Top Bar 形态、Inspector 默认状态、Approval Dock 视觉等）见 [DESIGN.md](./DESIGN.md)。
+Galley CLI 的公开契约：
 
-### 13.1 Top Bar
+- 命令 surface 完整列表 + 参数 + 输出 schema
+- Exit code 表
+- Schema versioning 规则
+- 稳定性承诺（v0.6+ 内 additive-only）
+- 错误码 enum + 解释
 
-显示：当前 session 名 / GA runtime 状态 / Stop / Command Palette 入口。
+给 Supervisor adapter / SOP 作者看，不是给最终用户看。
 
-**不**显示 Context Window（V0.1 拿不到）、**不**显示价格。
+## 15. Onboarding 调整
 
-### 13.2 中间主区
+继承 v0.1 onboarding flow（welcome / attach / health check / new chat），v0.5 新增引导：
 
-Conversation + Tool Timeline 一体。Tool event 内联在消息流里，可折叠展开。
+1. v0.1 → v0.5 升级用户首次启动：弹"v0.5 新增 Galley CLI"提示，引导到 Settings → Integration
+2. 全新用户首次启动后：Settings 一个低调 banner "想让 supervisor agent 远程控制 Galley？看 [docs/agent-api.md]"
+3. 不打扰：CLI 是 power user feature，正常使用 GUI 的用户不被 push 必须用 CLI
 
-**最终答案视觉分离**：每个 turn 的最终回答需用分割线（`<hr>`）与 step 列表分离，醒目展示在下方。参考 fsapp `_TaskCard._build` 的【状态栏 + 折叠面板 + hr + 最终答案】布局——用户第一眼看到结论，好奇过程再展开。
+## 16. 数据迁移（v0.1 → v0.5）
 
-### 13.3 右侧 Inspector
+### 16.1 Tauri identifier 不变
 
-V0.1 tabs（DESIGN.md 已收紧到 3 个）：Details / Approvals / Runtime。Logs 移到 Settings → Developer。
+`app.galley` 保持不动。v0.1 用户的数据目录 `~/Library/Application Support/app.galley/` 直接被 v0.5 接管，所有 sessions / projects / messages 平滑过渡。
 
-V0.2+ 再加：Files / Memory / Diff。
+### 16.2 Schema migration
 
-## 14. Onboarding
+v0.5 启动时自动跑：
 
-首次启动：
+- migration 006: 加 `messages.created_via` (default `manual`)
+- migration 007: 加 `messages.supervisor` (default NULL)
+- migration 008: 加 `messages.origin_note` (default NULL)
+- migration 009: 加 `sessions.created_via` / `sessions.created_by_supervisor` / `sessions.created_origin_note` (default `manual` / NULL / NULL)
 
-1. 欢迎页：「Galley 是 GenericAgent 的本地桌面工作台。它不会修改你的 GA。」
-2. Attach Existing GA：默认检测 `~/Documents/GenericAgent`
-3. Health Check
-4. 进入 New Chat
+旧数据全部标 `created_via=manual`，supervisor 字段 NULL。GUI 显示时 NULL 不渲染 "via CLI" badge。
 
-文案重点：
+### 16.3 Migration 失败兜底
 
-- 不会修改你的 GA
-- 高风险动作会请求审批
-- 不需要先创建 Project 才能聊
-- 删除 Galley 后 GA 独立可用
+migration 失败 → app 拒绝启动 + 显示错误页面：
 
-## 15. 设计系统方向
+- 用户数据目录路径
+- 错误详情
+- 建议：备份目录 + 联系方式（GitHub issue 链接 / Email）
 
-> 本节是 v0.2 PRD 写作时的初版方向（dark-first / Linear 风）。设计讨论后已转向 light-first / Notion + Claude 文档对话工作台气质，详见 [DESIGN.md](./DESIGN.md)。
+不自动 rollback / 不自动删数据。
 
-### 15.1 关键词
+## 17. 路线图
 
-Local-first / Galley / Transparent / Controllable / Calm / Technical / Trustworthy / Non-intrusive
+| 阶段 | 时间窗 | 目标 |
+|---|---|---|
+| v0.1 Mac release | 5月下旬 | 现有代码出包 (.app + .dmg) |
+| v0.2 Windows | 6-7月 | NSIS .exe + Win/Mac 跨平台 |
+| Prototype: Rust-owned subprocess | B1 前 2-3 天 | throwaway 验证（详见 [prototype spec](../desktop/src-tauri/experiments/bridge-owner/README.md)） |
+| B1: Rust core 骨架 + CLI 只读 | 3w | 目录重组、core/cli/gui/runner 四目录、6 个 read 命令 |
+| B2: Runner ownership 迁 Rust | 3w | Rust 持 child handle，CLI send_message 写命令 |
+| B3: useAppStore 拆 slice 改订阅 | 3-4w | GUI 改 presenter，最 risky 阶段 |
+| B4: CLI feature-complete + background mode | 2-3w | 全命令 + menubar + SOP + Skill + agent-api.md |
+| **v0.5** | 10月底-11月初 | dual-native orchestrator 正式发布 |
 
-### 15.2 视觉
-
-light-first（v0.2 转向后）。气质：文档工作台但不是 IDE，calm control center 而不是 flashy AI app。
-
-### 15.3 参考
-
-Notion / Claude.ai / Linear / Raycast / opencode Desktop。
-
-### 15.4 交互三原则（提炼自 GA 飞书前端的设计哲学）
-
-除 Section 4 的 Non-invasive 工程原则外，UX 层有三条核心约束：
-
-1. **单容器更新**：一个 session 的所有进展在同一视图内持续刷新，不开新窗口/弹层/toast
-2. **渐进式披露**：默认只展示摘要，细节按需展开。Tool event / raw JSON / 历史 turn 都默认折叠。尊重用户注意力
-3. **结果优先**：最终答案与过程必须视觉分离。用户第一眼看到结论，好奇过程再展开看
-
-## 16. 技术栈
-
-- **Shell**：Tauri v2
-- **Frontend**：React 19 + TypeScript 5.8 strict + Vite 7
-- **Styling**：Tailwind CSS v4（CSS-first `@theme`）+ shadcn / Radix（按需 add，主要给 Command Palette / Dialog / Popover / DropdownMenu / Tabs 等 a11y 复杂组件）
-- **Local DB**：SQLite
-- **Bridge**：Python 脚本（import GA 公开 API）
-- **IPC**：stdio JSON Lines（V0.1 起步），可后续切到本地 socket
-- **Platform**：macOS-first
-
-## 17. V0.1 Acceptance Criteria
-
-### 17.1 Attach
-
-- 能识别用户本地 GA 路径
-- Health Check 五项全过才进入主界面
-- 任意一项失败显示可理解错误
-
-### 17.2 多 Session 并行
-
-- 用户能同时跑 3 个 session 不互相干扰
-- 每个 session 独立子进程，独立 cwd / history
-- 一个 session 报错不影响其他
-
-### 17.3 Tool Timeline
-
-- 工具调用按顺序结构化显示
-- 当前运行工具实时更新
-- 失败工具显示错误摘要
-- 可展开 raw JSON
-
-### 17.4 Approval
-
-- 默认审批列表中的工具调用前会暂停
-- 用户可 Allow once / Deny / Always allow（in Project / globally）
-- Deny 后 agent 收到拒绝信号继续工作
-- Approval Card 显示风险原因和目标对象
-- **`file_patch` 审批 Card 渲染 split diff 视图**（基于 `args.old_content` / `args.new_content`），V0.1 自研 PatchView（`diff` 包 + 自渲染 split layout，无语法高亮）；`@pierre/diffs` 留 V0.2 候选
-- **`file_write` 审批 Card 显示 `path + mode` + muted 文案**（不做内容预览，文档说明 GA 架构限制）
-
-### 17.5 Session 历史
-
-- 历史 sessions 在侧边栏可见
-- 点开历史 session 显示完整 conversation + tool timeline
-- 用户可继续输入，agent 接续上下文
-- 跨进程重启 session 仍可恢复
-
-### 17.6 Projects
-
-- 用户可创建 Project，绑定可选 root path
-- session 可归入 Project 或保持未归类
-- 删除 Project 后 sessions 自动变未归类
-- Project root path 在子进程启动时作为 cwd
-
-### 17.7 Session Row 状态展示
-
-- 每个 session row 显示状态 icon + 标题 + `Turn N · summary`
-- 状态实时更新（每个 turn 结束后 ≤2s 反映在 UI）
-- pending approval / error 有显著角标
-- 不点进 session 就能判断进展、是否需要介入
-
-### 17.8 LLM 切换
-
-- Composer 内 LLM dropdown 显示当前 session 的 LLM displayName
-- 用户可在对话中切换到 mykey.py 配置的其他 LLM
-- 切换后**对话上下文保留**（GA 自动把 history 从旧 client 迁移到新 client）
-- agent running / waiting approval 状态下 dropdown disabled
-- 历史 session 恢复时使用上次的 LLM index（per-session 持久化到 SQLite）；该 index 失效时 fallback 到默认并 emit warning
-- 新建 session 时使用用户上次选择的 LLM（per-app preference）
-
-### 17.9 Non-invasive
-
-- 删除 Galley 后 GA 独立可用
-- 不修改 GA 源码 / memory / 配置
-- GA 升级（git pull）后 Galley 不需要改 GA（在 baseline commit 兼容范围内）
+详细 phase invariant、dogfood 策略、failure handling 见 [vision pivot devlog](./devlog/2026-05-15-vision-pivot-to-orchestrator.md) §D4 + §D13。
 
 ## 18. 风险与权衡
 
-### 18.1 IPC 协议是 V0.1 的咽喉
+### 18.1 useAppStore 2727 行的 dogfood 教训
 
-风险：协议定不好，Tool Timeline、Approval、恢复都做不出来。
-缓解：协议定义放在编码前的第一步，先纸上对齐、再实现。Stage 1 已现实验证。
+**风险**：v0.1 + v0.2 期间 useAppStore 累积了 6 个月的 UX 教训（auto-scroll snap、unread 三态、/btw routing、乐观更新 reconciliation、multi-session N-active 边界）。B3 拆 slice + 改订阅 Rust event 过程中，80% 容易做对，20% 会以 regression 形式被 dogfood 发现。
 
-### 18.2 GA 升级破坏 BaseHandler 接口
+**缓解**：
 
-风险：GA 重写 handler/loop 时打破子类化兼容。
-缓解：固定一个测试过的 GA commit 作为 V0.1 baseline；监控 upstream 重大变更；BaseHandler 接口在过去较稳定。
+- 每阶段 invariant："dogfood 体验不能比上一阶段差"
+- 老路径保留 + 新路径并行 + 验证后切流（不一次性删旧代码）
+- 阶段性 ship dev build 给自己装
+- 全套 e2e 测试覆盖关键 UX 行为
 
-### 18.3 多子进程资源开销
+### 18.2 CLI schema versioning
 
-风险：3-5 个 GA 子进程同时跑，内存 / API quota 不够。
-缓解：用户已自测 3 个 OK；UI 显示并发数提醒；提供 max_concurrent_sessions 设置。
+**风险**：v0.5 schema 设错 → v0.6+ 想加字段不 backward compatible → 用户 SOP 全断。
 
-### 18.4 历史恢复时 history 注入失败
+**缓解**：
 
-风险：`llmclient.backend.history` 是内部状态，不同 LLM provider（Claude / OAI / Mixin）下表现可能不一致。
-缓解：V0.1 只对单一 provider 做完整恢复测试（已在 NativeClaudeSession 验证）；多 provider 兼容是 V0.2。
+- additive-only invariant（只加不删 / 不改语义）
+- 加字段时 default 值兼容老 schema
+- breaking change 强制 schema_version bump
+- 公开 [agent-api.md](./agent-api.md) 在 v0.5 ship 时定稿
 
-### 18.5 子类化 hook 副作用
+### 18.3 Galley Core ↔ Tauri WebView lifecycle
 
-风险：审批等待可能让 GA 内部超时机制失效。
-缓解：审批等待有 max_wait（默认 10 分钟）；超时按 deny 处理。
+**风险**：路径 B 下 Galley Core 是 Rust，权威跟 WebView 解耦。但 Tauri 进程 lifecycle 跟主窗口绑定——"close window 不退出 process" 是否可靠？menubar daemon mode 下 WebView 是否 destroyed？
+
+**缓解**：prototype 阶段 + B4 background mode 实施时专门验证 + dogfood。
+
+### 18.4 v0.1 → v0.5 schema migration
+
+**风险**：用户 dogfood 数据丢失或损坏。
+
+**缓解**：
+
+- migration 失败拒启动 + 显示数据目录 + 不自动删
+- v0.5 release 前 JC 自己 dogfood 跑过 migration
+- release notes 显式说明 migration 行为
+
+### 18.5 Supervisor 误用 destructive 命令
+
+**风险**：Supervisor agent 听信 user 的"删了它"未经 confirm 就跑 `galley session archive` / `galley project archive`。
+
+**缓解**：
+
+- SOP / Skill artifact 显式强调 destructive 命令前必须问 human
+- CLI 本身不加 confirm prompt（不是用户友好性问题，是 SOP 设计责任）
 
 ## 19. Open Questions
 
-1. 多 session 并行时的 LLM API quota 共享怎么处理？需要 Galley 层做 rate limit 还是依赖 LLM provider 自己限流？
-2. Session 数量软上限设几？V0.1 建议 5。
-3. `web_execute_js` 是否进默认审批列表？它能改远端状态（提交表单、执行操作），但绝大多数使用是 read-only。当前归类为免审批，由 Always Allow 列表反向覆盖。
+继承自 v0.2 PRD 的未解决问题（多 session API quota / web_execute_js 审批分类等）仍然 open。v0.5 新增的开放问题见 [vision pivot devlog](./devlog/2026-05-15-vision-pivot-to-orchestrator.md) §Open questions。
 
-## 20. 推荐下一步（按顺序）
-
-1. ~~定义 IPC 事件协议 v0~~（[已完成](./ipc-protocol.md)）
-2. ~~写 `workbench_bridge.py` POC~~（[已完成](../bridge/workbench_bridge.py)）
-3. ~~锁定 baseline GA commit~~（已锁 `6a3eecc07eb7dbdde823c0095842c829925e3e64`）
-4. ~~跑通 single session E2E~~（[已完成](../bridge/tests/test_e2e.py)）
-5. 完成 DESIGN.md v0.2（设计讨论中）
-6. 出 3-5 张关键界面 mockup：Onboarding / New Chat / Tool Timeline / Approval Card / Session 列表
-7. 初始化 Tauri + React + shadcn 项目骨架
-8. 实现 Session Manager（子进程生命周期管理）
-9. 加 Approval 系统 UI
-10. 加 Session 持久化与恢复 UI
-
-## 21. 当前默认决策表
+## 20. 当前默认决策表（v0.5）
 
 | 项 | 决策 |
 |---|---|
-| 产品形态 | 通用 Agent 桌面工作台 |
-| 默认入口 | New Chat |
-| 归类容器 | 可选 Projects（绑定归类 + cwd） |
-| Spaces | 不做 |
-| Runtime | Attach Existing Local GA（多子进程） |
-| Approval | V0.1 必做基础版（generator 阻塞模式） |
-| Tool Timeline | 结构化事件流（双轨制：`_turn_end_hooks` 主链 + 子类化 handler 仅审批） |
-| 历史恢复 | Galley SQLite + history 注入 |
-| Context Window | V0.1 不做（GA 未暴露） |
-| Follow-up Queue | V0.2 |
-| Artifacts 一等公民 | V0.2 |
-| 数据存储 | Galley SQLite |
-| 设计系统 | light-first，Notion + Claude 文档对话工作台气质 |
-| 平台 | macOS-first，Tauri 跨平台 |
+| 产品形态 | local agent team orchestrator, dual-native |
+| 前端 | Galley GUI + Galley CLI 对等 |
+| 权威层 | Galley Core (Rust) |
+| Agent runtime | GA only (v0.5)，架构允许将来扩展 |
+| 远程支持 | 不直接支持，由 Supervisor 在外部传输层 |
+| Auth | filesystem permission only (localhost) |
+| Supervisor 身份 | freeform string, 不校验不注册 |
+| CLI 输出 | JSON / NDJSON default, --pretty escape hatch |
+| Background mode | menubar daemon (default ON 关窗时) |
+| Telemetry | no |
+| 设计哲学 | dual-native (first-class for both human and agent) |
+| 平台 | macOS + Windows (Linux 候选) |
 
-## 22. 未来方向（V0.2+）
+## 21. Future direction (v0.6++)
 
-- Context Window Indicator（需要 GA 暴露 context 占用 API，可能联动上游）
-- Follow-up Queue
-- Artifacts 一等公民
-- Memory Diff / Memory Approval
-- 远程 Runtime
-- 多 LLM provider 并行
-- Browser / File Diff Inspector
-- Plugin marketplace
-- 自定义 system prompt 注入到 Project（Custom GPT 模式，复用 GA 的 `extra_sys_prompt`）
-- Onboarding for new GA users（含安装引导）
-- Dark mode
+继承 v0.2 PRD §22 的 future direction。v0.6+ 新增候选：
 
----
+- Multi-runtime backend (Claude SDK / OpenAI Agents 作为 alternative runner)
+- Web view / mobile thin client（直接跟 Galley Core 通信，不需要 Supervisor 中转）
+- Supervisor capability registration / permission system
+- 远程访问层（如果证据上需要，但仍坚持 localhost only 是默认）
+- Homebrew tap / package managers
+- Galley Plugin marketplace (扩展 supervisor adapter)
+- Persistent Supervisor session（如果 dogfood 信号支持）
 
 ## 附录 A：与 GenericAgent 的集成边界
 
-本附录基于 GA 当前代码（`ga.py`、`agent_loop.py`、`agentmain.py`、`llmcore.py`）的源码事实归纳。
+继承 v0.2 PRD 附录 A 全部内容。v0.5 新增条目：
 
-### A.1 GA 当前架构事实
+- v0.5 GA baseline：TBD（在 v0.2 release 前可能再升一次，详见 [vision pivot devlog](./devlog/2026-05-15-vision-pivot-to-orchestrator.md) Open Question O9）
+- runner/ 目录（重命名自 bridge/）继续遵循附录 A.2 的接入点表
 
-1. **单进程单 session 模型**：`GeneraticAgent` 实例持有全局 `task_queue`、`history`、`handler`、`is_running`。多 session 必须多进程实现。
-2. **流是字符串**：`agent_runner_loop` yield 的是混合 markdown 字符串（含 tool 启动提示、stdout、status 标记），不是结构化事件。
-3. **存在 hook 接口**：`BaseHandler.tool_before_callback / tool_after_callback / turn_end_callback` 是公开扩展点，默认空实现。
-4. **`extra_sys_prompt`**：`agentmain.get_system_prompt()` 后会拼接 `getattr(self.llmclient.backend, 'extra_sys_prompt', '')`，这给了 Galley 在不改 GA 源码的前提下注入额外 prompt 的余地（V0.2 用）。
-5. **`ask_user` 工具**：通过 `should_exit=True` 让 generator 退出，下次 `put_task` 重入。这是 GA 现有的人机交互模式，Galley 可直接复用为 IPC `ask_user` 事件。
-6. **session 持久化**：`/resume` 是让 LLM 自助扫 `temp/model_responses/`。framework 层无原生 checkpoint。
-7. **history 在 `client.backend.history`**：运行时内存，进程退出即丢。NativeClaudeSession 格式是 `[{role, content: [{type, text}]}]`（Anthropic native messages 格式）；其他 LLM session 类未验证。
+## 附录 B：v0.2 ↔ v0.3 diff 摘要
 
-### A.2 Galley 接入点（按 V0.1 用途）
+完整决策 provenance：[2026-05-15 vision pivot devlog](./devlog/2026-05-15-vision-pivot-to-orchestrator.md)
 
-| 接入点 | 类型 | 兼容性风险 | V0.1 用途 |
-|---|---|---|---|
-| `agent._turn_end_hooks` | **GA 官方扩展点（dict）** | **极低**（fsapp 已用） | Tool Timeline / Session 状态 / summary（**主链路**） |
-| `BaseHandler.tool_before_callback` | 公开 hook | 低 | 备用（POC 选择子类化 dispatch） |
-| `BaseHandler.tool_after_callback` | 公开 hook | 低 | 备用 |
-| `BaseHandler.turn_end_callback` | 公开 hook | 低 | 备用（与 `_turn_end_hooks` 重叠） |
-| 子类化 `GenericAgentHandler` 重写 `dispatch` | 公开方法但需在前置加门 | 中 | **审批拦截（已实现）** |
-| 启动子进程 + 注入 bridge 脚本 | 进程级 | 低 | session 隔离 |
-| 读取 / 注入 `llmclient.backend.history` | 内部状态 | 中 | 历史持久化与恢复 |
-| `extra_sys_prompt` | 公开属性 | 低 | V0.2（Custom GPT 模式） |
-| `ask_user` 工具复用为审批前置 | 已有协议 | 低 | 已有人机交互复用 |
-
-### A.3 V0.1 不接触的部分
-
-- `agent_runner_loop` 函数体（不重写、不 monkey patch）
-- `ga.py` 内的所有 `do_*` 工具实现
-- `llmcore.py`（不修改 LLM session 类）
-- `mykey.py`（不读不写）
-- `memory/` 目录（不读不写）
-- `assets/` 目录下的 system prompt、tool schema（不修改）
-
-### A.4 Baseline Commit
-
-V0.1 锁定为 `6a3eecc07eb7dbdde823c0095842c829925e3e64`（用户本地 `~/Documents/GenericAgent` 的 HEAD，2026-04-29）。选用户实际跑通的版本，避免 upstream 新 commit 引入未验证的接口变化。upstream main 后续如有重要修复，由用户主动 `git pull` 后再升 baseline 并重跑 smoke test。
-
-CI smoke test 验证（V0.2 工作）：
-
-- `BaseHandler.tool_before_callback / tool_after_callback / turn_end_callback` 签名
-- `agent._turn_end_hooks` 字典扩展点存在
-- `llmclient.backend.history` 可读写
+| 维度 | v0.2 | v0.3 |
+|---|---|---|
+| 定位 | "GA 的本地桌面工作台" | "local agent team orchestrator, dual-native" |
+| 前端 | GUI only | GUI + CLI 对等 |
+| 权威层 | TypeScript (React) | Rust (Galley Core) |
+| Bridge ownership | TypeScript | Rust |
+| 数据持久 | 同 v0.2 | 同 + supervisor / origin_note / created_via 字段 |
+| 远程访问 | non-goal | "由 Supervisor 在外部传输层"（仍 localhost only） |
+| Telemetry | 隐含 no | 显式 no |
+| 目录结构 | src-tauri/desktop/bridge | core/gui/cli/runner |
+| Runtime backend | GA only | GA only (v0.5)，架构允许将来扩展 |
+| Stage 范围 | 3.7 收尾 | B1-B4 重构到 v0.5 |

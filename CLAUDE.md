@@ -10,13 +10,16 @@
 - **Large hero display (≥ 30px)**: `Galley` (Newsreader medium, sentence case). Currently used: Onboarding StepWelcome h1 (36px). Uppercase at this scale reads as marketing banner; sentence case stays gentle and product-appropriate.
 - Use **GenericAgent** / **GA** when referring to the upstream engine, never to mean Galley.
 
-多 session AI agent 的本地桌面工作台。让重度用户能多 session 并行、审批高风险动作、快捷查看与恢复历史会话。
+本地 agent team 编排器，人和 agent 都是一等公民。Galley GUI 给坐在桌前的 human operator，Galley CLI 给 Supervisor Agent 远程操作整个 session team。
 
-- 产品定义（PRD v0.2）：[docs/PRD.md](./docs/PRD.md)
+v0.5 之前（v0.1 / v0.2）仍以"GA 的本地桌面工作台 + 多 session 并行"为主要使用形态；v0.5 起 dual-native 架构（Rust 端 Galley Core + 双前端）正式 ship。
+
+- 产品定义（PRD v0.3）：[docs/PRD.md](./docs/PRD.md)
 - 设计系统（DESIGN.md，draft）：[docs/DESIGN.md](./docs/DESIGN.md)
 - IPC 契约：[docs/ipc-protocol.md](./docs/ipc-protocol.md)
 - 发版 SOP（v0.2+）：[docs/release-workflow.md](./docs/release-workflow.md)
 - Win 手动 build 指南：[docs/windows-build-checklist.md](./docs/windows-build-checklist.md)
+- **Galley Core 重构执行手册** (v0.5 路径)：[docs/refactor/](./docs/refactor/README.md) — 跨多 session 重构的中央调度器；新 session 进入 B 阶段时必读
 - 决策叙事 / 历史：[docs/devlog/](./docs/devlog/)
 
 ## 项目宪法（Non-invasive）
@@ -46,6 +49,75 @@
 
 GA 升级时，Galley 只依赖 `BaseHandler` / `ToolClient` 这一层公开 API。
 
+**例外条款：用户主动安装 Supervisor SOP**
+
+v0.5 起 Galley Settings 提供 "Install Supervisor SOP" 按钮，用户点击后 Galley 把 `galley-supervisor-sop.md` 写入用户 GA 的 `~/Documents/GenericAgent/memory/`。这属于**用户显式触发的内容安装**，不属于"Galley 偷改 GA 状态"——宪法明确允许。
+
+法理：宪法防的是"Galley 悄悄改 GA 让 GA 独立运行被污染"。SOP 是用户主动装的内容（类比"装 GA 插件"），不破坏 GA 独立性。删 Galley 后 SOP 文件留在 memory/，GA 仍然独立运行；用户也可以随时手动删该 SOP 文件，不影响 GA 任何功能。
+
+实现要点：
+- 装之前检查同名文件，存在时提示用户（不覆盖）
+- 装的位置只能是 `memory/` 下且文件名固定为 `galley-supervisor-sop.md`（不允许 Galley 写到其它路径或其它文件名）
+- 不接受用户配置"装到哪"——固定行为减少 surface
+- 卸载 Galley 时不主动清这个 SOP（用户自己删，宪法非对称）
+
+## Galley 架构原则 (v0.5+)
+
+非侵入条款守 Galley ↔ GA 边界；本节守 Galley 自身的设计边界。**违反任一条等于破坏 v0.5 dual-native 承诺**：
+
+### 1. Localhost only
+
+**Galley Core 永远只 listen on AF_UNIX socket / named pipe，不开 TCP，不持有 token。**
+
+远程访问（手机 IM 派任务给 Galley 这种场景）通过 Supervisor Agent 在外部传输层（GA 的 IM frontend / SSH / 其他）完成，**不是 Galley 的责任**：
+
+```
+手机 ─→ IM service ─→ 桌面上的 Supervisor (GA + IM frontend)
+                              ↓ localhost (unix socket)
+                              Galley Core
+```
+
+收益：
+- 安全模型 = OS user filesystem permission，无 TLS / token / 证书 / 旋转
+- 复用 GA 已经做好的 IM frontend，Galley 不重复造轮子
+- "Galley 是本地的、数据不离开你的机器" brand 守住
+
+**任何 PR 提"加 HTTP server / 加 token auth / 加远程访问"以本条款拒绝**。例外需先改宪法。
+
+### 2. CLI surface 是公开契约面
+
+Galley CLI 的 JSON 输出 schema 是 Galley 对 agent 生态的公开承诺。规范见 [docs/agent-api.md](docs/agent-api.md)（v0.5 ship 时 publish）：
+
+- **schema_version 内 additive-only**：v1 schema 内只加字段，不删 / 不改语义
+- **Breaking change 强制 bump**：要 break = `schema_version: 2`，旧版 SOP 可用 `?schema=1` 拿老格式
+- **Exit code 分类稳定**：0/1/2/3/4/5 五类（详 agent-api.md），不重新分配
+- **错误码 enum stable**：error 字段值是 stable identifier，不重新命名
+
+下游 supervisor adapter（GA SOP / Claude Skill / 用户自写 agent）依赖这个契约稳定。**改 schema 比改 GUI 慎重得多**：GUI 改了用户重新学一遍，schema 改了所有 SOP 一起坏。
+
+### 3. 数据不离开 Galley
+
+**Galley 不存 Supervisor ↔ human 的对话内容**。supervisor 通过 CLI 发的命令、命令的 `--reason` 标注存进 Galley（per-session 行动日志），但 supervisor 跟 user 在 IM 里聊的对话不存。
+
+收益：
+- Galley 是 orchestrator 不是 chat platform，scope 守住
+- 换 supervisor 不存在 "data migration" 问题
+- supervisor history 是 supervisor 自己的事（GA history / Claude conversation 等）
+
+例外：用户自己存的不算（如未来某用户 fork 改造 Galley 加 chat 持久化，那是 fork 不是主干）。
+
+### 4. 路径 B 不可逆迁移
+
+v0.5 起，**业务逻辑权威全部在 Rust 端 Galley Core**：
+- SQLite 写：Rust
+- Bridge subprocess ownership：Rust
+- Session 生命周期 / 命令调度：Rust
+- 前端（GUI / CLI / 未来扩展）：stateless presenter，订阅 event + invoke 命令
+
+**任何 PR 在前端持有写权威（直接写 DB / 直接 spawn bridge / 持有 authoritative state）以本条款拒绝**。这是路径 B 不可逆。
+
+宪法历史：2026-05-15 [vision pivot devlog](docs/devlog/2026-05-15-vision-pivot-to-orchestrator.md) 决定走 path B（Rust core 权威）而不是 path A（Rust 中继）。理由不是验证后才选 B，而是 B 架构独立于 supervisor 场景也更好（multi-frontend / 可测试性 / 开源贡献门槛 / 长期维护）。
+
 ## Tauri Identifier 不可随意改
 
 Tauri 配置里 `identifier`（如 `app.galley`）**绑定了 macOS / Linux / Windows 上的应用数据目录路径**：
@@ -69,18 +141,16 @@ dogfood 阶段单用户改 identifier，手动 `mv ~/Library/Application\ Suppor
 
 ## GA Baseline
 
-锁定 commit: `6bb31046cc29981f3fd0ce0b22a6af8c9741e850`（upstream/main HEAD，2026-05-13）
+锁定 commit: `fc6b5ad309fc2b8f4158eba56ad5f9ab6fc33ca0`（upstream/main HEAD，2026-05-15）
 
 - 来源：`lsdefine/GenericAgent` upstream main 分支
-- **5 个 commits** 升级自旧 baseline `cf65515`（2026-05-12），其中 1 处接口表面变化在桥接层做了**版本兼容适配**（详见 [baseline 升级 devlog](docs/devlog/2026-05-13-ga-baseline-upgrade-cf65515-to-6bb3104.md) + [regression 修复 devlog](docs/devlog/2026-05-13-baseline-regression-and-feature-detection.md)）：
-  - `BaseHandler.dispatch` 签名新增 `tool_num=1` 参数（commit 3205f4a）—— **breaking**
-    - 适配：`bridge/handlers.py` 用 `inspect.signature` 在模块加载时探测当前 GA 的 `BaseHandler.dispatch` 是否支持 `tool_num`，运行时按结果选择 4 参或 5 参调用 super。**对 baseline 6bb3104 + 旧版（cf65515 之前）都正确**，桥接层不强制用户跟着升级 GA
-    - 用途：upstream 用 `_tool_num = len(tool_calls)` 让 do_* 工具实现按并行调用数等比缩减输出长度，避免 context blow up
-  - `_turn_end_hooks` 字典扩展点 + `hook(locals())` 调用约定保持
-  - `agentmain.GenericAgentHandler` 导入路径保持
-  - `llmclient.backend.history` 列表读写语义保持
-- ga.py 工具实现层有改动（`do_code_run` / `do_web_scan` / `do_web_execute_js` / `do_file_read` 用动态 maxlen），属预期改进，不影响接入语义
-- 其余 4 个 commits 都是 frontend tui / docs / 静态资源，跟桥接层无关
+- **13 个 commits** 升级自旧 baseline `6bb3104`（2026-05-13），**零接口表面变化**（详见 [baseline 升级 devlog](docs/devlog/2026-05-15-ga-baseline-upgrade-6bb3104-to-fc6b5ad.md)）：
+  - `agent_loop.py`（BaseHandler 三回调 + dispatch 签名）—— **0 行改动**
+  - `agentmain.py`（GenericAgentHandler 导入路径）—— **0 行改动**
+  - `ga.py`（_turn_end_hooks + GenericAgentHandler）—— **4 行**（仅 maxlen 阈值微调：`do_code_run` 20000→15000、压缩窗口 150→100 行），无接口语义变化
+  - `llmcore.py` —— 54 行内部重构（`trim_messages_history` 签名从 `(history, context_win)` 改为 `(history, sess)`；`compress_history_tags` 新增 `interval=5` 默认参数；`BaseSession.__init__` 按模型类型选 default context_win 与 deepseek-specific 调参）。**但这些函数只在 GA 内部调用**；bridge 不引用它们，只读 `agent.llmclient.backend.history` 列表，该属性的 list/mutable 语义保持
+- 其余 commits 是 TUI v2 / conductor system / configure wizard / langfuse fix / docs —— 跟桥接层完全无关
+- 测试矩阵：`bridge/tests/` 106/106 在 fc6b5ad（新）+ 6bb3104（旧）两个 baseline 都通过
 
 CI smoke test（`bridge/tests/test_e2e.py` + `test_handlers.py`）验证：
 
@@ -206,9 +276,17 @@ galley/
 | 3. V0.1 七件事 polish | ✅ 代码层完成 | 七件全做齐：#1 端到端真跑 ✅；tool_events 审批审计持久化 ✅；Multi-session N-active（含 per-session LLM / title 派生 / summary 写入 / set_llm 接 IPC）✅；Session Restore（user message 持久化 + ready 触发 replayHistoryToBridge）✅；LRU 5 alive bridges（active 保护 + 自动 suspend）✅；Settings GA Path picker（Python 字段诚实改只读，capability 限制）✅；Onboarding fs.exists 5 项 health check ✅；macOS bundle（bridge/ 作 Tauri resource + prod cwd=resourceDir）✅。Dogfood 7 轮 UX 打磨完成（composer auto-grow / LLM 内联 Popover / 右键 Archive + toast / lazy New Chat + 清「新对话」累积 / 软化 thinking placeholder + strip GA `LLM Running` marker / 「第 N 轮」→「第 N 步」/ Sidebar 三状态 unread / 修复 turn summary 静默丢失） |
 | 3.5. Sidebar 重塑 + Projects V0.1 | ✅ 代码层完成 | Sidebar Earlier 桶折叠 + EarlierDialog（月分组 + 多选 bulk archive）✅；SQLite FTS5 全文搜索（migration 004，trigram tokenizer，CommandPalette 内"在对话内容中"分区）✅；Inspector 整面退役（右侧 Details/Approvals/Runtime 三 tab，第一性原理：每 tab 都重复其它地方信息，回收 14-30% 横向）✅；AppShell overflow-hidden 修复 ✅；MessageActions icon-only + Radix Tooltip（100ms 即时反馈）✅；Multi-select bulk in EarlierDialog & ArchivedDialog（Gmail-style Select toggle）✅；GA Baseline 6a3eecc → cf65515 升级（92 commits 零 breaking change，含 Settings → Runtime "GA Version" 卡片）✅；**Projects V0.1 完整实现** ✅（5 phase：数据层 + CreateProjectDialog + Sidebar PROJECTS section 上移到时间桶之上 + 右键 Move to project 子菜单 + filter 模式 banner ~~显示 rootPath~~ + ~~CWD 绑定到 bridge spawn~~ + EditProjectDialog + ConfirmDeleteProjectDialog + ProjectsDialog 阈值 9 + 右键 Delete destructive + 0-project 引导 + filter 状态下 New Chat label 自适应 + filter 空状态 CTA）。**2026-05-14 update**：rootPath/CWD 绑定 rollback 到纯分组（[devlog](docs/devlog/2026-05-14-project-rootpath-rollback-ga-memory-coupling.md)）——原 cwd 注入会让 GA 在 project session 下读不到 `./memory/...` 静默失效。剩 user 跑 `pnpm tauri build` 实测产物 |
 | 3.6. Conversation polish marathon | ✅ 代码层完成 | 18 commits 把对话区主要体验全面打磨（[devlog](docs/devlog/2026-05-14-conversation-streaming-and-btw-marathon.md)）：**流式输出启用** ✅（`agent.verbose = True`，bridge `_FenceFilter` 状态机过滤 fence 内工具 stdout 解决 IPC 流量爆炸 + 98/98 bridge tests）；**User message apricot 锚点** ✅（实色 `bg-brand-soft` callout + 3px `brand-strong` 竖线，长对话回找提问主路径）；**TurnMarker thinking 态** ✅（占位符从大 callout 降到单行 italic serif 12px + 等待 ≥5s 显示 elapsed counter，每步独立计时）；**Phosphor-only 全产品**（收掉 💭 emoji 例外）；**⌥↑/⌥↓ 跨 user-msg 跳转** ✅；**/btw side question** ✅（bridge bypass agent.run() queue via `handle_frontend_command` worker；新 IPC `SystemMessageEvent` + SystemTurn 类型 + SystemMessageBubble 黄色 callout + Composer stopMode 让 `/btw` 通过；V0.1 transient 不持久化）；**Desktop Pet UX** ✅（sidebar Cat badge 显示 pet 附着位置 + menu label 二态化 + 隐式迁移机制）；**Conversation 视觉清扫**：ThinkingSummary 脱离 brand 色系到中性 surface / InlineToolPill 去 CheckCircle / AskUserBubble 规格对齐 user-msg / Follow-bottom 修复（步骤 commit 都触发 snap）/ `🛠️ ` dispatch marker strip / `[Action]` 行 strip 兜底 / GA prompt-induced `当前阶段：` preamble strip / 「归入项目」→「加入项目」文案。**Open**：/rewind 4-commit 计划已设计未实施（推到下次 session） |
-| 3.9. Release readiness consolidation · CI · menubar · icon · screenshots | ✅ 代码层完成；Win 机 smoke + 真 dry-run 待 | 14 个 commits 把发版能力一次性补齐（[devlog](docs/devlog/2026-05-15-release-ci-menubar-icon-screenshots.md)）：**Release CI**（[release.yml](.github/workflows/release.yml) tag push + workflow_dispatch 双触发 / 三平台 matrix macos-14 + macos-13 + windows-latest / pre-build typecheck+lint+cargo check / ubuntu-latest 收集 artifact + 创建 draft Release；[check.yml](.github/workflows/check.yml) PR + main push 跑同样三平台 gates 不 build artifact；[docs/release-workflow.md](docs/release-workflow.md) 人类 SOP 含 dry-run 路径 / 故障排查 / Intel runner deprecation 三 fallback）；**Mac menubar**（Galley/File/Edit/View/Window/Help 6 submenu，Find + Toggle Sidebar 灰禁占位 V0.2 wiring，About 用 PredefinedMenuItem 弹原生 dialog 利用新 icon）；**App icon 4 轮迭代** 最终 JC 手调 1024 RGBA + squircle 烤进 alpha + 832/1024 Apple safe area；**关键发现**：macOS Big Sur+ 不自动 mask 第三方 icon，必须把 squircle 烤进 alpha；**CI 实测抓 3 个 Win-only bug**（pnpm version 没指定 / `internal-on-*` event permission 是虚构名 / `window-shadows-v2::set_shadows` API 签名错），证实 cfg-gated Win 代码 Mac 本地 cargo check 永远抓不到，CI 是 must-have；**README 6 张 hero screenshots** 通过临时 patch demo.ts + hydrateFromDB 内存覆盖捕获，落 docs/screenshots/，截后 revert，SQLite 没动。**Open**：Y6 Win 机 smoke / release CI dry-run / README 整合 |
-| 3.8. Windows 发版 prep · Y 计划自绘 chrome + A 阶段杂项 | ✅ 代码层完成；Win 机 smoke 待 | 10 个 commits 覆盖 Win/Mac dual-release 准备（[devlog](docs/devlog/2026-05-15-win-prep-y-plan-custom-chrome.md)）。**Y 计划自绘 chrome**（JC 为「精致工作台」品牌定位选 fully custom 而非回退原生 Win chrome）：Y1 Rust setup hook 关原生装饰 + `window-shadows-v2` 阴影（target-specific Cargo dep，Mac 二进制零 Win 代码） / Y2 `lib/platform.ts` UA-sniff `isMac` / `isWindows` + TopBar OS-conditional layout（左 spacer 70/12、右 pr-3 仅 Mac） / Y3 `WindowControls.tsx` 三按钮（46×44，bg-hover/bg-danger 同 token 系统）+ Win-scoped capability `platforms: ["windows"]` / Y4 双击 TopBar → toggleMaximize（`isWindowActionTarget` walk-up DOM 排除按钮）/ Y5 `onFocusChanged` 失焦 desaturate。**Snap Layouts 跳过** —— 要写 WM_NCHITTEST Rust 等真痛点反馈。**A 阶段**：A1 NSIS bundle target + currentUser installMode / A2 Python OS-aware default（`python` Win，`python3` Mac/Linux）/ A3 复盘后 no-op（教程命令早已双版本） / A4 `formatShortcut("Mod+K")` helper + 6 site 迁移（Mac 字符串 byte-identical）/ A5 `docs/windows-build-checklist.md`（25 项 smoke checkbox + 已知坑）/ A7 `EXAMPLE_GA_PATH` 常量（Mac `~/Documents/...` 不变，Win `C:\Users\你的名字\...`） / SettingsShortcuts macOS 文案保留 isMac 条件（feedback rule byte-equivalent）。**Mac 安全三层**：每个 Win-only 改动都过三道门 —— render gate (`!isMac`) → effect cleanup cancelled flag → platform-scoped capability。10 commits 全部 typecheck/lint/cargo check 干净 + 独立可回滚。**Open**: Y6 Win 机 smoke（Win 11 圆角自动应用 / resize handle 抓握 / Maximize 8px 溢出 / `onResized` 全路径触发 / Win+Arrow snap 跟我们 toggleMaximize 是否冲突 / CopySimple restore icon 是否可读 / 大字 fence-edge 等）待 JC 借机器跑 |
 | 3.7. Onboarding + Empty state + YOLO + button polish | ✅ 代码层完成；Windows prep 推迟 | 两个 commits 覆盖 8 大件（[devlog](docs/devlog/2026-05-15-onboarding-empty-state-yolo-button-polish.md)）：**Conversation 步骤渲染**：TurnMarker 整行可点击 + 条件 chevron 展开 DetailPanel（thinking + 前言并入）；新 TurnTicker streaming 显示前言最新段（line-clamp-3）；InlineToolPill 双区（icon + 中文名 + arg preview · mono GA name + chevron）；migration 005 加 `messages.preamble` + `extractPreamble` 反向抽取 strip-all-tags。**Onboarding 教程系统**：5 个手写 fix-it 片段 + TutorialModal + HealthCheckCard `actions` 扩到 warning + StepHealth 「重新检查」按钮 + StepAttach 失败 contextual tutorial 按钮 + 「Attach」→「接入」中英文一致化。**Welcome 双卡片**：Mode 1 灰禁「敬请期待」/ Mode 2「Galley 不会修改你的 GenericAgent」value-prop trust 文案搬卡片 body；副标题去句号跟 SettingsAbout 对齐。**Empty State**：删大标题；placeholder 升「今天交代什么？」；4 chip 降为 prose hint（italic serif 12.5px ink-muted）；新 prompt 跨 web/local/multi-source/reasoning。**LLM display name**：bridge `_simplify_llm_name(raw, model)` heuristic 尊重用户 mykey.py 显式 `name`；+8 测试 → 106/106。**YOLO 默认 ON + 阻塞 modal**：v0.1 默认 yoloMode=true；首次 MainView 弹 YoloIntroDialog（ESC/overlay/X 全禁，只能点「改回审批模式」/「知道了」）；`yoloIntroSeen` pref 只对真新用户翻 false 跳过现有 dogfooder。**按钮系统轻量统一**：新 `components/ui/button.tsx` 5 variant × 3 size，primary canonical = `bg-ink`，迁移 4 个最显眼 site；JSDoc 作系统规约。**v0.1 Mac-only 决策**：定 v0.1 Mac-only 释放（`.app` + `.dmg`），v0.2 计划 dual via GitHub Actions CI 出 NSIS `.exe` + `.dmg`。**未启动**：Mac-side prep 6 项（NSIS bundle / Python OS-aware / 教程命令双版本 / 键盘 mod-key 抽象 / joinPath 改 Tauri path API / docs/windows-build-checklist）推到下次 session，必须 Mac-backward-compatible（JC 明确确认） |
+| 3.8. Windows 发版 prep · Y 计划自绘 chrome + A 阶段杂项 | ✅ 代码层完成；Win 机 smoke 待 | 10 个 commits 覆盖 Win/Mac dual-release 准备（[devlog](docs/devlog/2026-05-15-win-prep-y-plan-custom-chrome.md)）。**Y 计划自绘 chrome**（JC 为「精致工作台」品牌定位选 fully custom 而非回退原生 Win chrome）：Y1 Rust setup hook 关原生装饰 + `window-shadows-v2` 阴影（target-specific Cargo dep，Mac 二进制零 Win 代码） / Y2 `lib/platform.ts` UA-sniff `isMac` / `isWindows` + TopBar OS-conditional layout（左 spacer 70/12、右 pr-3 仅 Mac） / Y3 `WindowControls.tsx` 三按钮（46×44，bg-hover/bg-danger 同 token 系统）+ Win-scoped capability `platforms: ["windows"]` / Y4 双击 TopBar → toggleMaximize（`isWindowActionTarget` walk-up DOM 排除按钮）/ Y5 `onFocusChanged` 失焦 desaturate。**Snap Layouts 跳过** —— 要写 WM_NCHITTEST Rust 等真痛点反馈。**A 阶段**：A1 NSIS bundle target + currentUser installMode / A2 Python OS-aware default（`python` Win，`python3` Mac/Linux）/ A3 复盘后 no-op（教程命令早已双版本） / A4 `formatShortcut("Mod+K")` helper + 6 site 迁移（Mac 字符串 byte-identical）/ A5 `docs/windows-build-checklist.md`（25 项 smoke checkbox + 已知坑）/ A7 `EXAMPLE_GA_PATH` 常量（Mac `~/Documents/...` 不变，Win `C:\Users\你的名字\...`） / SettingsShortcuts macOS 文案保留 isMac 条件（feedback rule byte-equivalent）。**Mac 安全三层**：每个 Win-only 改动都过三道门 —— render gate (`!isMac`) → effect cleanup cancelled flag → platform-scoped capability。10 commits 全部 typecheck/lint/cargo check 干净 + 独立可回滚。**Open**: Y6 Win 机 smoke（Win 11 圆角自动应用 / resize handle 抓握 / Maximize 8px 溢出 / `onResized` 全路径触发 / Win+Arrow snap 跟我们 toggleMaximize 是否冲突 / CopySimple restore icon 是否可读 / 大字 fence-edge 等）待 JC 借机器跑 |
+| 3.9. Release readiness consolidation · CI · menubar · icon · screenshots | ✅ 代码层完成；Win 机 smoke + 真 dry-run 待 | 14 个 commits 把发版能力一次性补齐（[devlog](docs/devlog/2026-05-15-release-ci-menubar-icon-screenshots.md)）：**Release CI**（[release.yml](.github/workflows/release.yml) tag push + workflow_dispatch 双触发 / 三平台 matrix macos-14 + macos-13 + windows-latest / pre-build typecheck+lint+cargo check / ubuntu-latest 收集 artifact + 创建 draft Release；[check.yml](.github/workflows/check.yml) PR + main push 跑同样三平台 gates 不 build artifact；[docs/release-workflow.md](docs/release-workflow.md) 人类 SOP 含 dry-run 路径 / 故障排查 / Intel runner deprecation 三 fallback）；**Mac menubar**（Galley/File/Edit/View/Window/Help 6 submenu，Find + Toggle Sidebar 灰禁占位 V0.2 wiring，About 用 PredefinedMenuItem 弹原生 dialog 利用新 icon）；**App icon 4 轮迭代** 最终 JC 手调 1024 RGBA + squircle 烤进 alpha + 832/1024 Apple safe area；**关键发现**：macOS Big Sur+ 不自动 mask 第三方 icon，必须把 squircle 烤进 alpha；**CI 实测抓 3 个 Win-only bug**（pnpm version 没指定 / `internal-on-*` event permission 是虚构名 / `window-shadows-v2::set_shadows` API 签名错），证实 cfg-gated Win 代码 Mac 本地 cargo check 永远抓不到，CI 是 must-have；**README 6 张 hero screenshots** 通过临时 patch demo.ts + hydrateFromDB 内存覆盖捕获，落 docs/screenshots/，截后 revert，SQLite 没动。**Open**：Y6 Win 机 smoke / release CI dry-run / README 整合 |
+| 3.10. Vision pivot · workbench → local agent team orchestrator (dual-native) | ✅ 文档层完成 | 8 轮 brainstorm 产物（[devlog](docs/devlog/2026-05-15-vision-pivot-to-orchestrator.md)）：产品定位从「GA 的本地桌面工作台」reframe 为「本地 agent team orchestrator，dual-native for human and agent」。Galley CLI 一等公民 + Supervisor Agent 概念 + localhost-only 升级架构原则 + agent-api 公开契约 + Galley Core 权威层迁 Rust（路径 B 重构）。术语表（Supervisor / session team / Galley Core / runner/）+ CLI 命令 surface + 发包策略（sidecar + discovery file）+ 6 条 agent-first 输出规则。PRD v0.3 升格替代 v0.2（v0.2 留 git 历史）；CLAUDE.md 加 Galley 架构原则 4 条（localhost only / CLI 公开契约面 / 数据不离开 Galley / 路径 B 不可逆）+ SOP 安装例外条款。Rejected: CEO mode 命名 / MCP 主路径 / approval routing 当核心 / 路径 A 中继 / long-lived branch / 远程 auth / 存 supervisor 对话。**未启动**：[bridge-owner prototype](desktop/src-tauri/experiments/bridge-owner/README.md) 2-3 天 throwaway 验证 + v0.2 Windows release + Galley Core 重构 (B1-B4) |
+| 4. v0.2 Windows release | ⏳ 未启动 | 继承 3.8 + 3.9 已落地基础。剩 Y6 借 Windows 机 smoke test + NSIS .exe 出包 + release CI dry-run 验证。完成即 v0.2 ship；之后 main 上正式进 B 重构 |
+| 5. Bridge-owner prototype | ⏳ 未启动 | 2-3 天 throwaway 验证 Rust-owned Python subprocess 等价于当前 TS 持有的 latency/throughput/reliability。详 [experiments/bridge-owner/README.md](desktop/src-tauri/experiments/bridge-owner/README.md)。go/no-go gate for B1 |
+| 6. B1: Rust core 骨架 + CLI 只读 · [playbook](./docs/refactor/B1-rust-core.md) | ⏳ 未启动 | 3w · 目录重组（src-tauri → core/、desktop → gui/、bridge → runner/、新建 cli/）+ Rust core 起步 + SQLite 读 + CLI 6 read 命令（list / brief / show / search / status / health）。详细 sub-tasks + cursor 在 playbook |
+| 7. B2: Bridge ownership 迁 Rust · [playbook](./docs/refactor/B2-bridge-ownership.md) (stub) | ⏳ 未启动 | 3w · Python runner subprocess spawn/管理迁到 Rust（runner_manager 模块）+ React 改用 Tauri invoke 而不是直接 spawn + CLI 加 send_message（第一个写命令）+ dogfood: bridge 行为不能 regress |
+| 8. B3: useAppStore 拆 slice + 改订阅 Rust event · [playbook](./docs/refactor/B3-store-slice.md) (stub) | ⏳ 未启动 | 3-4w · 拆 sessionsStore / messagesStore / runtimeStore / uiStore + 每个 slice 改订阅 Rust event 而不是自己 own 数据 + 每个 capability 迁完跑回归 + dogfood 一天 · 最 risky 阶段，regression 风险最高 |
+| 9. B4: CLI feature-complete + background mode + adapter artifact · [playbook](./docs/refactor/B4-cli-bg-artifact.md) (stub) | ⏳ 未启动 | 2-3w · CLI 全部命令（archive / btw / project / llm 等）+ menubar daemon mode（关窗→隐藏）+ Galley Supervisor SOP + galley-supervisor skill + docs/agent-api.md 公开契约 + discovery file 写入 |
+| v0.5 milestone | ⏳ | 10月底-11月初 · dual-native orchestrator 正式发布。Galley GUI + Galley CLI 对等前端 + Supervisor adapter 生态启动 |
 
 ## 工程规范
 
