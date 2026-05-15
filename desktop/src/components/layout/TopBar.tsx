@@ -12,7 +12,9 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
-import { isMac } from "@/lib/platform";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+import { isMac, isWindowActionTarget } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { WindowControls } from "./WindowControls";
@@ -140,6 +142,18 @@ export function TopBar({
   return (
     <div
       data-tauri-drag-region
+      // Windows custom chrome: double-click anywhere draggable on the
+      // TopBar toggles maximize, mirroring native title-bar behavior.
+      // Mac's Overlay style hands this to the OS, so we early-exit.
+      onDoubleClick={(e) => {
+        if (isMac) return;
+        if (!isWindowActionTarget(e.target)) return;
+        try {
+          void getCurrentWindow().toggleMaximize();
+        } catch {
+          // No Tauri host (e.g. plain Vite browser dev) — ignore.
+        }
+      }}
       className={cn(
         "flex h-11 shrink-0 items-stretch border-b border-line bg-app text-[13px]",
         // Windows reserves no right padding here — WindowControls

@@ -22,3 +22,44 @@ const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
 
 export const isMac = ua.includes("Macintosh");
 export const isWindows = ua.includes("Windows");
+
+/**
+ * True when the given event target should trigger a window-chrome
+ * action (e.g. double-click → toggleMaximize). Walks up the DOM:
+ *
+ *   - returns false if any ancestor is an interactive control
+ *     (button / link / input / textarea / select)
+ *   - returns false if any ancestor opts out via
+ *     data-tauri-drag-region="false"
+ *   - returns true only when the path includes at least one element
+ *     marked `data-tauri-drag-region` (no value, attribute-only or
+ *     attribute="true") — i.e. an area Tauri would already grab for
+ *     window dragging
+ *
+ * Used by Windows custom chrome to decide whether a double-click on
+ * TopBar should maximize the window. Mac's "Overlay" titleBarStyle
+ * makes the OS handle this natively, so callers always gate with
+ * `!isMac` before invoking this helper.
+ */
+export function isWindowActionTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  let el: HTMLElement | null = target;
+  let sawDragRegion = false;
+  while (el) {
+    const drag = el.getAttribute("data-tauri-drag-region");
+    if (drag === "false") return false;
+    if (drag !== null) sawDragRegion = true;
+    const tag = el.tagName;
+    if (
+      tag === "BUTTON" ||
+      tag === "A" ||
+      tag === "INPUT" ||
+      tag === "TEXTAREA" ||
+      tag === "SELECT"
+    ) {
+      return false;
+    }
+    el = el.parentElement;
+  }
+  return sawDragRegion;
+}
