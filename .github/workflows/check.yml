@@ -40,6 +40,9 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          # Pin major version explicitly — see release.yml for why.
+          version: 10
 
       - name: Setup Node
         uses: actions/setup-node@v4
