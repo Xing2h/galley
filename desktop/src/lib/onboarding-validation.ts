@@ -35,10 +35,10 @@ import type { HealthCheckItem } from "@/types/inspector";
 export async function validateGAPath(rawPath: string): Promise<PathValidation> {
   const path = rawPath.trim();
   if (!path) return null;
-  // Expand `~` since Tauri's exists() doesn't do shell-style expansion.
-  // The picker dialog returns absolute paths so this only matters when
-  // the user types manually.
-  const resolved = await expandHome(path);
+  // Expand `~` and normalize separators / mixed slashes via Tauri's
+  // path API. Critical on Windows — see `resolvePath` comment for the
+  // user-reported bug this fixes.
+  const resolved = await resolvePath(path);
   let pathOk: boolean;
   try {
     pathOk = await fsExists(resolved);
@@ -50,7 +50,7 @@ export async function validateGAPath(rawPath: string): Promise<PathValidation> {
 
   let agentmainOk = false;
   try {
-    agentmainOk = await fsExists(joinPath(resolved, "agentmain.py"));
+    agentmainOk = await fsExists(await joinPath(resolved, "agentmain.py"));
   } catch (e) {
     console.warn("[onboarding] fs.exists(agentmain.py) failed:", e);
   }
@@ -89,7 +89,7 @@ export async function runHealthChecks(
     onPythonProbed?: (alias: string | null, result: ProbeResult) => void;
   },
 ): Promise<HealthCheckItem[]> {
-  const resolved = await expandHome(path.trim());
+  const resolved = await resolvePath(path.trim());
   const probes: HealthProbe[] = [
     {
       name: "GA 路径存在",
@@ -99,12 +99,12 @@ export async function runHealthChecks(
     {
       name: "agentmain.py 可见",
       detail: "GA 入口模块",
-      check: () => fsExists(joinPath(resolved, "agentmain.py")),
+      check: async () => fsExists(await joinPath(resolved, "agentmain.py")),
     },
     {
       name: "mykey.py 存在",
       detail: "LLM 配置文件",
-      check: () => fsExists(joinPath(resolved, "mykey.py")),
+      check: async () => fsExists(await joinPath(resolved, "mykey.py")),
       // mykey.py is user-supplied + .gitignored; a missing file is a
       // warning rather than an error — the user can still attach and
       // configure later.
@@ -113,13 +113,13 @@ export async function runHealthChecks(
     {
       name: "memory/ 目录可见",
       detail: "L1-L4 记忆存储",
-      check: () => fsExists(joinPath(resolved, "memory")),
+      check: async () => fsExists(await joinPath(resolved, "memory")),
       warnOnMissing: true,
     },
     {
       name: "assets/ 目录可见",
       detail: "GA 资源目录",
-      check: () => fsExists(joinPath(resolved, "assets")),
+      check: async () => fsExists(await joinPath(resolved, "assets")),
       warnOnMissing: true,
     },
   ];
@@ -235,26 +235,65 @@ async function fsExists(path: string): Promise<boolean> {
 }
 
 /**
- * Replace leading `~` with the user's home directory. Tauri's
- * `homeDir()` returns absolute path; concat the rest of the input.
- * No-op when the input doesn't start with `~`.
+ * Expand `~` to the user's home directory **and** normalize the path
+ * to the platform-native form via Tauri's path API.
+ *
+ * The normalize step was added 2026-05-15 after a Windows v0.1-alpha.1
+ * user report: picking a valid GA folder via the OS dialog was still
+ * flagged as "错误路径" by validateGAPath, but appending a trailing
+ * `\` in the input box made it pass. Root cause was the old
+ * `joinPath` doing string concat with a hardcoded `/`, producing
+ * mixed-separator paths like `C:\Users\foo\GA/agentmain.py` that
+ * Tauri's fs:scope check on Windows handles inconsistently — the
+ * trailing `\` happened to nudge it into a code path that worked.
+ * Routing both expansion and join through `@tauri-apps/api/path`
+ * gives us platform-correct separators on all targets.
  */
-async function expandHome(path: string): Promise<string> {
-  if (!path.startsWith("~")) return path;
-  try {
-    const { homeDir } = await import("@tauri-apps/api/path");
-    const home = await homeDir();
-    return home + path.slice(1);
-  } catch (e) {
-    console.warn("[onboarding] expandHome failed; using raw path.", e);
-    return path;
+async function resolvePath(path: string): Promise<string> {
+  let p = path;
+  if (p.startsWith("~")) {
+    try {
+      const { homeDir } = await import("@tauri-apps/api/path");
+      const home = await homeDir();
+      p = home + p.slice(1);
+    } catch (e) {
+      console.warn(
+        "[onboarding] homeDir lookup failed; using raw path.",
+        e,
+      );
+    }
   }
+  try {
+    const { normalize } = await import("@tauri-apps/api/path");
+    p = await normalize(p);
+  } catch (e) {
+    console.warn(
+      "[onboarding] path normalize failed; using raw path.",
+      e,
+    );
+  }
+  return p;
 }
 
-/** Trivial path-join — Tauri 的 fs 接受平台原生分隔符；macOS 上是 "/"。 */
-function joinPath(a: string, b: string): string {
-  if (a.endsWith("/")) return a + b;
-  return a + "/" + b;
+/**
+ * Platform-native path join. Delegates to `@tauri-apps/api/path.join`
+ * so Windows gets `\` and POSIX gets `/`. See `resolvePath` above for
+ * the Windows-specific bug that motivated routing this through Tauri.
+ */
+async function joinPath(a: string, b: string): Promise<string> {
+  try {
+    const { join } = await import("@tauri-apps/api/path");
+    return await join(a, b);
+  } catch (e) {
+    console.warn(
+      "[onboarding] joinPath via Tauri API failed; falling back.",
+      e,
+    );
+    // POSIX-only fallback; only hit if the Tauri path plugin isn't
+    // loadable (Vite-only dev). Accept either trailing separator.
+    if (a.endsWith("/") || a.endsWith("\\")) return a + b;
+    return a + "/" + b;
+  }
 }
 
 function sleep(ms: number): Promise<void> {
