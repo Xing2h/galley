@@ -19,6 +19,7 @@ writes to the captured fd.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import queue
@@ -72,6 +73,13 @@ def _capture_real_stdout() -> IO[str]:
     redirect sys.stdout into /dev/null to silence GA's print() calls."""
     fd = os.dup(1)
     return os.fdopen(fd, "w", encoding="utf-8", buffering=1)  # line-buffered
+
+
+def _capture_real_stdin() -> IO[str]:
+    """Read desktop JSON Lines as UTF-8 regardless of the Windows locale."""
+    if hasattr(sys.stdin, "buffer"):
+        return io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
+    return sys.stdin
 
 
 def _silence_python_stdout() -> None:
@@ -1459,7 +1467,7 @@ def main() -> int:
         return 2
 
     real_stdout = _capture_real_stdout()
-    real_stdin = sys.stdin
+    real_stdin = _capture_real_stdin()
     _silence_python_stdout()
 
     bridge = Bridge(

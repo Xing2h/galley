@@ -6,14 +6,45 @@ prettification.
 """
 from __future__ import annotations
 
+import io
+import sys
+
 import pytest
 
+from bridge.ipc import UserMessageCommand, decode_command, encode
 from bridge.workbench_bridge import (
     Bridge,
     _FenceFilter,
     _classify_error,
+    _capture_real_stdin,
     _simplify_llm_name,
 )
+
+# ---------------- stdin capture ----------------
+
+
+def test_capture_real_stdin_reads_desktop_utf8_under_cp936_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows pipes may expose sys.stdin as CP936; bridge wire bytes are UTF-8."""
+    expected = "在Galley的Setting中添加配置"
+    line = encode(UserMessageCommand(text=expected)) + "\n"
+    fake_stdin = io.TextIOWrapper(
+        io.BytesIO(line.encode("utf-8")),
+        encoding="cp936",
+        errors="replace",
+    )
+    monkeypatch.setattr(sys, "stdin", fake_stdin)
+
+    captured = _capture_real_stdin()
+    try:
+        decoded = decode_command(captured.readline())
+    finally:
+        captured.detach()
+
+    assert isinstance(decoded, UserMessageCommand)
+    assert decoded.text == expected
+
 
 # ---------------- _classify_error ----------------
 
