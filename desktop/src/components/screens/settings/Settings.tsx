@@ -3,6 +3,7 @@ import {
   Cpu,
   Info,
   Keyboard,
+  Key,
   ShieldCheck,
   X as XIcon,
 } from "@phosphor-icons/react";
@@ -10,12 +11,18 @@ import { useState } from "react";
 
 import { SettingsAbout } from "@/components/screens/settings/SettingsAbout";
 import { SettingsApproval } from "@/components/screens/settings/SettingsApproval";
+import { SettingsMyKey } from "@/components/screens/settings/SettingsMyKey";
 import { SettingsRuntime } from "@/components/screens/settings/SettingsRuntime";
 import { SettingsShortcuts } from "@/components/screens/settings/SettingsShortcuts";
 import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
 
-export type SettingsTab = "runtime" | "approval" | "shortcuts" | "about";
+export type SettingsTab =
+  | "runtime"
+  | "mykey"
+  | "approval"
+  | "shortcuts"
+  | "about";
 
 export interface ApprovalConfig {
   /** Tools that require approval before dispatch. */
@@ -121,6 +128,7 @@ export function Settings({
                   onCommitGAPath={onCommitGAPath}
                 />
               )}
+              {tab === "mykey" && <SettingsMyKey gaPath={runtimeInfo.gaPath} />}
               {tab === "approval" && (
                 <SettingsApproval
                   config={approval}
@@ -162,6 +170,12 @@ function SettingsTabList({
         Icon={Cpu}
         label="Runtime"
         onClick={() => onChange("runtime")}
+      />
+      <SettingsTabButton
+        active={tab === "mykey"}
+        Icon={Key}
+        label="mykey.py"
+        onClick={() => onChange("mykey")}
       />
       <SettingsTabButton
         active={tab === "approval"}

@@ -38,6 +38,31 @@ fn path_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
 }
 
+/// Avoid exposing broad filesystem writes from the renderer. This narrow
+/// command only writes `<ga_path>/mykey.py`, never reads an existing secret,
+/// and refuses to overwrite unless the UI passed an explicit confirmation.
+#[tauri::command]
+fn write_mykey_file(ga_path: String, content: String, overwrite: bool) -> Result<String, String> {
+    let base = std::path::PathBuf::from(ga_path.trim());
+    if base.as_os_str().is_empty() {
+        return Err("GenericAgent path is empty".to_string());
+    }
+    if !base.exists() || !base.is_dir() {
+        return Err("GenericAgent path does not exist or is not a directory".to_string());
+    }
+    if !base.join("agentmain.py").exists() || !base.join("llmcore.py").exists() {
+        return Err("GenericAgent path must contain agentmain.py and llmcore.py".to_string());
+    }
+
+    let target = base.join("mykey.py");
+    if target.exists() && !overwrite {
+        return Err("mykey.py already exists; explicit overwrite is required".to_string());
+    }
+
+    std::fs::write(&target, content).map_err(|e| format!("failed to write mykey.py: {e}"))?;
+    Ok(target.to_string_lossy().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -83,7 +108,7 @@ pub fn run() {
                 .add_migrations(DB_URL, migrations)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![path_exists])
+        .invoke_handler(tauri::generate_handler![path_exists, write_mykey_file])
         .setup(|_app| {
             // Windows-only custom chrome: drop native decorations and
             // restore the drop shadow via window-shadows-v2 so the borderless
