@@ -329,6 +329,27 @@ def _install_process_tree_kill_for_ga(ga_module: Any) -> bool:
     return True
 
 
+def _install_devnull_stdin_for_ga(ga_module: Any) -> bool:
+    """Prevent GA tool subprocesses from inheriting the desktop IPC stdin pipe."""
+    popen_cls = ga_module.subprocess.Popen
+    if getattr(popen_cls, "_galley_devnull_stdin", False):
+        return False
+
+    class _GalleyDevnullStdinPopen(popen_cls):  # type: ignore[valid-type, misc]
+        _galley_devnull_stdin = True
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            # In Galley, bridge stdin is the long-lived desktop IPC pipe.
+            # Letting PowerShell/Git inherit it can make MSYS2 tools wait
+            # on a pipe that never reaches EOF, even for tiny commands.
+            if len(args) < 4 and "stdin" not in kwargs:
+                kwargs["stdin"] = subprocess.DEVNULL
+            super().__init__(*args, **kwargs)
+
+    ga_module.subprocess.Popen = _GalleyDevnullStdinPopen
+    return True
+
+
 _GIT_UPDATE_TIMEOUT_FLOOR_SECONDS = 180
 _SHELL_CODE_TYPES = frozenset({"powershell", "bash", "sh", "shell", "ps1", "pwsh"})
 _GIT_UPDATE_COMMAND_RE = re.compile(
@@ -727,6 +748,7 @@ class Bridge:
         import agentmain
         import ga as ga_module
 
+        _install_devnull_stdin_for_ga(ga_module)
         _install_process_tree_kill_for_ga(ga_module)
         self.agentmain = agentmain
         self.agent = agentmain.GeneraticAgent()

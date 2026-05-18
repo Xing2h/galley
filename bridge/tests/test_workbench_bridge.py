@@ -20,6 +20,7 @@ from bridge.workbench_bridge import (
     _classify_error,
     _code_run_args_with_git_timeout_floor,
     _FenceFilter,
+    _install_devnull_stdin_for_ga,
     _install_git_noninteractive_environment,
     _install_process_tree_kill_for_ga,
     _looks_like_git_update_command,
@@ -286,6 +287,42 @@ def test_ga_process_kill_falls_back_to_original_kill_off_windows(
     proc.kill()
 
     assert proc.fallback_killed is True
+
+
+def test_ga_popen_defaults_stdin_to_devnull() -> None:
+    class FakePopen:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    class FakeSubprocess:
+        Popen = FakePopen
+
+    class FakeGa:
+        subprocess = FakeSubprocess
+
+    assert _install_devnull_stdin_for_ga(FakeGa) is True
+    proc = FakeGa.subprocess.Popen(["powershell", "-Command", "git --version"])
+
+    assert proc.kwargs["stdin"] == subprocess.DEVNULL
+
+
+def test_ga_popen_preserves_explicit_stdin() -> None:
+    class FakePopen:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    class FakeSubprocess:
+        Popen = FakePopen
+
+    class FakeGa:
+        subprocess = FakeSubprocess
+
+    assert _install_devnull_stdin_for_ga(FakeGa) is True
+    proc = FakeGa.subprocess.Popen(["python"], stdin=subprocess.PIPE)
+
+    assert proc.kwargs["stdin"] == subprocess.PIPE
 
 
 # ---------------- Git code_run safeguards ----------------
