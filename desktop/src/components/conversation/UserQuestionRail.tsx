@@ -163,6 +163,17 @@ export function UserQuestionRail({
       className="pointer-events-none absolute right-1.5 top-6 bottom-6 z-10 w-5"
     >
       <div className="relative h-full">
+        {/* Hairline spine — 1px line-subtle vertical, centered under
+            the dot column, runs full rail height. Threads the dots
+            into a single visual group instead of a loose constellation.
+            Layered behind the dots: inactive rings let it show through
+            their transparent center (reads as a quiet through-line),
+            active filled discs sit on top and break it visually
+            wherever the user currently is. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 bg-line-subtle"
+        />
         {dotPositions.map((dot) => (
           <div
             key={dot.index}
