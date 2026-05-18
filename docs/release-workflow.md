@@ -17,22 +17,20 @@ git commit + git tag v0.2.0 + git push origin main v0.2.0
        ↓
 GitHub Actions release.yml 自动触发
        │
-       ├─ macos-15 (Apple Silicon) → Galley_0.2.0_macOS_aarch64.dmg
-       └─ windows-latest           → Galley_0.2.0_Windows_x64-setup.exe
+       ├─ macos-15 (arm64 runner, native) → Galley_0.2.0_macOS_aarch64.dmg
+       ├─ macos-15 (arm64 runner, cross)  → Galley_0.2.0_macOS_x64.dmg   ← v0.1.2 起 CI 出，cross-compile + Rosetta 2
+       └─ windows-latest                  → Galley_0.2.0_Windows_x64-setup.exe
        ↓
 ubuntu-latest 收集产物 + gh release create --draft
-       ↓
-（可选）JC 在 Intel Mac 上本地 `pnpm tauri build` + 跑 `scripts/rename-artifact.sh x86_64-apple-darwin`
-        → 出 Galley_0.2.0_macOS_x64.dmg → `gh release upload v0.2.0 …` 挂到同一 draft
        ↓
 手动 review: GitHub Release 页面看 draft、edit 加亮 notes、本地下载 smoke test
        ↓
 点 publish → 用户可见 + 可下载
 ```
 
-构建时间预估：每个 platform job 8-15 min（缓存命中后），两个并行。全流程 push tag 到 draft release ready 大约 **15-20 min**。
+构建时间预估：每个 platform job 4-7 min（缓存命中后），三个并行。全流程 push tag 到 draft release ready 大约 **10-12 min**。
 
-**Mac Intel 不在 CI matrix 内**（v0.1.0-alpha.2 起）：JC 当前开发机是 Intel Mac，需要时本地 `pnpm tauri build --target x86_64-apple-darwin` 出包；GitHub macos-13 runner 本身也在 2026-27 被 deprecated 的路径上，CI 提前撤出符合方向。详 §"Intel runner deprecation"。
+**Mac Intel CI 路径**（v0.1.2 起）：macos-15 arm64 runner + cross-compile + Rosetta 2，详细 trial 验证见 [trial run 26016317898](https://github.com/wangjc683/galley/actions/runs/26016317898)。Rosetta 装载 ~3min，cross-compile 跟 native build 相比多约 2-3min。比保 GitHub macos-13 deprecated runner 更长寿（macos-13 在 2026-27 deprecation 路径上）。本地 build 路径仍然是兜底（CI 不可用 / 紧急 hotfix 时走 [Manual fallback](#manual-fallback-ci-stalled-or-skipped) 方案 B）。
 
 ## 版本号策略
 
@@ -118,10 +116,10 @@ CI 完成时：GitHub 顶部红圈通知 + 邮件提醒（默认订阅）。
 
 进 https://github.com/wangjc683/galley/releases 看到一个 draft `Galley v0.2.0`：
 
-- **产物列表**：确认 CI 出 2 个文件
+- **产物列表**：确认 CI 出 3 个文件
   - `Galley_0.2.0_macOS_aarch64.dmg`
+  - `Galley_0.2.0_macOS_x64.dmg`
   - `Galley_0.2.0_Windows_x64-setup.exe`
-  - （如果需要 Intel Mac binary：JC 本地 `pnpm tauri build --target x86_64-apple-darwin` + `scripts/rename-artifact.sh x86_64-apple-darwin` 出 `Galley_0.2.0_macOS_x64.dmg`，再 `gh release upload v0.2.0` 挂上去）
 - **Auto-generated notes**：GitHub 根据 tag 间的 commit 自动列出来。点 **Edit** 按下面模板加工：
 
 ```markdown
@@ -363,26 +361,56 @@ GitHub Actions 偶发某些 runner 排队。等 5-10 min 通常自然解决。
 
 ## Intel runner deprecation 应对
 
-`macos-13` runner GitHub 已经标 deprecated（具体下线日期 GitHub 没公告，估计 2026 年底-2027 年）。**v0.1.0-alpha.2 起 Galley 已经从 CI matrix 撤掉 macos-13**——比 GitHub 强制下线提前走，按需采用下面方案 B/C 兜底。
+`macos-13` runner GitHub 已经标 deprecated（具体下线日期 GitHub 没公告，估计 2026 年底-2027 年）。**v0.1.0-alpha.2 起 Galley 已经从 CI matrix 撤掉 macos-13**——比 GitHub 强制下线提前走。
 
-**方案 A**: drop Intel Mac 支持
-- `release.yml` 删 macos-13 matrix 行 ✅（已落实）
-- Release notes 加 Intel Mac 用户说明：CI 不再出 Intel `.dmg`
-- 影响：Intel Mac 用户失去 CI 出包；想要装就走方案 B 本地 build
+历史走过的兜底路径（按时间序）：
 
-**方案 B**: 本地建 Intel Mac dmg（**当前主力路径**）
-- JC 在自己的 Intel Mac 上手动跑 `pnpm tauri build --target x86_64-apple-darwin`
-- 跑 `scripts/rename-artifact.sh x86_64-apple-darwin` 给文件名插入 `macOS` slug
-- 把产物 `gh release upload v<X.Y.Z> Galley_<X.Y.Z>_macOS_x64.dmg` 挂到 same Release
-- 影响：发版多一步本地 build + rename；JC 当前开发机就是 Intel Mac，零额外成本
+- **v0.1.0-alpha.2 / v0.1.1-alpha.1**: 方案 B —— JC 本地 Intel Mac build + `gh release upload` 手挂
+- **v0.1.2 起**: 方案 C —— macos-15 arm64 runner cross-compile x86_64 + Rosetta 2 装载，全 CI 自动出。trial 验证 2026-05-18 [run 26016317898](https://github.com/wangjc683/galley/actions/runs/26016317898) 通过，merge 到 main 作为默认 CI 行为
 
-**方案 C**: 用 Apple Silicon 跨编译 x86_64
-- macos-14 runner 上 `rustup target add x86_64-apple-darwin` + `tauri build --target x86_64-apple-darwin`
-- Tauri 2 支持 Mac → Mac 跨架构（同一个 OS，不同 CPU 架构）
-- 影响：build 时间加倍（一台机出两份），但 release.yml matrix 简化为单 platform 双 target
-- 状态：备选，JC 换 M 系列开发机或 Intel 用户量起来后再考虑
+### 方案 C（当前主力，v0.1.2 起）
 
-JC 的偏好（2026-05-15 alpha.2 起）：方案 B（自有 Intel Mac 兜底）。方案 C 长期备选。
+`release.yml` matrix 第二行：
+
+```yaml
+- platform: macos-15
+  target: x86_64-apple-darwin
+  arch: x64
+  bundle_dir: dmg
+  bundle_glob: "*.dmg"
+```
+
+加 conditional Rosetta install step（`if: matrix.target == 'x86_64-apple-darwin'`）：
+
+```yaml
+- name: Install Rosetta 2 (x86_64 cross-compile on arm64 host)
+  if: matrix.target == 'x86_64-apple-darwin'
+  run: softwareupdate --install-rosetta --agree-to-license
+```
+
+`bundle-python.sh mac-x64` 下 x86_64 PBS Python tarball，在 arm64 host 上通过 Rosetta 2 跑 `pip install` 装 GA deps。`pnpm tauri build --target x86_64-apple-darwin` Rust cross-compile 出 Mac Intel binary。`hdiutil` 自动出 x86_64 .dmg。
+
+Trial 实测 binary arch：
+```
+Galley.app/Contents/MacOS/desktop:                Mach-O x86_64 ✓
+Galley.app/Contents/Resources/python/bin/python3.11:  Mach-O x86_64 ✓
+```
+
+耗时：~7min vs arm64 native ~4min（Rosetta install +~3min，cross-compile +~0min on cached Rust target）。
+
+### 方案 B（v0.1.2 起仅作兜底）
+
+CI stalled / 紧急 hotfix / Rosetta 装载在某次 runner image update 后失败时，仍可本地 build:
+
+- JC 在 Intel Mac 上 `pnpm tauri build --target x86_64-apple-darwin`
+- `scripts/rename-artifact.sh x86_64-apple-darwin` 插 `macOS` slug
+- `gh release upload v<X.Y.Z> Galley_<X.Y.Z>_macOS_x64.dmg` 挂到 same Release
+
+### 方案 A（drop Intel Mac 支持）
+
+不再考虑——方案 C 跑通后 Intel CI 维护成本可控；Galley 早期用户里 Intel Mac 占比仍可观。
+
+历史记忆：2026-05-15 alpha.2 起为方案 B，2026-05-18 v0.1.1-alpha.1 ship 后验证 + merge 方案 C 成主力。
 
 ## Announcement templates
 
