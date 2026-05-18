@@ -261,10 +261,17 @@ impl GalleyApi for SqliteGalley {
         if filter.status.is_some() {
             sql.push_str(" AND status = ?");
         }
+        // Standard Option<bool> filter semantics:
+        //   None        → no archived filter (active + archived both returned)
+        //   Some(false) → exclude archived
+        //   Some(true)  → only archived
+        // The CLI's `--all` flag passes None for this; the CLI default
+        // and the GUI sidebar pass Some(false). GUI's `loadSessions`
+        // historically returned everything (no filter) — matches None.
         match filter.archived {
-            // None — exclude archived (GUI default).
-            None | Some(false) => sql.push_str(" AND status != 'archived'"),
+            Some(false) => sql.push_str(" AND status != 'archived'"),
             Some(true) => sql.push_str(" AND status = 'archived'"),
+            None => {}
         }
         sql.push_str(" ORDER BY pinned DESC, last_activity_at DESC");
 

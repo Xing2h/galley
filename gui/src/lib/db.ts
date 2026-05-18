@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import Database from "@tauri-apps/plugin-sql";
 
 import type { Project, Session, SessionStatus } from "@/types/session";
@@ -51,10 +52,92 @@ export function _resetDBForTest(): void {
 // ---------------- sessions ----------------
 
 /**
+ * SessionBrief wire shape — what `core/src/api/session.rs::SessionBrief`
+ * serializes to over Tauri invoke. Field set is a subset of {@link Session}:
+ * the durable / agent-facing fields plus optional pinned / hasUnread.
+ * Transient runtime fields (pid, currentTool, pendingApprovalCount,
+ * errorCount, hasPendingAskUser, lastStepIndex) are intentionally
+ * excluded — they belong to the in-memory runtime model that B2's
+ * runner-manager will own. M6's adapter defaults them to 0 / undefined.
+ */
+interface SessionBriefWire {
+  id: string;
+  projectId?: string;
+  title: string;
+  status: SessionStatus;
+  summary?: string;
+  turnCount?: number;
+  lastActivityAt: string;
+  createdAt: string;
+  updatedAt: string;
+  pinned?: boolean;
+  hasUnread?: boolean;
+}
+
+/**
+ * Galley Core-backed session list. Migration pattern for B2 / B3:
+ *
+ *   1. Add `GalleyApi` trait method in `core/src/api.rs`.
+ *   2. Implement in `core/src/db.rs` (`impl GalleyApi for SqliteGalley`).
+ *   3. Add a `#[tauri::command]` wrapper in `core/src/lib.rs` + register
+ *      in `tauri::generate_handler!`.
+ *   4. Add an `X_via_core()` invoker here (this function is the template).
+ *   5. Migrate the call site from `X()` to `X_via_core()`.
+ *   6. Mark the old `X()` with `@deprecated`; remove later when no
+ *      callers remain.
+ *
+ * Argument shape: Tauri's `invoke` receives the second argument as a
+ * map matching the Rust function's parameter names. Our Rust signature
+ * is `list_sessions(filter: SessionFilter)` so the JS call passes
+ * `{ filter: <SessionFilter JSON> }`. `SessionFilter` is camelCase via
+ * `#[serde(rename_all = "camelCase")]`.
+ *
+ * Empty filter → matches legacy `loadSessions()` behaviour (returns
+ * archived + active, recency desc). Sidebar / store filters for
+ * display.
+ */
+export async function loadSessionsViaCore(): Promise<Session[]> {
+  const briefs = await invoke<SessionBriefWire[]>("list_sessions", {
+    filter: {},
+  });
+  return briefs.map(sessionFromBrief);
+}
+
+function sessionFromBrief(b: SessionBriefWire): Session {
+  return {
+    id: b.id,
+    projectId: b.projectId,
+    title: b.title,
+    // Same transient-status healing the legacy path does. SessionBrief
+    // can carry transient status if SQLite happened to hold a stale
+    // value (rare — persistableStatus coerces on write — but the heal
+    // remains harmless).
+    status: persistableStatus(b.status),
+    summary: b.summary,
+    turnCount: b.turnCount ?? 0,
+    // Transient runtime fields — SessionBrief omits these intentionally
+    // (see SessionBriefWire docstring). They populate from IPC events
+    // (bridge / B2's runner-manager) once a runner is alive, or stay
+    // 0 / undefined for sessions whose runner isn't running.
+    pendingApprovalCount: 0,
+    errorCount: 0,
+    currentTool: undefined,
+    pid: undefined,
+    cwd: undefined,
+    pinned: b.pinned ?? false,
+    hasUnread: b.hasUnread ?? false,
+    lastActivityAt: b.lastActivityAt,
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt,
+  };
+}
+
+/**
  * @deprecated B1 M3 — Rust port available at `galley_core_lib::db::SqliteGalley::list_sessions`,
- * exposed via Tauri command `list_sessions`. Migrate call sites to
- * `invoke("list_sessions", {...})` then delete this once no callers remain.
- * Kept alive in parallel per refactor/invariants.md §I1.
+ * exposed via Tauri command `list_sessions` and JS-side wrapper
+ * {@link loadSessionsViaCore}. Migrate call sites to the new wrapper
+ * then delete this once no callers remain. Kept alive in parallel per
+ * refactor/invariants.md §I1.
  */
 export async function loadSessions(): Promise<Session[]> {
   const db = await getDB();

@@ -15,7 +15,7 @@ import {
   getPref,
   loadMessagesBySession,
   loadProjects,
-  loadSessions,
+  loadSessionsViaCore,
   persistProject,
   persistSession,
   persistToolEventApprovalDecision,
@@ -2662,7 +2662,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
           e,
         );
       }
-      const sessions = await loadSessions();
+      // B1 M6 migration template: this read goes through Rust core
+      // (`SqliteGalley::list_sessions` → Tauri command → JS adapter).
+      // Behaviour matches legacy `loadSessions()` — see
+      // `loadSessionsViaCore` docstring for the migration pattern.
+      const sessions = await loadSessionsViaCore();
       // No demo-seed on first launch. DEMO_SESSIONS stay as the
       // in-memory initial state for the brief moment before
       // hydrate resolves; if the user has zero real sessions, the

@@ -1,11 +1,11 @@
 # B1 · Rust core 骨架 + CLI 只读
 
 ```
-Cursor:   T6.1  (M6 启动 — pick loadProjects vs loadSessions as migration template)
-Status:   🚧 启动中 (M5 done · docs/agent-api.md draft published)
+Cursor:   T7.1  (M7 启动 — 跑 A1-A12 acceptance + 写 B1 完成 devlog)
+Status:   🚧 启动中 (M6 done · loadSessions 已切到 Rust core 路径 · dogfood OK)
 Started:  2026-05-18
-Last touch: 2026-05-18 M5 done — agent-api.md covers 6 commands + stability promise + error envelope
-Predecessor: M4 commit e3f11a1 (CLI binary)
+Last touch: 2026-05-18 M6 done — loadSessionsViaCore, migration template documented
+Predecessor: M5 commit 3e29dbc (agent-api.md)
 Successor:   B2 (bridge ownership 迁 Rust)
 Duration:    3 周 (D1-D15)
 ```
@@ -278,11 +278,11 @@ Galley 对 agent 生态的公开契约文档。B1 阶段先写 read 命令部分
 
 ### Sub-tasks
 
-- [ ] **T6.1** 选迁移目标：建议 `loadProjects`（小、独立、易验证），或 `loadSessions`（更核心，但 B2 也会动）。**写 running notes**
-- [ ] **T6.2** 在 `gui/src/lib/db.ts` 选定的函数旁边新建 `loadProjectsViaCore()` (新名)：调 `invoke('list_projects_cmd')` 而非直接 SQL
-- [ ] **T6.3** 在 useAppStore 那一处把 `loadProjects()` 改成 `loadProjectsViaCore()`。**老的 `loadProjects` 函数还在，没用了，加 @deprecated**
-- [ ] **T6.4** Dogfood：起 GUI，看 Projects sidebar 渲染正常，create/delete/edit project 全套跑通
-- [ ] **T6.5** 写一段 `docs/refactor/migration-pattern.md` 把这个改造步骤写成 template（5-7 步），B2/B3 复用——**或者直接写在本 playbook 底部 "Migration pattern" section**。**决定**
+- [x] **T6.1** 选迁移目标：建议 `loadProjects`（小、独立、易验证），或 `loadSessions`（更核心，但 B2 也会动）。**写 running notes**
+- [x] **T6.2** 在 `gui/src/lib/db.ts` 选定的函数旁边新建 `loadProjectsViaCore()` (新名)：调 `invoke('list_projects_cmd')` 而非直接 SQL
+- [x] **T6.3** 在 useAppStore 那一处把 `loadProjects()` 改成 `loadProjectsViaCore()`。**老的 `loadProjects` 函数还在，没用了，加 @deprecated**
+- [x] **T6.4** Dogfood：起 GUI，看 Projects sidebar 渲染正常，create/delete/edit project 全套跑通
+- [x] **T6.5** 写一段 `docs/refactor/migration-pattern.md` 把这个改造步骤写成 template（5-7 步），B2/B3 复用——**或者直接写在本 playbook 底部 "Migration pattern" section**。**决定**
 
 ### M6 完成标志
 
@@ -391,27 +391,37 @@ B1 全部 acceptance 跑过，devlog ship，B2 playbook 写好可以启动。
 - [O2] ~~Rust SQLite 驱动：`rusqlite` 推荐，但要确认 libsqlite3-sys 版本跟 tauri-plugin-sql 不冲突 (T3.1)~~ **RESOLVED 2026-05-18 → `sqlx 0.8.6` + `sqlite` feature** (matches the version already pulled in transitively by `tauri-plugin-sql 2.4.0`; sharing `libsqlite3-sys 0.30.1` rules out the linking-conflict hazard the gotcha worried about). Playbook G6 claimed tauri-plugin-sql uses rusqlite internally — that's wrong, Cargo.lock confirms sqlx. Async-native sqlx also pairs naturally with the `async_trait`-defined `GalleyApi`; rusqlite would have needed `tokio::task::spawn_blocking` wrappers in every method.
 - [O3] ~~Error output 走 stdout 还是 stderr (T4.12)~~ **RESOLVED 2026-05-18 → stdout** (errors emit JSON on stdout matching `GalleyError` shape; exit code carries category for SOPs that don't want to parse). Stderr reserved for panic / rustc backtrace only. See running note N23.
 - [O4] B1 阶段 `health` 命令复杂度边界 (T3.9 / G8)：是否包 Python dry-run
-- [O5] GUI 迁移模板选哪个函数 (T6.1)：loadProjects vs loadSessions vs getPref
+- [O5] ~~GUI 迁移模板选哪个函数 (T6.1)：loadProjects vs loadSessions vs getPref~~ **RESOLVED 2026-05-18 → `loadSessions`** (Rust side already wired in M3 T3.13 → shortest path; M6 just adds the JS adapter + flips one call site). loadProjects deferred to B2 along with the rest of write-path.
 - [O6] cli/ 是否需要 platform-specific build (Windows .exe icon resource embedding 等)：B1 暂不做，B4 polish
 - [O7] **NEW** `schemars::JsonSchema` derive 是否要现在加 (T2.10)：M2 deferred to M5/B4 when agent-api.md schema gen actually needs it (N8). If we hit a "need schemars now" moment earlier, revisit.
 - [O8] **NEW** invariants.md §I4 (3-commit rename) vs B1 playbook T1.15 (1-commit rename) 文档内部矛盾未调和 — JC 2026-05-18 选了 T1.15 路径，但文档冲突仍在 (running note N5).
 
 ## Migration pattern · 给 B2/B3 用的迁移模板
 
-（B1 M6 完成时填这里，作为后续 phase 复用的样板）
+样板已在 M6 落地：**`loadSessions` → `loadSessionsViaCore`**。
+[`gui/src/lib/db.ts loadSessionsViaCore`](../../gui/src/lib/db.ts) 的 JSDoc 是 canonical 描述；以下是 10 步操作清单 + M6 学到的 4 条注意事项。
 
 ```
-1. 在 core/src/api.rs 给目标功能加 trait method
-2. 在 core/src/<module>.rs 实现该 method
-3. 写 cargo test
-4. 在 core/src/lib.rs 加 #[tauri::command] wrapper
-5. 注册到 generate_handler! 宏
+1. 在 core/src/api.rs 给目标功能加 trait method（read-only B1 / write B2+）
+2. 在 core/src/api/<domain>.rs 加对应 Brief 结构（serde camelCase）
+3. 在 core/src/db.rs `impl GalleyApi for SqliteGalley` 写 SQL 实现
+4. 在 core/tests/db_test.rs 加 in-memory 测试（seed → call → assert）
+5. 在 core/src/lib.rs 加 #[tauri::command] wrapper，
+   注册到 tauri::generate_handler!
 6. 在 gui/src/lib/<对应文件> 新建 X_via_core() 包装 invoke
 7. 在调用点切换到 X_via_core()
 8. 老 TS 函数加 @deprecated JSDoc，保留不删
-9. dogfood 跑通 → commit
-10. 后续 phase 全部迁完 + 一段时间稳定后，统一清理老 TS 函数（不在本 B1 / B2 / B3 内）
+9. pnpm tauri dev 跑通 + cargo test 全过 → commit
+10. 后续 phase 全部迁完 + 一段时间稳定后，统一清理老 TS 函数（不在 B1 / B2 / B3 内）
 ```
+
+**4 条 M6 retrospective**：
+
+- **Brief vs Full**：`SessionBrief` 故意比 TS `Session` 字段少 —— 删 transient runtime 字段（pid / currentTool / pendingApprovalCount / errorCount / pid / cwd / lastStepIndex / hasPendingAskUser）。JS 适配器 (`sessionFromBrief`) 把这些填默认值 (0 / undefined)。语义：Rust core 是"持久态权威"，runtime 态字段由 B2+ runner-manager 注入 IPC event 时写入。这条约定避免了 Brief 字段无限膨胀。
+- **Option<bool> filter 语义**：M6 暴露 `archived: Option<bool>` 的 None 语义不一致问题 —— 修正为标准的 `None = no filter / Some(true) = only / Some(false) = exclude`。前置 phase 加新的 Option<bool> 字段时**默认按标准语义实现**，不要让 None 隐含"排除"含义。
+- **Tauri argument shape**：JS `invoke("name", { argName: value })` 的 key 名要跟 Rust 函数 parameter 名匹配（不是 struct 字段名）。Struct 字段的 camelCase/snake_case 由 `#[serde(rename_all)]` 单独控制。
+- **Stale runtime data tolerance**：旧 `loadSessions()` 读 SQLite 的 `current_tool` / `pid` / `pending_approval_count` 等字段时拿到的可能是上次 crash 前的陈旧值。新 `loadSessionsViaCore` 默认空值反而更诚实。如果未来某 phase 真的需要保留这些字段（不太可能 —— B2 起 runner-manager 是权威），再 Brief 字段加。
+
 
 ---
 

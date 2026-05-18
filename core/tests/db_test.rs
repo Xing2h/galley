@@ -93,21 +93,43 @@ async fn seed_message(
 }
 
 #[tokio::test]
-async fn list_sessions_returns_in_recency_order_excluding_archived() {
+async fn list_sessions_default_filter_returns_all_in_recency_order() {
     let pool = fresh_pool().await;
     seed_session(&pool, "sess_old", "old", "idle", "2026-05-10T00:00:00Z").await;
     seed_session(&pool, "sess_new", "new", "idle", "2026-05-18T00:00:00Z").await;
     seed_session(&pool, "sess_arch", "old archived", "archived", "2026-05-15T00:00:00Z").await;
 
     let galley = SqliteGalley::from_pool(pool);
+    // Default SessionFilter has archived=None → no filter (active +
+    // archived both returned). Matches the legacy `loadSessions()`
+    // TS behaviour the GUI hydrate path depends on.
     let rows = galley
         .list_sessions(SessionFilter::default())
         .await
         .expect("list_sessions");
 
     let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, vec!["sess_new", "sess_arch", "sess_old"]);
+}
+
+#[tokio::test]
+async fn list_sessions_archived_false_excludes_archived() {
+    let pool = fresh_pool().await;
+    seed_session(&pool, "sess_old", "old", "idle", "2026-05-10T00:00:00Z").await;
+    seed_session(&pool, "sess_new", "new", "idle", "2026-05-18T00:00:00Z").await;
+    seed_session(&pool, "sess_arch", "archived", "archived", "2026-05-15T00:00:00Z").await;
+
+    let galley = SqliteGalley::from_pool(pool);
+    let rows = galley
+        .list_sessions(SessionFilter {
+            archived: Some(false),
+            ..Default::default()
+        })
+        .await
+        .expect("list_sessions excluding archived");
+
+    let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, vec!["sess_new", "sess_old"]);
-    assert!(ids.iter().all(|id| *id != "sess_arch"));
 }
 
 #[tokio::test]
