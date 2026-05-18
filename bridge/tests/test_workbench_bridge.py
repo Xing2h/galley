@@ -7,6 +7,8 @@ prettification.
 from __future__ import annotations
 
 import io
+import os
+import subprocess
 import sys
 
 import pytest
@@ -14,9 +16,10 @@ import pytest
 from bridge.ipc import UserMessageCommand, decode_command, encode
 from bridge.workbench_bridge import (
     Bridge,
-    _FenceFilter,
-    _classify_error,
     _capture_real_stdin,
+    _classify_error,
+    _FenceFilter,
+    _install_process_tree_kill_for_ga,
     _normalize_available_llms,
     _simplify_llm_name,
 )
@@ -217,6 +220,69 @@ def test_normalize_available_llms_dedupes_raw_name_and_keeps_current() -> None:
             "isCurrent": True,
         }
     ]
+
+
+# ---------------- GA process-tree cleanup ----------------
+
+
+def test_ga_process_kill_uses_taskkill_tree_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    class FakePopen:
+        def __init__(self) -> None:
+            self.pid = 12345
+            self.fallback_killed = False
+
+        def kill(self) -> None:
+            self.fallback_killed = True
+
+    class FakeSubprocess:
+        Popen = FakePopen
+
+    class FakeGa:
+        subprocess = FakeSubprocess
+
+    def fake_run(args: list[str], **_: object) -> object:
+        calls.append(args)
+        return object()
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert _install_process_tree_kill_for_ga(FakeGa) is True
+    proc = FakeGa.subprocess.Popen()
+    proc.kill()
+
+    assert calls == [["taskkill", "/PID", "12345", "/T", "/F"]]
+    assert proc.fallback_killed is False
+
+
+def test_ga_process_kill_falls_back_to_original_kill_off_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakePopen:
+        def __init__(self) -> None:
+            self.pid = 12345
+            self.fallback_killed = False
+
+        def kill(self) -> None:
+            self.fallback_killed = True
+
+    class FakeSubprocess:
+        Popen = FakePopen
+
+    class FakeGa:
+        subprocess = FakeSubprocess
+
+    monkeypatch.setattr(os, "name", "posix")
+
+    assert _install_process_tree_kill_for_ga(FakeGa) is True
+    proc = FakeGa.subprocess.Popen()
+    proc.kill()
+
+    assert proc.fallback_killed is True
 
 
 # ---------------- _extract_ask_user ----------------

@@ -24,6 +24,7 @@ import json
 import os
 import queue
 import re
+import subprocess
 import sys
 import threading
 import traceback
@@ -277,6 +278,55 @@ def _normalize_available_llms(items: list[dict[str, Any]]) -> list[dict[str, Any
             used.add(display)
 
     return deduped
+
+
+def _kill_process_tree(process: Any, fallback_kill: Any | None = None) -> None:
+    """Kill a subprocess and its descendants on Windows.
+
+    GA's code_run timeout path calls ``process.kill()`` on the shell/Python
+    wrapper only. On Windows that can leave grandchildren like git.exe alive,
+    so Galley makes kill tree-aware for subprocesses spawned by the embedded GA.
+    """
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+            return
+        except Exception:
+            pass
+    if fallback_kill is not None:
+        fallback_kill()
+    else:
+        process.kill()
+
+
+def _install_process_tree_kill_for_ga(ga_module: Any) -> bool:
+    """Patch GA's Popen class so existing ``process.kill()`` kills the tree.
+
+    This keeps the fix local to Galley bridge startup and avoids editing the
+    user's GA checkout. It is idempotent because multiple session bridges may
+    import the same GA module in one Python process during tests.
+    """
+    popen_cls = ga_module.subprocess.Popen
+    if getattr(popen_cls, "_galley_process_tree_kill", False):
+        return False
+
+    class _GalleyTreeKillingPopen(popen_cls):  # type: ignore[valid-type, misc]
+        _galley_process_tree_kill = True
+
+        def kill(self) -> None:
+            def fallback() -> None:
+                super(_GalleyTreeKillingPopen, self).kill()
+
+            _kill_process_tree(self, fallback_kill=fallback)
+
+    ga_module.subprocess.Popen = _GalleyTreeKillingPopen
+    return True
 
 
 # Keyword patterns for hint inference. Match in order; first hit wins.
@@ -575,7 +625,9 @@ class Bridge:
             os.chdir(self.ga_path)
 
         import agentmain
+        import ga as ga_module
 
+        _install_process_tree_kill_for_ga(ga_module)
         self.agentmain = agentmain
         self.agent = agentmain.GeneraticAgent()
         self.agent.next_llm(self.llm_no)
