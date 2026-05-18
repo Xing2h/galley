@@ -510,12 +510,11 @@ interface State {
    */
   projects: Project[];
   /**
-   * When set, the Sidebar filters to show only sessions assigned to
-   * this project (plus the "Showing: ProjectName ×" banner). Not
-   * persisted across launches — fresh start = global view, fewer
-   * "where did my recents go?" moments.
+   * Project id that the next lazily-created session should inherit.
+   * This is set when the user starts "new chat in project" from the
+   * sidebar tree and cleared by global new-chat / session navigation.
    */
-  activeProjectFilter: string | undefined;
+  newSessionProjectId: string | undefined;
   /**
    * Projection of `_runtimes[activeSessionId].llms` — see SessionRuntime
    * for the rationale (LLM list is per-bridge in N-active).
@@ -715,8 +714,8 @@ interface Actions {
    */
   /** Create a session row + activate it. Optional `projectId` ties
    * the session to a project at birth — used when "+ New Chat" fires
-   * while the sidebar is in project-filter mode, so the new chat
-   * inherits the same drawer (and, in Phase 4, the project's cwd). */
+   * from the sidebar project tree, so the new chat inherits the same
+   * drawer (and, in Phase 4, the project's cwd). */
   createSession: (projectId?: string) => string;
   /**
    * Make `id` the active session and ensure its bridge is alive.
@@ -841,8 +840,8 @@ interface Actions {
     sessionId: string,
     projectId: string | null,
   ) => Promise<void>;
-  /** Enter / exit filter mode. `undefined` clears the filter. */
-  setActiveProjectFilter: (projectId: string | undefined) => void;
+  /** Set / clear the project assignment for the next new session. */
+  setNewSessionProjectId: (projectId: string | undefined) => void;
   /**
    * Permanently delete every archived session. Destructive — UI
    * must double-confirm (checkbox + destructive button) before
@@ -1289,7 +1288,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   sessions: DEMO_SESSIONS,
   activeSessionId: undefined,
   projects: [],
-  activeProjectFilter: undefined,
+  newSessionProjectId: undefined,
   pendingLLMIndex: undefined,
   // llms / llmDisplayName are populated by the trailing
   // `...projectionFrom(emptyRuntime())` spread below — emptyRuntime
@@ -1396,8 +1395,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       title: defaultNewSessionTitle(),
       status: "idle",
       // Inherit project assignment at birth when caller passes it
-      // (Sidebar "+ New Chat" while in filter mode, or EmptyState
-      // composer submit). Project = grouping only — bridge cwd is
+      // (Sidebar "new chat in project" or EmptyState composer
+      // submit). Project = grouping only — bridge cwd is
       // unaffected (see devlog 2026-05-14).
       projectId: projectId,
       pendingApprovalCount: 0,
@@ -1728,8 +1727,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       sessions: state.sessions.map((s) =>
         s.projectId === id ? { ...s, projectId: undefined } : s,
       ),
-      activeProjectFilter:
-        state.activeProjectFilter === id ? undefined : state.activeProjectFilter,
+      newSessionProjectId:
+        state.newSessionProjectId === id
+          ? undefined
+          : state.newSessionProjectId,
     }));
     try {
       await deleteProjectFromDB(id);
@@ -1762,8 +1763,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  setActiveProjectFilter: (projectId) =>
-    set({ activeProjectFilter: projectId }),
+  setNewSessionProjectId: (projectId) =>
+    set({ newSessionProjectId: projectId }),
 
   // ---- Bulk variants (multi-select in EarlierDialog / ArchivedDialog) ----
   //

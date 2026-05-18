@@ -18,7 +18,6 @@ import {
   X as XIcon,
 } from "@phosphor-icons/react";
 
-import { Button } from "@/components/ui/button";
 import { groupSessions, SIDEBAR_BUCKET_ORDER } from "@/lib/sessions";
 import { useI18n } from "@/lib/i18n";
 import { formatShortcut } from "@/lib/shortcuts";
@@ -54,10 +53,8 @@ export interface SidebarProps {
   sessions: Session[];
   projects?: Project[];
   activeId?: string;
-  /** When set, the timeline buckets render only sessions belonging
-   * to this project, and the project itself gets a bg-selected
-   * highlight in the Projects section. `undefined` = global view. */
-  activeProjectFilter?: string;
+  /** Project assignment that the next new chat should inherit. */
+  newSessionProjectId?: string;
   runtimeStatus?: RuntimeStatus;
   onSelectSession?: (id: string) => void;
   onNewChat?: () => void;
@@ -65,12 +62,8 @@ export interface SidebarProps {
   /** Open the CreateProjectDialog. Wired to the inline "+" in the
    * Projects section header and the empty-state hint below it. */
   onNewProject?: () => void;
-  /** Click a project row → enter filter mode (or switch active
-   * project if already filtering). */
-  onSelectProject?: (id: string) => void;
-  /** Exit filter mode (clear active project filter). Wired to the
-   * "× Clear" affordance in the filter banner. */
-  onClearProjectFilter?: () => void;
+  /** Create a new chat assigned to the given project. */
+  onNewChatInProject?: (id: string) => void;
   /** Right-click → Archive. Hides the session from the bucketed list
    * but keeps the row in SQLite. */
   onArchiveSession?: (id: string) => void;
@@ -100,10 +93,6 @@ export interface SidebarProps {
   /** Right-click project → Delete (destructive item below separator).
    * Parent opens ConfirmDeleteProjectDialog. */
   onDeleteProject?: (id: string) => void;
-  /** Click "查看全部 (N) →" in the truncated PROJECTS section →
-   * opens the full ProjectsDialog (search + all rows). Only used
-   * when project count exceeds the default visible limit. */
-  onOpenProjectsBrowser?: () => void;
   /** Click the collapsed "Earlier (N)" row → open the EarlierDialog
    * (browse all sessions older than 7 days). Replaces the old
    * inline-expanded `earlier` bucket so the sidebar stays bounded as
@@ -132,9 +121,9 @@ export interface SidebarProps {
  *
  * Two visual modes, derived from `sessions.length`:
  *
- *   full  — sessions[] non-empty: header + quick actions + bucketed
- *           sections (pinned/today/week/earlier) + projects + trash
- *   empty — sessions[] empty: header + quick actions + muted hint
+ *   full  — projects / sessions non-empty: header + quick actions +
+ *           project tree + unassigned bucketed sessions + archive
+ *   empty — no projects / sessions: header + quick actions + muted hint
  *           "这里会出现你的 sessions"; no sections / projects / trash
  *
  * The active session row gets `bg-selected` (apricot tint) — this is a
@@ -144,14 +133,13 @@ export function Sidebar({
   sessions,
   projects = [],
   activeId,
-  activeProjectFilter,
+  newSessionProjectId,
   runtimeStatus = "ready",
   onSelectSession,
   onNewChat,
   onSearch,
   onNewProject,
-  onSelectProject,
-  onClearProjectFilter,
+  onNewChatInProject,
   onArchiveSession,
   onRenameSession,
   onTogglePinSession,
@@ -159,7 +147,6 @@ export function Sidebar({
   onTogglePinProject,
   onEditProject,
   onDeleteProject,
-  onOpenProjectsBrowser,
   onOpenEarlier,
   onOpenArchived,
   archivedCount = 0,
@@ -167,27 +154,33 @@ export function Sidebar({
   petAttachedSessionId,
 }: SidebarProps) {
   const { t } = useI18n();
-  // When a project filter is active, the bucketed list shows only
-  // sessions that belong to that project. Active session in main
-  // view is independent — user can be looking at one session while
-  // filtering the sidebar to a different project.
-  const visibleSessions = activeProjectFilter
-    ? sessions.filter((s) => s.projectId === activeProjectFilter)
-    : sessions;
-  const buckets = groupSessions(visibleSessions);
-  const activeProject = activeProjectFilter
-    ? projects.find((p) => p.id === activeProjectFilter)
+  const newSessionProject = newSessionProjectId
+    ? projects.find((p) => p.id === newSessionProjectId)
     : undefined;
-  const filteredEmpty = visibleSessions.length === 0;
-  const globalEmpty = sessions.length === 0;
+  const unassignedSessions = sessions.filter((s) => !s.projectId);
+  const buckets = groupSessions(unassignedSessions);
+  const globalEmpty = projects.length === 0 && unassignedSessions.length === 0;
 
   // Sidebar-local edit state — only one session can be inline-edited
   // at a time. Lifting this to App.tsx / Zustand would be overkill:
   // edit state is ephemeral UI affecting only sidebar rendering, and
   // not visible / actionable from anywhere else.
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(
-    null,
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(
+    () => new Set(),
   );
+
+  const toggleProjectCollapsed = (projectId: string) => {
+    setCollapsedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-full flex-col bg-app text-[13px] text-ink">
@@ -199,38 +192,41 @@ export function Sidebar({
       <SidebarQuickActions
         onNewChat={onNewChat}
         onSearch={onSearch}
-        activeProjectName={activeProject?.name}
+        newSessionProjectName={newSessionProject?.name}
         t={t}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         <SidebarProjectsSection
           projects={projects}
-          activeProjectFilter={activeProjectFilter}
-          onSelectProject={onSelectProject}
+          sessions={sessions}
+          activeId={activeId}
+          collapsedProjectIds={collapsedProjectIds}
+          petAttachedSessionId={petAttachedSessionId}
+          onToggleProjectCollapsed={toggleProjectCollapsed}
           onNewProject={onNewProject}
+          onNewChatInProject={onNewChatInProject}
+          onSelectSession={onSelectSession}
+          onArchiveSession={onArchiveSession}
+          onTogglePinSession={onTogglePinSession}
+          onAssignSessionToProject={onAssignSessionToProject}
           onTogglePinProject={onTogglePinProject}
           onEditProject={onEditProject}
           onDeleteProject={onDeleteProject}
-          onOpenProjectsBrowser={onOpenProjectsBrowser}
+          editingSessionId={editingSessionId}
+          onRequestRename={
+            onRenameSession ? (id) => setEditingSessionId(id) : undefined
+          }
+          onConfirmRename={(id, newTitle) => {
+            onRenameSession?.(id, newTitle);
+            setEditingSessionId(null);
+          }}
+          onCancelRename={() => setEditingSessionId(null)}
           t={t}
         />
 
-        {activeProject && (
-          <SidebarFilterBanner
-            project={activeProject}
-            onClear={onClearProjectFilter}
-          />
-        )}
-
-        {filteredEmpty ? (
-          activeProject ? (
-            <SidebarProjectEmptyCta
-              projectName={activeProject.name}
-              onNewChat={onNewChat}
-              t={t}
-            />
-          ) : globalEmpty ? (
+        {unassignedSessions.length === 0 ? (
+          globalEmpty ? (
             <div className="px-5 py-6 font-serif text-[12.5px] italic text-ink-muted">
               {t("sidebar.emptyHint")}
             </div>
@@ -266,9 +262,7 @@ export function Sidebar({
                 onAssignSessionToProject={onAssignSessionToProject}
                 editingSessionId={editingSessionId}
                 onRequestRename={
-                  onRenameSession
-                    ? (id) => setEditingSessionId(id)
-                    : undefined
+                  onRenameSession ? (id) => setEditingSessionId(id) : undefined
                 }
                 onConfirmRename={(id, newTitle) => {
                   onRenameSession?.(id, newTitle);
@@ -282,7 +276,11 @@ export function Sidebar({
         )}
       </div>
 
-      <SidebarFooter count={archivedCount} onOpenArchived={onOpenArchived} t={t} />
+      <SidebarFooter
+        count={archivedCount}
+        onOpenArchived={onOpenArchived}
+        t={t}
+      />
     </div>
   );
 }
@@ -373,7 +371,7 @@ function runtimeStatusLabel(status: RuntimeStatus, t: TFunction): string {
 function SidebarQuickActions({
   onNewChat,
   onSearch,
-  activeProjectName,
+  newSessionProjectName,
   t,
 }: {
   onNewChat?: () => void;
@@ -381,11 +379,11 @@ function SidebarQuickActions({
   /** When set, the "+ New Chat" label appends project context so the
    * user knows the new session will inherit projectId + cwd. Without
    * this hint the action was technically correct but invisibly so. */
-  activeProjectName?: string;
+  newSessionProjectName?: string;
   t: TFunction;
 }) {
-  const newChatLabel = activeProjectName
-    ? t("sidebar.newChatInProject", { project: activeProjectName })
+  const newChatLabel = newSessionProjectName
+    ? t("sidebar.newChatInProject", { project: newSessionProjectName })
     : t("sidebar.newChat");
   return (
     <div className="border-b border-line py-1.5">
@@ -519,6 +517,7 @@ function SidebarSessionRow({
   session,
   active,
   petAttached = false,
+  nested = false,
   projects,
   onClick,
   onArchive,
@@ -536,6 +535,8 @@ function SidebarSessionRow({
    * Cat icon next to the title — status only, not clickable (the
    * row itself is the click target for switching sessions). */
   petAttached?: boolean;
+  /** Nested rows are children of a project folder in the tree. */
+  nested?: boolean;
   /** Full project list — used to populate the "Move to project"
    * submenu. Sorted by lastActivityAt desc, pinned-first for the
    * menu render (matches Sidebar Projects section order). */
@@ -629,13 +630,11 @@ function SidebarSessionRow({
     <div
       onClick={isEditing ? undefined : onClick}
       className={cn(
-        "mx-1.5 flex min-h-[44px] items-start gap-2 rounded-sm px-3 py-1.5 transition-colors",
+        "flex min-h-[44px] items-start gap-2 rounded-sm py-1.5 transition-colors",
+        nested ? "ml-7 mr-1.5 px-2" : "mx-1.5 px-3",
         isEditing
           ? "bg-elevated ring-1 ring-brand/30"
-          : cn(
-              "cursor-pointer",
-              active ? "bg-selected" : "hover:bg-hover",
-            ),
+          : cn("cursor-pointer", active ? "bg-selected" : "hover:bg-hover"),
       )}
     >
       <span className="pt-0.5">
@@ -744,10 +743,7 @@ function SidebarSessionRow({
           )}
         >
           {onRequestRename && (
-            <ContextMenu.Item
-              onSelect={onRequestRename}
-              className={itemClass}
-            >
+            <ContextMenu.Item onSelect={onRequestRename} className={itemClass}>
               <Pencil size={13} weight="thin" />
               {t("sidebar.rename")}
             </ContextMenu.Item>
@@ -808,7 +804,9 @@ function SidebarSessionRow({
                           )}
                         >
                           <Folder size={13} weight="thin" />
-                          <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {p.name}
+                          </span>
                           {isCurrent && (
                             <span className="text-[10px] text-brand-strong">
                               ✓
@@ -945,52 +943,57 @@ function Badge({
 }
 
 /**
- * PROJECTS section. Sits above the timeline buckets per the 2026-
- * 05-12 IA decision (持续性 > 近期性). Always rendered — even at 0
- * projects, the muted hint surfaces the affordance so users
- * discover it without needing a tutorial.
- *
- * Truncation strategy:
- *   - 0 projects: empty hint that doubles as a "+ New" affordance
- *   - 1-8 projects: all visible, no overflow link
- *   - 9+ projects: top 8 visible (pinned first, then recent) + a
- *     "查看全部 (N) →" link that opens ProjectsDialog (search +
- *     full list). This caps sidebar height at predictable bounds
- *     regardless of how many projects the user accumulates.
- *
- * Why not inline expand: scanning >15 items in a vertical sidebar
- * is slow even with no filter. The dialog has a search input that
- * makes find-by-name instant; for the cases where the user just
- * wants to *see* the top recent ones, the inline 8 cover it. The
- * dialog handles "I have 30 projects and need to find one".
- *
- * Active project (when in filter mode) gets `bg-selected` highlight
- * so the user has a visual anchor for "what scope am I in".
+ * PROJECTS section. Renders a true tree: each project row is a
+ * folder, and its sessions hang directly beneath it. This keeps
+ * project-scoped conversations in the same sidebar surface instead
+ * of pushing the user into a separate project view.
  */
 function SidebarProjectsSection({
   projects,
-  activeProjectFilter,
-  onSelectProject,
+  sessions,
+  activeId,
+  collapsedProjectIds,
+  petAttachedSessionId,
+  onToggleProjectCollapsed,
   onNewProject,
+  onNewChatInProject,
+  onSelectSession,
+  onArchiveSession,
+  onTogglePinSession,
+  onAssignSessionToProject,
   onTogglePinProject,
   onEditProject,
   onDeleteProject,
-  onOpenProjectsBrowser,
+  editingSessionId,
+  onRequestRename,
+  onConfirmRename,
+  onCancelRename,
   t,
 }: {
   projects: Project[];
-  activeProjectFilter?: string;
-  onSelectProject?: (id: string) => void;
+  sessions: Session[];
+  activeId?: string;
+  collapsedProjectIds: Set<string>;
+  petAttachedSessionId?: string | null;
+  onToggleProjectCollapsed: (projectId: string) => void;
   onNewProject?: () => void;
+  onNewChatInProject?: (id: string) => void;
+  onSelectSession?: (id: string) => void;
+  onArchiveSession?: (id: string) => void;
+  onTogglePinSession?: (id: string) => void;
+  onAssignSessionToProject?: (
+    sessionId: string,
+    projectId: string | null,
+  ) => void;
   onTogglePinProject?: (id: string) => void;
   onEditProject?: (id: string) => void;
   onDeleteProject?: (id: string) => void;
-  /** Click "查看全部 (N) →" → opens ProjectsDialog. */
-  onOpenProjectsBrowser?: () => void;
+  editingSessionId?: string | null;
+  onRequestRename?: (id: string) => void;
+  onConfirmRename?: (id: string, newTitle: string) => void;
+  onCancelRename?: () => void;
   t: TFunction;
 }) {
-  const DEFAULT_LIMIT = 8;
-
   // Sort: pinned first (newest-pinned-action-first via lastActivityAt),
   // then non-pinned by lastActivityAt desc. Matches the global
   // intuition "this is what I've been working on lately".
@@ -998,9 +1001,6 @@ function SidebarProjectsSection({
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     return b.lastActivityAt.localeCompare(a.lastActivityAt);
   });
-
-  const overflow = sorted.length > DEFAULT_LIMIT;
-  const visible = overflow ? sorted.slice(0, DEFAULT_LIMIT) : sorted;
 
   return (
     <section>
@@ -1016,36 +1016,96 @@ function SidebarProjectsSection({
           </span>
         </button>
       ) : (
-        <>
-          {visible.map((p) => (
-            <SidebarProjectRow
-              key={p.id}
-              project={p}
-              active={p.id === activeProjectFilter}
-              onClick={() => onSelectProject?.(p.id)}
-              onTogglePin={
-                onTogglePinProject ? () => onTogglePinProject(p.id) : undefined
-              }
-              onEdit={
-                onEditProject ? () => onEditProject(p.id) : undefined
-              }
-              onDelete={
-                onDeleteProject ? () => onDeleteProject(p.id) : undefined
-              }
-              t={t}
-            />
-          ))}
-          {overflow && (
-            <button
-              type="button"
-              onClick={onOpenProjectsBrowser}
-              className="mx-1.5 mb-1 flex w-[calc(100%-12px)] cursor-pointer items-center gap-1 rounded-sm px-3 py-1.5 text-left text-[11.5px] text-ink-muted transition-colors hover:bg-hover hover:text-ink-soft"
-            >
-              {t("sidebar.viewAllCount", { count: sorted.length })}
-              <CaretRight size={10} weight="thin" />
-            </button>
-          )}
-        </>
+        sorted.map((project) => {
+          const projectSessions = sessions
+            .filter((s) => s.projectId === project.id)
+            .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+          const collapsed = collapsedProjectIds.has(project.id);
+          return (
+            <div key={project.id}>
+              <SidebarProjectRow
+                project={project}
+                collapsed={collapsed}
+                sessionCount={projectSessions.length}
+                onClick={() => onToggleProjectCollapsed(project.id)}
+                onNewChatInProject={
+                  onNewChatInProject
+                    ? () => onNewChatInProject(project.id)
+                    : undefined
+                }
+                onTogglePin={
+                  onTogglePinProject
+                    ? () => onTogglePinProject(project.id)
+                    : undefined
+                }
+                onEdit={
+                  onEditProject ? () => onEditProject(project.id) : undefined
+                }
+                onDelete={
+                  onDeleteProject
+                    ? () => onDeleteProject(project.id)
+                    : undefined
+                }
+                t={t}
+              />
+              {!collapsed && (
+                <div className="mt-1">
+                  {projectSessions.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => onNewChatInProject?.(project.id)}
+                      className="mx-1.5 mb-1 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2 rounded-sm px-3 py-1.5 text-left text-[12px] text-ink-muted transition-colors hover:bg-hover hover:text-ink"
+                    >
+                      <Plus size={12} weight="thin" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {t("sidebar.newInProject", { project: project.name })}
+                      </span>
+                    </button>
+                  ) : (
+                    projectSessions.map((session) => (
+                      <SidebarSessionRow
+                        key={session.id}
+                        session={session}
+                        active={session.id === activeId}
+                        nested
+                        petAttached={session.id === petAttachedSessionId}
+                        projects={sorted}
+                        onClick={() => onSelectSession?.(session.id)}
+                        onArchive={
+                          onArchiveSession
+                            ? () => onArchiveSession(session.id)
+                            : undefined
+                        }
+                        onTogglePin={
+                          onTogglePinSession
+                            ? () => onTogglePinSession(session.id)
+                            : undefined
+                        }
+                        onAssignToProject={
+                          onAssignSessionToProject
+                            ? (projectId) =>
+                                onAssignSessionToProject(session.id, projectId)
+                            : undefined
+                        }
+                        isEditing={editingSessionId === session.id}
+                        onRequestRename={
+                          onRequestRename
+                            ? () => onRequestRename(session.id)
+                            : undefined
+                        }
+                        onConfirmRename={(newTitle) =>
+                          onConfirmRename?.(session.id, newTitle)
+                        }
+                        onCancelRename={onCancelRename}
+                        t={t}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })
       )}
     </section>
   );
@@ -1078,16 +1138,20 @@ function SidebarProjectsHeader({
 
 function SidebarProjectRow({
   project,
-  active,
+  collapsed,
+  sessionCount,
   onClick,
+  onNewChatInProject,
   onTogglePin,
   onEdit,
   onDelete,
   t,
 }: {
   project: Project;
-  active: boolean;
+  collapsed: boolean;
+  sessionCount: number;
   onClick?: () => void;
+  onNewChatInProject?: () => void;
   onTogglePin?: () => void;
   onEdit?: () => void;
   /** Right-click → Delete project. Sits below a separator + uses
@@ -1103,15 +1167,25 @@ function SidebarProjectRow({
       onClick={onClick}
       className={cn(
         "mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 rounded-sm px-3 py-1.5 text-left text-[13px] transition-colors",
-        active ? "bg-selected text-ink" : "text-ink hover:bg-hover",
+        "text-ink hover:bg-hover",
       )}
+      aria-expanded={!collapsed}
     >
-      <Folder
-        size={14}
-        weight="thin"
-        className="shrink-0 text-ink-muted"
-      />
+      {collapsed ? (
+        <Folder size={14} weight="thin" className="shrink-0 text-ink-muted" />
+      ) : (
+        <FolderOpen
+          size={14}
+          weight="thin"
+          className="shrink-0 text-ink-muted"
+        />
+      )}
       <span className="min-w-0 flex-1 truncate">{project.name}</span>
+      {sessionCount > 0 && (
+        <span className="shrink-0 text-[11px] text-ink-muted">
+          {sessionCount}
+        </span>
+      )}
       {project.pinned && (
         <PushPin
           size={10}
@@ -1123,7 +1197,7 @@ function SidebarProjectRow({
     </button>
   );
 
-  if (!onTogglePin && !onEdit && !onDelete) return row;
+  if (!onNewChatInProject && !onTogglePin && !onEdit && !onDelete) return row;
 
   const itemClass = cn(
     "flex cursor-pointer items-center gap-2 rounded-sm px-2.5 py-1.5 text-[12.5px] text-ink-soft outline-none transition-colors",
@@ -1143,6 +1217,15 @@ function SidebarProjectRow({
             "z-50 min-w-[160px] rounded-md border border-line bg-elevated p-1 shadow-elevated",
           )}
         >
+          {onNewChatInProject && (
+            <ContextMenu.Item
+              onSelect={onNewChatInProject}
+              className={itemClass}
+            >
+              <Plus size={13} weight="thin" />
+              {t("sidebar.newInProject", { project: project.name })}
+            </ContextMenu.Item>
+          )}
           {onTogglePin && (
             <ContextMenu.Item onSelect={onTogglePin} className={itemClass}>
               {project.pinned ? (
@@ -1179,88 +1262,6 @@ function SidebarProjectRow({
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
-  );
-}
-
-/**
- * Filter-mode banner. Sits between the Projects section and the
- * timeline buckets, scoping everything below it to the active
- * project. Brand-soft tint + leading folder icon + trailing × so
- * the user has a one-click exit; the active project in the Projects
- * section above also retains its bg-selected highlight as a second
- * visual anchor.
- */
-function SidebarFilterBanner({
-  project,
-  onClear,
-}: {
-  project: Project;
-  onClear?: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div
-      className={cn(
-        "mx-1.5 mb-1 mt-2 rounded-sm border border-brand/30 bg-brand-soft px-3 py-1.5 text-[12px] text-ink",
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <FolderOpen
-          size={12}
-          weight="thin"
-          className="shrink-0 text-brand-strong"
-        />
-        <span className="min-w-0 flex-1 truncate font-medium">
-          {project.name}
-        </span>
-        <button
-          type="button"
-          onClick={onClear}
-          aria-label={t("sidebar.clearFilterAria")}
-          title={t("sidebar.clearFilterTitleZh")}
-          className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
-        >
-          <XIcon size={11} weight="thin" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Empty-state CTA shown when the user is in project filter mode but
- * the project has no sessions yet. Surfaces the most likely next
- * action ("+ 在 {ProjectName} 里新建对话") as a real button instead
- * of inline italic text — directly addresses the dogfood gap where
- * users couldn't tell the global "+ New Chat" would inherit the
- * active project.
- */
-function SidebarProjectEmptyCta({
-  projectName,
-  onNewChat,
-  t,
-}: {
-  projectName: string;
-  onNewChat?: () => void;
-  t: TFunction;
-}) {
-  return (
-    <div className="mx-1.5 mt-3 flex flex-col gap-2 rounded-sm border border-dashed border-line px-3 py-3">
-      <p className="font-serif text-[12px] italic text-ink-muted">
-        {t("sidebar.projectEmpty", { project: projectName })}
-      </p>
-      <Button
-        onClick={onNewChat}
-        className="self-start"
-        title={t("sidebar.newInProject", { project: projectName })}
-        leadingIcon={<Plus size={12} weight="thin" />}
-      >
-        {t("sidebar.newInProject", { project: projectName })}
-      </Button>
-      <p className="text-[11px] text-ink-muted">
-        {t("sidebar.orAddExisting")}
-      </p>
-    </div>
   );
 }
 

@@ -18,7 +18,6 @@ import {
   ConfirmDeleteProjectDialog,
   EditProjectDialog,
 } from "@/components/screens/project/EditProjectDialog";
-import { ProjectsDialog } from "@/components/screens/project/ProjectsDialog";
 import { useI18n } from "@/lib/i18n";
 import { bucketSession } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
@@ -72,9 +71,9 @@ function App() {
   const togglePinSession = useAppStore((s) => s.togglePinSession);
   const renameSession = useAppStore((s) => s.renameSession);
   const projects = useAppStore((s) => s.projects);
-  const activeProjectFilter = useAppStore((s) => s.activeProjectFilter);
+  const newSessionProjectId = useAppStore((s) => s.newSessionProjectId);
   const createProject = useAppStore((s) => s.createProject);
-  const setActiveProjectFilter = useAppStore((s) => s.setActiveProjectFilter);
+  const setNewSessionProjectId = useAppStore((s) => s.setNewSessionProjectId);
   const assignSessionToProject = useAppStore((s) => s.assignSessionToProject);
   const updateProject = useAppStore((s) => s.updateProject);
   const deleteProject = useAppStore((s) => s.deleteProject);
@@ -178,12 +177,20 @@ function App() {
         setSettingsOpen(true);
       } else if (e.key === "n" || e.key === "N") {
         e.preventDefault();
+        setActiveSession(undefined);
+        setNewSessionProjectId(undefined);
         setScreen("empty");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [togglePalette, setSettingsOpen, setScreen]);
+  }, [
+    togglePalette,
+    setSettingsOpen,
+    setScreen,
+    setActiveSession,
+    setNewSessionProjectId,
+  ]);
 
   // macOS menubar bridge: src-tauri/src/lib.rs installs a native menu
   // on Mac that emits `menu:<id>` events. We subscribe and route each
@@ -205,7 +212,14 @@ function App() {
 
     const handlers: Array<[string, () => void]> = [
       ["menu:settings", () => setSettingsOpen(true)],
-      ["menu:new_chat", () => setScreen("empty")],
+      [
+        "menu:new_chat",
+        () => {
+          setActiveSession(undefined);
+          setNewSessionProjectId(undefined);
+          setScreen("empty");
+        },
+      ],
       ["menu:width_compact", () => {
         void setConversationWidth("compact");
       }],
@@ -229,7 +243,13 @@ function App() {
       cancelled = true;
       unlisteners.forEach((fn) => fn());
     };
-  }, [setSettingsOpen, setScreen, setConversationWidth]);
+  }, [
+    setSettingsOpen,
+    setScreen,
+    setConversationWidth,
+    setActiveSession,
+    setNewSessionProjectId,
+  ]);
 
   // Conversation source-of-truth precedence:
   //   1. store.turns + store.pendingApprovals — populated by IPC
@@ -304,16 +324,15 @@ function App() {
   const [earlierOpen, setEarlierOpen] = useState(false);
   const earlierSessions = useMemo(
     () =>
-      visibleSessions.filter((s) => bucketSession(s) === "earlier"),
+      visibleSessions.filter(
+        (s) => !s.projectId && bucketSession(s) === "earlier",
+      ),
     [visibleSessions],
   );
   // CreateProjectDialog open state. Local for the same reason as the
   // other dialogs above — modal visibility shouldn't persist across
   // launches.
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  // ProjectsDialog: opens when the sidebar's "查看全部 (N)" link is
-  // clicked at 9+ projects. Sibling to EarlierDialog in role.
-  const [projectsBrowserOpen, setProjectsBrowserOpen] = useState(false);
   // EditProjectDialog: stores the full project being edited so the
   // dialog can reset its inputs from the row that triggered it.
   // `null` = closed.
@@ -490,12 +509,19 @@ function App() {
               // createSession + activateSession when the user
               // commits to a first message.
               setActiveSession(undefined);
+              setNewSessionProjectId(undefined);
+              setScreen("empty");
+            }}
+            onNewChatInProject={(projectId) => {
+              setActiveSession(undefined);
+              setNewSessionProjectId(projectId);
               setScreen("empty");
             }}
             onSelectSession={(id) => {
               // Activate (re-spawns the bridge if this session has
               // been idle / closed / errored) and switch to main.
               // Other sessions' bridges keep running in background.
+              setNewSessionProjectId(undefined);
               void activateSession(id);
               setScreen("main");
             }}
@@ -507,10 +533,8 @@ function App() {
             archivedCount={archivedCount}
             onSearch={() => setPaletteOpen(true)}
             projects={projects}
-            activeProjectFilter={activeProjectFilter}
+            newSessionProjectId={newSessionProjectId}
             onNewProject={() => setCreateProjectOpen(true)}
-            onSelectProject={(id) => setActiveProjectFilter(id)}
-            onClearProjectFilter={() => setActiveProjectFilter(undefined)}
             onAssignSessionToProject={(sessionId, projectId) => {
               void assignSessionToProject(sessionId, projectId);
             }}
@@ -520,7 +544,6 @@ function App() {
             }}
             onEditProject={(id) => setEditingProjectId(id)}
             onDeleteProject={(id) => setDeletingProjectId(id)}
-            onOpenProjectsBrowser={() => setProjectsBrowserOpen(true)}
             petAttachedSessionId={petAttachedSessionId}
           />
         }
@@ -549,8 +572,8 @@ function App() {
                   appendUserTurn,
                   sendIPCCommand,
                   setScreen,
-                  activeProjectFilter,
-                );
+                  newSessionProjectId,
+                ).finally(() => setNewSessionProjectId(undefined));
               }}
               onQuickPrompt={(p) => {
                 void submitOnEmpty(
@@ -561,8 +584,8 @@ function App() {
                   appendUserTurn,
                   sendIPCCommand,
                   setScreen,
-                  activeProjectFilter,
-                );
+                  newSessionProjectId,
+                ).finally(() => setNewSessionProjectId(undefined));
               }}
             />
           ) : (
@@ -784,12 +807,8 @@ function App() {
         open={createProjectOpen}
         onOpenChange={setCreateProjectOpen}
         onCreate={async (input) => {
-          // Create + immediately enter filter mode for the new
-          // project. Feels right for the "I just made this drawer,
-          // now show me it" instinct; the empty-project view is the
-          // implicit "drop sessions in here" prompt.
-          const created = await createProject(input);
-          setActiveProjectFilter(created.id);
+          await createProject(input);
+          setNewSessionProjectId(undefined);
         }}
       />
 
@@ -817,23 +836,6 @@ function App() {
           setDeletingProjectId(null);
           setEditingProjectId(null);
         }}
-      />
-
-      <ProjectsDialog
-        open={projectsBrowserOpen}
-        onOpenChange={setProjectsBrowserOpen}
-        projects={projects}
-        sessions={sessions}
-        onSelectProject={(id) => {
-          setActiveProjectFilter(id);
-        }}
-        onTogglePinProject={(id) => {
-          const p = projects.find((x) => x.id === id);
-          if (p) void updateProject(id, { pinned: !p.pinned });
-        }}
-        onEditProject={(id) => setEditingProjectId(id)}
-        onDeleteProject={(id) => setDeletingProjectId(id)}
-        onNewProject={() => setCreateProjectOpen(true)}
       />
 
       <ToastHost
@@ -906,8 +908,8 @@ async function submitOnEmpty(
   let id = existingId;
   if (!id) {
     // Inherit project assignment when the EmptyState composer fires
-    // while a project filter is active. New chat instantly belongs
-    // to the same drawer the user is looking at.
+    // from the sidebar's project-level "new chat" action. New chat
+    // instantly belongs to that drawer.
     id = createSession(inheritProjectId);
     await activateSession(id);
   }
