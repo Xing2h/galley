@@ -149,6 +149,15 @@ jobs:
         working-directory: ./desktop
         run: pnpm tauri build --target ${{ matrix.target }}
 
+      # Tauri's bundler names artifacts `Galley_<version>_<arch>.<ext>`
+      # with no `artifactName` config to customize. Post-build, insert
+      # the OS slug (macOS / Windows) so users see what they're
+      # downloading without having to recognize the file extension.
+      # Helper is idempotent — safe to re-run.
+      - name: Rename artifact (insert OS slug)
+        shell: bash
+        run: ./scripts/rename-artifact.sh ${{ matrix.target }}
+
       - name: Upload bundle artifact
         uses: actions/upload-artifact@v7
         with:
