@@ -37,9 +37,18 @@ export const DEMO_GA_CONFIG = {
   // Windows ships `python.exe` (no version suffix); macOS / Linux
   // commonly expose `python3` while bare `python` may still point at
   // a stale Python 2 on older systems. Use the right alias per OS.
+  // Only consulted when useExternalPython is true — v0.1.1+ defaults
+  // to the Galley-bundled interpreter, so this field is just the
+  // escape-hatch target.
   python: isWindows ? "python" : "python3",
   gaPath: "/Users/inkstone/Documents/GenericAgent",
   bridgeCwd: "/Users/inkstone/Documents/genericagent-webui",
+  // v0.1.1+: prefer the Galley-bundled Python at $RESOURCE/python/.
+  // Flip to true (Settings → Runtime advanced toggle) to spawn from
+  // the `python` field above instead — useful when the user's GA
+  // fork adds deps the bundle doesn't carry, or when iterating on
+  // GA in a custom venv.
+  useExternalPython: false,
 };
 
 export const DEMO_LLM_DISPLAY_NAME = "Claude Sonnet 4.5";

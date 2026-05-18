@@ -23,10 +23,23 @@ import type { IPCCommand, IPCEvent } from "@/types/ipc";
 export interface BridgeSpawnArgs {
   /**
    * Python interpreter path. Defaults to "python3" on macOS / Linux
-   * and "python" on Windows (must be on PATH). Override when the user
-   * configured a custom Python in Settings.
+   * and "python" on Windows (must be on PATH). Only consulted when
+   * `useExternalPython` is true — v0.1.1+ defaults to the bundled
+   * interpreter and this field is the escape-hatch target.
    */
   python?: string;
+  /**
+   * v0.1.1+: when false (default), spawn the Galley-bundled Python
+   * at `$RESOURCE/python/` (shipped via tauri.conf.json's
+   * bundle.resources mapping, see scripts/bundle-python.sh). When
+   * true, fall back to the `python` alias above.
+   *
+   * In dev mode (`pnpm tauri dev`) the bundled tree doesn't exist at
+   * runtime — bundle.resources is processed at `tauri build` time —
+   * so dev callers are silently forced to external, no matter what
+   * this prefs flag says. Production .app respects the flag.
+   */
+  useExternalPython?: boolean;
   /** Path to GA repo (forwarded to bridge as --ga-path). */
   gaPath: string;
   /** Stable session id (forwarded to bridge as --session-id). */
@@ -75,7 +88,18 @@ export async function spawnBridge(
   args: BridgeSpawnArgs,
   handlers: BridgeHandlers,
 ): Promise<BridgeClient> {
-  const program = args.python ?? (isWindows ? "python" : "python3");
+  // v0.1.1+: default to the Galley-bundled Python at $RESOURCE/python/.
+  // The capability allowlist defines two aliases — one per OS path
+  // layout (PBS install_only puts python at bin/python3 on Unix and
+  // python.exe at the root on Windows). Dev mode bypasses the bundle
+  // because bundle.resources mappings are processed at build time and
+  // never materialize during `pnpm tauri dev` — see BridgeSpawnArgs
+  // for the full rationale.
+  const wantBundled = import.meta.env.PROD && !args.useExternalPython;
+  const bundledAlias = isWindows ? "python-bundled-win" : "python-bundled";
+  const program = wantBundled
+    ? bundledAlias
+    : (args.python ?? (isWindows ? "python" : "python3"));
   const argv = [
     "-m",
     "bridge.workbench_bridge",

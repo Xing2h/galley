@@ -474,6 +474,16 @@ interface State {
     python: string;
     gaPath: string;
     bridgeCwd: string;
+    /**
+     * v0.1.1+: Galley ships its own Python interpreter at
+     * `$RESOURCE/python/` (see scripts/bundle-python.sh + tauri.conf
+     * bundle.resources). The default is to spawn that bundle. Flip
+     * this to `true` from Settings → Runtime → advanced to fall back
+     * to the user-configured `python` field — the escape hatch for
+     * users with custom GA forks that need deps the bundle doesn't
+     * carry, or for live-iterating on GA in a venv.
+     */
+    useExternalPython: boolean;
   };
 
   approvalConfig: ApprovalConfig;
@@ -2742,6 +2752,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         python: string;
         gaPath: string;
         bridgeCwd: string;
+        useExternalPython?: boolean;
       }>("ga_config");
       if (saved && saved.gaPath) {
         hasGAConfig = true;
@@ -2752,8 +2763,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
         );
         const displayCandidate = await findCandidateByAlias(saved.python);
         const pythonDisplay = displayCandidate?.displayPath ?? saved.python;
+        // Migrate legacy alpha.2 configs (no useExternalPython field).
+        // Default to false so upgrading users automatically pick up
+        // the bundled Python — they keep their old `python` alias on
+        // file as the escape hatch if anything goes sideways. Same
+        // default as DEMO_GA_CONFIG for fresh installs.
+        const migrated = {
+          ...saved,
+          useExternalPython: saved.useExternalPython ?? false,
+        };
         set((state) => ({
-          gaConfig: saved,
+          gaConfig: migrated,
           runtimeInfo: {
             ...state.runtimeInfo,
             gaPath: saved.gaPath,
