@@ -831,7 +831,12 @@ interface Actions {
    * in-flight sessions silently; we push a toast to remind the user.
    */
   setGAConfig: (
-    partial: Partial<{ python: string; gaPath: string; bridgeCwd: string }>,
+    partial: Partial<{
+      python: string;
+      gaPath: string;
+      bridgeCwd: string;
+      useExternalPython: boolean;
+    }>,
   ) => Promise<void>;
 
   /**

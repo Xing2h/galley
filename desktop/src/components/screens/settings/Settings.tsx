@@ -40,12 +40,18 @@ export interface SettingsProps {
 
   defaultTab?: SettingsTab;
 
+  /** v0.1.1+ Python mode (bundled vs external). Threaded into Runtime
+   * tab so its Python panel can switch between the read-only bundled
+   * card and the legacy picker. */
+  useExternalPython: boolean;
+
   onChangeRequiredTools?: (tools: string[]) => void;
   onRemoveAlwaysAllow?: (scope: "project" | "global", tool: string) => void;
   onChangeYoloMode: (enabled: boolean) => void;
   onChangeGAPath?: () => void;
   onChangeBridgePython?: () => void;
   onReRunHealthCheck?: () => void;
+  onToggleExternalPython?: (useExternal: boolean) => void;
   onCommitGAPath?: (path: string) => Promise<void>;
 }
 
@@ -77,12 +83,14 @@ export function Settings({
   projectCount,
   yoloMode,
   defaultTab = "runtime",
+  useExternalPython,
   onChangeRequiredTools,
   onRemoveAlwaysAllow,
   onChangeYoloMode,
   onChangeGAPath,
   onChangeBridgePython,
   onReRunHealthCheck,
+  onToggleExternalPython,
   onCommitGAPath,
 }: SettingsProps) {
   const [tab, setTab] = useState<SettingsTab>(defaultTab);
@@ -115,9 +123,11 @@ export function Settings({
               {tab === "runtime" && (
                 <SettingsRuntime
                   info={runtimeInfo}
+                  useExternalPython={useExternalPython}
                   onChangeGAPath={onChangeGAPath}
                   onChangeBridgePython={onChangeBridgePython}
                   onReRunHealthCheck={onReRunHealthCheck}
+                  onToggleExternalPython={onToggleExternalPython}
                   onCommitGAPath={onCommitGAPath}
                 />
               )}

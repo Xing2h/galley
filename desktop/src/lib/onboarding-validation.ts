@@ -59,11 +59,28 @@ export async function validateGAPath(rawPath: string): Promise<PathValidation> {
 }
 
 /**
+ * Version of the bundled CPython, mirrored from
+ * scripts/bundle-python.sh's `PBS_PYTHON_VERSION`. Surfaced in the
+ * Health Check row + Settings → Runtime panel as the user-facing
+ * version label. Update together when the bundle script's pin moves.
+ */
+export const BUNDLED_PYTHON_VERSION = "3.11.15";
+
+/**
  * Run the health check against the chosen path. Each check fires
  * sequentially with a brief delay so the user sees the progression —
  * same visual rhythm as the original mock, just driven by real fs
- * probes. The last row is a Python interpreter probe (see
- * lib/python-probe.ts) — the only check that exec'es a subprocess.
+ * probes. The last row is the Python interpreter status.
+ *
+ * Python row has two modes:
+ *   - **Bundled (default, v0.1.1+)**: synthesized success row showing
+ *     "Galley 内置 Python <version>". No subprocess spawn — the
+ *     bundle ships with GA core deps pre-installed and is validated
+ *     at build time by bundle-python.sh.
+ *   - **External (`useExternalPython=true`)**: legacy behavior —
+ *     spawn the python-probe subprocess to find a user-installed
+ *     interpreter with GA's deps. Surfaces tutorial fix-it links if
+ *     no candidate succeeds.
  *
  * Caller passes:
  *   - `path`: the validated GA path
@@ -71,9 +88,11 @@ export async function validateGAPath(rawPath: string): Promise<PathValidation> {
  *     (running / success / warning state transitions)
  *   - `signal`: AbortSignal so the host can cancel if the user
  *     navigates away from the Health step mid-run
- *   - `options.onPythonProbed`: callback fired when the Python row
- *     resolves. Receives the winning alias (a Tauri shell-capability
- *     `name` like "python-framework-3-14") or null when every
+ *   - `options.useExternalPython`: when true, run the probe. Default
+ *     false — synthesize the bundled-Python success row.
+ *   - `options.onPythonProbed`: only fired when `useExternalPython`
+ *     is true. Receives the winning alias (Tauri shell-capability
+ *     name like "python-framework-3-14") or null when every
  *     candidate failed. Onboarding uses this to seed gaConfig.python
  *     so the subsequent bridge spawn uses the right interpreter.
  *
@@ -86,6 +105,7 @@ export async function runHealthChecks(
   onUpdate: (items: HealthCheckItem[]) => void,
   signal: AbortSignal,
   options?: {
+    useExternalPython?: boolean;
     onPythonProbed?: (alias: string | null, result: ProbeResult) => void;
   },
 ): Promise<HealthCheckItem[]> {
@@ -124,11 +144,22 @@ export async function runHealthChecks(
     },
   ];
 
-  const pythonRow: HealthCheckItem = {
-    name: "Python 解释器",
-    detail: "查找能加载 GA 的 Python",
-    state: "pending",
-  };
+  const useExternalPython = options?.useExternalPython ?? false;
+  // Two row identities. The label diverges so the Onboarding
+  // itemActions map (which keys by name) only attaches the "fix it"
+  // tutorial buttons in external mode — bundled-mode row has no
+  // failure path so no actions are needed.
+  const pythonRow: HealthCheckItem = useExternalPython
+    ? {
+        name: "Python 解释器",
+        detail: "查找能加载 GA 的 Python",
+        state: "pending",
+      }
+    : {
+        name: "Galley 内置 Python",
+        detail: `CPython ${BUNDLED_PYTHON_VERSION} · 已附带 GA 依赖`,
+        state: "pending",
+      };
   let items: HealthCheckItem[] = [
     ...probes.map<HealthCheckItem>((p) => ({
       name: p.name,
@@ -171,14 +202,29 @@ export async function runHealthChecks(
     onUpdate(items);
   }
 
-  // Python probe — the only row that actually spawns a subprocess.
-  // Runs after the fs probes so the visual cascade is consistent.
+  // Python row. Bundled mode (default v0.1.1+) synthesizes a success
+  // row — no subprocess spawn, no probe. bundle-python.sh runs
+  // `import agentmain` against the staged interpreter at build time;
+  // by the time a .dmg / .exe ships, the bundle is already verified.
+  // External mode runs the legacy spawn-based probe.
   if (signal.aborted) return items;
   const pythonIdx = items.length - 1;
   items = items.map((c, idx) =>
     idx === pythonIdx ? { ...c, state: "running" } : c,
   );
   onUpdate(items);
+
+  if (!useExternalPython) {
+    // Brief paced delay so the row reads as a deliberate check rather
+    // than flashing past — matches the fs probes' rhythm above.
+    await sleep(220);
+    if (signal.aborted) return items;
+    items = items.map((c, idx) =>
+      idx === pythonIdx ? { ...c, state: "success" } : c,
+    );
+    onUpdate(items);
+    return items;
+  }
 
   // Pass the GA path to the probe so it validates the actual import
   // chain (`sys.path.insert(0, gaPath); import agentmain`) rather

@@ -18,6 +18,7 @@ import {
 } from "@/lib/onboarding-tutorials";
 import { EXAMPLE_GA_PATH } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import { useAppStore } from "@/stores/useAppStore";
 import type { HealthCheckItem } from "@/types/inspector";
 
 export type OnboardingStep = "welcome" | "attach" | "health";
@@ -161,14 +162,25 @@ export function Onboarding({
   // pacing so we don't need a manual setTimeout cascade here.
   const [healthChecks, setHealthChecks] = useState<HealthCheckItem[]>([]);
 
+  // v0.1.1+: when gaConfig.useExternalPython is false (the default),
+  // runHealthChecks synthesizes the Python row as a success without
+  // spawning anything. Only the legacy external-Python mode runs the
+  // probe + populates probedPython. We still subscribe to the toggle
+  // value so a user flipping the Settings switch mid-revisit triggers
+  // a re-run with the new mode.
+  const useExternalPython = useAppStore(
+    (s) => s.gaConfig.useExternalPython,
+  );
+
   useEffect(() => {
     if (step !== "health") return;
     const controller = new AbortController();
     void runHealthChecks(path, setHealthChecks, controller.signal, {
+      useExternalPython,
       onPythonProbed: (alias) => setProbedPython(alias),
     });
     return () => controller.abort();
-  }, [step, path, healthRunNonce]);
+  }, [step, path, healthRunNonce, useExternalPython]);
 
   // Tutorial mapping: each named health check (and StepAttach failure)
   // maps to one fix-it snippet. The action id we hand to

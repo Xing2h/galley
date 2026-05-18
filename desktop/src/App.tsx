@@ -718,6 +718,7 @@ function App() {
         approval={approvalConfig}
         projectCount={projects.length}
         yoloMode={yoloMode}
+        useExternalPython={gaConfig.useExternalPython}
         onChangeYoloMode={(enabled) => {
           // Fire-and-forget: setYoloMode persists + notifies bridge,
           // but the UI updates synchronously from the store action.
@@ -735,6 +736,13 @@ function App() {
           // shows the same "重启 Galley 才能生效" toast as the picker
           // flow, keeping both entry points symmetric.
           await setGAConfig({ gaPath: path });
+        }}
+        onToggleExternalPython={(useExternal) => {
+          // v0.1.1: persist the bundled-vs-external choice. Like
+          // gaPath, takes effect on next bridge spawn (existing live
+          // sessions keep their current Python). setGAConfig shows
+          // the same "重启 Galley" toast.
+          void setGAConfig({ useExternalPython: useExternal });
         }}
         // Bridge Python picker intentionally not wired — V0.1 relies
         // on the python probe to pick the interpreter; advanced users

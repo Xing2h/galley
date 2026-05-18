@@ -5,21 +5,38 @@ import {
   CircleNotch,
   FolderOpen,
   Info,
+  Package,
   Warning,
   X,
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
 import type { PathValidation } from "@/components/screens/onboarding/StepAttach";
-import { validateGAPath } from "@/lib/onboarding-validation";
+import {
+  BUNDLED_PYTHON_VERSION,
+  validateGAPath,
+} from "@/lib/onboarding-validation";
 import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
 
 interface SettingsRuntimeProps {
   info: RuntimeInfo;
+  /**
+   * v0.1.1+: when false (default), Galley spawns its own bundled Python
+   * interpreter and the Python panel is a read-only info card. When
+   * true, the legacy picker UI is shown so the user can point Galley
+   * at an external interpreter (their own venv, conda env, etc).
+   */
+  useExternalPython: boolean;
   onChangeGAPath?: () => void;
   onChangeBridgePython?: () => void;
   onReRunHealthCheck?: () => void;
+  /**
+   * Toggle the bundled-vs-external Python mode. Persisted via
+   * `setGAConfig({ useExternalPython })`. Takes effect on the next
+   * bridge spawn — running sessions keep their current Python.
+   */
+  onToggleExternalPython?: (useExternal: boolean) => void;
   /**
    * Commit a manually-typed GA path. Called on Enter / blur when the
    * draft differs from the saved value and validation hasn't returned
@@ -45,9 +62,11 @@ interface SettingsRuntimeProps {
  */
 export function SettingsRuntime({
   info,
+  useExternalPython,
   onChangeGAPath,
   onChangeBridgePython,
   onReRunHealthCheck,
+  onToggleExternalPython,
   onCommitGAPath,
 }: SettingsRuntimeProps) {
   return (
@@ -65,17 +84,11 @@ export function SettingsRuntime({
         hint="点「选择」走文件夹选取，或直接在框里输入 / 粘贴路径 · 回车提交"
       />
 
-      <PathField
-        label="Python"
-        value={info.pythonVersion}
-        // Picker intentionally not wired in V0.1 — the auto-probe
-        // (lib/python-probe.ts) picks an interpreter from a pre-
-        // approved list at Onboarding. Settings shows the resolved
-        // path; "Re-run health check" below re-probes when the venv
-        // changes (broken upgrade, switched Python version, etc.).
-        onPick={onChangeBridgePython}
-        readOnly
-        hint="探测到的可用 Python 路径 · 改变后点下方 Re-run 即可重新探测"
+      <PythonPanel
+        useExternal={useExternalPython}
+        externalPath={info.pythonVersion}
+        onChangeExternalPath={onChangeBridgePython}
+        onToggle={onToggleExternalPython}
       />
 
       <GAVersionCard
@@ -103,6 +116,96 @@ export function SettingsRuntime({
       <div className="border-t border-line pt-4 font-mono text-[11px] text-ink-muted">
         Galley v{info.workbenchVersion}
       </div>
+    </div>
+  );
+}
+
+// ---------------- Python (bundled / external) ----------------
+
+/**
+ * Python interpreter panel. Two visual modes:
+ *
+ *   - **Bundled (default, v0.1.1+)**: read-only card showing
+ *     "Galley 内置 Python <version>". Galley ships its own CPython
+ *     with GA deps pre-staged via scripts/bundle-python.sh, so the
+ *     user doesn't pick anything. A small "使用外部 Python…" toggle
+ *     under the card reveals the legacy picker for advanced users
+ *     (custom GA forks, live venv iteration).
+ *
+ *   - **External**: a read-only PathField mirrors the
+ *     python-probe-selected path the way it did pre-v0.1.1. Same
+ *     "Re-run Health Check" button below (in the parent) re-triggers
+ *     the probe. A "改回 Galley 内置 Python" toggle returns to
+ *     bundled mode.
+ *
+ * Toggle hands off to the parent via `onToggle(bool)` — caller
+ * persists through `setGAConfig({useExternalPython})`. UI confirms
+ * implicitly: changing the toggle is the user's intent declaration.
+ */
+function PythonPanel({
+  useExternal,
+  externalPath,
+  onChangeExternalPath,
+  onToggle,
+}: {
+  useExternal: boolean;
+  externalPath: string;
+  onChangeExternalPath?: () => void;
+  onToggle?: (useExternal: boolean) => void;
+}) {
+  if (!useExternal) {
+    return (
+      <div>
+        <SubLabel>Python</SubLabel>
+        <div className="mt-2 flex items-center gap-3 rounded-sm border border-line bg-surface px-3 py-2.5">
+          <Package
+            size={18}
+            weight="thin"
+            className="shrink-0 text-ink-soft"
+          />
+          <div className="min-w-0">
+            <div className="font-mono text-[12.5px] text-ink">
+              CPython {BUNDLED_PYTHON_VERSION}
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-ink-muted">
+              Galley 内置 · 已附带 GA 依赖，零配置可用
+            </div>
+          </div>
+        </div>
+        {onToggle && (
+          <button
+            type="button"
+            onClick={() => onToggle(true)}
+            className="mt-2 text-[11.5px] text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
+          >
+            使用外部 Python…
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div>
+      <PathField
+        label="Python"
+        value={externalPath}
+        // External mode keeps the V0.1-era picker-suppressed behavior:
+        // the probe owns selection; we surface the resolved path for
+        // visibility, and Re-run Health Check (button below in
+        // parent) re-probes when needed.
+        onPick={onChangeExternalPath}
+        readOnly
+        hint="外部 Python · 改变后用下方 Re-run 重新探测"
+      />
+      {onToggle && (
+        <button
+          type="button"
+          onClick={() => onToggle(false)}
+          className="mt-2 text-[11.5px] text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
+        >
+          改回 Galley 内置 Python
+        </button>
+      )}
     </div>
   );
 }
