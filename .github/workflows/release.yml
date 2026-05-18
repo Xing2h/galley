@@ -114,6 +114,37 @@ jobs:
         working-directory: ./desktop/src-tauri
         run: cargo check --target ${{ matrix.target }}
 
+      # v0.1.1+ Galley ships a bundled CPython 3.11 + GA core deps at
+      # $RESOURCE/python/. `scripts/bundle-python.sh` downloads the
+      # python-build-standalone tarball, strips non-essential stdlib,
+      # and pip-installs GA's four deps. Output lands in
+      # desktop/src-tauri/python-bundle/python/, which tauri.conf.json's
+      # bundle.resources mapping copies into the .app / NSIS payload.
+      # The bundle path is .gitignored so this step is mandatory before
+      # `tauri build` — otherwise the resource resolver finds an empty
+      # directory and fails.
+      - name: Setup Python (for bundle pip install)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache python-build-standalone tarball
+        uses: actions/cache@v4
+        with:
+          path: .cache/pbs
+          key: pbs-tarball-${{ matrix.target }}-20260510
+
+      - name: Bundle Python interpreter + GA core deps
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin)   ARCH=mac-arm64 ;;
+            x86_64-apple-darwin)    ARCH=mac-x64 ;;
+            x86_64-pc-windows-msvc) ARCH=win-x64 ;;
+            *) echo "Unmapped target: ${{ matrix.target }}" >&2; exit 1 ;;
+          esac
+          ./scripts/bundle-python.sh "$ARCH"
+
       - name: Build Tauri bundle
         working-directory: ./desktop
         run: pnpm tauri build --target ${{ matrix.target }}
