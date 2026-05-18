@@ -329,6 +329,125 @@ def _install_process_tree_kill_for_ga(ga_module: Any) -> bool:
     return True
 
 
+def _install_devnull_stdin_for_ga(ga_module: Any) -> bool:
+    """Prevent GA tool subprocesses from inheriting the desktop IPC stdin pipe."""
+    popen_cls = ga_module.subprocess.Popen
+    if getattr(popen_cls, "_galley_devnull_stdin", False):
+        return False
+
+    class _GalleyDevnullStdinPopen(popen_cls):  # type: ignore[valid-type, misc]
+        _galley_devnull_stdin = True
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            # In Galley, bridge stdin is the long-lived desktop IPC pipe.
+            # Letting PowerShell/Git inherit it can make MSYS2 tools wait
+            # on a pipe that never reaches EOF, even for tiny commands.
+            if len(args) < 4 and "stdin" not in kwargs:
+                kwargs["stdin"] = subprocess.DEVNULL
+            super().__init__(*args, **kwargs)
+
+    ga_module.subprocess.Popen = _GalleyDevnullStdinPopen
+    return True
+
+
+_GIT_UPDATE_TIMEOUT_FLOOR_SECONDS = 180
+_SHELL_CODE_TYPES = frozenset({"powershell", "bash", "sh", "shell", "ps1", "pwsh"})
+_GIT_UPDATE_COMMAND_RE = re.compile(
+    r"""
+    (?:^|[\r\n;&|({])
+    \s*
+    git(?:\.exe)?
+    \s+
+    (?:
+        (?:
+            -[A-Za-z]
+            (?:
+                \s+|=)?
+            (?:
+                "(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;&|]+
+            )?
+        |
+            --[A-Za-z0-9-]+
+            (?:
+                =
+                (?:
+                    "(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;&|]+
+                )
+            |
+                \s+
+                (?:
+                    "(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;&|]+
+                )
+            )?
+        )
+        \s+
+    )*
+    (?:
+        fetch
+      | pull
+      | clone
+      | push
+      | remote\s+update
+      | submodule\s+(?:update|sync|foreach)
+    )
+    \b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _install_git_noninteractive_environment(
+    environ: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Make Git fail fast instead of waiting for hidden credential prompts."""
+    env = os.environ if environ is None else environ
+    applied: dict[str, str] = {}
+    defaults = {
+        "GIT_TERMINAL_PROMPT": "0",
+        "GCM_INTERACTIVE": "Never",
+    }
+    for key, value in defaults.items():
+        if key not in env:
+            env[key] = value
+            applied[key] = value
+
+    if "GIT_SSH_COMMAND" not in env and "GIT_SSH" not in env:
+        env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
+        applied["GIT_SSH_COMMAND"] = env["GIT_SSH_COMMAND"]
+
+    return applied
+
+
+def _looks_like_git_update_command(code: str) -> bool:
+    return bool(_GIT_UPDATE_COMMAND_RE.search(code))
+
+
+def _code_run_args_with_git_timeout_floor(
+    args: dict[str, Any],
+    *,
+    code: str | None = None,
+    code_type: str | None = None,
+) -> dict[str, Any]:
+    effective_type = str(code_type or args.get("type", "python")).lower()
+    if effective_type not in _SHELL_CODE_TYPES:
+        return args
+
+    effective_code = str(code if code is not None else args.get("code") or args.get("script") or "")
+    if not _looks_like_git_update_command(effective_code):
+        return args
+
+    try:
+        timeout = int(args.get("timeout", 60))
+    except (TypeError, ValueError):
+        timeout = 60
+    if timeout >= _GIT_UPDATE_TIMEOUT_FLOOR_SECONDS:
+        return args
+
+    adjusted = dict(args)
+    adjusted["timeout"] = _GIT_UPDATE_TIMEOUT_FLOOR_SECONDS
+    return adjusted
+
+
 # Keyword patterns for hint inference. Match in order; first hit wins.
 # Patterns are case-insensitive substring matches against the error message.
 # See docs/ipc-protocol.md §4.10 for the hint contract; DESIGN.md §6.2 for
@@ -624,9 +743,12 @@ class Bridge:
             # Default to GA's own dir so agentmain finds its assets/.
             os.chdir(self.ga_path)
 
+        _install_git_noninteractive_environment()
+
         import agentmain
         import ga as ga_module
 
+        _install_devnull_stdin_for_ga(ga_module)
         _install_process_tree_kill_for_ga(ga_module)
         self.agentmain = agentmain
         self.agent = agentmain.GeneraticAgent()
@@ -709,6 +831,21 @@ class Bridge:
                     # desktop sidebar can show "正在工作 · 第 N 步" live.
                     turn_started_callback=bridge_self._emit_turn_start,
                 )
+
+            def do_code_run(self, args: dict[str, Any], response: Any) -> Any:
+                code_type = str(args.get("type", "python"))
+                code = args.get("code") or args.get("script")
+                if not code:
+                    try:
+                        code = self._extract_code_block(response, code_type)
+                    except Exception:
+                        code = None
+                adjusted_args = _code_run_args_with_git_timeout_floor(
+                    args,
+                    code=str(code) if code is not None else None,
+                    code_type=code_type,
+                )
+                return (yield from super().do_code_run(adjusted_args, response))
 
         # agentmain bound the name at import time (`from ga import
         # GenericAgentHandler`), so we patch the agentmain module's binding,

@@ -18,8 +18,12 @@ from bridge.workbench_bridge import (
     Bridge,
     _capture_real_stdin,
     _classify_error,
+    _code_run_args_with_git_timeout_floor,
     _FenceFilter,
+    _install_devnull_stdin_for_ga,
+    _install_git_noninteractive_environment,
     _install_process_tree_kill_for_ga,
+    _looks_like_git_update_command,
     _normalize_available_llms,
     _simplify_llm_name,
 )
@@ -283,6 +287,128 @@ def test_ga_process_kill_falls_back_to_original_kill_off_windows(
     proc.kill()
 
     assert proc.fallback_killed is True
+
+
+def test_ga_popen_defaults_stdin_to_devnull() -> None:
+    class FakePopen:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    class FakeSubprocess:
+        Popen = FakePopen
+
+    class FakeGa:
+        subprocess = FakeSubprocess
+
+    assert _install_devnull_stdin_for_ga(FakeGa) is True
+    proc = FakeGa.subprocess.Popen(["powershell", "-Command", "git --version"])
+
+    assert proc.kwargs["stdin"] == subprocess.DEVNULL
+
+
+def test_ga_popen_preserves_explicit_stdin() -> None:
+    class FakePopen:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    class FakeSubprocess:
+        Popen = FakePopen
+
+    class FakeGa:
+        subprocess = FakeSubprocess
+
+    assert _install_devnull_stdin_for_ga(FakeGa) is True
+    proc = FakeGa.subprocess.Popen(["python"], stdin=subprocess.PIPE)
+
+    assert proc.kwargs["stdin"] == subprocess.PIPE
+
+
+# ---------------- Git code_run safeguards ----------------
+
+
+def test_git_noninteractive_environment_sets_missing_defaults() -> None:
+    env: dict[str, str] = {}
+
+    applied = _install_git_noninteractive_environment(env)
+
+    assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert env["GCM_INTERACTIVE"] == "Never"
+    assert env["GIT_SSH_COMMAND"] == "ssh -o BatchMode=yes"
+    assert applied == env
+
+
+def test_git_noninteractive_environment_preserves_existing_values() -> None:
+    env = {
+        "GIT_TERMINAL_PROMPT": "1",
+        "GCM_INTERACTIVE": "Auto",
+        "GIT_SSH": "plink.exe",
+    }
+
+    applied = _install_git_noninteractive_environment(env)
+
+    assert env == {
+        "GIT_TERMINAL_PROMPT": "1",
+        "GCM_INTERACTIVE": "Auto",
+        "GIT_SSH": "plink.exe",
+    }
+    assert applied == {}
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "git fetch origin",
+        'git -C "D:\\Dev\\Code\\galley" pull --ff-only',
+        "git clone https://example.invalid/repo.git",
+        "git remote update",
+        "git submodule update --init --recursive",
+    ],
+)
+def test_git_update_detection_matches_update_commands(code: str) -> None:
+    assert _looks_like_git_update_command(code) is True
+
+
+@pytest.mark.parametrize("code", ["git status --short", "git log -1", "echo git pull"])
+def test_git_update_detection_ignores_non_update_commands(code: str) -> None:
+    assert _looks_like_git_update_command(code) is False
+
+
+def test_code_run_git_update_timeout_uses_floor() -> None:
+    args = {"type": "powershell", "code": "git fetch origin", "timeout": 30}
+
+    adjusted = _code_run_args_with_git_timeout_floor(args)
+
+    assert adjusted["timeout"] == 180
+    assert args["timeout"] == 30
+
+
+def test_code_run_git_status_timeout_stays_unchanged() -> None:
+    args = {"type": "powershell", "code": "git status --short", "timeout": 30}
+
+    adjusted = _code_run_args_with_git_timeout_floor(args)
+
+    assert adjusted is args
+    assert adjusted["timeout"] == 30
+
+
+def test_code_run_git_update_keeps_longer_explicit_timeout() -> None:
+    args = {"type": "bash", "code": "git pull --ff-only", "timeout": 300}
+
+    adjusted = _code_run_args_with_git_timeout_floor(args)
+
+    assert adjusted is args
+    assert adjusted["timeout"] == 300
+
+
+def test_code_run_python_timeout_stays_unchanged_for_git_text() -> None:
+    args = {"type": "python", "code": "print('git pull')", "timeout": 30}
+
+    adjusted = _code_run_args_with_git_timeout_floor(args)
+
+    assert adjusted is args
+    assert adjusted["timeout"] == 30
 
 
 # ---------------- _extract_ask_user ----------------
