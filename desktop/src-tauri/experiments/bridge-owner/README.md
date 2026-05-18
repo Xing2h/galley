@@ -1,6 +1,6 @@
 # Experiment: Rust-owned Python bridge subprocess
 
-**Status**: spec drafted 2026-05-15, awaiting kickoff
+**Status**: in progress — 3/13 checklist items pass (L1, L2, L4 as of 2026-05-18 session 1). See cursor at the bottom for next steps.
 **Purpose**: 2-3 day throwaway prototype to validate that Rust can own Python runner subprocesses with **equivalent latency, throughput, and reliability** compared to the current TypeScript ownership.
 **Gate for**: B1 (Galley Core refactor) — go/no-go based on this experiment.
 **Related**:
@@ -62,10 +62,10 @@ Each item is **pass / fail / unknown**. All must pass for B1 to start.
 
 ### Lifecycle
 
-- [ ] **L1**: Spawn one bridge via `tokio::process::Command` with the existing `bridge/workbench_bridge.py` (no modifications to bridge/ side). Bridge sends `ready` event, Rust captures it.
-- [ ] **L2**: Spawn 3 bridges concurrently. Each independent (separate PIDs, separate stdin/stdout). Verify in Activity Monitor / Task Manager.
+- [x] **L1**: Spawn one bridge via `tokio::process::Command` with the existing `bridge/workbench_bridge.py` (no modifications to bridge/ side). Bridge sends `ready` event, Rust captures it. _(2026-05-18 session 1 — 430ms ready latency; results.md)_
+- [x] **L2**: Spawn 3 bridges concurrently. Each independent (separate PIDs, separate stdin/stdout). Verify in Activity Monitor / Task Manager. _(2026-05-18 session 1 — concurrent ready in 340ms, faster than single; results.md)_
 - [ ] **L3**: Kill bridge externally (`kill -9 <pid>`). Rust detects exit within 1 second and emits `bridge:exited` event with exit code.
-- [ ] **L4**: Galley app quits cleanly. All bridge children terminate (no orphan processes). Verify `ps aux | grep workbench_bridge` after quit returns nothing.
+- [x] **L4**: Galley app quits cleanly. All bridge children terminate (no orphan processes). Verify `ps aux | grep workbench_bridge` after quit returns nothing. _(2026-05-18 session 1 — `kill_on_drop(true)` reaps child within 2s; results.md)_
 - [ ] **L5**: Galley app panics (force a `panic!` in Rust). All bridge children terminate. (Important: Rust drop semantics must propagate to child kill.)
 
 ### Stdin → Bridge command path
@@ -259,3 +259,35 @@ If no-go:
 - Document what failed in `results.md`
 - Open new devlog entry: "B path subprocess ownership prototype results"
 - Re-brainstorm B path or fall back to path A (Rust relay to React)
+
+## Cursor / running notes (append-only per invariant I10)
+
+**Cursor**: L3 (external `kill -9` detection within 1s).
+
+### 2026-05-18 · Session 1 (Claude + JC)
+
+- **Design call (not in spec)**: standalone tokio binary, no Tauri. Rationale +
+  P1 tolerance check in `results.md` ("Design choice" section).
+- **Scaffolded**: `Cargo.toml` `experiments` feature + `[[bin]]`,
+  `registry.rs` (`BridgeProcess`), `main.rs` (scenarios `l1`, `l4`),
+  `tests.sh`, `results.md`. Builds clean both with and without
+  `--features experiments`.
+- **Done**: L1 PASS, L4 PASS.
+- **Gotcha caught**: pgrep -f workbench_bridge picks up daily-driver
+  `/Applications/Galley.app` children too. Filter `tests.sh` orphan check by
+  `--session-id exp_`. Pattern applies to any future prototype/experiment.
+- **Load-bearing invariant**: `preload_rx` inside `BridgeProcess::spawn`. Drop
+  it and we race the first `subscribe()` call against the ready event.
+- **Open for session 2**: L2 (concurrent), L3 (external kill detection),
+  L5 (panic cleanup), C1-C3 (stdin command path), S1-S4 (dual subscriber +
+  unix socket — needs adding `tokio::net::UnixListener`), then P1-P3
+  (perf vs TS baseline — needs TS-side measurement first), X1-X2 (stress).
+
+### 2026-05-18 · Session 1 update (after L2)
+
+- **L2 PASS** in the same session — pulled forward from "session 2" plan
+  after JC said "推 L2 直接". Numbers: 3 concurrent ready in 340ms (faster
+  than single L1 at 430ms — Python startup overlaps).
+- **New cursor**: L3.
+- **New gotcha logged**: graceful shutdown is slow (~2.5s/bridge) — see
+  results.md surprises. Tag for B2 design discussion when we get there.
