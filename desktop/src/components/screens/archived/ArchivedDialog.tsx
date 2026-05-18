@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Session } from "@/types/session";
 
@@ -71,6 +72,7 @@ export function ArchivedDialog({
   onRestoreBulk,
   onDeletePermanentlyBulk,
 }: ArchivedDialogProps) {
+  const { t } = useI18n();
   const archived = useMemo(
     () =>
       [...sessions]
@@ -148,6 +150,7 @@ export function ArchivedDialog({
               onCancelSelectMode={exitSelectMode}
               onClose={() => onOpenChange(false)}
               onEmptyAll={() => setEmptyConfirmOpen(true)}
+              t={t}
             />
 
             <div className="min-h-0 flex-1 overflow-y-auto bg-app">
@@ -164,6 +167,7 @@ export function ArchivedDialog({
                       onToggleSelect={() => toggleSelect(s.id)}
                       onRestore={() => onRestore(s.id)}
                       onDelete={() => setPendingDelete(s)}
+                      t={t}
                     />
                   ))}
                 </ul>
@@ -184,6 +188,7 @@ export function ArchivedDialog({
                   if (selectedIds.length === 0) return;
                   setBulkDeleteConfirmOpen(true);
                 }}
+                t={t}
               />
             )}
           </Dialog.Content>
@@ -238,6 +243,7 @@ function Header({
   onCancelSelectMode,
   onClose,
   onEmptyAll,
+  t,
 }: {
   count: number;
   selectMode: boolean;
@@ -246,17 +252,18 @@ function Header({
   onCancelSelectMode: () => void;
   onClose: () => void;
   onEmptyAll: () => void;
+  t: ReturnType<typeof useI18n>["t"];
 }) {
   const summary = selectMode
-    ? `已选 ${selectedCount}`
+    ? t("common.selected", { count: selectedCount })
     : count > 0
-      ? `${count} 个已归档`
-      : "暂无归档";
+      ? t("dialog.archived.count", { count })
+      : t("dialog.archived.emptySummary");
 
   return (
     <div className="flex items-center gap-3 border-b border-line bg-elevated px-5 py-3.5">
       <Dialog.Title className="font-serif text-[16px] font-medium text-ink">
-        Archived
+        {t("dialog.archived.title")}
       </Dialog.Title>
       <span className="text-[12.5px] text-ink-muted">{summary}</span>
 
@@ -270,7 +277,7 @@ function Header({
               "transition-colors hover:bg-hover hover:text-ink",
             )}
           >
-            取消
+            {t("common.cancel")}
           </button>
         ) : (
           <>
@@ -283,7 +290,7 @@ function Header({
                   "transition-colors hover:bg-hover hover:text-ink",
                 )}
               >
-                多选
+                {t("common.select")}
               </button>
             )}
             {count > 0 && (
@@ -294,16 +301,16 @@ function Header({
                   "inline-flex items-center gap-1.5 rounded-sm border border-error/30 bg-error/[0.06] px-2.5 py-1 text-[12px] font-medium text-error",
                   "transition-colors hover:bg-error/[0.12]",
                 )}
-                title="永久删除所有归档"
+                title={t("dialog.archived.emptyAllTitle")}
               >
                 <WarningCircle size={12} weight="bold" />
-                清空全部
+                {t("dialog.archived.emptyAll")}
               </button>
             )}
           </>
         )}
         <Dialog.Close
-          aria-label="关闭"
+          aria-label={t("common.close")}
           onClick={onClose}
           className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
@@ -323,6 +330,7 @@ function ArchivedRow({
   onToggleSelect,
   onRestore,
   onDelete,
+  t,
 }: {
   session: Session;
   selectMode: boolean;
@@ -330,6 +338,7 @@ function ArchivedRow({
   onToggleSelect: () => void;
   onRestore: () => void;
   onDelete: () => void;
+  t: ReturnType<typeof useI18n>["t"];
 }) {
   if (selectMode) {
     return (
@@ -359,7 +368,7 @@ function ArchivedRow({
           <div className="mt-1 text-[10.5px] text-ink-muted">
             {formatDate(session.updatedAt)}
             {session.turnCount !== undefined && session.turnCount > 0 && (
-              <> · {session.turnCount} 步</>
+              <> · {t("common.stepCount", { count: session.turnCount })}</>
             )}
           </div>
         </div>
@@ -381,7 +390,7 @@ function ArchivedRow({
         <div className="mt-1 text-[10.5px] text-ink-muted">
           {formatDate(session.updatedAt)}
           {session.turnCount !== undefined && session.turnCount > 0 && (
-            <> · {session.turnCount} 步</>
+            <> · {t("common.stepCount", { count: session.turnCount })}</>
           )}
         </div>
       </div>
@@ -390,8 +399,8 @@ function ArchivedRow({
         <button
           type="button"
           onClick={onRestore}
-          title="恢复"
-          aria-label="恢复"
+          title={t("common.restore")}
+          aria-label={t("common.restore")}
           className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-elevated hover:text-ink"
         >
           <ArrowUUpLeft size={14} weight="thin" />
@@ -399,8 +408,8 @@ function ArchivedRow({
         <button
           type="button"
           onClick={onDelete}
-          title="永久删除"
-          aria-label="永久删除"
+          title={t("common.permanentDelete")}
+          aria-label={t("common.permanentDelete")}
           className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-error/10 hover:text-error"
         >
           <Trash size={14} weight="thin" />
@@ -418,12 +427,14 @@ function SelectActionBar({
   onToggleSelectAllVisible,
   onRestore,
   onDelete,
+  t,
 }: {
   selectedCount: number;
   allVisibleSelected: boolean;
   onToggleSelectAllVisible: () => void;
   onRestore: () => void;
   onDelete: () => void;
+  t: ReturnType<typeof useI18n>["t"];
 }) {
   const disabled = selectedCount === 0;
   return (
@@ -441,7 +452,7 @@ function SelectActionBar({
         ) : (
           <Square size={13} weight="thin" />
         )}
-        {allVisibleSelected ? "取消全选" : "全选"}
+        {allVisibleSelected ? t("common.unselectAll") : t("common.selectAll")}
       </button>
 
       <div className="ml-auto flex items-center gap-1.5">
@@ -456,7 +467,7 @@ function SelectActionBar({
           )}
         >
           <ArrowUUpLeft size={12} weight="thin" />
-          恢复
+          {t("common.restore")}
           {selectedCount > 0 && (
             <span className="text-ink-muted">· {selectedCount}</span>
           )}
@@ -472,7 +483,7 @@ function SelectActionBar({
           )}
         >
           <Trash size={12} weight="thin" />
-          永久删除
+          {t("common.permanentDelete")}
           {selectedCount > 0 && (
             <span className="text-error/70">· {selectedCount}</span>
           )}
@@ -485,10 +496,11 @@ function SelectActionBar({
 // ---------------- Empty ----------------
 
 function EmptyState() {
+  const { t } = useI18n();
   return (
     <div className="flex h-full items-center justify-center">
       <p className="font-serif text-[13.5px] italic text-ink-muted">
-        没有已归档的对话。
+        {t("dialog.archived.empty")}
       </p>
     </div>
   );
@@ -510,6 +522,7 @@ function ConfirmDeleteOneDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   return (
     <Dialog.Root
       open={!!session}
@@ -532,14 +545,16 @@ function ConfirmDeleteOneDialog({
           )}
         >
           <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
-            永久删除这个对话？
+            {t("dialog.archived.confirmDeleteOneTitle")}
           </Dialog.Title>
           <p
             id="confirm-delete-one-desc"
             className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft"
           >
-            「{session?.title ?? ""}」连同它的所有对话记录将被永久删除。
-            <span className="text-ink">此操作无法撤销。</span>
+            {t("dialog.archived.confirmDeleteOneBody", {
+              title: session?.title ?? "",
+            })}
+            <span className="text-ink">{t("dialog.archived.undoWarning")}</span>
           </p>
 
           <div className="mt-5 flex justify-end gap-2">
@@ -549,7 +564,7 @@ function ConfirmDeleteOneDialog({
               autoFocus
               className="rounded-sm border border-line bg-elevated px-3.5 py-1.5 text-[12.5px] text-ink transition-colors hover:bg-hover"
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -561,7 +576,7 @@ function ConfirmDeleteOneDialog({
                 "transition-colors hover:bg-error/90",
               )}
             >
-              永久删除
+              {t("common.permanentDelete")}
             </button>
           </div>
         </Dialog.Content>
@@ -586,6 +601,7 @@ function ConfirmDeleteManyDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   return (
     <Dialog.Root
       open={open}
@@ -605,14 +621,14 @@ function ConfirmDeleteManyDialog({
           )}
         >
           <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
-            永久删除选中的 {count} 个对话？
+            {t("dialog.archived.confirmDeleteManyTitle", { count })}
           </Dialog.Title>
           <p
             id="confirm-delete-many-desc"
             className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft"
           >
-            这些对话连同它们的所有消息和工具调用记录将被永久删除。
-            <span className="text-ink">此操作无法撤销。</span>
+            {t("dialog.archived.confirmDeleteManyBody")}
+            <span className="text-ink">{t("dialog.archived.undoWarning")}</span>
           </p>
 
           <div className="mt-5 flex justify-end gap-2">
@@ -622,7 +638,7 @@ function ConfirmDeleteManyDialog({
               autoFocus
               className="rounded-sm border border-line bg-elevated px-3.5 py-1.5 text-[12.5px] text-ink transition-colors hover:bg-hover"
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -634,7 +650,7 @@ function ConfirmDeleteManyDialog({
                 "transition-colors hover:bg-error/90",
               )}
             >
-              永久删除 {count} 个
+              {t("dialog.archived.confirmDeleteCount", { count })}
             </button>
           </div>
         </Dialog.Content>
@@ -663,6 +679,7 @@ function ConfirmEmptyAllDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [acknowledged, setAcknowledged] = useState(false);
 
   return (
@@ -689,16 +706,15 @@ function ConfirmEmptyAllDialog({
           <div className="flex items-center gap-2">
             <WarningCircle size={18} weight="bold" className="text-error" />
             <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
-              清空所有归档？
+              {t("dialog.archived.confirmEmptyTitle")}
             </Dialog.Title>
           </div>
           <p
             id="confirm-empty-all-desc"
             className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft"
           >
-            将永久删除 <span className="font-medium text-ink">{count}</span>{" "}
-            个已归档对话，包括它们的所有消息和工具调用记录。
-            <span className="text-ink">此操作无法撤销。</span>
+            {t("dialog.archived.confirmEmptyBody", { count })}
+            <span className="text-ink">{t("dialog.archived.undoWarning")}</span>
           </p>
 
           <label className="mt-4 flex cursor-pointer select-none items-start gap-2 rounded-sm border border-line bg-app px-3 py-2.5 text-[12.5px] text-ink transition-colors hover:border-line-strong">
@@ -708,7 +724,7 @@ function ConfirmEmptyAllDialog({
               onChange={(e) => setAcknowledged(e.target.checked)}
               className="mt-0.5 size-3.5 accent-error"
             />
-            <span>我了解此操作无法撤销</span>
+            <span>{t("dialog.archived.ack")}</span>
           </label>
 
           <div className="mt-5 flex justify-end gap-2">
@@ -721,7 +737,7 @@ function ConfirmEmptyAllDialog({
               autoFocus
               className="rounded-sm border border-line bg-elevated px-3.5 py-1.5 text-[12.5px] text-ink transition-colors hover:bg-hover"
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -735,7 +751,7 @@ function ConfirmEmptyAllDialog({
                 "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-error",
               )}
             >
-              清空全部
+              {t("dialog.archived.emptyAll")}
             </button>
           </div>
         </Dialog.Content>

@@ -18,6 +18,7 @@ import {
 import { useState, type ReactNode } from "react";
 
 import { ApprovalForm } from "@/components/conversation/ApprovalForm";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
   ConversationToolEvent,
@@ -281,7 +282,8 @@ function StatusBit({ status }: { status: ToolEventStatus }) {
 }
 
 function StatusPill({ status }: { status: ToolEventStatus }) {
-  const text = STATUS_PILL_TEXT[status];
+  const { t } = useI18n();
+  const text = t(`tool.status.${status}`);
   return (
     <span
       className={cn(
@@ -293,15 +295,6 @@ function StatusPill({ status }: { status: ToolEventStatus }) {
     </span>
   );
 }
-
-const STATUS_PILL_TEXT: Record<ToolEventStatus, string> = {
-  running: "running",
-  "success-current": "success",
-  "success-historical": "success",
-  waiting_approval: "awaiting approval",
-  failed: "failed",
-  denied: "denied",
-};
 
 const STATUS_PILL_CLASS: Record<ToolEventStatus, string> = {
   running: "bg-brand/[0.18] text-brand-strong",
@@ -339,10 +332,11 @@ function stringifyValue(v: unknown): ReactNode {
 }
 
 function ResultBlock({ content }: { content: string }) {
+  const { t } = useI18n();
   return (
     <div className="mt-2.5">
       <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-        Result
+        {t("tool.result")}
       </div>
       <pre className="overflow-x-auto whitespace-pre-wrap rounded-[8px] border border-line bg-app px-3 py-2.5 font-mono text-[12.5px] leading-[1.6] text-ink-soft">
         {content}
@@ -373,15 +367,21 @@ function ResultBlock({ content }: { content: string }) {
  * raw GA name in mono — visually quieter than an arbitrary icon
  * picked under uncertainty.
  */
-const TOOL_META: Record<string, { icon: Icon; zh: string }> = {
-  web_scan: { icon: GlobeSimple, zh: "读取网页" },
-  web_execute_js: { icon: CursorClick, zh: "执行网页脚本" },
-  file_read: { icon: FileText, zh: "读取文件" },
-  file_write: { icon: FilePlus, zh: "写入文件" },
-  file_patch: { icon: PencilSimpleLine, zh: "修改文件" },
-  code_run: { icon: Terminal, zh: "运行代码" },
-  update_working_checkpoint: { icon: BookmarkSimple, zh: "保存关键上下文" },
-  start_long_term_update: { icon: Brain, zh: "写入长期记忆" },
+const TOOL_META: Record<string, { icon: Icon; labelKey: string }> = {
+  web_scan: { icon: GlobeSimple, labelKey: "tool.web_scan" },
+  web_execute_js: { icon: CursorClick, labelKey: "tool.web_execute_js" },
+  file_read: { icon: FileText, labelKey: "tool.file_read" },
+  file_write: { icon: FilePlus, labelKey: "tool.file_write" },
+  file_patch: { icon: PencilSimpleLine, labelKey: "tool.file_patch" },
+  code_run: { icon: Terminal, labelKey: "tool.code_run" },
+  update_working_checkpoint: {
+    icon: BookmarkSimple,
+    labelKey: "tool.update_working_checkpoint",
+  },
+  start_long_term_update: {
+    icon: Brain,
+    labelKey: "tool.start_long_term_update",
+  },
 };
 
 /**
@@ -409,6 +409,7 @@ const TOOL_META: Record<string, { icon: Icon; zh: string }> = {
  * bit carries real signal.
  */
 function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const meta = TOOL_META[tool.name];
   const ToolIcon = meta?.icon;
@@ -434,7 +435,9 @@ function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
             />
           )}
           <span className="truncate font-serif text-[13px]">
-            {meta?.zh ?? (
+            {meta ? (
+              t(meta.labelKey)
+            ) : (
               // Unknown tool: surface the GA name itself as the
               // primary label (mono) so the pill still has a usable
               // identity — better than a blank chip.

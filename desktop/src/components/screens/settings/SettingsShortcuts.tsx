@@ -14,6 +14,7 @@
  * arrows, Tab) render the same on both OSes.
  */
 
+import { useI18n } from "@/lib/i18n";
 import { isMac } from "@/lib/platform";
 import { formatShortcut } from "@/lib/shortcuts";
 
@@ -31,62 +32,62 @@ interface ShortcutGroup {
   rows: ShortcutRow[];
 }
 
-const GROUPS: ShortcutGroup[] = [
-  {
-    title: "Navigation",
-    rows: [
-      { combo: formatShortcut("Mod+K"), action: "打开命令面板（Command Palette）" },
-      { combo: formatShortcut("Mod+N"), action: "新建对话" },
-      { combo: formatShortcut("Mod+\\"), action: "折叠 / 展开 Sidebar", note: "V0.1 已规划，wiring 待补" },
-      { combo: formatShortcut("Mod+,"), action: "打开 Settings" },
-    ],
-  },
-  {
-    title: "Composer",
-    rows: [
-      { combo: "Enter", action: "发送消息" },
-      { combo: "Shift+Enter", action: "换行（不发送）" },
-    ],
-  },
-  {
-    title: "Conversation",
-    rows: [
-      {
-        combo: `${formatShortcut("Alt+↑")} / ${formatShortcut("Alt+↓")}`,
-        action: "跳到上 / 下一条提问",
-        // Mac users had the original "macOS 文本编辑原生快捷键保留"
-        // phrasing — preserved verbatim so Mac UX is byte-identical
-        // through the A4 migration. Win gets a parallel sentence that
-        // doesn't reference macOS.
-        note: isMac
-          ? "焦点在 Composer 时不生效（macOS 文本编辑原生快捷键保留）"
-          : "焦点在 Composer 时不生效（保留原生文本编辑快捷键）",
-      },
-    ],
-  },
-  {
-    title: "Overlays",
-    rows: [
-      { combo: "Esc", action: "关闭当前 overlay 或退出 inline edit" },
-      { combo: "↑ / ↓", action: "在 Command Palette / 列表中上下选择" },
-      { combo: "Tab", action: "在 Command Palette 中进入二级菜单" },
-    ],
-  },
-];
-
 export function SettingsShortcuts() {
+  const { t } = useI18n();
+  const groups: ShortcutGroup[] = [
+    {
+      title: t("shortcuts.group.navigation"),
+      rows: [
+        { combo: formatShortcut("Mod+K"), action: t("shortcuts.openPalette") },
+        { combo: formatShortcut("Mod+N"), action: t("shortcuts.newChat") },
+        {
+          combo: formatShortcut("Mod+\\"),
+          action: t("shortcuts.toggleSidebar"),
+          note: t("shortcuts.toggleSidebarNote"),
+        },
+        { combo: formatShortcut("Mod+,"), action: t("shortcuts.openSettings") },
+      ],
+    },
+    {
+      title: t("shortcuts.group.composer"),
+      rows: [
+        { combo: "Enter", action: t("shortcuts.sendMessage") },
+        { combo: "Shift+Enter", action: t("shortcuts.newline") },
+      ],
+    },
+    {
+      title: t("shortcuts.group.conversation"),
+      rows: [
+        {
+          combo: `${formatShortcut("Alt+↑")} / ${formatShortcut("Alt+↓")}`,
+          action: t("shortcuts.jumpQuestion"),
+          note: isMac
+            ? t("shortcuts.jumpQuestionNoteMac")
+            : t("shortcuts.jumpQuestionNoteOther"),
+        },
+      ],
+    },
+    {
+      title: t("shortcuts.group.overlays"),
+      rows: [
+        { combo: "Esc", action: t("shortcuts.closeOverlay") },
+        { combo: "↑ / ↓", action: t("shortcuts.navigateList") },
+        { combo: "Tab", action: t("shortcuts.paletteSubmenu") },
+      ],
+    },
+  ];
   return (
     <div className="space-y-7">
       <div>
         <h2 className="m-0 font-serif text-[18px] font-medium text-ink">
-          Shortcuts
+          {t("settings.tabs.shortcuts")}
         </h2>
         <p className="mt-1 text-[12.5px] text-ink-muted">
-          全部快捷键 · 当前 V0.1 不支持自定义，V0.2 会加重绑入口
+          {t("shortcuts.subtitle")}
         </p>
       </div>
 
-      {GROUPS.map((g) => (
+      {groups.map((g) => (
         <section key={g.title}>
           <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
             {g.title}

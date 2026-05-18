@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Project, Session } from "@/types/session";
 
@@ -69,6 +70,7 @@ export function ProjectsDialog({
   onDeleteProject,
   onNewProject,
 }: ProjectsDialogProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
 
   // Reset on open. Deferred via setTimeout so the reset doesn't run
@@ -139,9 +141,10 @@ export function ProjectsDialog({
               onOpenChange(false);
               onNewProject();
             }}
+            t={t}
           />
 
-          <SearchBar query={query} onChange={setQuery} />
+          <SearchBar query={query} onChange={setQuery} t={t} />
 
           <div className="min-h-0 flex-1 overflow-y-auto bg-app">
             {filtered.length === 0 ? (
@@ -169,6 +172,7 @@ export function ProjectsDialog({
                         onOpenChange(false);
                         onDeleteProject(p.id);
                       }}
+                      t={t}
                     />
                   );
                 })}
@@ -187,25 +191,27 @@ function Header({
   filtered,
   onClose,
   onNewProject,
+  t,
 }: {
   total: number;
   shown: number;
   filtered: boolean;
   onClose: () => void;
   onNewProject: () => void;
+  t: ReturnType<typeof useI18n>["t"];
 }) {
   const summary = filtered
     ? shown === 0
-      ? "无匹配"
-      : `${shown} / ${total} 命中`
+      ? t("common.filterNoMatches")
+      : t("common.hitCount", { shown, total })
     : total > 0
-      ? `${total} 个项目`
-      : "暂无项目";
+      ? t("dialog.project.total", { count: total })
+      : t("dialog.project.emptySummary");
 
   return (
     <div className="flex items-center gap-3 border-b border-line bg-elevated px-5 py-3.5">
       <Dialog.Title className="font-serif text-[16px] font-medium text-ink">
-        Projects
+        {t("dialog.project.title")}
       </Dialog.Title>
       <span className="text-[12.5px] text-ink-muted">{summary}</span>
 
@@ -219,10 +225,10 @@ function Header({
           )}
         >
           <Plus size={12} weight="thin" />
-          New
+          {t("dialog.project.new")}
         </button>
         <Dialog.Close
-          aria-label="关闭"
+          aria-label={t("common.close")}
           onClick={onClose}
           className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
@@ -236,9 +242,11 @@ function Header({
 function SearchBar({
   query,
   onChange,
+  t,
 }: {
   query: string;
   onChange: (q: string) => void;
+  t: ReturnType<typeof useI18n>["t"];
 }) {
   return (
     <div className="relative shrink-0 border-b border-line bg-elevated px-4 py-2.5">
@@ -251,7 +259,7 @@ function SearchBar({
         type="text"
         value={query}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="按名字过滤…"
+        placeholder={t("dialog.project.search")}
         autoFocus
         className={cn(
           "h-7 w-full rounded-sm border border-line bg-app pl-7 pr-3 text-[12.5px] text-ink",
@@ -270,6 +278,7 @@ function ProjectRow({
   onTogglePin,
   onEdit,
   onDelete,
+  t,
 }: {
   project: Project;
   sessionCount: number;
@@ -278,6 +287,7 @@ function ProjectRow({
   onTogglePin: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  t: ReturnType<typeof useI18n>["t"];
 }) {
   const row = (
     <li
@@ -294,8 +304,8 @@ function ProjectRow({
           </span>
           {hasActive && (
             <span
-              aria-label="有活跃对话"
-              title="有对话正在运行或等待审批"
+              aria-label={t("dialog.project.activeAria")}
+              title={t("dialog.project.activeTitle")}
               className="size-1.5 shrink-0 rounded-full bg-brand"
             />
           )}
@@ -304,14 +314,14 @@ function ProjectRow({
               size={10}
               weight="fill"
               className="shrink-0 text-ink-muted"
-              aria-label="pinned"
+              aria-label={t("dialog.rowPinned")}
             />
           )}
         </div>
         <div className="mt-1 text-[10.5px] text-ink-muted">
           {sessionCount === 0
-            ? "暂无对话"
-            : `${sessionCount} 个对话`}
+            ? t("dialog.project.noSessions")
+            : t("dialog.project.sessionCount", { count: sessionCount })}
         </div>
       </div>
     </li>
@@ -339,18 +349,18 @@ function ProjectRow({
             {project.pinned ? (
               <>
                 <PushPinSlash size={13} weight="thin" />
-                Unpin
+                {t("sidebar.unpin")}
               </>
             ) : (
               <>
                 <PushPin size={13} weight="thin" />
-                Pin
+                {t("sidebar.pin")}
               </>
             )}
           </ContextMenu.Item>
           <ContextMenu.Item onSelect={onEdit} className={itemClass}>
             <FolderOpen size={13} weight="thin" />
-            Edit project
+            {t("sidebar.editProject")}
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-line" />
           <ContextMenu.Item
@@ -358,7 +368,7 @@ function ProjectRow({
             className={destructiveItemClass}
           >
             <Trash size={13} weight="thin" />
-            Delete project
+            {t("sidebar.deleteProject")}
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
@@ -367,10 +377,11 @@ function ProjectRow({
 }
 
 function EmptyState({ filtered }: { filtered: boolean }) {
+  const { t } = useI18n();
   return (
     <div className="flex h-full items-center justify-center">
       <p className="font-serif text-[13.5px] italic text-ink-muted">
-        {filtered ? "没有匹配的项目。" : "还没有项目。"}
+        {filtered ? t("dialog.project.noMatches") : t("dialog.project.empty")}
       </p>
     </div>
   );

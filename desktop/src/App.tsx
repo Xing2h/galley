@@ -19,6 +19,7 @@ import {
   EditProjectDialog,
 } from "@/components/screens/project/EditProjectDialog";
 import { ProjectsDialog } from "@/components/screens/project/ProjectsDialog";
+import { useI18n } from "@/lib/i18n";
 import { bucketSession } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 import {
@@ -43,6 +44,7 @@ import { useAppStore, type Screen } from "@/stores/useAppStore";
  * review of the Error Card. Both vanish in production builds.
  */
 function App() {
+  const { t } = useI18n();
   const screen = useAppStore((s) => s.screen);
   const setScreen = useAppStore((s) => s.setScreen);
 
@@ -726,7 +728,7 @@ function App() {
         onChangeRequiredTools={setApprovalRequiredTools}
         onRemoveAlwaysAllow={removeAlwaysAllow}
         onChangeGAPath={() => {
-          void pickGAPath(setGAConfig);
+          void pickGAPath(setGAConfig, t("onboarding.pickGATitle"));
         }}
         onCommitGAPath={async (path) => {
           // Manual-typed GA path from Settings → Runtime. The
@@ -928,13 +930,14 @@ async function pickGAPath(
   setGAConfig: (
     p: Partial<{ python: string; gaPath: string; bridgeCwd: string }>,
   ) => Promise<void>,
+  title: string,
 ): Promise<void> {
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "选择 GenericAgent 仓库目录",
+      title,
     });
     if (typeof selected === "string" && selected.length > 0) {
       await setGAConfig({ gaPath: selected });

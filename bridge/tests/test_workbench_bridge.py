@@ -17,6 +17,7 @@ from bridge.workbench_bridge import (
     _FenceFilter,
     _classify_error,
     _capture_real_stdin,
+    _normalize_available_llms,
     _simplify_llm_name,
 )
 
@@ -164,6 +165,58 @@ def test_simplify_llm_name_respects_explicit_name(
     raw: str, model: str | None, expected: str
 ) -> None:
     assert _simplify_llm_name(raw, model) == expected
+
+
+def test_normalize_available_llms_disambiguates_equal_display_names() -> None:
+    result = _normalize_available_llms(
+        [
+            {
+                "index": 0,
+                "name": "MixinSession/gpt-native",
+                "displayName": "gpt-native",
+                "isCurrent": True,
+            },
+            {
+                "index": 1,
+                "name": "NativeOAISession/gpt-native",
+                "displayName": "gpt-native",
+                "isCurrent": False,
+            },
+        ]
+    )
+
+    assert [item["displayName"] for item in result] == [
+        "gpt-native · mixin",
+        "gpt-native · native OAI",
+    ]
+
+
+def test_normalize_available_llms_dedupes_raw_name_and_keeps_current() -> None:
+    result = _normalize_available_llms(
+        [
+            {
+                "index": 0,
+                "name": "NativeOAISession/gpt-native",
+                "displayName": "gpt-native",
+                "isCurrent": False,
+            },
+            {
+                "index": 1,
+                "name": "NativeOAISession/gpt-native",
+                "displayName": "gpt-native",
+                "isCurrent": True,
+            },
+        ]
+    )
+
+    assert result == [
+        {
+            "index": 1,
+            "name": "NativeOAISession/gpt-native",
+            "displayName": "gpt-native",
+            "isCurrent": True,
+        }
+    ]
 
 
 # ---------------- _extract_ask_user ----------------

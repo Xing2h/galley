@@ -3,8 +3,11 @@ import { Check, Lightning, X } from "@phosphor-icons/react";
 import { useState } from "react";
 
 import { IconTooltip } from "@/components/ui/tooltip";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ApprovalConfig } from "@/components/screens/settings/Settings";
+
+type TFunction = ReturnType<typeof useI18n>["t"];
 
 interface SettingsApprovalProps {
   config: ApprovalConfig;
@@ -43,6 +46,7 @@ export function SettingsApproval({
   onChangeRequiredTools,
   onRemoveAlwaysAllow,
 }: SettingsApprovalProps) {
+  const { t } = useI18n();
   const showPerProject =
     projectCount > 0 || config.alwaysAllowProject.length > 0;
   const [activationOpen, setActivationOpen] = useState(false);
@@ -66,11 +70,11 @@ export function SettingsApproval({
   return (
     <div className="space-y-7">
       <SectionTitle
-        title="Approval"
-        subtitle="哪些工具需要审批 · 哪些已加白名单"
+        title={t("settings.tabs.approval")}
+        subtitle={t("approval.subtitle")}
       />
 
-      <YoloSection enabled={yoloMode} onToggle={handleYoloToggle} />
+      <YoloSection enabled={yoloMode} onToggle={handleYoloToggle} t={t} />
 
       <YoloActivationModal
         open={activationOpen}
@@ -79,6 +83,7 @@ export function SettingsApproval({
           onChangeYoloMode(true);
           setActivationOpen(false);
         }}
+        t={t}
       />
 
       {/* "Rules are disabled" announcement banner — kept OUTSIDE the
@@ -90,7 +95,7 @@ export function SettingsApproval({
           overlapping the "Approval-required tools" header. */}
       {yoloMode && (
         <div className="text-[12px] italic text-ink-muted">
-          YOLO 已开启，下列规则当前不生效（关闭 YOLO 后恢复）。
+          {t("approval.yoloRulesDisabled")}
         </div>
       )}
 
@@ -100,14 +105,10 @@ export function SettingsApproval({
           yoloMode && "pointer-events-none opacity-50",
         )}
         aria-disabled={yoloMode}
-        title={
-          yoloMode
-            ? "YOLO 已开启，下列规则当前不生效"
-            : undefined
-        }
+        title={yoloMode ? t("approval.yoloRulesDisabledTitle") : undefined}
       >
         <div>
-          <SubLabel>Approval-required tools</SubLabel>
+          <SubLabel>{t("approval.requiredTools")}</SubLabel>
           <div className="mt-2 space-y-1">
             {DEFAULT_TOOLS.map((tool) => {
               const required = config.requiredTools.includes(tool);
@@ -124,7 +125,7 @@ export function SettingsApproval({
                     {tool}
                   </span>
                   <span className="ml-auto text-[11px] text-ink-muted">
-                    {TOOL_DESCRIPTIONS[tool]}
+                    {t(`approval.tool.${tool}`)}
                   </span>
                 </label>
               );
@@ -135,29 +136,35 @@ export function SettingsApproval({
         {showPerProject && (
           <div>
             <SubLabel>
-              Always allow · Per-project ({config.alwaysAllowProject.length})
+              {t("approval.alwaysProject", {
+                count: config.alwaysAllowProject.length,
+              })}
             </SubLabel>
             <RuleList
               rules={config.alwaysAllowProject}
               onRemove={(tool) => onRemoveAlwaysAllow?.("project", tool)}
-              empty="没有项目级白名单"
+              empty={t("approval.emptyProjectRules")}
+              t={t}
             />
           </div>
         )}
 
         <div>
           <SubLabel>
-            Always allow · Global ({config.alwaysAllowGlobal.length})
+            {t("approval.alwaysGlobal", {
+              count: config.alwaysAllowGlobal.length,
+            })}
           </SubLabel>
           <RuleList
             rules={config.alwaysAllowGlobal}
             onRemove={(tool) => onRemoveAlwaysAllow?.("global", tool)}
-            empty="没有全局白名单"
+            empty={t("approval.emptyGlobalRules")}
+            t={t}
           />
         </div>
 
         <div className="text-[12px] text-ink-muted">
-          Always-allow 在审批弹窗里勾"always allow"后会出现在这里。
+          {t("approval.alwaysAllowHint")}
         </div>
       </div>
     </div>
@@ -182,9 +189,11 @@ export function SettingsApproval({
 function YoloSection({
   enabled,
   onToggle,
+  t,
 }: {
   enabled: boolean;
   onToggle: (next: boolean) => void;
+  t: TFunction;
 }) {
   return (
     <div
@@ -207,14 +216,14 @@ function YoloSection({
           />
           <div className="min-w-0 flex-1">
             <div className="font-serif text-[14px] font-medium text-ink">
-              <IconTooltip text="You Only Live Once · 跳过审批让 agent 自主运行，适合在隔离环境完全信任 agent 时使用">
+              <IconTooltip text={t("approval.yoloTooltip")}>
                 <span className="cursor-help underline decoration-line-strong decoration-dotted underline-offset-[3px]">
-                  YOLO 模式
+                  {t("approval.yoloMode")}
                 </span>
               </IconTooltip>
             </div>
             <div className="mt-1 text-[12px] text-ink-muted">
-              跳过所有操作的审批，agent 自主执行 — 适合完全信任 agent 的沙盒环境
+              {t("approval.yoloDescription")}
             </div>
           </div>
         </div>
@@ -223,14 +232,14 @@ function YoloSection({
       {enabled && (
         <div className="mt-3 flex items-center justify-between border-t border-warning/20 pt-3 text-[12px]">
           <span className="text-warning">
-            ⚡ YOLO 已启用 · TopBar 显示状态
+            {t("approval.yoloEnabledStatus")}
           </span>
           <button
             type="button"
             onClick={() => onToggle(false)}
             className="rounded-sm px-2 py-1 text-[12px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
           >
-            立即关闭
+            {t("topbar.disableNow")}
           </button>
         </div>
       )}
@@ -275,10 +284,12 @@ function YoloActivationModal({
   open,
   onOpenChange,
   onConfirm,
+  t,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
+  t: TFunction;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -294,30 +305,24 @@ function YoloActivationModal({
           <div className="flex items-center gap-2">
             <Lightning size={20} weight="thin" className="text-warning" />
             <Dialog.Title className="font-serif text-[18px] font-medium text-ink">
-              打开 YOLO 模式？
+              {t("approval.activateTitle")}
             </Dialog.Title>
           </div>
 
           <div className="mt-4 space-y-3 text-[13px] text-ink-soft">
             <p>
-              YOLO ="You Only Live Once"。所有 tool 调用将不经审批直接执行——包括：
+              {t("approval.activateIntro")}
             </p>
             <ul className="space-y-1 pl-1 font-mono text-[12.5px] text-ink">
-              <li>· file_patch（修改文件）</li>
-              <li>· file_write（写入文件）</li>
-              <li>· code_run（执行命令）</li>
-              <li>· 其他高风险操作</li>
+              <li>{t("approval.activateFilePatch")}</li>
+              <li>{t("approval.activateFileWrite")}</li>
+              <li>{t("approval.activateCodeRun")}</li>
+              <li>{t("approval.activateOtherRisk")}</li>
             </ul>
-            <p>
-              <span className="text-ink">适合</span>
-              ：完全信任 agent + 在沙盒环境工作（个人 repo / 临时虚拟机）
-            </p>
-            <p>
-              <span className="text-ink">不适合</span>
-              ：生产代码 / 共享系统 / 不熟悉的 agent / 敏感数据
-            </p>
+            <p>{t("approval.activateGoodFor")}</p>
+            <p>{t("approval.activateBadFor")}</p>
             <p className="text-[12px] text-ink-muted">
-              打开后 TopBar 会显示 ⚡ YOLO 标识，随时可一键关闭。
+              {t("approval.activateFooter")}
             </p>
           </div>
 
@@ -328,14 +333,14 @@ function YoloActivationModal({
               autoFocus
               className="rounded-sm px-3 py-2 text-[13px] text-ink transition-colors hover:bg-hover"
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="button"
               onClick={onConfirm}
               className="rounded-sm bg-warning px-3 py-2 text-[13px] font-medium text-elevated transition-colors hover:bg-warning/90"
             >
-              是的，我知道在做什么
+              {t("approval.activateConfirm")}
             </button>
           </div>
         </Dialog.Content>
@@ -352,13 +357,6 @@ const DEFAULT_TOOLS = [
   "file_patch",
   "start_long_term_update",
 ];
-
-const TOOL_DESCRIPTIONS: Record<string, string> = {
-  code_run: "执行 shell / python / powershell",
-  file_write: "覆盖或新建文件",
-  file_patch: "修改已有文件",
-  start_long_term_update: "写入 GenericAgent 长期记忆",
-};
 
 function SectionTitle({
   title,
@@ -416,10 +414,12 @@ function RuleList({
   rules,
   empty,
   onRemove,
+  t,
 }: {
   rules: string[];
   empty: string;
   onRemove: (tool: string) => void;
+  t: TFunction;
 }) {
   if (rules.length === 0) {
     return (
@@ -440,8 +440,8 @@ function RuleList({
             type="button"
             onClick={() => onRemove(tool)}
             className="inline-flex size-6 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-hover hover:text-error"
-            aria-label={`Remove ${tool}`}
-            title="Remove rule"
+            aria-label={t("approval.removeRuleFor", { tool })}
+            title={t("approval.removeRule")}
           >
             <X size={12} weight="thin" />
           </button>

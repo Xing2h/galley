@@ -38,11 +38,22 @@ fn path_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
 }
 
-/// Avoid exposing broad filesystem writes from the renderer. This narrow
-/// command only writes `<ga_path>/mykey.py`, never reads an existing secret,
-/// and refuses to overwrite unless the UI passed an explicit confirmation.
-#[tauri::command]
-fn write_mykey_file(ga_path: String, content: String, overwrite: bool) -> Result<String, String> {
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MyKeyFileReadResult {
+    exists: bool,
+    path: String,
+    content: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MyKeyFileSaveResult {
+    path: String,
+    backup_path: Option<String>,
+}
+
+fn validate_ga_path(ga_path: &str) -> Result<std::path::PathBuf, String> {
     let base = std::path::PathBuf::from(ga_path.trim());
     if base.as_os_str().is_empty() {
         return Err("GenericAgent path is empty".to_string());
@@ -53,14 +64,72 @@ fn write_mykey_file(ga_path: String, content: String, overwrite: bool) -> Result
     if !base.join("agentmain.py").exists() || !base.join("llmcore.py").exists() {
         return Err("GenericAgent path must contain agentmain.py and llmcore.py".to_string());
     }
+    Ok(base)
+}
 
-    let target = base.join("mykey.py");
-    if target.exists() && !overwrite {
-        return Err("mykey.py already exists; explicit overwrite is required".to_string());
+fn mykey_path(ga_path: &str) -> Result<std::path::PathBuf, String> {
+    Ok(validate_ga_path(ga_path)?.join("mykey.py"))
+}
+
+/// Narrow read command for `<ga_path>/mykey.py`. The renderer needs to
+/// preserve existing user secrets and hand-edited config, but we still avoid
+/// a broad file-read capability by accepting only a validated GA root.
+#[tauri::command]
+fn read_mykey_file(ga_path: String) -> Result<MyKeyFileReadResult, String> {
+    let target = mykey_path(&ga_path)?;
+    if !target.exists() {
+        return Ok(MyKeyFileReadResult {
+            exists: false,
+            path: target.to_string_lossy().to_string(),
+            content: None,
+        });
+    }
+
+    let content =
+        std::fs::read_to_string(&target).map_err(|e| format!("failed to read mykey.py: {e}"))?;
+    Ok(MyKeyFileReadResult {
+        exists: true,
+        path: target.to_string_lossy().to_string(),
+        content: Some(content),
+    })
+}
+
+/// Save `<ga_path>/mykey.py` with optimistic concurrency protection. Existing
+/// files are backed up before the write, and stale renderer content is rejected
+/// so an external edit cannot be silently overwritten.
+#[tauri::command]
+fn save_mykey_file(
+    ga_path: String,
+    content: String,
+    expected_content: Option<String>,
+) -> Result<MyKeyFileSaveResult, String> {
+    let target = mykey_path(&ga_path)?;
+    let mut backup_path = None;
+
+    if target.exists() {
+        let current = std::fs::read_to_string(&target)
+            .map_err(|e| format!("failed to read current mykey.py: {e}"))?;
+        let expected = expected_content.as_deref().ok_or_else(|| {
+            "mykey.py already exists; reload it before saving from Galley".to_string()
+        })?;
+        if current != expected {
+            return Err("mykey.py changed on disk; reload before saving".to_string());
+        }
+
+        let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let backup = target.with_file_name(format!("mykey.py.bak.{stamp}"));
+        std::fs::copy(&target, &backup)
+            .map_err(|e| format!("failed to back up existing mykey.py: {e}"))?;
+        backup_path = Some(backup.to_string_lossy().to_string());
+    } else if expected_content.is_some() {
+        return Err("mykey.py no longer exists; reload before saving".to_string());
     }
 
     std::fs::write(&target, content).map_err(|e| format!("failed to write mykey.py: {e}"))?;
-    Ok(target.to_string_lossy().to_string())
+    Ok(MyKeyFileSaveResult {
+        path: target.to_string_lossy().to_string(),
+        backup_path,
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -108,7 +177,11 @@ pub fn run() {
                 .add_migrations(DB_URL, migrations)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![path_exists, write_mykey_file])
+        .invoke_handler(tauri::generate_handler![
+            path_exists,
+            read_mykey_file,
+            save_mykey_file
+        ])
         .setup(|_app| {
             // Windows-only custom chrome: drop native decorations and
             // restore the drop shadow via window-shadows-v2 so the borderless

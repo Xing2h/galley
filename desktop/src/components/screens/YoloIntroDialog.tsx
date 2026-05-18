@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Lightning } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface YoloIntroDialogProps {
@@ -38,6 +39,7 @@ interface YoloIntroDialogProps {
  * what the modal told me about".
  */
 export function YoloIntroDialog({ open, onAcknowledge }: YoloIntroDialogProps) {
+  const { t } = useI18n();
   return (
     <Dialog.Root open={open}>
       <Dialog.Portal>
@@ -58,20 +60,20 @@ export function YoloIntroDialog({ open, onAcknowledge }: YoloIntroDialogProps) {
               <Lightning size={16} weight="thin" />
             </span>
             <Dialog.Title className="font-serif text-[17px] font-medium text-ink">
-              已默认开启 YOLO 模式
+              {t("yoloIntro.title")}
             </Dialog.Title>
           </div>
 
           <p className="mb-6 mt-3 text-[13.5px] leading-[1.65] text-ink-soft">
-            所有工具直接运行，不需要逐项审批。
+            {t("yoloIntro.body")}
           </p>
 
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => onAcknowledge(true)}>
-              改回审批模式
+              {t("yoloIntro.revert")}
             </Button>
             <Button autoFocus onClick={() => onAcknowledge(false)}>
-              知道了
+              {t("yoloIntro.ok")}
             </Button>
           </div>
         </Dialog.Content>

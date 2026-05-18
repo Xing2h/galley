@@ -1,4 +1,5 @@
 import { fromIPCError, makeAppError } from "@/types/app-error";
+import { translate } from "@/lib/i18n";
 import type {
   AgentTurn,
   ConversationToolEvent,
@@ -60,6 +61,7 @@ export function dispatchIPCEvent(
         event.sessionId,
         event.availableLLMs.map((l) => ({
           index: l.index,
+          name: l.name,
           displayName: l.displayName,
           isCurrent: l.isCurrent,
         })),
@@ -278,8 +280,10 @@ export function dispatchIPCEvent(
         makeAppError({
           category: "business",
           severity: "info",
-          title: "工具已重新注入",
-          message: `已为本 session 注入 ${event.blocksAdded} 条工具定义。`,
+          title: translate("toast.toolsReinjected"),
+          message: translate("toast.toolsReinjectedMessage", {
+            count: event.blocksAdded,
+          }),
           hint: null,
           retryable: false,
           context: "reinject_tools",
@@ -302,8 +306,8 @@ export function dispatchIPCEvent(
         makeAppError({
           category: "business",
           severity: "info",
-          title: "桌面宠物已启动",
-          message: "宠物会实时显示本对话的进展。",
+          title: translate("toast.petStarted"),
+          message: translate("toast.petStartedMessage"),
           hint: null,
           retryable: false,
           context: "attach_pet",
@@ -341,7 +345,7 @@ export function dispatchIPCEvent(
         makeAppError({
           category: "business",
           severity: "info",
-          title: "桌面宠物已关闭",
+          title: translate("toast.petClosed"),
           message: "",
           hint: null,
           retryable: false,

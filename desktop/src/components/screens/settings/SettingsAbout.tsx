@@ -1,5 +1,7 @@
 import { ArrowSquareOut } from "@phosphor-icons/react";
 
+import { useI18n } from "@/lib/i18n";
+
 interface SettingsAboutProps {
   workbenchVersion: string;
   gaBaseline: string;
@@ -24,6 +26,7 @@ export function SettingsAbout({
   workbenchVersion,
   gaBaseline,
 }: SettingsAboutProps) {
+  const { t } = useI18n();
   return (
     <div className="space-y-7">
       <div>
@@ -37,7 +40,7 @@ export function SettingsAbout({
           Galley
         </h2>
         <p className="mt-1 font-serif text-[14px] italic text-ink-soft">
-          GenericAgent 的本地桌面工作台
+          {t("about.tagline")}
         </p>
       </div>
 
@@ -47,16 +50,14 @@ export function SettingsAbout({
           brand on the welcome screen. The GA capitalization is a
           quiet bow, not a billboard. */}
       <div className="rounded-md border border-line bg-elevated px-4 py-3 font-serif text-[13.5px] italic leading-[1.65] text-ink-soft">
-        Galley started as a workbench for{" "}
-        <span className="not-italic">GenericAgent</span>. The first two
-        letters of our name are a quiet bow to where we came from.
+        {t("about.origin")}
       </div>
 
       <dl className="m-0 grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
-        <dt className="text-ink-muted">Galley 版本</dt>
+        <dt className="text-ink-muted">{t("about.galleyVersion")}</dt>
         <dd className="m-0 font-mono text-ink">v{workbenchVersion}</dd>
 
-        <dt className="text-ink-muted">已验证 GA 版本</dt>
+        <dt className="text-ink-muted">{t("about.gaBaseline")}</dt>
         <dd className="m-0 font-mono text-ink">{gaBaseline.slice(0, 7)}</dd>
       </dl>
 
@@ -71,16 +72,16 @@ export function SettingsAbout({
           web-default disc. mt-10 mirrors the Links section's
           deliberate 40px section break above. */}
       <div className="mt-10">
-        <SubLabel>本地优先</SubLabel>
+        <SubLabel>{t("about.localFirst")}</SubLabel>
         <ul className="mt-3 space-y-1.5 text-[12.5px] text-ink-soft">
           <li className="before:mr-2 before:text-ink-muted before:content-['·']">
-            数据本地存储
+            {t("about.localData")}
           </li>
           <li className="before:mr-2 before:text-ink-muted before:content-['·']">
-            不收集使用数据
+            {t("about.noTelemetry")}
           </li>
           <li className="before:mr-2 before:text-ink-muted before:content-['·']">
-            LLM 调用直达你配置的 API
+            {t("about.directLLM")}
           </li>
         </ul>
       </div>
@@ -92,7 +93,7 @@ export function SettingsAbout({
           gap reads as "still part of the same block". 40px breaks
           that visual coupling cleanly. */}
       <div className="mt-10">
-        <SubLabel>Links</SubLabel>
+        <SubLabel>{t("about.links")}</SubLabel>
         <div className="mt-3 space-y-1.5">
           <ExternalLink href="https://github.com/wangjc683/galley">
             Galley · github.com/wangjc683/galley
@@ -101,7 +102,7 @@ export function SettingsAbout({
             GenericAgent · github.com/lsdefine/GenericAgent
           </ExternalLink>
           <ExternalLink href="https://github.com/wangjc683/galley/issues">
-            反馈建议 · GitHub Issues
+            {t("about.feedback")}
           </ExternalLink>
         </div>
       </div>
@@ -115,19 +116,19 @@ export function SettingsAbout({
           (off-topic but adds personality — signals the maker has
           interests beyond AI). */}
       <div className="mt-10">
-        <SubLabel>Also by wangjc683</SubLabel>
+        <SubLabel>{t("about.alsoBy")}</SubLabel>
         <div className="mt-3 space-y-1.5">
           <ExternalLink href="https://subsage.top">
-            SubSage · AI Agent 原生订阅管家 · subsage.top
+            {t("about.subsage")}
           </ExternalLink>
           <ExternalLink href="https://15perf70mm.com">
-            15perf70mm · IMAX 胶片电影资料库 · 15perf70mm.com
+            {t("about.perf70mm")}
           </ExternalLink>
         </div>
       </div>
 
       <div className="border-t border-line pt-4 text-[12px] text-ink-muted">
-        Made by wangjc683 · MIT licensed · 欢迎 PR
+        {t("about.footer")}
       </div>
     </div>
   );

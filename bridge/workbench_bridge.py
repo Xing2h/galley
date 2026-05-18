@@ -212,6 +212,73 @@ def _safe_get_model(client: Any) -> str | None:
     return model if isinstance(model, str) and model else None
 
 
+def _llm_source_suffix(raw: str, index: int) -> str:
+    """Human suffix for duplicate LLM display names.
+
+    GA exposes raw names as ``ClassName/name``. When two entries simplify
+    to the same display name, the session class is the most useful
+    distinction for users because it explains which adapter path will run.
+    """
+    cls = raw.split("/", 1)[0] if "/" in raw else ""
+    suffixes = {
+        "MixinSession": "mixin",
+        "NativeOAISession": "native OAI",
+        "NativeClaudeSession": "native Claude",
+        "LLMSession": "OAI",
+        "ClaudeSession": "Claude",
+    }
+    return suffixes.get(cls) or cls or f"#{index}"
+
+
+def _normalize_available_llms(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Deduplicate raw LLM entries and disambiguate equal display names.
+
+    - Exact duplicate raw ``name`` entries collapse to one row; if one is
+      current, keep that one.
+    - Distinct entries that simplify to the same display name get a source
+      suffix such as ``gpt-native · mixin`` vs ``gpt-native · native OAI``.
+    """
+    deduped: list[dict[str, Any]] = []
+    by_raw: dict[str, int] = {}
+    for item in items:
+        raw = str(item.get("name") or "")
+        index = int(item.get("index", len(deduped)))
+        key = raw if raw else f"__index__:{index}"
+        copy = dict(item)
+        if key not in by_raw:
+            by_raw[key] = len(deduped)
+            deduped.append(copy)
+            continue
+        existing_pos = by_raw[key]
+        existing = deduped[existing_pos]
+        if bool(copy.get("isCurrent")) and not bool(existing.get("isCurrent")):
+            deduped[existing_pos] = copy
+
+    groups: dict[str, list[int]] = {}
+    for pos, item in enumerate(deduped):
+        display = str(item.get("displayName") or item.get("name") or item.get("index"))
+        item["displayName"] = display
+        groups.setdefault(display, []).append(pos)
+
+    used: set[str] = set()
+    for base, positions in groups.items():
+        if len(positions) == 1:
+            used.add(str(deduped[positions[0]].get("displayName")))
+            continue
+        for pos in positions:
+            item = deduped[pos]
+            raw = str(item.get("name") or "")
+            index = int(item.get("index", pos))
+            suffix = _llm_source_suffix(raw, index)
+            display = f"{base} · {suffix}"
+            if display in used:
+                display = f"{display} #{index}"
+            item["displayName"] = display
+            used.add(display)
+
+    return deduped
+
+
 # Keyword patterns for hint inference. Match in order; first hit wins.
 # Patterns are case-insensitive substring matches against the error message.
 # See docs/ipc-protocol.md §4.10 for the hint contract; DESIGN.md §6.2 for
@@ -679,7 +746,7 @@ class Bridge:
                 )
         except Exception as e:
             self._emit_error(f"list_llms failed: {e}", traceback.format_exc())
-        return out
+        return _normalize_available_llms(out)
 
     def _emit(self, ev: Any) -> None:
         self.event_queue.put(encode(ev))

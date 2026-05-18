@@ -85,12 +85,12 @@ const RAW_CANDIDATES: ReadonlyArray<{
   {
     alias: "python-ga-venv",
     rawPath: `${HOME_PLACEHOLDER}/Documents/GenericAgent/.venv/bin/python`,
-    label: "GA 项目 venv (.venv)",
+    label: "GA project venv (.venv)",
   },
   {
     alias: "python-ga-venv-alt",
     rawPath: `${HOME_PLACEHOLDER}/Documents/GenericAgent/venv/bin/python`,
-    label: "GA 项目 venv (venv)",
+    label: "GA project venv (venv)",
   },
   {
     alias: "python-brew-arm",
@@ -129,12 +129,12 @@ const RAW_CANDIDATES: ReadonlyArray<{
   {
     alias: "python3",
     rawPath: "python3 (PATH)",
-    label: "系统 PATH 上的 python3",
+    label: "System PATH python3",
   },
   {
     alias: "python",
     rawPath: "python (PATH)",
-    label: "系统 PATH 上的 python",
+    label: "System PATH python",
   },
 ];
 

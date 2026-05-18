@@ -12,10 +12,11 @@ import {
   validateGAPath,
 } from "@/lib/onboarding-validation";
 import {
-  TUTORIALS,
+  getTutorial,
   type Tutorial,
   type TutorialId,
 } from "@/lib/onboarding-tutorials";
+import { useI18n } from "@/lib/i18n";
 import { EXAMPLE_GA_PATH } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import type { HealthCheckItem } from "@/types/inspector";
@@ -57,13 +58,6 @@ export interface OnboardingProps {
   initialPath?: string;
 }
 
-const STEP_LABELS: { key: OnboardingStep | "done"; label: string }[] = [
-  { key: "welcome", label: "欢迎" },
-  { key: "attach", label: "接入 GA" },
-  { key: "health", label: "Health Check" },
-  { key: "done", label: "完成" },
-];
-
 /**
  * Top-level Onboarding controller — manages step state, mocked path
  * validation, and a sequential health-check animation. DESIGN.md §5.
@@ -83,7 +77,14 @@ export function Onboarding({
   onCancel,
   initialPath,
 }: OnboardingProps) {
+  const { t } = useI18n();
   const isRevisit = mode === "revisit";
+  const stepLabels: { key: OnboardingStep | "done"; label: string }[] = [
+    { key: "welcome", label: t("onboarding.step.welcome") },
+    { key: "attach", label: t("onboarding.step.attach") },
+    { key: "health", label: t("onboarding.step.health") },
+    { key: "done", label: t("onboarding.step.done") },
+  ];
   // Revisit jumps straight to Health (Settings already has a saved GA
   // path; user just wants to re-validate). Welcome/Attach are unreachable
   // in this mode — the StepProgress dots still render the full chain for
@@ -179,27 +180,29 @@ export function Onboarding({
     Record<string, { id: string; label: string }[]>
   >(
     () => ({
-      "GA 路径存在": [{ id: "download-ga", label: "查看教程：下载 GA" }],
-      "agentmain.py 可见": [
-        { id: "wrong-directory", label: "查看教程：选对目录" },
+      "health.check.gaPath": [
+        { id: "download-ga", label: t("onboarding.tutorial.downloadGA") },
       ],
-      "mykey.py 存在": [
-        { id: "mykey-setup", label: "查看教程：配置 API 密钥" },
+      "health.check.agentmain": [
+        { id: "wrong-directory", label: t("onboarding.tutorial.pickDirectory") },
       ],
-      "memory/ 目录可见": [
-        { id: "memory-info", label: "查看：为什么是警告" },
+      "health.check.mykey": [
+        { id: "mykey-setup", label: t("onboarding.tutorial.apiKey") },
       ],
-      "assets/ 目录可见": [
-        { id: "assets-missing", label: "查看教程：重装 GA" },
+      "health.check.memory": [
+        { id: "memory-info", label: t("onboarding.tutorial.warningInfo") },
       ],
-      "Python 解释器": [
+      "health.check.assets": [
+        { id: "assets-missing", label: t("onboarding.tutorial.reinstallGA") },
+      ],
+      "health.check.python": [
         {
           id: "python-missing-anthropic",
-          label: "查看教程：在 GA 目录创建 venv",
+          label: t("onboarding.tutorial.createVenv"),
         },
       ],
     }),
-    [],
+    [t],
   );
 
   const handleItemAction = (
@@ -214,7 +217,7 @@ export function Onboarding({
   };
 
   const activeTutorialEntry: Tutorial | null = activeTutorial
-    ? TUTORIALS[activeTutorial]
+    ? getTutorial(activeTutorial, t)
     : null;
 
   const handleContinueAttach = () => {
@@ -240,7 +243,7 @@ export function Onboarding({
         data-tauri-drag-region="false"
         className="mx-auto flex w-full max-w-[700px] flex-col"
       >
-        <StepProgress step={step} />
+        <StepProgress step={step} labels={stepLabels} />
 
         <div className="mt-10">
           {step === "welcome" && (
@@ -252,7 +255,7 @@ export function Onboarding({
               validation={validation}
               onPathChange={setPath}
               onPickFolder={() => {
-                void pickFolder().then((picked) => {
+                void pickFolder(t("onboarding.pickGATitle")).then((picked) => {
                   if (picked) setPath(picked);
                 });
               }}
@@ -269,8 +272,12 @@ export function Onboarding({
               onRetry={() => setHealthRunNonce((n) => n + 1)}
               onItemAction={handleItemAction}
               itemActions={itemActions}
-              backLabel={isRevisit ? "取消" : "Back"}
-              continueLabel={isRevisit ? "返回 Settings" : "进入 Galley"}
+              backLabel={isRevisit ? t("onboarding.cancel") : t("common.backEnglish")}
+              continueLabel={
+                isRevisit
+                  ? t("onboarding.returnSettings")
+                  : t("onboarding.enterGalley")
+              }
             />
           )}
         </div>
@@ -297,7 +304,13 @@ function isTutorialId(s: string): s is TutorialId {
 
 // ---------------- Progress dots ----------------
 
-function StepProgress({ step }: { step: OnboardingStep }) {
+function StepProgress({
+  step,
+  labels,
+}: {
+  step: OnboardingStep;
+  labels: { key: OnboardingStep | "done"; label: string }[];
+}) {
   const stepIndex: Record<OnboardingStep | "done", number> = {
     welcome: 0,
     attach: 1,
@@ -308,7 +321,7 @@ function StepProgress({ step }: { step: OnboardingStep }) {
 
   return (
     <div className="flex items-center gap-2.5">
-      {STEP_LABELS.map((s, i) => {
+      {labels.map((s, i) => {
         const done = i < current;
         const active = i === current;
         return (
@@ -334,7 +347,7 @@ function StepProgress({ step }: { step: OnboardingStep }) {
                 {s.label}
               </span>
             </div>
-            {i < STEP_LABELS.length - 1 && (
+            {i < labels.length - 1 && (
               <span className="h-px w-[60px] bg-line" aria-hidden />
             )}
           </div>
@@ -351,13 +364,13 @@ function StepProgress({ step }: { step: OnboardingStep }) {
  * choking on the plugin shim. Returns the picked path or null on
  * cancel / error.
  */
-async function pickFolder(): Promise<string | null> {
+async function pickFolder(title: string): Promise<string | null> {
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "选择 GenericAgent 仓库目录",
+      title,
     });
     return typeof selected === "string" && selected.length > 0
       ? selected

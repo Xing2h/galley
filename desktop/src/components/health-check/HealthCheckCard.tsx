@@ -7,6 +7,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { HealthCheckItem, HealthCheckState } from "@/types/inspector";
 
@@ -74,11 +75,13 @@ interface ItemAction {
 export function HealthCheckCard({
   items,
   variant = "standalone",
-  title = "Health Check",
+  title,
   onItemAction,
   itemActions = {},
   showFooter,
 }: HealthCheckCardProps) {
+  const { t } = useI18n();
+  const resolvedTitle = title ?? t("runtime.healthTitle");
   const summary = summarize(items);
   const renderFooter = showFooter ?? variant === "standalone";
 
@@ -89,7 +92,7 @@ export function HealthCheckCard({
           <HealthRow
             key={item.name}
             item={item}
-            actions={itemActions[item.name] ?? []}
+            actions={itemActions[item.nameKey ?? item.name] ?? []}
             onAction={(action) => onItemAction?.(item, action)}
           />
         ))}
@@ -101,7 +104,7 @@ export function HealthCheckCard({
     <div className="rounded-md border border-line bg-elevated p-5 shadow-card">
       <div className="mb-1 flex items-center gap-2.5 border-b border-line pb-3">
         <ShieldCheck size={18} weight="thin" className="text-ink" />
-        <div className="text-[14px] font-medium text-ink">{title}</div>
+        <div className="text-[14px] font-medium text-ink">{resolvedTitle}</div>
         <SummaryPill summary={summary} className="ml-auto" />
       </div>
 
@@ -112,7 +115,7 @@ export function HealthCheckCard({
             item={item}
             index={idx + 1}
             total={items.length}
-            actions={itemActions[item.name] ?? []}
+            actions={itemActions[item.nameKey ?? item.name] ?? []}
             onAction={(action) => onItemAction?.(item, action)}
           />
         ))}
@@ -121,10 +124,10 @@ export function HealthCheckCard({
       {renderFooter && (
         <div className="mt-3 border-t border-line pt-3 text-[12.5px] text-ink-soft">
           {summary.failed > 0
-            ? `修复 ${summary.failed} 个问题后继续`
+            ? t("health.footerFix", { count: summary.failed })
             : summary.running > 0
-              ? "正在检查最后一项…"
-              : "全部检查通过"}
+              ? t("health.footerRunning")
+              : t("health.footerPassed")}
         </div>
       )}
     </div>
@@ -146,6 +149,9 @@ function HealthRow({
   actions: ItemAction[];
   onAction: (action: string) => void;
 }) {
+  const { t } = useI18n();
+  const name = item.nameKey ? t(item.nameKey) : item.name;
+  const detail = item.detailKey ? t(item.detailKey) : item.detail;
   // Warnings (e.g. mykey.py missing — user-supplied + .gitignored)
   // also surface a tutorial action: "this is fixable, here's how".
   // Failures and warnings share the same action treatment; success /
@@ -161,10 +167,10 @@ function HealthRow({
           <RowIcon state={item.state} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[13.5px] text-ink">{item.name}</div>
-          {item.detail && (
+          <div className="text-[13.5px] text-ink">{name}</div>
+          {detail && (
             <div className="mt-0.5 truncate font-mono text-[11.5px] text-ink-muted">
-              {item.detail}
+              {detail}
             </div>
           )}
         </div>
@@ -254,6 +260,7 @@ function SummaryPill({
   summary: Summary;
   className?: string;
 }) {
+  const { t } = useI18n();
   const isAllPassed = summary.passed === summary.total && summary.total > 0;
   const hasFailures = summary.failed > 0;
   const inProgress = summary.running > 0 || summary.pending > 0;
@@ -266,7 +273,7 @@ function SummaryPill({
           className,
         )}
       >
-        all passed
+        {t("health.pillPassed")}
       </span>
     );
   }
@@ -278,7 +285,7 @@ function SummaryPill({
           className,
         )}
       >
-        {summary.failed} failed
+        {t("health.pillFailed", { count: summary.failed })}
       </span>
     );
   }
@@ -290,7 +297,10 @@ function SummaryPill({
           className,
         )}
       >
-        {summary.passed} / {summary.total} passed
+        {t("health.pillProgress", {
+          passed: summary.passed,
+          total: summary.total,
+        })}
       </span>
     );
   }

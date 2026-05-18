@@ -7,9 +7,12 @@ import { MessageAgent } from "@/components/conversation/MessageAgent";
 import { MessageUser } from "@/components/conversation/MessageUser";
 import { SystemMessageBubble } from "@/components/conversation/SystemMessageBubble";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { AgentTurn, Turn } from "@/types/conversation";
 import type { ApprovalDecision } from "@/types/ipc";
+
+type TFunction = ReturnType<typeof useI18n>["t"];
 
 export interface ConversationProps {
   turns: Turn[];
@@ -44,20 +47,22 @@ export function Conversation({
   onApprove,
   projectName,
 }: ConversationProps) {
+  const { t } = useI18n();
   return (
     <div>
-      {turns.map((t, i) => (
+      {turns.map((turn, i) => (
         <Fragment key={i}>
-          {t.role === "user" ? (
-            <MessageUser content={t.content} />
-          ) : t.role === "system" ? (
-            <SystemMessageBubble content={t.content} variant={t.variant} />
+          {turn.role === "user" ? (
+            <MessageUser content={turn.content} />
+          ) : turn.role === "system" ? (
+            <SystemMessageBubble content={turn.content} variant={turn.variant} />
           ) : (
             <AgentTurnView
-              turn={t}
+              turn={turn}
               approvalDecisions={approvalDecisions}
               onApprove={onApprove}
               projectName={projectName}
+              t={t}
             />
           )}
           {/* No divider between turns — the TurnMarker on each
@@ -77,11 +82,13 @@ function AgentTurnView({
   approvalDecisions,
   onApprove,
   projectName,
+  t,
 }: {
   turn: AgentTurn;
   approvalDecisions?: Record<string, ApprovalDecision>;
   onApprove?: (approvalId: string, decision: ApprovalDecision) => void;
   projectName?: string;
+  t: TFunction;
 }) {
   // `finalAnswer` is what's left of GA's responseContent after the
   // <thinking> / <tool_use> / <file_content> / <summary> tags have
@@ -122,6 +129,7 @@ function AgentTurnView({
           summary={turn.summary}
           thinkingContent={turn.thinking}
           preamble={turn.preamble}
+          t={t}
         />
       )}
 
@@ -193,6 +201,7 @@ export function TurnMarker({
   thinking = false,
   thinkingContent,
   preamble,
+  t: tProp,
 }: {
   /**
    * GA-side step number. Optional because the thinking placeholder
@@ -238,11 +247,13 @@ export function TurnMarker({
    * Ignored when `thinking` (placeholder) is true.
    */
   preamble?: string;
+  t?: TFunction;
 }) {
+  const i18n = useI18n();
+  const t = tProp ?? i18n.t;
   const elapsedSec = useElapsedSeconds(thinking);
-  const elapsedLabel = thinking && elapsedSec >= 5
-    ? formatElapsedSeconds(elapsedSec)
-    : null;
+  const elapsedLabel =
+    thinking && elapsedSec >= 5 ? formatElapsedSeconds(elapsedSec, t) : null;
   const hasStepNumber = index != null;
   const hasDetail = !thinking && Boolean(thinkingContent || preamble);
   const [open, setOpen] = useState(false);
@@ -256,10 +267,10 @@ export function TurnMarker({
           hasDetail && "cursor-pointer transition-colors hover:text-ink-soft",
         )}
       >
-        {hasStepNumber && <>第 {index} 步</>}
+        {hasStepNumber && <>{t("main.step", { index })}</>}
         {thinking ? (
           <>
-            {hasStepNumber ? " · 思考中" : "思考中"}
+            {hasStepNumber ? ` · ${t("main.thinking")}` : t("main.thinking")}
             <TypingDots />
             {elapsedLabel && (
               <span className="text-ink-muted">{" · "}{elapsedLabel}</span>
@@ -360,11 +371,11 @@ function useElapsedSeconds(active: boolean): number {
  * "已 1 分 0 秒") so the display ticks continuously each second
  * rather than briefly flashing a shorter form on the round-minute.
  */
-function formatElapsedSeconds(sec: number): string {
-  if (sec < 60) return `${sec} 秒`;
+function formatElapsedSeconds(sec: number, t: TFunction): string {
+  if (sec < 60) return t("main.elapsedSeconds", { seconds: sec });
   const minutes = Math.floor(sec / 60);
   const remainder = sec % 60;
-  return `已 ${minutes} 分 ${remainder} 秒`;
+  return t("main.elapsedMinutes", { minutes, seconds: remainder });
 }
 
 function StrongHr() {

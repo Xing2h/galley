@@ -14,6 +14,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { searchMessages, type MessageSearchHit } from "@/lib/db";
+import { useI18n } from "@/lib/i18n";
 import { formatShortcut } from "@/lib/shortcuts";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,7 @@ export interface CommandPaletteProps {
  * DESIGN.md §8 "故意排除".
  */
 export function CommandPalette(props: CommandPaletteProps) {
+  const { t } = useI18n();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState<"root" | "switch-llm">("root");
   const [messageHits, setMessageHits] = useState<MessageSearchHit[]>([]);
@@ -124,7 +126,7 @@ export function CommandPalette(props: CommandPaletteProps) {
     <Command.Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
-      label="Command palette"
+      label={t("palette.label")}
       shouldFilter={page === "root"}
     >
       <div className="relative shrink-0">
@@ -137,7 +139,7 @@ export function CommandPalette(props: CommandPaletteProps) {
           value={search}
           onValueChange={setSearch}
           placeholder={
-            page === "switch-llm" ? "搜索 LLM…" : "搜索对话或输入命令…"
+            page === "switch-llm" ? t("palette.placeholderLLM") : t("palette.placeholder")
           }
           autoFocus
         />
@@ -230,6 +232,7 @@ function RootPage({
   onAttachGAFolder: () => void;
   onSubmitFreeText: (text: string) => void;
 }) {
+  const { t } = useI18n();
   // Show only the most recent 8 sessions when there's no search; cmdk
   // handles fuzzy filtering when the user starts typing.
   const recentSessions = sessions.slice(0, 8);
@@ -242,13 +245,13 @@ function RootPage({
 
       {/* Always-first: New chat. Plain Item, no group header. */}
       <Command.Item value="new-chat new chat 新对话 新建对话" onSelect={onNewChat}>
-        <PaletteRow Icon={Plus} label="新对话" shortcut={formatShortcut("Mod+N")} />
+        <PaletteRow Icon={Plus} label={t("palette.newChat")} shortcut={formatShortcut("Mod+N")} />
       </Command.Item>
       <Command.Item
         value="new-project new project 新建项目"
         onSelect={onNewProject}
       >
-        <PaletteRow Icon={FolderOpen} label="新建项目" />
+        <PaletteRow Icon={FolderOpen} label={t("palette.newProject")} />
       </Command.Item>
 
       {/* Sessions */}
@@ -273,7 +276,7 @@ function RootPage({
       {messageHits.length > 0 && (
         <>
           <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            在对话内容中
+            {t("palette.inConversation")}
           </div>
           {messageHits.map((h) => (
             <Command.Item
@@ -296,8 +299,8 @@ function RootPage({
       >
         <PaletteRow
           Icon={Cube}
-          label="切换 LLM"
-          sub={currentLLM ? `当前：${currentLLM}` : undefined}
+          label={t("palette.switchLLM")}
+          sub={currentLLM ? t("palette.currentLLM", { name: currentLLM }) : undefined}
           shortcut="→"
         />
       </Command.Item>
@@ -305,16 +308,16 @@ function RootPage({
         value="rerun health check 体检"
         onSelect={onReRunHealthCheck}
       >
-        <PaletteRow Icon={ArrowsClockwise} label="重新运行健康检查" />
+        <PaletteRow Icon={ArrowsClockwise} label={t("palette.rerunHealth")} />
       </Command.Item>
       <Command.Item value="open settings 设置" onSelect={onOpenSettings}>
-        <PaletteRow Icon={Gear} label="打开设置" shortcut={formatShortcut("Mod+,")} />
+        <PaletteRow Icon={Gear} label={t("palette.openSettings")} shortcut={formatShortcut("Mod+,")} />
       </Command.Item>
       <Command.Item
         value="attach ga folder 切换 GA 路径"
         onSelect={onAttachGAFolder}
       >
-        <PaletteRow Icon={FolderOpen} label="切换 GA 路径" />
+        <PaletteRow Icon={FolderOpen} label={t("palette.attachGA")} />
       </Command.Item>
     </>
   );
@@ -327,22 +330,23 @@ function EmptyHint({
   search: string;
   onSubmit: () => void;
 }) {
+  const { t } = useI18n();
   if (search.trim() === "") {
     return (
       <div className="px-4 py-6 text-center text-[12.5px] italic text-ink-muted">
-        没有匹配项。
+        {t("palette.noMatches")}
       </div>
     );
   }
   return (
     <div className="flex flex-col items-center gap-1.5 px-4 py-6 text-center">
-      <div className="text-[12.5px] italic text-ink-muted">没找到。</div>
+      <div className="text-[12.5px] italic text-ink-muted">{t("palette.notFound")}</div>
       <button
         type="button"
         onClick={onSubmit}
         className="inline-flex items-center gap-1.5 text-[13px] font-medium text-brand-strong transition-colors hover:text-ink"
       >
-        Enter 直接发问？
+        {t("palette.askWithEnter")}
         <span className="rounded-sm border border-line bg-app px-1.5 py-px font-mono text-[10px] text-ink-muted">
           ↵
         </span>
@@ -362,10 +366,11 @@ function SwitchLLMPage({
   onPick: (index: number) => void;
   onBack: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <>
       <Command.Item value="back" onSelect={onBack}>
-        <PaletteRow Icon={ArrowLeft} label="Back" sub="主菜单" />
+        <PaletteRow Icon={ArrowLeft} label={t("common.back")} sub={t("palette.mainMenu")} />
       </Command.Item>
       {llms.map((llm) => (
         <Command.Item
@@ -376,7 +381,7 @@ function SwitchLLMPage({
           <PaletteRow
             Icon={Cube}
             label={llm.displayName}
-            sub={llm.isCurrent ? "current" : undefined}
+            sub={llm.isCurrent ? t("common.current") : undefined}
             checked={llm.isCurrent}
           />
         </Command.Item>
@@ -384,7 +389,7 @@ function SwitchLLMPage({
       {llms.length === 0 && (
         <Command.Empty>
           <div className="px-4 py-6 text-center text-[12.5px] italic text-ink-muted">
-            没有可用的 LLM 配置。
+            {t("palette.noLLM")}
           </div>
         </Command.Empty>
       )}
@@ -395,11 +400,12 @@ function SwitchLLMPage({
 // ---------------- Message hit row ----------------
 
 function MessageHitRow({ hit }: { hit: MessageSearchHit }) {
+  const { t } = useI18n();
   return (
     <div className="flex w-full items-start gap-2.5">
       <span
         className="inline-flex shrink-0 pt-0.5 text-ink-soft"
-        title={hit.role === "user" ? "你的提问" : "Agent 回复"}
+        title={hit.role === "user" ? t("palette.userRole") : t("palette.agentRole")}
       >
         {hit.role === "user" ? (
           <User size={14} weight="thin" />

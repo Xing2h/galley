@@ -24,7 +24,9 @@ export type HealthCheckState =
 
 export interface HealthCheckItem {
   name: string;
+  nameKey?: string;
   detail?: string;
+  detailKey?: string;
   state: HealthCheckState;
 }
 

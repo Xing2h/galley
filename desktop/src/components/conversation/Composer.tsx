@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export interface ComposerLLMOption {
@@ -105,12 +106,13 @@ export function Composer({
   stopMode = false,
   onStop,
   disabled = false,
-  placeholder = "问点什么…",
+  placeholder,
   autoFocus = false,
   llms,
   onSelectLLM,
   onOpenLLMSwitcher,
 }: ComposerProps) {
+  const { t } = useI18n();
   // Hybrid controlled / uncontrolled. When `value` prop is provided
   // we render it directly; otherwise we maintain an internal copy.
   // Avoid syncing prop -> internal in an effect (React 19 / Compiler
@@ -118,6 +120,7 @@ export function Composer({
   const [internal, setInternal] = useState("");
   const isControlled = value !== undefined;
   const text = isControlled ? value : internal;
+  const resolvedPlaceholder = placeholder ?? t("composer.placeholder");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Paste fold state (uncontrolled mode only — controlled callers
@@ -262,7 +265,7 @@ export function Composer({
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         style={{ maxHeight: COMPOSER_MAX_HEIGHT_PX }}
         // `resize-none` keeps the corner grab handle hidden — the
         // height auto-grows via the effect above, so manual resize
@@ -272,7 +275,7 @@ export function Composer({
       />
 
       <div className="mt-2 flex items-center gap-2">
-        <ComposerCornerButton title="Add (V0.2)" disabled>
+        <ComposerCornerButton title={t("composer.addDisabled")} disabled>
           <Plus size={14} weight="thin" />
         </ComposerCornerButton>
 
@@ -289,8 +292,8 @@ export function Composer({
           <button
             type="button"
             onClick={onStop}
-            title="Stop"
-            aria-label="Stop"
+            title={t("composer.stopTitle")}
+            aria-label={t("common.stop")}
             className="ml-auto flex size-8 items-center justify-center rounded-full bg-warning text-white transition-colors hover:bg-warning/90"
           >
             <Stop size={14} weight="fill" />
@@ -300,8 +303,8 @@ export function Composer({
             type="button"
             onClick={handleSubmit}
             disabled={disabled || !text?.trim()}
-            title="Send · Enter"
-            aria-label="Send"
+            title={t("composer.sendTitle")}
+            aria-label={t("common.send")}
             className={cn(
               "ml-auto flex size-8 items-center justify-center rounded-full bg-brand text-ink transition-colors hover:bg-brand-strong hover:text-white",
               (disabled || !text?.trim()) &&
@@ -346,9 +349,10 @@ function LLMPill({
   disabled: boolean;
   stopMode: boolean;
 }) {
+  const { t } = useI18n();
   const title = stopMode
-    ? "运行中无法切换 LLM"
-    : `切换 LLM · 当前 ${llmDisplayName}`;
+    ? t("composer.switchDisabled")
+    : t("composer.switchTitle", { name: llmDisplayName });
 
   const pillClasses = cn(
     "flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-[12.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink",
@@ -423,8 +427,7 @@ function LLMPill({
               question right where it surfaces. Visually quiet on
               purpose — supplementary metadata, not a CTA. */}
           <div className="mt-1 border-t border-line/60 px-2.5 pb-1 pt-1.5 text-[10.5px] leading-[1.45] text-ink-muted/70">
-            修改 <code className="font-mono">mykey.py</code> 后重启
-            Galley 生效
+            {t("composer.restartHint")}
           </div>
         </Popover.Content>
       </Popover.Portal>

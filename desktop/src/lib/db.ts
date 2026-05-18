@@ -165,7 +165,7 @@ export async function deleteEmptyNewSessions(): Promise<number> {
   // tauri-plugin-sql's execute returns { rowsAffected, lastInsertId }.
   const result = await db.execute(
     `DELETE FROM sessions
-     WHERE title = '新对话'
+     WHERE title IN ('新对话', 'New chat')
        AND turn_count = 0
        AND status != 'archived'`,
   );

@@ -14,6 +14,7 @@ import { SettingsApproval } from "@/components/screens/settings/SettingsApproval
 import { SettingsMyKey } from "@/components/screens/settings/SettingsMyKey";
 import { SettingsRuntime } from "@/components/screens/settings/SettingsRuntime";
 import { SettingsShortcuts } from "@/components/screens/settings/SettingsShortcuts";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
 
@@ -92,6 +93,7 @@ export function Settings({
   onReRunHealthCheck,
   onCommitGAPath,
 }: SettingsProps) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<SettingsTab>(defaultTab);
 
   return (
@@ -106,13 +108,13 @@ export function Settings({
             "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)]",
           )}
         >
-          <Dialog.Title className="sr-only">设置</Dialog.Title>
+          <Dialog.Title className="sr-only">{t("settings.title")}</Dialog.Title>
 
           <SettingsTabList tab={tab} onChange={setTab} />
 
           <div className="relative min-w-0 flex-1 overflow-y-auto bg-app">
             <Dialog.Close
-              aria-label="关闭"
+              aria-label={t("common.close")}
               className="absolute right-3 top-3 z-10 inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
             >
               <XIcon size={14} weight="thin" />
@@ -163,39 +165,75 @@ function SettingsTabList({
   tab: SettingsTab;
   onChange: (tab: SettingsTab) => void;
 }) {
+  const { t } = useI18n();
   return (
     <nav className="flex w-[180px] shrink-0 flex-col border-r border-line bg-app py-3">
       <SettingsTabButton
         active={tab === "runtime"}
         Icon={Cpu}
-        label="Runtime"
+        label={t("settings.tabs.runtime")}
         onClick={() => onChange("runtime")}
       />
       <SettingsTabButton
         active={tab === "mykey"}
         Icon={Key}
-        label="mykey.py"
+        label={t("settings.tabs.mykey")}
         onClick={() => onChange("mykey")}
       />
       <SettingsTabButton
         active={tab === "approval"}
         Icon={ShieldCheck}
-        label="Approval"
+        label={t("settings.tabs.approval")}
         onClick={() => onChange("approval")}
       />
       <SettingsTabButton
         active={tab === "shortcuts"}
         Icon={Keyboard}
-        label="Shortcuts"
+        label={t("settings.tabs.shortcuts")}
         onClick={() => onChange("shortcuts")}
       />
       <SettingsTabButton
         active={tab === "about"}
         Icon={Info}
-        label="About"
+        label={t("settings.tabs.about")}
         onClick={() => onChange("about")}
       />
+      <div className="mt-auto px-3 pt-3">
+        <SettingsLanguageToggle />
+      </div>
     </nav>
+  );
+}
+
+function SettingsLanguageToggle() {
+  const { language, setLanguage, t } = useI18n();
+  return (
+    <section className="rounded-sm border border-line bg-surface p-2.5">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+        {t("settings.language.title")}
+      </div>
+      <div
+        role="group"
+        aria-label={t("settings.language.title")}
+        className="mt-2 grid grid-cols-2 rounded-sm border border-line bg-app p-0.5"
+      >
+        {(["zh", "en"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => setLanguage(option)}
+            className={cn(
+              "rounded-[3px] px-1.5 py-1 text-[11.5px] transition-colors",
+              language === option
+                ? "bg-elevated text-ink shadow-sm"
+                : "text-ink-muted hover:text-ink",
+            )}
+          >
+            {t(`app.language.${option}`)}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -19,15 +19,14 @@ import {
 } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
-import {
-  BUCKET_LABEL,
-  groupSessions,
-  SIDEBAR_BUCKET_ORDER,
-} from "@/lib/sessions";
+import { groupSessions, SIDEBAR_BUCKET_ORDER } from "@/lib/sessions";
+import { useI18n } from "@/lib/i18n";
 import { formatShortcut } from "@/lib/shortcuts";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
 import type { Project, Session, SessionBucket } from "@/types/session";
+
+type TFunction = ReturnType<typeof useI18n>["t"];
 
 /**
  * Sidebar header runtime indicator. Two states for V0.1 — kept
@@ -167,6 +166,7 @@ export function Sidebar({
   onOpenRuntimeSettings,
   petAttachedSessionId,
 }: SidebarProps) {
+  const { t } = useI18n();
   // When a project filter is active, the bucketed list shows only
   // sessions that belong to that project. Active session in main
   // view is independent — user can be looking at one session while
@@ -194,11 +194,13 @@ export function Sidebar({
       <SidebarHeader
         runtimeStatus={runtimeStatus}
         onOpenRuntimeSettings={onOpenRuntimeSettings}
+        t={t}
       />
       <SidebarQuickActions
         onNewChat={onNewChat}
         onSearch={onSearch}
         activeProjectName={activeProject?.name}
+        t={t}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
@@ -211,6 +213,7 @@ export function Sidebar({
           onEditProject={onEditProject}
           onDeleteProject={onDeleteProject}
           onOpenProjectsBrowser={onOpenProjectsBrowser}
+          t={t}
         />
 
         {activeProject && (
@@ -225,10 +228,11 @@ export function Sidebar({
             <SidebarProjectEmptyCta
               projectName={activeProject.name}
               onNewChat={onNewChat}
+              t={t}
             />
           ) : globalEmpty ? (
             <div className="px-5 py-6 font-serif text-[12.5px] italic text-ink-muted">
-              这里会出现你的 sessions。
+              {t("sidebar.emptyHint")}
             </div>
           ) : null
         ) : (
@@ -244,6 +248,7 @@ export function Sidebar({
                   key={bucket}
                   count={buckets[bucket].length}
                   onClick={onOpenEarlier}
+                  t={t}
                 />
               );
             }
@@ -270,13 +275,14 @@ export function Sidebar({
                   setEditingSessionId(null);
                 }}
                 onCancelRename={() => setEditingSessionId(null)}
+                t={t}
               />
             );
           })
         )}
       </div>
 
-      <SidebarFooter count={archivedCount} onOpenArchived={onOpenArchived} />
+      <SidebarFooter count={archivedCount} onOpenArchived={onOpenArchived} t={t} />
     </div>
   );
 }
@@ -286,9 +292,11 @@ export function Sidebar({
 function SidebarHeader({
   runtimeStatus,
   onOpenRuntimeSettings,
+  t,
 }: {
   runtimeStatus: RuntimeStatus;
   onOpenRuntimeSettings?: () => void;
+  t: TFunction;
 }) {
   // Single-line header (refactored 2026-05-13): the "Galley" wordmark
   // is short (~50px at 16px serif), which left ~200px of dead space
@@ -322,20 +330,20 @@ function SidebarHeader({
         <button
           type="button"
           onClick={onOpenRuntimeSettings}
-          title="GA 路径或 Python 解释器未配置 · 点击去 Settings 配置"
-          aria-label="去 Settings 配置 GA"
+          title={t("sidebar.runtimeUnconfiguredTitle")}
+          aria-label={t("sidebar.runtimeUnconfiguredAria")}
           className="flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-[11.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
           <RuntimeDot status={runtimeStatus} />
-          <span>{runtimeStatusLabel(runtimeStatus)}</span>
+          <span>{runtimeStatusLabel(runtimeStatus, t)}</span>
         </button>
       ) : (
         <div
           className="flex items-center gap-1.5 text-[11.5px] text-ink-soft"
-          title="GA 配置已就绪，bridge 可以启动"
+          title={t("sidebar.runtimeReadyTitle")}
         >
           <RuntimeDot status={runtimeStatus} />
-          <span>{runtimeStatusLabel(runtimeStatus)}</span>
+          <span>{runtimeStatusLabel(runtimeStatus, t)}</span>
         </div>
       )}
     </div>
@@ -356,14 +364,17 @@ function RuntimeDot({ status }: { status: RuntimeStatus }) {
   return <span className={cn("size-2 rounded-full", map[status])} />;
 }
 
-function runtimeStatusLabel(status: RuntimeStatus): string {
-  return status === "ready" ? "GA 就绪" : "GA 未配置";
+function runtimeStatusLabel(status: RuntimeStatus, t: TFunction): string {
+  return status === "ready"
+    ? t("sidebar.runtimeReadyLabel")
+    : t("sidebar.runtimeUnconfiguredLabel");
 }
 
 function SidebarQuickActions({
   onNewChat,
   onSearch,
   activeProjectName,
+  t,
 }: {
   onNewChat?: () => void;
   onSearch?: () => void;
@@ -371,10 +382,11 @@ function SidebarQuickActions({
    * user knows the new session will inherit projectId + cwd. Without
    * this hint the action was technically correct but invisibly so. */
   activeProjectName?: string;
+  t: TFunction;
 }) {
   const newChatLabel = activeProjectName
-    ? `新对话 · 📂 ${activeProjectName}`
-    : "新对话";
+    ? t("sidebar.newChatInProject", { project: activeProjectName })
+    : t("sidebar.newChat");
   return (
     <div className="border-b border-line py-1.5">
       <QuickAction
@@ -385,7 +397,7 @@ function SidebarQuickActions({
       />
       <QuickAction
         icon={<MagnifyingGlass size={14} weight="thin" />}
-        label="搜索"
+        label={t("common.search")}
         hint={formatShortcut("Mod+K")}
         onClick={onSearch}
       />
@@ -434,6 +446,7 @@ function SidebarBucket({
   onRequestRename,
   onConfirmRename,
   onCancelRename,
+  t,
 }: {
   bucket: SessionBucket;
   sessions: Session[];
@@ -457,10 +470,11 @@ function SidebarBucket({
   onConfirmRename: (id: string, newTitle: string) => void;
   /** Inline input cancels (Esc). */
   onCancelRename: () => void;
+  t: TFunction;
 }) {
   return (
     <>
-      <SidebarSectionLabel>{BUCKET_LABEL[bucket]}</SidebarSectionLabel>
+      <SidebarSectionLabel>{bucketLabel(bucket, t)}</SidebarSectionLabel>
       {sessions.map((s) => (
         <SidebarSessionRow
           key={s.id}
@@ -486,6 +500,7 @@ function SidebarBucket({
           }
           onConfirmRename={(newTitle) => onConfirmRename(s.id, newTitle)}
           onCancelRename={onCancelRename}
+          t={t}
         />
       ))}
     </>
@@ -513,6 +528,7 @@ function SidebarSessionRow({
   onRequestRename,
   onConfirmRename,
   onCancelRename,
+  t,
 }: {
   session: Session;
   active?: boolean;
@@ -542,6 +558,7 @@ function SidebarSessionRow({
   onConfirmRename?: (newTitle: string) => void;
   /** Inline input cancels (Esc). */
   onCancelRename?: () => void;
+  t: TFunction;
 }) {
   // Four-state sidebar display (Stage 3 round 7+10, V0.2 ask_user):
   //   1. running                  — bold brand spinner + italic "正在工作 · 第 N 步" subline
@@ -597,13 +614,16 @@ function SidebarSessionRow({
     ? stripLegacyStepPrefix(session.summary)
     : null;
   const sublineText = hasPendingAsk
-    ? "⏸ 等你回复"
+    ? t("sidebar.waiting")
     : isRunning
       ? session.lastStepIndex != null && cleanSummary
-        ? `第 ${session.lastStepIndex} 步 · ${cleanSummary}`
-        : "思考中…"
+        ? t("sidebar.workingStep", {
+            index: session.lastStepIndex,
+            summary: cleanSummary,
+          })
+        : t("sidebar.thinking")
       : cleanSummary
-        ? `已完成 · ${cleanSummary}`
+        ? t("sidebar.doneSummary", { summary: cleanSummary })
         : null;
   const row = (
     <div
@@ -645,8 +665,8 @@ function SidebarSessionRow({
           )}
           {petAttached && (
             <span
-              aria-label="桌面宠物附着中"
-              title="桌面宠物附着中 · 进入此对话可关闭"
+              aria-label={t("sidebar.petAttachedAria")}
+              title={t("sidebar.petAttachedTitle")}
               className="inline-flex shrink-0 text-ink-soft"
             >
               <Cat size={12} weight="thin" />
@@ -654,14 +674,14 @@ function SidebarSessionRow({
           )}
           {hasPendingAsk ? (
             <span
-              aria-label="等你回复"
-              title="GA 在等你回复"
+              aria-label={t("askUser.waiting")}
+              title={t("sidebar.waitingTitle")}
               className="size-2 shrink-0 rounded-full bg-warning"
             />
           ) : showUnread ? (
             <span
-              aria-label="未读"
-              title="有新回复"
+              aria-label={t("sidebar.unreadAria")}
+              title={t("sidebar.newReply")}
               className="size-2 shrink-0 rounded-full bg-brand"
             />
           ) : null}
@@ -685,13 +705,15 @@ function SidebarSessionRow({
             {session.pendingApprovalCount > 0 && (
               <Badge tone="warning">
                 <PauseCircle size={10} weight="bold" />
-                {session.pendingApprovalCount} 待审批
+                {t("sidebar.pendingApprovalBadge", {
+                  count: session.pendingApprovalCount,
+                })}
               </Badge>
             )}
             {session.errorCount > 0 && (
               <Badge tone="error">
                 <WarningCircle size={10} weight="bold" />
-                {session.errorCount} 错误
+                {t("sidebar.errorBadge", { count: session.errorCount })}
               </Badge>
             )}
           </div>
@@ -727,7 +749,7 @@ function SidebarSessionRow({
               className={itemClass}
             >
               <Pencil size={13} weight="thin" />
-              重命名
+              {t("sidebar.rename")}
             </ContextMenu.Item>
           )}
           {onTogglePin && (
@@ -735,12 +757,12 @@ function SidebarSessionRow({
               {session.pinned ? (
                 <>
                   <PushPinSlash size={13} weight="thin" />
-                  取消置顶
+                  {t("sidebar.unpin")}
                 </>
               ) : (
                 <>
                   <PushPin size={13} weight="thin" />
-                  置顶
+                  {t("sidebar.pin")}
                 </>
               )}
             </ContextMenu.Item>
@@ -754,7 +776,7 @@ function SidebarSessionRow({
                 )}
               >
                 <Folder size={13} weight="thin" />
-                加入项目
+                {t("sidebar.addToProject")}
                 <CaretRight
                   size={10}
                   weight="thin"
@@ -770,7 +792,7 @@ function SidebarSessionRow({
                 >
                   {sortedProjects.length === 0 ? (
                     <div className="px-2.5 py-1.5 text-[12px] italic text-ink-muted">
-                      还没有项目
+                      {t("sidebar.noProjects")}
                     </div>
                   ) : (
                     sortedProjects.map((p) => {
@@ -804,7 +826,7 @@ function SidebarSessionRow({
                         className={itemClass}
                       >
                         <XIcon size={13} weight="thin" />
-                        从项目移除
+                        {t("sidebar.removeFromProject")}
                       </ContextMenu.Item>
                     </>
                   )}
@@ -815,7 +837,7 @@ function SidebarSessionRow({
           {onArchive && (
             <ContextMenu.Item onSelect={onArchive} className={itemClass}>
               <Archive size={13} weight="thin" />
-              归档
+              {t("sidebar.archive")}
             </ContextMenu.Item>
           )}
         </ContextMenu.Content>
@@ -954,6 +976,7 @@ function SidebarProjectsSection({
   onEditProject,
   onDeleteProject,
   onOpenProjectsBrowser,
+  t,
 }: {
   projects: Project[];
   activeProjectFilter?: string;
@@ -964,6 +987,7 @@ function SidebarProjectsSection({
   onDeleteProject?: (id: string) => void;
   /** Click "查看全部 (N) →" → opens ProjectsDialog. */
   onOpenProjectsBrowser?: () => void;
+  t: TFunction;
 }) {
   const DEFAULT_LIMIT = 8;
 
@@ -980,7 +1004,7 @@ function SidebarProjectsSection({
 
   return (
     <section>
-      <SidebarProjectsHeader onNewProject={onNewProject} />
+      <SidebarProjectsHeader onNewProject={onNewProject} t={t} />
       {sorted.length === 0 ? (
         <button
           type="button"
@@ -988,7 +1012,7 @@ function SidebarProjectsSection({
           className="mx-1.5 mb-1 flex w-[calc(100%-12px)] cursor-pointer items-start rounded-sm px-3 py-2 text-left transition-colors hover:bg-hover"
         >
           <span className="font-serif text-[11.5px] italic text-ink-muted group-hover:text-ink-soft">
-            把相关对话加入项目
+            {t("sidebar.addProjectHint")}
           </span>
         </button>
       ) : (
@@ -1008,6 +1032,7 @@ function SidebarProjectsSection({
               onDelete={
                 onDeleteProject ? () => onDeleteProject(p.id) : undefined
               }
+              t={t}
             />
           ))}
           {overflow && (
@@ -1016,7 +1041,7 @@ function SidebarProjectsSection({
               onClick={onOpenProjectsBrowser}
               className="mx-1.5 mb-1 flex w-[calc(100%-12px)] cursor-pointer items-center gap-1 rounded-sm px-3 py-1.5 text-left text-[11.5px] text-ink-muted transition-colors hover:bg-hover hover:text-ink-soft"
             >
-              查看全部 ({sorted.length})
+              {t("sidebar.viewAllCount", { count: sorted.length })}
               <CaretRight size={10} weight="thin" />
             </button>
           )}
@@ -1028,19 +1053,21 @@ function SidebarProjectsSection({
 
 function SidebarProjectsHeader({
   onNewProject,
+  t,
 }: {
   onNewProject?: () => void;
+  t: TFunction;
 }) {
   return (
     <div className="flex items-center justify-between px-4 pb-1.5 pt-3.5">
       <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-        Projects
+        {t("sidebar.projects")}
       </span>
       <button
         type="button"
         onClick={onNewProject}
-        aria-label="New project"
-        title="New project"
+        aria-label={t("palette.newProject")}
+        title={t("palette.newProject")}
         className="inline-flex size-5 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-hover hover:text-ink"
       >
         <Plus size={12} weight="thin" />
@@ -1056,6 +1083,7 @@ function SidebarProjectRow({
   onTogglePin,
   onEdit,
   onDelete,
+  t,
 }: {
   project: Project;
   active: boolean;
@@ -1067,6 +1095,7 @@ function SidebarProjectRow({
    * actual confirm dialog still runs in the parent — this just
    * opens it. */
   onDelete?: () => void;
+  t: TFunction;
 }) {
   const row = (
     <button
@@ -1088,7 +1117,7 @@ function SidebarProjectRow({
           size={10}
           weight="fill"
           className="shrink-0 text-ink-muted"
-          aria-label="pinned"
+          aria-label={t("dialog.rowPinned")}
         />
       )}
     </button>
@@ -1119,12 +1148,12 @@ function SidebarProjectRow({
               {project.pinned ? (
                 <>
                   <PushPinSlash size={13} weight="thin" />
-                  取消置顶
+                  {t("sidebar.unpin")}
                 </>
               ) : (
                 <>
                   <PushPin size={13} weight="thin" />
-                  置顶
+                  {t("sidebar.pin")}
                 </>
               )}
             </ContextMenu.Item>
@@ -1132,7 +1161,7 @@ function SidebarProjectRow({
           {onEdit && (
             <ContextMenu.Item onSelect={onEdit} className={itemClass}>
               <FolderOpen size={13} weight="thin" />
-              编辑项目
+              {t("sidebar.editProject")}
             </ContextMenu.Item>
           )}
           {onDelete && (
@@ -1143,7 +1172,7 @@ function SidebarProjectRow({
                 className={destructiveItemClass}
               >
                 <Trash size={13} weight="thin" />
-                删除项目
+                {t("sidebar.deleteProject")}
               </ContextMenu.Item>
             </>
           )}
@@ -1168,6 +1197,7 @@ function SidebarFilterBanner({
   project: Project;
   onClear?: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div
       className={cn(
@@ -1186,8 +1216,8 @@ function SidebarFilterBanner({
         <button
           type="button"
           onClick={onClear}
-          aria-label="Clear project filter"
-          title="退出 project 视图"
+          aria-label={t("sidebar.clearFilterAria")}
+          title={t("sidebar.clearFilterTitleZh")}
           className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
           <XIcon size={11} weight="thin" />
@@ -1208,25 +1238,27 @@ function SidebarFilterBanner({
 function SidebarProjectEmptyCta({
   projectName,
   onNewChat,
+  t,
 }: {
   projectName: string;
   onNewChat?: () => void;
+  t: TFunction;
 }) {
   return (
     <div className="mx-1.5 mt-3 flex flex-col gap-2 rounded-sm border border-dashed border-line px-3 py-3">
       <p className="font-serif text-[12px] italic text-ink-muted">
-        {projectName} 还没有对话。
+        {t("sidebar.projectEmpty", { project: projectName })}
       </p>
       <Button
         onClick={onNewChat}
         className="self-start"
-        title={`在 ${projectName} 里新建对话`}
+        title={t("sidebar.newInProject", { project: projectName })}
         leadingIcon={<Plus size={12} weight="thin" />}
       >
-        在 {projectName} 里新建对话
+        {t("sidebar.newInProject", { project: projectName })}
       </Button>
       <p className="text-[11px] text-ink-muted">
-        或右键已有对话「加入项目」
+        {t("sidebar.orAddExisting")}
       </p>
     </div>
   );
@@ -1235,9 +1267,11 @@ function SidebarProjectEmptyCta({
 function SidebarEarlierEntry({
   count,
   onClick,
+  t,
 }: {
   count: number;
   onClick?: () => void;
+  t: TFunction;
 }) {
   // Single collapsed row in place of the (unbounded) `earlier` bucket.
   // Visual register sits between a section label and a session row:
@@ -1245,7 +1279,7 @@ function SidebarEarlierEntry({
   // chevron hinting "opens elsewhere".
   return (
     <>
-      <SidebarSectionLabel>{BUCKET_LABEL.earlier}</SidebarSectionLabel>
+      <SidebarSectionLabel>{bucketLabel("earlier", t)}</SidebarSectionLabel>
       <button
         type="button"
         onClick={onClick}
@@ -1255,7 +1289,7 @@ function SidebarEarlierEntry({
         )}
       >
         <Clock size={14} weight="thin" className="text-ink-muted" />
-        <span>查看全部</span>
+        <span>{t("sidebar.viewAll")}</span>
         <span className="ml-auto flex items-center gap-1 text-[11px] text-ink-muted">
           {count}
           <CaretRight size={10} weight="thin" />
@@ -1268,9 +1302,11 @@ function SidebarEarlierEntry({
 function SidebarFooter({
   count,
   onOpenArchived,
+  t,
 }: {
   count: number;
   onOpenArchived?: () => void;
+  t: TFunction;
 }) {
   // "Archived" not "Trash": our archive flow keeps data forever
   // (status="archived", row preserved). Trash semantics would imply
@@ -1284,10 +1320,14 @@ function SidebarFooter({
       className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11.5px] text-ink-muted transition-colors hover:bg-hover hover:text-ink"
     >
       <Archive size={12} weight="thin" />
-      <span>Archived</span>
+      <span>{t("sidebar.archived")}</span>
       {count > 0 && <span className="ml-auto text-ink-soft">{count}</span>}
     </button>
   );
+}
+
+function bucketLabel(bucket: SessionBucket, t: TFunction): string {
+  return t(`sidebar.bucket.${bucket}`);
 }
 
 /**

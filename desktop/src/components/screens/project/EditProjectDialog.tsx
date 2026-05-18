@@ -7,6 +7,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/types/session";
 
@@ -48,6 +49,7 @@ export function EditProjectDialog({
   onSave,
   onRequestDelete,
 }: EditProjectDialogProps) {
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -109,10 +111,10 @@ export function EditProjectDialog({
         >
           <div className="flex items-center justify-between">
             <Dialog.Title className="font-serif text-[16px] font-medium text-ink">
-              编辑项目
+              {t("dialog.project.editTitle")}
             </Dialog.Title>
             <Dialog.Close
-              aria-label="关闭"
+              aria-label={t("common.close")}
               className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
             >
               <XIcon size={14} weight="thin" />
@@ -126,7 +128,7 @@ export function EditProjectDialog({
             }}
             className="mt-5 space-y-4"
           >
-            <Field label="名称" required>
+            <Field label={t("dialog.project.name")} required>
               <input
                 ref={nameInputRef}
                 type="text"
@@ -141,10 +143,10 @@ export function EditProjectDialog({
 
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="secondary" onClick={onClose}>
-                取消
+                {t("common.cancel")}
               </Button>
               <Button type="submit" disabled={!canSubmit}>
-                保存
+                {t("common.save")}
               </Button>
             </div>
           </form>
@@ -156,10 +158,10 @@ export function EditProjectDialog({
               onClick={() => project && onRequestDelete(project)}
               leadingIcon={<Trash size={12} weight="thin" />}
             >
-              删除项目
+              {t("dialog.project.delete")}
             </Button>
             <span className="ml-2 text-[11px] text-ink-muted">
-              里面的对话不会被删除，自动解绑回时间线
+              {t("dialog.project.deleteHint")}
             </span>
           </div>
         </Dialog.Content>
@@ -185,6 +187,7 @@ export function ConfirmDeleteProjectDialog({
   onCancel,
   onConfirm,
 }: ConfirmDeleteProjectDialogProps) {
+  const { t } = useI18n();
   return (
     <Dialog.Root
       open={!!project}
@@ -206,15 +209,17 @@ export function ConfirmDeleteProjectDialog({
           <div className="flex items-center gap-2">
             <WarningCircle size={18} weight="bold" className="text-error" />
             <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
-              删除项目「{project?.name ?? ""}」？
+              {t("dialog.project.confirmDeleteTitle", {
+                name: project?.name ?? "",
+              })}
             </Dialog.Title>
           </div>
           <p
             id="confirm-delete-project-desc"
             className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft"
           >
-            该项目下的对话不会被删除，会自动解绑回时间线。
-            <span className="text-ink">此操作无法撤销。</span>
+            {t("dialog.project.confirmDeleteBody")}
+            <span className="text-ink">{t("dialog.archived.undoWarning")}</span>
           </p>
 
           <div className="mt-5 flex justify-end gap-2">
@@ -224,7 +229,7 @@ export function ConfirmDeleteProjectDialog({
               autoFocus
               className="rounded-sm border border-line bg-elevated px-3.5 py-1.5 text-[12.5px] text-ink transition-colors hover:bg-hover"
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -236,7 +241,7 @@ export function ConfirmDeleteProjectDialog({
                 "transition-colors hover:bg-error/90",
               )}
             >
-              删除 Project
+              {t("dialog.project.deleteProject")}
             </button>
           </div>
         </Dialog.Content>

@@ -14,6 +14,7 @@ import { ToolCallout } from "@/components/conversation/ToolCallout";
 import { TurnTicker } from "@/components/conversation/TurnTicker";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useTypewriter } from "@/hooks/useTypewriter";
+import { useI18n } from "@/lib/i18n";
 import { cleanPartialContent, extractPreamble } from "@/lib/ipc-handlers";
 import { cn } from "@/lib/utils";
 import type {
@@ -135,6 +136,7 @@ export function MainView({
   pendingAskUser,
   conversationWidth = "compact",
 }: MainViewProps) {
+  const { t } = useI18n();
   const stillWaiting = pendingApprovals.length > 0;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Stripped partial — empty when nothing renderable yet (e.g. only
@@ -543,7 +545,7 @@ export function MainView({
         <button
           type="button"
           onClick={onClickScrollToBottom}
-          aria-label="Scroll to latest"
+          aria-label={t("main.scrollLatest")}
           className={cn(
             "absolute bottom-[140px] right-8 z-10 inline-flex size-9 items-center justify-center rounded-full",
             "border border-line bg-elevated text-ink-soft shadow-elevated",
@@ -573,8 +575,8 @@ export function MainView({
             llmDisplayName={llmDisplayName}
             placeholder={
               pendingAskUser
-                ? "回复以继续，或选择上方候选"
-                : "继续这个对话…"
+                ? t("main.replyPlaceholder")
+                : t("main.continuePlaceholder")
             }
             onSubmit={onSubmit}
             stopMode={isRunning}
@@ -586,15 +588,15 @@ export function MainView({
           />
 
           <div className="mt-1.5 flex items-center justify-between text-[11px] text-ink-muted">
-            <span>Enter 发送 · Shift+Enter 换行</span>
+            <span>{t("main.footerSend")}</span>
             <span>
-              切换{" "}
-              <IconTooltip text="Large Language Model · GPT / Claude / DeepSeek 等大语言模型的统称">
+              {t("main.footerLLM")}{" "}
+              <IconTooltip text={t("main.footerLLMTooltip")}>
                 <span className="cursor-help underline decoration-line-strong decoration-dotted underline-offset-[3px]">
                   LLM
                 </span>
               </IconTooltip>{" "}
-              不会丢失上下文
+              {t("main.footerKeepContext")}
             </span>
           </div>
         </div>

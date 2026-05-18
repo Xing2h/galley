@@ -93,17 +93,22 @@ export async function runHealthChecks(
   const probes: HealthProbe[] = [
     {
       name: "GA 路径存在",
+      nameKey: "health.check.gaPath",
       detail: path,
       check: () => fsExists(resolved),
     },
     {
       name: "agentmain.py 可见",
+      nameKey: "health.check.agentmain",
       detail: "GA 入口模块",
+      detailKey: "health.check.agentmainDetail",
       check: async () => fsExists(await joinPath(resolved, "agentmain.py")),
     },
     {
       name: "mykey.py 存在",
+      nameKey: "health.check.mykey",
       detail: "LLM 配置文件",
+      detailKey: "health.check.mykeyDetail",
       check: async () => fsExists(await joinPath(resolved, "mykey.py")),
       // mykey.py is user-supplied + .gitignored; a missing file is a
       // warning rather than an error — the user can still attach and
@@ -112,13 +117,17 @@ export async function runHealthChecks(
     },
     {
       name: "memory/ 目录可见",
+      nameKey: "health.check.memory",
       detail: "L1-L4 记忆存储",
+      detailKey: "health.check.memoryDetail",
       check: async () => fsExists(await joinPath(resolved, "memory")),
       warnOnMissing: true,
     },
     {
       name: "assets/ 目录可见",
+      nameKey: "health.check.assets",
       detail: "GA 资源目录",
+      detailKey: "health.check.assetsDetail",
       check: async () => fsExists(await joinPath(resolved, "assets")),
       warnOnMissing: true,
     },
@@ -126,13 +135,17 @@ export async function runHealthChecks(
 
   const pythonRow: HealthCheckItem = {
     name: "Python 解释器",
+    nameKey: "health.check.python",
     detail: "查找能加载 GA 的 Python",
+    detailKey: "health.check.pythonDetail",
     state: "pending",
   };
   let items: HealthCheckItem[] = [
     ...probes.map<HealthCheckItem>((p) => ({
       name: p.name,
+      nameKey: p.nameKey,
       detail: p.detail,
+      detailKey: p.detailKey,
       state: "pending",
     })),
     pythonRow,
@@ -206,6 +219,7 @@ export async function runHealthChecks(
             state: "failed",
             detail:
               "在常见路径未找到能加载 GA 的 Python · 请先在 GA 目录把依赖装到一个 .venv 里",
+            detailKey: "health.check.pythonFailedDetail",
           }
         : c,
     );
@@ -220,7 +234,9 @@ export async function runHealthChecks(
 
 interface HealthProbe {
   name: string;
+  nameKey: string;
   detail: string;
+  detailKey?: string;
   check: () => Promise<boolean>;
   /** Treat false result as `warning` not `error`. For non-critical
    * files like mykey.py / memory/ that user may set up later. */

@@ -9,12 +9,15 @@ import {
 } from "@phosphor-icons/react";
 import { useState } from "react";
 
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
   AppError,
   AppErrorHint,
   AppErrorSeverity,
 } from "@/types/app-error";
+
+type TFunction = ReturnType<typeof useI18n>["t"];
 
 export interface ErrorCardActions {
   /** Retry the original request. Shown when error.retryable is true. */
@@ -58,10 +61,11 @@ export function ErrorCard({
   onOpenMyKey,
   onOpenGADocs,
 }: ErrorCardProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const isInline = variant === "inline";
   const sev = SEVERITY_CONFIG[error.severity];
-  const hintCfg = error.hint ? HINT_CONFIG[error.hint] : null;
+  const hintCfg = error.hint ? hintConfig(error.hint, t) : null;
 
   // Title resolution order:
   //   1. error.title — explicit override (positive-feedback toasts
@@ -69,9 +73,9 @@ export function ErrorCard({
   //   2. hintCfg.title — tailored copy for known error hints
   //      (check_llm_config / network / quota_exceeded).
   //   3. defaultTitle(error) — category-flavored fallback.
-  const title = error.title ?? hintCfg?.title ?? defaultTitle(error);
+  const title = error.title ?? hintCfg?.title ?? defaultTitle(error, t);
   const brief = hintCfg?.brief ?? error.message;
-  const actions = hintCfg?.actions ?? defaultActions(error);
+  const actions = hintCfg?.actions ?? defaultActions(error, t);
 
   return (
     <div
@@ -92,7 +96,7 @@ export function ErrorCard({
           <button
             type="button"
             onClick={onDismiss}
-            aria-label="Dismiss"
+            aria-label={t("error.dismiss")}
             className="-m-1 inline-flex size-6 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-hover hover:text-ink"
           >
             <XIcon size={12} weight="thin" />
@@ -187,81 +191,77 @@ interface HintConfig {
   actions: ActionDef[];
 }
 
-const HINT_CONFIG: Record<AppErrorHint, HintConfig> = {
-  check_llm_config: {
-    title: "LLM 配置可能有问题",
-    brief: "首次发送失败，通常是 API key 或配置问题。",
-    actions: [
-      {
-        id: "open-mykey",
-        label: "检查 mykey.py",
-        kind: "primary",
-        handler: "onOpenMyKey",
-      },
-      {
-        id: "open-docs",
-        label: "查看 GA 文档",
-        kind: "ghost",
-        handler: "onOpenGADocs",
-      },
-      {
-        id: "details",
-        label: "查看技术详情",
-        kind: "ghost",
-        handler: "toggleDetails",
-      },
-    ],
-  },
-  network: {
-    title: "网络无法连接",
-    brief: "请求未能到达 LLM provider，可能是超时或 DNS 问题。",
-    actions: [
-      { id: "retry", label: "重试", kind: "primary", handler: "onRetry" },
-      {
-        id: "details",
-        label: "查看技术详情",
-        kind: "ghost",
-        handler: "toggleDetails",
-      },
-    ],
-  },
-  quota_exceeded: {
-    title: "API 配额耗尽",
-    brief: "可切换其他 LLM 继续。",
-    actions: [
-      {
-        id: "switch-llm",
-        label: "切换 LLM",
-        kind: "primary",
-        handler: "onSwitchLLM",
-      },
-      {
-        id: "details",
-        label: "查看技术详情",
-        kind: "ghost",
-        handler: "toggleDetails",
-      },
-    ],
-  },
-};
-
-function defaultTitle(error: AppError): string {
-  switch (error.category) {
-    case "runtime":
-      return "工具执行失败";
-    case "bridge":
-      return "Galley 错误";
-    case "business":
-      return "操作未能完成";
+function hintConfig(hint: AppErrorHint, t: TFunction): HintConfig {
+  const details: ActionDef = {
+    id: "details",
+    label: t("error.details"),
+    kind: "ghost",
+    handler: "toggleDetails",
+  };
+  switch (hint) {
+    case "check_llm_config":
+      return {
+        title: t("error.llmConfig.title"),
+        brief: t("error.llmConfig.brief"),
+        actions: [
+          {
+            id: "open-mykey",
+            label: t("error.llmConfig.checkMyKey"),
+            kind: "primary",
+            handler: "onOpenMyKey",
+          },
+          {
+            id: "open-docs",
+            label: t("error.llmConfig.docs"),
+            kind: "ghost",
+            handler: "onOpenGADocs",
+          },
+          details,
+        ],
+      };
+    case "network":
+      return {
+        title: t("error.network.title"),
+        brief: t("error.network.brief"),
+        actions: [
+          { id: "retry", label: t("common.retry"), kind: "primary", handler: "onRetry" },
+          details,
+        ],
+      };
+    case "quota_exceeded":
+      return {
+        title: t("error.quota.title"),
+        brief: t("error.quota.brief"),
+        actions: [
+          {
+            id: "switch-llm",
+            label: t("error.switchLLM"),
+            kind: "primary",
+            handler: "onSwitchLLM",
+          },
+          details,
+        ],
+      };
   }
 }
 
-function defaultActions(error: AppError): ActionDef[] {
+function defaultTitle(error: AppError, t: TFunction): string {
+  switch (error.category) {
+    case "runtime":
+      return t("error.toolFailure");
+    case "bridge":
+      return t("error.galley");
+    case "business":
+      return t("error.operationFailed");
+  }
+}
+
+function defaultActions(error: AppError, t: TFunction): ActionDef[] {
   const actions: ActionDef[] = [];
   if (error.retryable) {
     actions.push({
       id: "retry",
-      label: "重试",
+      label: t("common.retry"),
       kind: "primary",
       handler: "onRetry",
     });
@@ -269,7 +269,7 @@ function defaultActions(error: AppError): ActionDef[] {
   if (error.traceback || error.context) {
     actions.push({
       id: "details",
-      label: "查看详情",
+      label: t("common.details"),
       kind: "ghost",
       handler: "toggleDetails",
     });

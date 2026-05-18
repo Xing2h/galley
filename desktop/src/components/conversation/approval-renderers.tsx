@@ -1,6 +1,7 @@
 import { Brain, FloppyDiskBack, Info } from "@phosphor-icons/react";
 
 import { PatchView } from "@/components/conversation/diff/PatchView";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ConversationToolEvent } from "@/types/conversation";
 
@@ -60,6 +61,7 @@ const FILE_WRITE_MODE_LABEL: Record<string, string> = {
 };
 
 function FileWriteRenderer({ tool }: { tool: ConversationToolEvent }) {
+  const { t } = useI18n();
   const path = stringArg(tool, "path");
   const mode = stringArg(tool, "mode") || "overwrite";
 
@@ -86,9 +88,7 @@ function FileWriteRenderer({ tool }: { tool: ConversationToolEvent }) {
       <div className="mt-2 flex items-start gap-1.5 text-[12px] text-ink-muted">
         <Info size={12} weight="thin" className="mt-0.5 shrink-0" />
         <span>
-          内容由 LLM 当前回复决定，将写入此文件。
-          <span className="font-mono text-ink-muted">do_file_write</span> 在
-          dispatch 后才从 response 提取实际内容，所以这里看不到预览。
+          {t("approvalRenderer.fileWriteInfo")}
         </span>
       </div>
     </div>
@@ -98,6 +98,7 @@ function FileWriteRenderer({ tool }: { tool: ConversationToolEvent }) {
 // ---------------- code_run ----------------
 
 function CodeRunRenderer({ tool }: { tool: ConversationToolEvent }) {
+  const { t } = useI18n();
   const language =
     stringArg(tool, "type") ||
     stringArg(tool, "language") ||
@@ -117,7 +118,7 @@ function CodeRunRenderer({ tool }: { tool: ConversationToolEvent }) {
         </span>
       </div>
       <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap px-3 py-2.5 font-mono text-[12.5px] leading-[1.6] text-ink">
-        {code || "(no command)"}
+        {code || t("approvalRenderer.noCommand")}
       </pre>
     </div>
   );
@@ -130,6 +131,7 @@ function StartLongTermUpdateRenderer({
 }: {
   tool: ConversationToolEvent;
 }) {
+  const { t } = useI18n();
   const key =
     stringArg(tool, "key") ||
     stringArg(tool, "memory_key") ||
@@ -145,11 +147,11 @@ function StartLongTermUpdateRenderer({
     <div className="mb-3 rounded-[8px] border border-line bg-surface">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[12px]">
         <Brain size={14} weight="thin" className="text-ink-soft" />
-        <span className="text-ink-soft">memory key</span>
+        <span className="text-ink-soft">{t("approvalRenderer.memoryKey")}</span>
         <span className="ml-1 font-mono text-ink">{key}</span>
       </div>
       <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap px-3 py-2.5 font-mono text-[12.5px] leading-[1.6] text-ink-soft">
-        {content || "(empty content)"}
+        {content || t("approvalRenderer.emptyContent")}
       </pre>
     </div>
   );

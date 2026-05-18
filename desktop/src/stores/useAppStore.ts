@@ -23,6 +23,7 @@ import {
   setPref,
 } from "@/lib/db";
 import { dispatchIPCEvent } from "@/lib/ipc-handlers";
+import { translate } from "@/lib/i18n";
 import { deriveSessionStatus } from "@/lib/sessions";
 import {
   DEMO_APPROVAL_CONFIG,
@@ -173,8 +174,75 @@ export type Screen = "onboarding" | "empty" | "main";
 
 export interface LLMOption {
   index: number;
+  name?: string;
   displayName: string;
   isCurrent: boolean;
+}
+
+function llmSourceSuffix(name: string | undefined, index: number): string {
+  const cls = name?.includes("/") ? name.split("/", 1)[0] : "";
+  const suffixes: Record<string, string> = {
+    MixinSession: "mixin",
+    NativeOAISession: "native OAI",
+    NativeClaudeSession: "native Claude",
+    LLMSession: "OAI",
+    ClaudeSession: "Claude",
+  };
+  return (cls && suffixes[cls]) || cls || `#${index}`;
+}
+
+function normalizeLLMOptions(llms: LLMOption[]): LLMOption[] {
+  const deduped: LLMOption[] = [];
+  const byKey = new Map<string, number>();
+
+  llms.forEach((llm) => {
+    const name = llm.name?.trim();
+    const displayName = (llm.displayName || name || `#${llm.index}`).trim();
+    const key = name
+      ? `name:${name}`
+      : `index:${llm.index}|display:${displayName}`;
+    const copy: LLMOption = {
+      ...llm,
+      ...(name ? { name } : {}),
+      displayName,
+    };
+    const existingPos = byKey.get(key);
+    if (existingPos === undefined) {
+      byKey.set(key, deduped.length);
+      deduped.push(copy);
+      return;
+    }
+    if (copy.isCurrent && !deduped[existingPos].isCurrent) {
+      deduped[existingPos] = copy;
+    }
+  });
+
+  const groups = new Map<string, number[]>();
+  deduped.forEach((llm, pos) => {
+    const positions = groups.get(llm.displayName) ?? [];
+    positions.push(pos);
+    groups.set(llm.displayName, positions);
+  });
+
+  const used = new Set<string>();
+  groups.forEach((positions, base) => {
+    if (positions.length === 1) {
+      used.add(deduped[positions[0]].displayName);
+      return;
+    }
+    positions.forEach((pos) => {
+      const llm = deduped[pos];
+      const suffix = llm.name ? llmSourceSuffix(llm.name, llm.index) : `#${llm.index}`;
+      let displayName = llm.name ? `${base} · ${suffix}` : `${base} ${suffix}`;
+      while (used.has(displayName)) {
+        displayName = `${displayName} #${llm.index}`;
+      }
+      deduped[pos] = { ...llm, displayName };
+      used.add(displayName);
+    });
+  });
+
+  return deduped;
 }
 
 export type BridgeStatus =
@@ -282,6 +350,18 @@ function truncateSummary(text: string): string {
  * — once the user (or restoration) renames the session we leave it
  * alone. */
 const DEFAULT_NEW_SESSION_TITLE = "新对话";
+const DEFAULT_NEW_SESSION_TITLES = new Set([
+  DEFAULT_NEW_SESSION_TITLE,
+  "New chat",
+]);
+
+function defaultNewSessionTitle(): string {
+  return translate("topbar.emptyTitle");
+}
+
+function isDefaultNewSessionTitle(title: string): boolean {
+  return DEFAULT_NEW_SESSION_TITLES.has(title);
+}
 
 /**
  * Convert SQLite `messages` rows back into UI `Turn[]`. Walks rows in
@@ -1313,7 +1393,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const now = new Date().toISOString();
     const newSession: Session = {
       id,
-      title: DEFAULT_NEW_SESSION_TITLE,
+      title: defaultNewSessionTitle(),
       status: "idle",
       // Inherit project assignment at birth when caller passes it
       // (Sidebar "+ New Chat" while in filter mode, or EmptyState
@@ -1516,7 +1596,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         makeAppError({
           category: "business",
           severity: "info",
-          title: "已 Archive",
+          title: translate("toast.archived"),
           message: archivedTitle,
           hint: null,
           retryable: false,
@@ -1549,7 +1629,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // placeholder so we never persist a literally-empty title (which
     // would render the sidebar row as a blank line with no anchor).
     const cleaned = newTitle.trim();
-    const finalTitle = cleaned === "" ? DEFAULT_NEW_SESSION_TITLE : cleaned;
+    const finalTitle = cleaned === "" ? defaultNewSessionTitle() : cleaned;
     const now = new Date().toISOString();
     let updated: Session | null = null;
     set((state) => ({
@@ -1727,7 +1807,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         makeAppError({
           category: "business",
           severity: "info",
-          title: `已归档 ${updatedRows.length} 个对话`,
+          title: translate("toast.archivedBulk", { count: updatedRows.length }),
           message: "",
           hint: null,
           retryable: false,
@@ -2006,8 +2086,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         makeAppError({
           category: "business",
           severity: "info",
-          title: "已保存路径配置",
-          message: "重启 Galley 才能让现有对话生效",
+          title: translate("toast.gaConfigSaved"),
+          message: translate("toast.gaConfigSavedMessage"),
           hint: null,
           retryable: false,
           context: "setGAConfig",
@@ -2035,14 +2115,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   // ---- LLMs ----
   replaceLLMs: (sessionId, llms) => {
+    const normalizedLLMs = normalizeLLMOptions(llms);
     set((state) => {
       // displayName follows isCurrent. If for some reason no entry
       // is flagged current, keep the previous displayName to avoid
       // a flash of empty string in the Composer.
-      const current = llms.find((l) => l.isCurrent);
+      const current = normalizedLLMs.find((l) => l.isCurrent);
       return applyRuntimeUpdate(state, sessionId, (rt) => ({
         ...rt,
-        llms,
+        llms: normalizedLLMs,
         llmDisplayName: current?.displayName ?? rt.llmDisplayName,
       }));
     });
@@ -2051,7 +2132,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // of the DEMO_LLMS seed. The LLM list is GA-install-wide
     // (mykey.py is one file shared across sessions), so any one
     // bridge's `ready` event is a faithful snapshot.
-    void setPref("llm_list", llms).catch((e) => {
+    void setPref("llm_list", normalizedLLMs).catch((e) => {
       console.debug("[store] replaceLLMs llm_list cache failed.", e);
     });
   },
@@ -2059,11 +2140,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
   selectLLMForNewSession: (index) => {
     set((state) => {
       const list = state.llms;
-      if (index < 0 || index >= list.length) return {};
-      const next = list.map((opt, i) => ({ ...opt, isCurrent: i === index }));
+      const next = list.map((opt) => ({ ...opt, isCurrent: opt.index === index }));
+      const current = next.find((opt) => opt.isCurrent);
+      if (!current) return {};
       return {
         llms: next,
-        llmDisplayName: next[index].displayName,
+        llmDisplayName: current.displayName,
         pendingLLMIndex: index,
       };
     });
@@ -2100,16 +2182,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
             readyHandled = true;
             const llms: LLMOption[] = event.availableLLMs.map((l) => ({
               index: l.index,
+              name: l.name,
               displayName: l.displayName,
               isCurrent: l.isCurrent,
             }));
-            const current = llms.find((l) => l.isCurrent);
+            const normalizedLLMs = normalizeLLMOptions(llms);
+            const current = normalizedLLMs.find((l) => l.isCurrent);
             set((state) => ({
-              llms,
+              llms: normalizedLLMs,
               llmDisplayName:
                 current?.displayName ?? state.llmDisplayName,
             }));
-            void setPref("llm_list", llms).catch((e) => {
+            void setPref("llm_list", normalizedLLMs).catch((e) => {
               console.debug("[warmup] llm_list cache failed.", e);
             });
             // Shutdown the warmup bridge — we only needed the
@@ -2200,7 +2284,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const idx = baseSessions.findIndex((s) => s.id === sessionId);
       if (idx !== -1) {
         const session = baseSessions[idx];
-        if (session.title === DEFAULT_NEW_SESSION_TITLE && text.trim()) {
+        if (isDefaultNewSessionTitle(session.title) && text.trim()) {
           const newTitle = deriveTitleFromText(text);
           const sessions = baseSessions.slice();
           sessions[idx] = { ...session, title: newTitle };
@@ -2454,7 +2538,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
               makeAppError({
                 category: "bridge",
                 severity: "error",
-                title: "Bridge 进程崩溃",
+                title: translate("toast.bridgeCrashed"),
                 message,
                 hint: null,
                 retryable: false,
@@ -2503,7 +2587,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
             makeAppError({
               category: "bridge",
               severity: "error",
-              title: "Bridge 启动失败",
+              title: translate("toast.bridgeStartFailed"),
               message: msg,
               hint: null,
               retryable: false,
@@ -2722,9 +2806,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const cachedLLMs = await getPref<LLMOption[]>("llm_list");
       if (cachedLLMs && cachedLLMs.length > 0) {
-        const current = cachedLLMs.find((l) => l.isCurrent);
+        const normalizedLLMs = normalizeLLMOptions(cachedLLMs);
+        const current = normalizedLLMs.find((l) => l.isCurrent);
         set((state) => ({
-          llms: cachedLLMs,
+          llms: normalizedLLMs,
           llmDisplayName: current?.displayName ?? state.llmDisplayName,
         }));
       }

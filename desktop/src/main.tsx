@@ -3,6 +3,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App";
+import { I18nProvider } from "./lib/i18n";
 import "./styles/globals.css";
 
 // App-wide Radix Tooltip provider. delayDuration=100 feels
@@ -13,7 +14,9 @@ import "./styles/globals.css";
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <Tooltip.Provider delayDuration={100} skipDelayDuration={200}>
-      <App />
+      <I18nProvider>
+        <App />
+      </I18nProvider>
     </Tooltip.Provider>
   </React.StrictMode>,
 );

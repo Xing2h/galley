@@ -33,7 +33,7 @@ export const isWindows = ua.includes("Windows");
  */
 export const EXAMPLE_GA_PATH = isMac
   ? "~/Documents/GenericAgent"
-  : "C:\\Users\\你的名字\\Documents\\GenericAgent";
+  : "C:\\Users\\YourName\\Documents\\GenericAgent";
 
 /**
  * True when the given event target should trigger a window-chrome

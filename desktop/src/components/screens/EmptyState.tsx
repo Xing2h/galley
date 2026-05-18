@@ -2,6 +2,7 @@ import {
   Composer,
   type ComposerLLMOption,
 } from "@/components/conversation/Composer";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface QuickPrompt {
@@ -25,13 +26,6 @@ interface QuickPrompt {
  * Labels ARE the prompt — what the line says is what the agent
  * receives, no surprise.
  */
-const DEFAULT_QUICK_PROMPTS: QuickPrompt[] = [
-  { label: "这两天有什么有趣的新闻？" },
-  { label: "列出 Downloads 里面最大的 10 个文件" },
-  { label: "查电影《奥德赛》的最新资讯" },
-  { label: "聊聊维特根斯坦与 LLM" },
-];
-
 export interface EmptyStateProps {
   llmDisplayName: string;
   onSubmit?: (text: string) => void;
@@ -80,12 +74,21 @@ export function EmptyState({
   llmDisplayName,
   onSubmit,
   onQuickPrompt,
-  prompts = DEFAULT_QUICK_PROMPTS,
+  prompts,
   llms,
   onSelectLLM,
   onOpenLLMSwitcher,
   conversationWidth = "compact",
 }: EmptyStateProps) {
+  const { t } = useI18n();
+  const quickPrompts =
+    prompts ??
+    [
+      { label: t("empty.prompt.news") },
+      { label: t("empty.prompt.downloads") },
+      { label: t("empty.prompt.movie") },
+      { label: t("empty.prompt.philosophy") },
+    ];
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-app px-16 py-12">
       <div
@@ -96,7 +99,7 @@ export function EmptyState({
       >
         <Composer
           llmDisplayName={llmDisplayName}
-          placeholder="今天交代什么？"
+          placeholder={t("empty.placeholder")}
           onSubmit={onSubmit}
           autoFocus
           llms={llms}
@@ -105,7 +108,7 @@ export function EmptyState({
         />
 
         <ul className="mt-6 flex flex-col items-center gap-2 text-center">
-          {prompts.map((p) => (
+          {quickPrompts.map((p) => (
             <li key={p.label}>
               <button
                 type="button"

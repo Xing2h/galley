@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { HealthCheckCard } from "@/components/health-check/HealthCheckCard";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { HealthCheckItem } from "@/types/inspector";
 
@@ -55,9 +56,12 @@ export function StepHealth({
   onRetry,
   onItemAction,
   itemActions,
-  backLabel = "Back",
-  continueLabel = "进入 Galley",
+  backLabel,
+  continueLabel,
 }: StepHealthProps) {
+  const { t } = useI18n();
+  const effectiveBackLabel = backLabel ?? t("common.backEnglish");
+  const effectiveContinueLabel = continueLabel ?? t("onboarding.enterGalley");
   const allPassed =
     items.length > 0 && items.every((c) => c.state === "success");
   const settled =
@@ -67,10 +71,10 @@ export function StepHealth({
   return (
     <div className="max-w-[580px]">
       <h1 className="m-0 font-serif text-[32px] font-medium leading-tight tracking-[0.005em] text-ink">
-        检查 GA 运行环境
+        {t("health.title")}
       </h1>
       <p className="mb-7 mt-2.5 font-serif text-[15.5px] italic leading-[1.55] text-ink-soft">
-        全部通过后才能进入主界面 · Galley 不会修改你的 GA。
+        {t("health.subtitle")}
       </p>
 
       <HealthCheckCard
@@ -87,8 +91,7 @@ export function StepHealth({
           className="mt-0.5 shrink-0 text-ink-muted"
         />
         <div>
-          跳过了 LLM 连接测试以节省费用。第一次发送消息时如有问题
-          会提示具体错误并给出修复路径。
+          {t("health.skipLLM")}
         </div>
       </div>
 
@@ -99,7 +102,7 @@ export function StepHealth({
           className="inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-[13px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
           <ArrowLeft size={13} weight="thin" />
-          {backLabel}
+          {effectiveBackLabel}
         </button>
         {onRetry && settled && !allPassed && (
           <button
@@ -108,7 +111,7 @@ export function StepHealth({
             className="inline-flex items-center gap-1.5 rounded-sm border border-line px-3 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink"
           >
             <ArrowClockwise size={12} weight="thin" />
-            重新检查
+            {t("health.retry")}
           </button>
         )}
         <button
@@ -120,7 +123,7 @@ export function StepHealth({
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
         >
-          {continueLabel}
+          {effectiveContinueLabel}
           <ArrowRight size={13} weight="bold" />
         </button>
       </div>

@@ -3,6 +3,7 @@ import { X as XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export interface CreateProjectDialogProps {
@@ -30,6 +31,7 @@ export function CreateProjectDialog({
   onOpenChange,
   onCreate,
 }: CreateProjectDialogProps) {
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -85,10 +87,10 @@ export function CreateProjectDialog({
         >
           <div className="flex items-center justify-between">
             <Dialog.Title className="font-serif text-[16px] font-medium text-ink">
-              新建项目
+              {t("dialog.project.createTitle")}
             </Dialog.Title>
             <Dialog.Close
-              aria-label="关闭"
+              aria-label={t("common.close")}
               className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
             >
               <XIcon size={14} weight="thin" />
@@ -102,13 +104,13 @@ export function CreateProjectDialog({
             }}
             className="mt-5 space-y-4"
           >
-            <Field label="名称" required>
+            <Field label={t("dialog.project.name")} required>
               <input
                 ref={nameInputRef}
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="项目名"
+                placeholder={t("dialog.project.namePlaceholder")}
                 className={cn(
                   "h-9 w-full rounded-sm border border-line bg-app px-3 text-[13px] text-ink",
                   "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
@@ -118,10 +120,10 @@ export function CreateProjectDialog({
 
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="secondary" onClick={() => onOpenChange(false)}>
-                取消
+                {t("common.cancel")}
               </Button>
               <Button type="submit" disabled={!canSubmit}>
-                创建
+                {t("common.create")}
               </Button>
             </div>
           </form>

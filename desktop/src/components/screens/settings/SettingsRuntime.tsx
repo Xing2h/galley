@@ -11,9 +11,12 @@ import {
 import { useEffect, useState } from "react";
 
 import type { PathValidation } from "@/components/screens/onboarding/StepAttach";
+import { useI18n } from "@/lib/i18n";
 import { validateGAPath } from "@/lib/onboarding-validation";
 import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
+
+type TFunction = ReturnType<typeof useI18n>["t"];
 
 interface SettingsRuntimeProps {
   info: RuntimeInfo;
@@ -50,11 +53,12 @@ export function SettingsRuntime({
   onReRunHealthCheck,
   onCommitGAPath,
 }: SettingsRuntimeProps) {
+  const { t } = useI18n();
   return (
     <div className="space-y-7">
       <SectionTitle
-        title="Runtime"
-        subtitle="GenericAgent 的启动参数 · 改动后需要重启 Galley"
+        title={t("settings.tabs.runtime")}
+        subtitle={t("runtime.subtitle")}
       />
 
       <PathField
@@ -62,7 +66,8 @@ export function SettingsRuntime({
         value={info.gaPath}
         onPick={onChangeGAPath}
         onCommit={onCommitGAPath}
-        hint="点「选择」走文件夹选取，或直接在框里输入 / 粘贴路径 · 回车提交"
+        hint={t("runtime.gaPathHint")}
+        t={t}
       />
 
       <PathField
@@ -75,20 +80,21 @@ export function SettingsRuntime({
         // changes (broken upgrade, switched Python version, etc.).
         onPick={onChangeBridgePython}
         readOnly
-        hint="探测到的可用 Python 路径 · 改变后点下方 Re-run 即可重新探测"
+        hint={t("runtime.pythonHint")}
+        t={t}
       />
 
       <GAVersionCard
         gaCommit={info.gaCommit}
         gaCommitDate={info.gaCommitDate}
         gaBaseline={info.gaBaseline}
+        t={t}
       />
 
       <div>
-        <SubLabel>Health Check</SubLabel>
+        <SubLabel>{t("runtime.healthTitle")}</SubLabel>
         <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">
-          不知道哪儿出问题了？跑一次完整体检 ——
-          重新探测 Python 解释器、检查 GA 路径和必要文件。
+          {t("runtime.healthDescription")}
         </p>
         <button
           type="button"
@@ -96,7 +102,7 @@ export function SettingsRuntime({
           className="mt-3 inline-flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-3 py-1.5 text-[12.5px] font-medium text-ink-soft transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink"
         >
           <ArrowsClockwise size={13} weight="thin" />
-          跑一次 Health Check
+          {t("runtime.runHealthCheck")}
         </button>
       </div>
 
@@ -127,10 +133,12 @@ function GAVersionCard({
   gaCommit,
   gaCommitDate,
   gaBaseline,
+  t,
 }: {
   gaCommit: string;
   gaCommitDate: string;
   gaBaseline: string;
+  t: TFunction;
 }) {
   const isUnknown = gaCommit === "unknown" || gaCommit === "";
   const isMatched = !isUnknown && gaCommit === gaBaseline;
@@ -140,10 +148,10 @@ function GAVersionCard({
 
   return (
     <div>
-      <SubLabel>GenericAgent 版本</SubLabel>
+      <SubLabel>{t("runtime.gaVersion")}</SubLabel>
       <div className="mt-2 rounded-sm border border-line bg-surface px-3 py-2.5">
         <div className="flex items-center gap-2 font-mono text-[12.5px] text-ink">
-          <span className="text-ink-muted">当前版本</span>
+          <span className="text-ink-muted">{t("runtime.currentVersion")}</span>
           <span>{currentShort}</span>
           {currentDate && (
             <span className="text-ink-muted">· {currentDate}</span>
@@ -151,7 +159,9 @@ function GAVersionCard({
         </div>
         {!isUnknown && (
           <div className="mt-1 flex items-center gap-2 font-mono text-[12px] text-ink-soft">
-            <span className="text-ink-muted">已验证版本</span>
+            <span className="text-ink-muted">
+              {t("runtime.baselineVersion")}
+            </span>
             <span>{baselineShort}</span>
             <span
               className={cn(
@@ -164,12 +174,12 @@ function GAVersionCard({
               {isMatched ? (
                 <>
                   <CheckCircle size={11} weight="fill" />
-                  已对齐
+                  {t("runtime.aligned")}
                 </>
               ) : (
                 <>
                   <Info size={11} weight="bold" />
-                  你已自行升级
+                  {t("runtime.selfUpgraded")}
                 </>
               )}
             </span>
@@ -177,7 +187,7 @@ function GAVersionCard({
         )}
       </div>
       <p className="mt-2 text-[11.5px] leading-[1.55] text-ink-muted">
-        新 commit 可能引入兼容问题，下次启动时会自动检查并报告。
+        {t("runtime.compatWarning")}
       </p>
     </div>
   );
@@ -246,6 +256,7 @@ function PathField({
   onPick,
   onCommit,
   readOnly = false,
+  t,
 }: {
   label: string;
   value: string;
@@ -258,6 +269,7 @@ function PathField({
   /** When true, the field shows the value but suppresses the picker —
    * used for Bridge Python (see capabilities constraint comment above). */
   readOnly?: boolean;
+  t: TFunction;
 }) {
   const editable = !!onCommit;
   const [draft, setDraft] = useState(value);
@@ -371,17 +383,23 @@ function PathField({
             className="inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-line bg-elevated px-3 py-2 text-[12.5px] text-ink-soft transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink"
           >
             <FolderOpen size={13} weight="thin" />
-            选择
+            {t("common.choose")}
           </button>
         )}
       </div>
-      {editable && <ValidationLine validation={validation} />}
+      {editable && <ValidationLine validation={validation} t={t} />}
       {hint && <div className="mt-1.5 text-[12px] text-ink-muted">{hint}</div>}
     </div>
   );
 }
 
-function ValidationLine({ validation }: { validation: PathValidation }) {
+function ValidationLine({
+  validation,
+  t,
+}: {
+  validation: PathValidation;
+  t: TFunction;
+}) {
   if (!validation) return null;
   const cls = "mt-2 flex items-center gap-1.5 text-[12.5px]";
   switch (validation.kind) {
@@ -389,9 +407,11 @@ function ValidationLine({ validation }: { validation: PathValidation }) {
       return (
         <div className={cn(cls, "text-success")}>
           <Check size={12} weight="thin" />
-          路径有效
+          {t("runtime.pathValid")}
           {validation.foundAgentmain && (
-            <span className="text-ink-muted">· agentmain.py 可见</span>
+            <span className="text-ink-muted">
+              · {t("runtime.agentmainVisible")}
+            </span>
           )}
         </div>
       );
@@ -399,14 +419,14 @@ function ValidationLine({ validation }: { validation: PathValidation }) {
       return (
         <div className={cn(cls, "text-warning")}>
           <Warning size={12} weight="thin" />
-          路径存在但未找到 agentmain.py — 仍会保存，但确认这是 GA 目录？
+          {t("runtime.missingAgentmain")}
         </div>
       );
     case "not-found":
       return (
         <div className={cn(cls, "text-error")}>
           <X size={12} weight="thin" />
-          路径不存在 · 不会保存
+          {t("runtime.pathNotFound")}
         </div>
       );
     case "checking":
@@ -415,7 +435,7 @@ function ValidationLine({ validation }: { validation: PathValidation }) {
           <span className="spin">
             <CircleNotch size={12} weight="thin" />
           </span>
-          检查中…
+          {t("runtime.checking")}
         </div>
       );
   }

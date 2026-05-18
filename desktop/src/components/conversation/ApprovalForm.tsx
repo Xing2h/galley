@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { ApprovalRenderer } from "@/components/conversation/approval-renderers";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
   ConversationToolEvent,
@@ -53,16 +54,17 @@ export function ApprovalForm({
   approvalDecision,
   projectName,
 }: ApprovalFormProps) {
+  const { t } = useI18n();
   const decided = approvalDecision !== undefined && approvalDecision !== null;
-  const reason = APPROVAL_REASON[tool.name] ?? GENERIC_REASON;
+  const reason = approvalReason(tool.name, t);
   const globalDisabled = HIGH_SENSITIVITY_TOOLS.has(tool.name);
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2.5">
-        {tool.riskLevel && <RiskPill level={tool.riskLevel} />}
+          {tool.riskLevel && <RiskPill level={tool.riskLevel} />}
         <span className="text-[13px] text-ink-soft">
-          {actionSentence(tool)}
+          {actionSentence(tool, t)}
         </span>
       </div>
 
@@ -102,14 +104,14 @@ export function ApprovalForm({
             icon={<Check size={13} weight="bold" />}
             onClick={() => onApprove?.("allow_once")}
           >
-            允许
+            {t("approvalForm.allow")}
           </DecisionButton>
           <DecisionButton
             variant="danger-ghost"
             icon={<X size={13} weight="bold" />}
             onClick={() => onApprove?.("deny")}
           >
-            拒绝
+            {t("approvalForm.deny")}
           </DecisionButton>
           {projectName && (
             <DecisionButton
@@ -117,7 +119,7 @@ export function ApprovalForm({
               icon={<FolderSimple size={13} weight="thin" />}
               onClick={() => onApprove?.("always_allow_project")}
             >
-              加入「{projectName}」白名单
+              {t("approvalForm.allowProject", { project: projectName })}
             </DecisionButton>
           )}
           <DecisionButton
@@ -125,9 +127,9 @@ export function ApprovalForm({
             icon={<Globe size={13} weight="thin" />}
             onClick={() => onApprove?.("always_allow_global")}
             disabled={globalDisabled}
-            title={globalDisabled ? "高敏感工具不允许全局自动通过" : undefined}
+            title={globalDisabled ? t("approvalForm.globalDisabled") : undefined}
           >
-            加入全局白名单
+            {t("approvalForm.allowGlobal")}
           </DecisionButton>
         </div>
       ) : (
@@ -144,29 +146,32 @@ export function ApprovalForm({
 // site for the layout rationale). Keep these factual and brief;
 // the long-form "审批后 GA 才会执行" boilerplate is implied by
 // the dialog's presence and the Allow / Deny buttons.
-const APPROVAL_REASON: Record<string, string> = {
-  file_patch: "修改现有文件的内容",
-  file_write: "写入或覆盖文件",
-  code_run: "执行代码或 shell 命令",
-  start_long_term_update: "更新 GA 的长期记忆（持久化）",
-};
-
-const GENERIC_REASON = "默认审批列表里的工具，需要你确认后才能执行";
-
 const HIGH_SENSITIVITY_TOOLS = new Set(["start_long_term_update"]);
 
-function actionSentence(tool: ConversationToolEvent): string {
+function approvalReason(
+  toolName: string,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  const key = `approvalForm.reason.${toolName}`;
+  const translated = t(key);
+  return translated === key ? t("approvalForm.reason.generic") : translated;
+}
+
+function actionSentence(
+  tool: ConversationToolEvent,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
   // Prefer a short summary if the caller provided one.
   if (tool.summary) return tool.summary;
   switch (tool.name) {
     case "file_patch":
-      return `Patch file at ${pathFromArgs(tool.args)}`;
+      return t("approvalForm.action.patch", { path: pathFromArgs(tool.args) });
     case "file_write":
-      return `Write file at ${pathFromArgs(tool.args)}`;
+      return t("approvalForm.action.write", { path: pathFromArgs(tool.args) });
     case "code_run":
-      return "Run code";
+      return t("approvalForm.action.runCode");
     default:
-      return `Run ${tool.name}`;
+      return t("approvalForm.action.runTool", { tool: tool.name });
   }
 }
 
@@ -176,7 +181,8 @@ function pathFromArgs(args?: Record<string, unknown>): string {
 }
 
 function RiskPill({ level }: { level: RiskLevel }) {
-  const text = `${level} risk`;
+  const { t } = useI18n();
+  const text = t("approvalForm.risk", { level });
   const cls: Record<RiskLevel, string> = {
     low: "bg-info/10 text-info",
     medium: "bg-warning/[0.12] text-warning",
@@ -240,14 +246,9 @@ const VARIANT_CLASS: Record<DecisionButtonProps["variant"], string> = {
 };
 
 function DecisionPill({ decision }: { decision: ApprovalDecision }) {
+  const { t } = useI18n();
   const isDeny = decision === "deny";
   const Icon = isDeny ? Prohibit : CheckCircle;
-  const label: Record<ApprovalDecision, string> = {
-    allow_once: "已通过 · 本次执行",
-    deny: "已拒绝 · 已通知 AI",
-    always_allow_project: "已加入此项目白名单",
-    always_allow_global: "已加入全局白名单",
-  };
   return (
     <div
       className={cn(
@@ -258,7 +259,7 @@ function DecisionPill({ decision }: { decision: ApprovalDecision }) {
       )}
     >
       <Icon size={14} weight="thin" />
-      <span>{label[decision]}</span>
+      <span>{t(`approvalForm.decision.${decision}`)}</span>
     </div>
   );
 }

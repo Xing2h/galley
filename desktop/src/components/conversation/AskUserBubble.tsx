@@ -1,6 +1,7 @@
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { PauseCircle } from "@phosphor-icons/react";
 
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { PendingAskUser } from "@/types/conversation";
 
@@ -44,6 +45,7 @@ export function AskUserBubble({
   onPickCandidate,
   disabled = false,
 }: AskUserBubbleProps) {
+  const { t } = useI18n();
   return (
     <div
       data-role="ask-user-bubble"
@@ -51,7 +53,7 @@ export function AskUserBubble({
     >
       <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-warning">
         <PauseCircle size={12} weight="bold" />
-        等你回复
+        {t("askUser.waiting")}
       </div>
       <div className="mb-3 whitespace-pre-wrap text-[15px] leading-[1.65] text-ink">
         {pending.question}
