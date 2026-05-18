@@ -59,6 +59,18 @@ jobs:
             arch: aarch64
             bundle_dir: dmg
             bundle_glob: "*.dmg"
+          # Mac Intel via cross-compile on macos-15 (arm64 runner).
+          # bundle-python.sh installs x86_64 PBS Python and pip-installs
+          # GA deps using it → needs Rosetta 2 to execute the x86_64
+          # interpreter on this arm64 host. Rosetta install step handles
+          # that. Trial entry — added in experiment/mac-x64-ci-trial
+          # branch to verify cross-compile + Rosetta before merging to
+          # main as the v0.1.2-default CI behavior.
+          - platform: macos-15
+            target: x86_64-apple-darwin
+            arch: x64
+            bundle_dir: dmg
+            bundle_glob: "*.dmg"
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             arch: x64
@@ -109,6 +121,17 @@ jobs:
       - name: Lint
         working-directory: ./desktop
         run: pnpm lint
+
+      # Mac Intel cross-compile uses x86_64 PBS Python on the arm64
+      # macos-15 runner. `bundle-python.sh mac-x64` runs that x86_64
+      # binary (`python -m pip install ...`) — requires Rosetta 2 on
+      # an Apple Silicon host. GHA's macos-15 image doesn't pre-install
+      # Rosetta; we add it here, conditional on the matrix target.
+      # Cheap on other matrix entries (`if:` evaluates false, step
+      # skipped — no time cost).
+      - name: Install Rosetta 2 (x86_64 cross-compile on arm64 host)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: softwareupdate --install-rosetta --agree-to-license
 
       # v0.1.1+ Galley ships a bundled CPython 3.11 + GA core deps at
       # $RESOURCE/python/. `scripts/bundle-python.sh` downloads the
