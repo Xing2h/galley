@@ -1271,11 +1271,41 @@ export const useAppStore = create<AppStore>((set, get) => ({
           toPersist = cleared;
         }
       }
+      // Suppress the ~430ms "Claude Sonnet 4.5" flash on first
+      // activation of a session in this app instance.
+      // `projectionFrom(emptyRuntime())` would overwrite the
+      // hydrate-cached `state.llms` / `state.llmDisplayName` with
+      // DEMO_LLMS, then bridge `ready` corrects it ~430ms later.
+      // For new runtimes, preserve the cached real list and prefer
+      // the session's persisted LLM choice for the pill (added in
+      // commit 9c36f42). Existing runtimes already hold the right
+      // values — leave them alone.
+      const sessionAfterClear =
+        sessionIndex !== -1 ? sessions[sessionIndex] : null;
+      const persistedIndex = sessionAfterClear?.selectedLlmIndex;
+      const persistedDisplayName = sessionAfterClear?.selectedLlmDisplayName;
+      const newRuntimeOverride: Partial<{
+        llms: LLMOption[];
+        llmDisplayName: string;
+      }> = existing
+        ? {}
+        : {
+            llms:
+              persistedIndex !== undefined && state.llms.length > 0
+                ? state.llms.map((l) => ({
+                    ...l,
+                    isCurrent: l.index === persistedIndex,
+                  }))
+                : state.llms,
+            llmDisplayName:
+              persistedDisplayName ?? state.llmDisplayName,
+          };
       return {
         activeSessionId: id,
         _runtimes,
         sessions,
         ...projectionFrom(rt),
+        ...newRuntimeOverride,
       };
     });
     if (toPersist) {
