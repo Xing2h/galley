@@ -4,6 +4,7 @@ pub mod error;
 pub mod ipc;
 pub mod runner_commands;
 pub mod runner_manager;
+pub mod socket_listener;
 
 use api::{GalleyApi, SessionBrief, SessionFilter};
 use db::SqliteGalley;
@@ -130,6 +131,27 @@ pub fn run() {
             runner_commands::shutdown_all_runners,
         ])
         .setup(|_app| {
+            // Start the local socket listener (Unix socket on macOS/Linux,
+            // Windows named pipe on Windows). CLI clients connect here to
+            // send write commands + watch event streams from B2 M4 onward.
+            // Per CLAUDE.md Galley 架构原则 #1: localhost only, fs-perm
+            // auth, no TCP / token. If bind fails or another instance
+            // owns the socket, start() returns a dormant guard and Galley
+            // Core keeps running — CLI clients will see exit 4 in that case.
+            //
+            // The guard is managed in app state so its Drop runs at app
+            // teardown, unlinking the socket file on Unix.
+            {
+                use tauri::Manager;
+                match tauri::async_runtime::block_on(socket_listener::start()) {
+                    Ok(guard) => {
+                        _app.manage(guard);
+                    }
+                    Err(e) => {
+                        eprintln!("[socket] start failed (non-fatal): {e}");
+                    }
+                }
+            }
             // Windows-only custom chrome: drop native decorations and
             // restore the drop shadow via window-shadows-v2 so the borderless
             // window doesn't look like a flat rectangle. Mac keeps its
