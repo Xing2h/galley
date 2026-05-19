@@ -51,6 +51,7 @@
 //! the residual narrow race window between try-connect and the next
 //! process's bind (~ms; OS-level atomic bind would close this fully).
 
+use crate::api::message::MessageBrief;
 use crate::api::{GalleyApi, Origin, OriginVia, SessionFilter, SessionId};
 use crate::db::SqliteGalley;
 use crate::ipc::{IpcCommand, UserMessageCommand};
@@ -60,6 +61,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tauri::{AppHandle, Emitter};
 use tokio::sync::broadcast;
 
 #[cfg(unix)]
@@ -180,7 +182,10 @@ extern "C" {
 /// Returns a guard that unlinks the socket file when dropped (Unix only —
 /// Windows pipes auto-clean). Hold this in app state to keep the socket
 /// alive until process exit.
-pub async fn start(manager: Arc<RunnerManager>) -> Result<SocketGuard, std::io::Error> {
+pub async fn start(
+    app: AppHandle,
+    manager: Arc<RunnerManager>,
+) -> Result<SocketGuard, std::io::Error> {
     let path = socket_path();
 
     // Race detection: try connecting to see if another instance owns it.
@@ -227,9 +232,10 @@ pub async fn start(manager: Arc<RunnerManager>) -> Result<SocketGuard, std::io::
 
             let task_path = path.clone();
             let task_manager = manager.clone();
+            let task_app = app.clone();
             tokio::spawn(async move {
                 eprintln!("[socket] listening on {}", task_path.display());
-                accept_loop(listener, task_manager).await;
+                accept_loop(task_app, listener, task_manager).await;
             });
             Ok(SocketGuard::active(path))
         }
@@ -276,14 +282,15 @@ fn apply_socket_permissions(path: &PathBuf) {
 }
 
 #[cfg(unix)]
-async fn accept_loop(listener: UnixListener, manager: Arc<RunnerManager>) {
+async fn accept_loop(app: AppHandle, listener: UnixListener, manager: Arc<RunnerManager>) {
     loop {
         match listener.accept().await {
             Ok((stream, _addr)) => {
                 let m = manager.clone();
+                let app_c = app.clone();
                 tokio::spawn(async move {
                     let (read_half, write_half) = stream.into_split();
-                    handle_stream(read_half, write_half, m).await;
+                    handle_stream(app_c, read_half, write_half, m).await;
                 });
             }
             Err(e) => {
@@ -296,7 +303,7 @@ async fn accept_loop(listener: UnixListener, manager: Arc<RunnerManager>) {
 }
 
 #[cfg(windows)]
-async fn accept_loop(mut listener: NamedPipeServer, manager: Arc<RunnerManager>) {
+async fn accept_loop(app: AppHandle, mut listener: NamedPipeServer, manager: Arc<RunnerManager>) {
     loop {
         // `connect()` blocks until a client connects to this pipe.
         if let Err(e) = listener.connect().await {
@@ -323,15 +330,20 @@ async fn accept_loop(mut listener: NamedPipeServer, manager: Arc<RunnerManager>)
         };
         let connected = std::mem::replace(&mut listener, new_listener);
         let m = manager.clone();
+        let app_c = app.clone();
         tokio::spawn(async move {
             let (read_half, write_half) = tokio::io::split(connected);
-            handle_stream(read_half, write_half, m).await;
+            handle_stream(app_c, read_half, write_half, m).await;
         });
     }
 }
 
-async fn handle_stream<R, W>(read_half: R, mut write_half: W, manager: Arc<RunnerManager>)
-where
+async fn handle_stream<R, W>(
+    app: AppHandle,
+    read_half: R,
+    mut write_half: W,
+    manager: Arc<RunnerManager>,
+) where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
 {
@@ -355,7 +367,7 @@ where
         if line.trim().is_empty() {
             continue;
         }
-        match dispatch_line(&line, &manager).await {
+        match dispatch_line(&line, Some(&app), &manager).await {
             DispatchResult::Unary(resp) => {
                 if write_resp(&mut write_half, &resp).await.is_err() {
                     return;
@@ -464,7 +476,11 @@ async fn write_resp<W: tokio::io::AsyncWrite + Unpin>(
 /// Parse a request line and dispatch to a command handler. Returns either
 /// a single [`SocketResponse`] or a streaming broadcast receiver for
 /// subscription commands like `session.watch`.
-async fn dispatch_line(line: &str, manager: &RunnerManager) -> DispatchResult {
+async fn dispatch_line(
+    line: &str,
+    app: Option<&AppHandle>,
+    manager: &RunnerManager,
+) -> DispatchResult {
     let req: SocketRequest = match serde_json::from_str(line) {
         Ok(r) => r,
         Err(e) => {
@@ -500,7 +516,7 @@ async fn dispatch_line(line: &str, manager: &RunnerManager) -> DispatchResult {
         )),
         // ---- B2 M4 write commands ----
         "session.send" => DispatchResult::Unary(
-            dispatch_session_send(request_id, req.args, manager).await,
+            dispatch_session_send(request_id, req.args, app, manager).await,
         ),
         "session.watch" => dispatch_session_watch(request_id, req.args, manager).await,
         other => DispatchResult::Unary(SocketResponse::err(
@@ -528,9 +544,26 @@ struct SessionWatchArgs {
     session_id: String,
 }
 
+/// Tauri event payload broadcast to the GUI whenever a user message is
+/// persisted via the socket path (CLI `galley session send` / supervisor
+/// agents). GUI's listener calls `appendUserTurnExternal` to mirror the
+/// row into the in-memory store so the conversation view renders the
+/// message even though it wasn't typed in the Composer.
+///
+/// The GUI's own Composer path skips this — it persists locally via
+/// `persistUserMessage` and mutates the store synchronously, so emitting
+/// here would double-render.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct UserMessagePersistedPayload {
+    session_id: String,
+    message: MessageBrief,
+}
+
 async fn dispatch_session_send(
     request_id: Option<String>,
     args: Value,
+    app: Option<&AppHandle>,
     manager: &RunnerManager,
 ) -> SocketResponse {
     let parsed: SessionSendArgs = match serde_json::from_value(args) {
@@ -603,6 +636,19 @@ async fn dispatch_session_send(
         Ok(()) => "dispatched",
         Err(_) => "persisted_only",
     };
+
+    // Notify GUI so the conversation view picks up the new user row.
+    // Emit covers both `dispatched` and `persisted_only` — the user
+    // message exists in the DB either way, and the GUI must mirror it.
+    // Best-effort: emit failure (no listeners registered yet, or app
+    // handle gone) does not roll back the persist + dispatch above.
+    if let Some(app) = app {
+        let payload = UserMessagePersistedPayload {
+            session_id: brief.session_id.0.clone(),
+            message: brief.clone(),
+        };
+        let _ = app.emit("user-message-persisted", payload);
+    }
 
     let result = serde_json::json!({
         "message": brief,
@@ -810,7 +856,7 @@ mod tests {
     async fn dispatch_unknown_command_yields_error() {
         let mgr = RunnerManager::new();
         let resp = expect_unary(
-            dispatch_line(r#"{"command":"nope.does_not_exist"}"#, &mgr).await,
+            dispatch_line(r#"{"command":"nope.does_not_exist"}"#, None, &mgr).await,
         );
         assert!(!resp.ok);
         assert_eq!(resp.error.as_deref(), Some("unknown_command"));
@@ -820,7 +866,7 @@ mod tests {
     async fn dispatch_ping_succeeds() {
         let mgr = RunnerManager::new();
         let resp = expect_unary(
-            dispatch_line(r#"{"command":"ping","requestId":"r1"}"#, &mgr).await,
+            dispatch_line(r#"{"command":"ping","requestId":"r1"}"#, None, &mgr).await,
         );
         assert!(resp.ok);
         assert_eq!(resp.request_id.as_deref(), Some("r1"));
@@ -829,7 +875,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_invalid_json() {
         let mgr = RunnerManager::new();
-        let resp = expect_unary(dispatch_line("not-json", &mgr).await);
+        let resp = expect_unary(dispatch_line("not-json", None, &mgr).await);
         assert!(!resp.ok);
         assert_eq!(resp.error.as_deref(), Some("invalid_args"));
     }
@@ -838,7 +884,7 @@ mod tests {
     async fn dispatch_schema_mismatch() {
         let mgr = RunnerManager::new();
         let resp = expect_unary(
-            dispatch_line(r#"{"command":"ping","schemaVersion":42}"#, &mgr).await,
+            dispatch_line(r#"{"command":"ping","schemaVersion":42}"#, None, &mgr).await,
         );
         assert!(!resp.ok);
         assert_eq!(resp.error.as_deref(), Some("schema_mismatch"));
@@ -848,7 +894,7 @@ mod tests {
     async fn dispatch_session_watch_unknown_session_returns_not_found() {
         let mgr = RunnerManager::new();
         let line = r#"{"command":"session.watch","args":{"sessionId":"nope"}}"#;
-        let resp = expect_unary(dispatch_line(line, &mgr).await);
+        let resp = expect_unary(dispatch_line(line, None, &mgr).await);
         assert!(!resp.ok);
         assert_eq!(resp.error.as_deref(), Some("not_found"));
     }

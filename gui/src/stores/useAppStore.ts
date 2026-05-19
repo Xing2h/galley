@@ -848,6 +848,19 @@ interface Actions {
   // Conversation (per-session — sessionId required)
   appendUserTurn: (sessionId: string, text: string) => void;
   /**
+   * Append a user turn that was persisted out-of-band by Rust core
+   * (`socket_listener::dispatch_session_send`). Skips the SQLite write
+   * that `appendUserTurn` does because the row is already in DB.
+   * Triggered by the `user-message-persisted` Tauri event whenever CLI
+   * / supervisor agents call `galley session send`.
+   *
+   * Otherwise identical to `appendUserTurn`: appends a UserTurn, sets
+   * `agentRunning=true` (the bridge has been dispatched), bumps
+   * `userSubmitTick` so the conversation scrolls to the new message,
+   * derives the sidebar title on first message.
+   */
+  appendUserTurnExternal: (sessionId: string, text: string) => void;
+  /**
    * Append a transient user message for `/btw` side questions.
    * Distinct from `appendUserTurn`:
    *   - Doesn't touch agentRunning / inFlightContent /
@@ -2191,6 +2204,53 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }).catch((e) => {
       console.debug("[store] appendUserTurn persistUserMessage failed.", e);
     });
+  },
+
+  appendUserTurnExternal: (sessionId, text) => {
+    // Mirror of appendUserTurn — see that action's comments for rationale
+    // on each field. Difference: skips `persistUserMessage` because Rust
+    // already wrote the row before emitting `user-message-persisted`.
+    let titleDerived: { sessionId: string; title: string } | null = null;
+    const currentTurnCount =
+      get().sessions.find((s) => s.id === sessionId)?.turnCount ?? 0;
+    set((state) => {
+      const update = applyRuntimeUpdate(state, sessionId, (rt) => ({
+        ...rt,
+        turns: [...rt.turns, { role: "user", content: text } as UserTurn],
+        agentRunning: true,
+        inFlightContent: "",
+        currentTurnIndex: null,
+        pendingAskUser: null,
+        turnIndexOffset: currentTurnCount,
+      }));
+      update.userSubmitTick = state.userSubmitTick + 1;
+      const baseSessions = update.sessions ?? state.sessions;
+      const idx = baseSessions.findIndex((s) => s.id === sessionId);
+      if (idx !== -1) {
+        const session = baseSessions[idx];
+        if (session.title === DEFAULT_NEW_SESSION_TITLE && text.trim()) {
+          const newTitle = deriveTitleFromText(text);
+          const sessions = baseSessions.slice();
+          sessions[idx] = { ...session, title: newTitle };
+          update.sessions = sessions;
+          titleDerived = { sessionId, title: newTitle };
+        }
+      }
+      return update;
+    });
+    if (titleDerived) {
+      const snap = get().sessions.find(
+        (s) => s.id === titleDerived!.sessionId,
+      );
+      if (snap) {
+        void persistSession(snap).catch((e) => {
+          console.debug(
+            "[store] appendUserTurnExternal persistSession failed.",
+            e,
+          );
+        });
+      }
+    }
   },
 
   appendAgentTurn: (sessionId, turn) =>

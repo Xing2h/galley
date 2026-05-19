@@ -87,6 +87,7 @@ function App() {
     (s) => s.deleteSessionPermanently,
   );
   const emptyArchive = useAppStore((s) => s.emptyArchive);
+  const appendUserTurnExternal = useAppStore((s) => s.appendUserTurnExternal);
   const llms = useAppStore((s) => s.llms);
   const llmDisplayName = useAppStore((s) => s.llmDisplayName);
   const selectLLMForNewSession = useAppStore(
@@ -229,6 +230,39 @@ function App() {
       unlisteners.forEach((fn) => fn());
     };
   }, [setSettingsOpen, setScreen, setConversationWidth]);
+
+  // `user-message-persisted` listener: Rust core's socket_listener emits
+  // this Tauri event whenever a user message is persisted via the socket
+  // transport (CLI `galley session send`, supervisor agents). The GUI's
+  // own Composer path skips this — it mutates the store synchronously
+  // and emitting here would double-render.
+  //
+  // Without this listener, CLI-origin messages render the agent reply
+  // (because bridge events still flow through `runner-event`) but the
+  // user question itself never appears — the row exists in DB but the
+  // in-memory `turns` array is the source of truth for rendering.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    void (async () => {
+      const fn = await listen<{
+        sessionId: string;
+        message: { content: string };
+      }>("user-message-persisted", (e) => {
+        const { sessionId, message } = e.payload;
+        appendUserTurnExternal(sessionId, message.content);
+      });
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [appendUserTurnExternal]);
 
   // Conversation source-of-truth precedence:
   //   1. store.turns + store.pendingApprovals — populated by IPC

@@ -163,7 +163,11 @@ pub fn run() {
                     .state::<std::sync::Arc<runner_manager::RunnerManager>>()
                     .inner()
                     .clone();
-                match tauri::async_runtime::block_on(socket_listener::start(manager)) {
+                let app_for_socket = _app.handle().clone();
+                match tauri::async_runtime::block_on(socket_listener::start(
+                    app_for_socket,
+                    manager,
+                )) {
                     Ok(guard) => {
                         _app.manage(guard);
                     }
