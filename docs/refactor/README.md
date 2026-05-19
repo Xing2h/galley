@@ -50,7 +50,7 @@ Blocker:  T2.10 / T3.13 / T4.10 / T4.11 manual dogfood — bundled into M7
 | Prototype: Rust-owned subprocess | ✅ COMPLETE · 17/17 · GO | — | [bridge-owner/README.md](../../core/experiments/bridge-owner/README.md) | 2026-05-18 session 1: all 5 subsections in one sprint |
 | B1: Rust core 骨架 + CLI 只读 | ✅ COMPLETE · M1-M7 · 11/12 A acceptance | — | [B1-rust-core.md](./B1-rust-core.md) · [devlog](../devlog/2026-05-18-b1-rust-core-complete.md) | 2026-05-18 single session — 21× faster than 3-week estimate |
 | B2: Bridge ownership 迁 Rust | 🚧 M1-M6 done · M7 pending | T7.1 | [B2-bridge-ownership.md](./B2-bridge-ownership.md) | 2026-05-19 same session: M1-M6 ship — full pipeline + agent-api.md public contract documented. 82 tests pass. M7 bundles all 4 manual dogfood scenarios |
-| B3: useAppStore 拆 slice + 改订阅 | ⏳ 未启动 | — | [B3-store-slice.md](./B3-store-slice.md) (stub) | 2026-05-15 stub |
+| B3: useAppStore 拆 slice + 改订阅 | ⏳ 待启动（playbook ready） | T1.1 | [B3-store-slice.md](./B3-store-slice.md) | 2026-05-19 升格到完整 playbook (M1-M7, ~60 sub-tasks, 7 phase invariants, 12 gotchas) |
 | B4: CLI feature-complete + background + artifact | ⏳ 未启动 | — | [B4-cli-bg-artifact.md](./B4-cli-bg-artifact.md) (stub) | 2026-05-15 stub |
 | **v0.5 milestone** | ⏳ | — | — | — |
 
