@@ -1,6 +1,8 @@
 pub mod api;
 pub mod db;
 pub mod error;
+pub mod ipc;
+pub mod runner_manager;
 
 use api::{GalleyApi, SessionBrief, SessionFilter};
 use db::SqliteGalley;

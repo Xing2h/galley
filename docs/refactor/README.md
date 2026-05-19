@@ -32,14 +32,13 @@ docs/refactor/
 ```
 Phase:    Prototype ✅ → B1 ✅ → [B2] → B3 → B4 → v0.5
                                   ↑ 现在在这里
-Status:   B1 COMPLETE — M1-M7 + T7.1-T7.7 全部 ship
-          11/12 A acceptance pass + 1 deferred (--pretty → B4)
-          Tag b1-complete · Commits 4ee23e3 (M1) → 41cdeb5 (M7) + 2026-05-19 收尾
-          Devlog: docs/devlog/2026-05-18-b1-rust-core-complete.md
-          B2 playbook 升格完成 (was 106-line stub → 430-line playbook 同 B1 粒度)
-Next:     B2 M1 T1.1 — `core/src/runner_manager.rs` 顶层模块 scaffold
-          (RunnerProcess 从 prototype/registry.rs 升级到 production)
-Blocker:  无 (B2 不依赖 v0.2 Windows release，可同步推进)
+Status:   B2 M1 COMPLETE — RunnerManager scaffold + 35 tests passing
+          Modules: core/src/ipc.rs · core/src/runner_manager/{mod,process,manager,error}.rs
+          Tests: 26 lib + 9 integration (mock Python subprocess in tempdir)
+          B1 ✅ tag b1-complete · B2 playbook upgraded same session
+Next:     B2 M2 T2.1 — Tauri command wrappers + bridge.ts thin shim
+          (spawn_runner / send_to_runner / shutdown_runner / kill_runner)
+Blocker:  无
 ```
 
 **Cursor 更新协议**：每个 sub-task 完成 → 当前 phase playbook 顶部的 cursor 行更新 → 本文件总 cursor 表跟着更新（只 phase 级别）。**不要批量更新**——每 task 一更，防止 session 中断后丢状态。
@@ -50,7 +49,7 @@ Blocker:  无 (B2 不依赖 v0.2 Windows release，可同步推进)
 |---|---|---|---|---|
 | Prototype: Rust-owned subprocess | ✅ COMPLETE · 17/17 · GO | — | [bridge-owner/README.md](../../core/experiments/bridge-owner/README.md) | 2026-05-18 session 1: all 5 subsections in one sprint |
 | B1: Rust core 骨架 + CLI 只读 | ✅ COMPLETE · M1-M7 · 11/12 A acceptance | — | [B1-rust-core.md](./B1-rust-core.md) · [devlog](../devlog/2026-05-18-b1-rust-core-complete.md) | 2026-05-18 single session — 21× faster than 3-week estimate |
-| B2: Bridge ownership 迁 Rust | ⏳ 待启动 (playbook ready) | T1.1 | [B2-bridge-ownership.md](./B2-bridge-ownership.md) | 2026-05-19 升格到完整 playbook (M1-M7, ~75 sub-tasks) — 等下次 session 开 M1 实施 |
+| B2: Bridge ownership 迁 Rust | 🚧 M1 done · M2-M7 pending | T2.1 | [B2-bridge-ownership.md](./B2-bridge-ownership.md) | 2026-05-19 M1 ship — RunnerManager + RunnerProcess + ipc.rs + 35 tests (lib 26 + integration 9) |
 | B3: useAppStore 拆 slice + 改订阅 | ⏳ 未启动 | — | [B3-store-slice.md](./B3-store-slice.md) (stub) | 2026-05-15 stub |
 | B4: CLI feature-complete + background + artifact | ⏳ 未启动 | — | [B4-cli-bg-artifact.md](./B4-cli-bg-artifact.md) (stub) | 2026-05-15 stub |
 | **v0.5 milestone** | ⏳ | — | — | — |

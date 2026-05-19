@@ -34,12 +34,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
-# Test-only deps. `tokio` is brought in transitively (via sqlx /
-# tauri) but `#[tokio::test]` needs the macros feature explicitly,
-# which transitive deps don't enable. Listed under dev-dependencies
-# so production builds don't pull this.
+# Test-only deps.
+#
+# `tokio` was moved to `[dependencies]` for production runner_manager use
+# (B2 M1); the dev-dep entry is gone — tests inherit the same feature set
+# the lib uses.
+#
+# `tempfile` is used by runner_manager_test.rs (mock runner Python script
+# written to a tempdir) and is the same dep `cli/tests/cli_test.rs` uses.
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -67,16 +71,24 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 # CLI binary has no AppHandle — see `db_path()` in `db.rs`.
 directories = "5"
 
-# Experiment-only deps: throwaway bridge-owner prototype (Prototype phase of
-# Galley Core refactor). Gated behind `experiments` feature so production
-# build never pulls these. See experiments/bridge-owner/README.md.
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "process", "sync", "time", "net", "fs"], optional = true }
+# Tokio is a production dep (RunnerManager owns Python runner subprocesses
+# from B2 M1 onward — see runner_manager.rs). The feature set is the union
+# of what RunnerManager needs (process, sync, io-util, time, macros,
+# rt-multi-thread) and what the prototype binary still references
+# (net + fs). Prototype binary stays gated behind the `experiments`
+# feature, but its tokio dep is the same crate as production's, so no
+# duplicate compile + no feature flag drift.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "process", "sync", "time", "net", "fs"] }
+
+# Experiment-only deps that aren't part of the production runner_manager
+# code path. Currently just `anyhow` (prototype uses anyhow::Result;
+# production code uses hand-rolled error enums per GalleyError convention).
 anyhow = { version = "1", optional = true }
 
 [features]
 # Enables the bridge-owner-experiment binary. Not part of any default set.
 # Use: `cargo build --features experiments --bin bridge-owner-experiment`.
-experiments = ["dep:tokio", "dep:anyhow"]
+experiments = ["dep:anyhow"]
 
 # Windows-only: restore drop shadow when we run with native decorations off
 # (Galley's TopBar acts as custom chrome on Win; see lib.rs setup hook).
