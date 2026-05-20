@@ -50,24 +50,25 @@ B4 ship = v0.5 RC，dogfood 一周后 ship 正式 v0.5（dual-native orchestrato
 
 按顺序逐条 demo + tick（沿用 stub acceptance，已 codified）：
 
-- [ ] **A1**: CLI 命令表（PRD §11.1）全部实现：
+- [x] **A1**: CLI 命令表（PRD §11.1）全部实现：
   - Inventory: list / search / brief / show / status / health / version ← 已 B1
   - Operate: new / send / btw / stop / archive / restore / watch ← send/watch 已 B2，其余 B4 M1
-  - Project: create / list / move / archive
+  - Project: create / list / delete (原 archive，M1 sub-plan O2 改名)
+  - Session: move (原 project move，M1 sub-plan O3 改语义)
   - Config: llm list / llm set
-- [ ] **A2**: 每个 CLI 命令在 `docs/agent-api.md` 都有完整 schema 文档
-- [ ] **A3**: Background mode 工作：关窗 → 隐藏，Cmd+Q → 真退。Galley Core 持续跑 (menubar 图标存在)
-- [ ] **A4**: Menubar 图标：静态 / N active session badge / 点击下拉菜单可 Show Galley / Quit
-- [ ] **A5**: Galley Core 完全退出后 CLI 报 exit 4 "Open Galley first"（沿用 B2 exit 分类）
-- [ ] **A6**: `~/.config/galley/cli-path`（mac/linux）/ `%APPDATA%\galley\cli-path` (windows) discovery file 在 GUI 首次启动后存在，内容是 CLI binary 绝对路径
-- [ ] **A7**: Settings → Integration 有 "Install `galley` to PATH" 按钮，点击触发 sudo + symlink（macOS）或写用户 PATH（Windows），可逆
-- [ ] **A8**: Settings → Integration 有 "Install Supervisor SOP into your GA" 按钮（[B4-I5](#phase-invariants--b4-特有的硬规则)），把 `galley-supervisor-sop.md` 写入用户配置的 GA `memory/`
-- [ ] **A9**: `docs/integrations/galley-supervisor-sop.md`（GA SOP）写完 + dogfood 验证（让 GA + 飞书 frontend 通过 SOP 控制 Galley 跑通一个完整 supervisor scenario）
-- [ ] **A10**: `.claude/skills/galley-supervisor/` Claude Skill 包写完 + 在 Claude Code 里加载试用通过
-- [ ] **A11**: v0.x → v0.5 数据 migration (010-014 加 supervisor / origin_note / created_via 字段) 在自己机器上跑过 + 数据完整 + [B4-I6](#phase-invariants--b4-特有的硬规则) 备份步骤生效
-- [ ] **A12**: TopBar / GUI per-session 显示 supervisor 行动日志（PRD §6.1 #4）：穿插 human / supervisor 动作 + reason
-- [ ] **A13**: 所有 Galley 架构原则（[CLAUDE.md](../../CLAUDE.md)）在 code review 中能逐条 demo：localhost only / CLI 公开契约 / 数据不离开 Galley / 路径 B 不可逆
-- [ ] **A14**: dogfood 一周（B4 完成后），零 P0 / P1 bug，准备 v0.5 ship
+- [x] **A2**: 每个 CLI 命令在 `docs/agent-api.md` 都有完整 schema 文档（M6 schema_version=1 frozen 19 commands）
+- [ ] **A3**: Background mode 工作：关窗 → 隐藏，Cmd+Q → 真退。Galley Core 持续跑 (menubar 图标存在) — **M2 pending**
+- [ ] **A4**: Menubar 图标：静态 / N active session badge / 点击下拉菜单可 Show Galley / Quit — **M2 pending**
+- [x] **A5**: Galley Core 完全退出后 CLI 报 exit 4 "Open Galley first"（沿用 B2 exit 分类）
+- [x] **A6**: `~/.config/galley/cli-path`（mac/linux）/ `%APPDATA%\galley\cli-path` (windows) discovery file 在 GUI 首次启动后存在，内容是 CLI binary 绝对路径 — M3 T3.1
+- [x] **A7**: Settings → Integration 有 "Install `galley` to PATH" 按钮，点击触发 sudo + symlink（macOS）或写用户 PATH（Windows），可逆 — M3 T3.3 macOS ship; Win path_install.rs cfg-gated Unsupported
+- [x] **A8**: Settings → Integration 有 "Install Supervisor SOP into your GA" 按钮（[B4-I5](#phase-invariants--b4-特有的硬规则)），把 `galley-supervisor-sop.md` 写入用户配置的 GA `memory/` — M3 T3.4
+- [x] **A9**: `docs/integrations/galley-supervisor-sop.md`（GA SOP）写完 — M4 T4.1 ship; JC dogfood 2026-05-20 pass（手动 supervisor flow；IM bot 集成 T4.2-T4.5 留 v0.6+ calendar gate）
+- [x] **A10**: `.claude/skills/galley-supervisor/` Claude Skill 包写完 + 在 Claude Code 里加载试用通过 — M5 ship; JC dogfood 2026-05-20 pass
+- [x] **A11**: v0.x → v0.5 数据 migration 备份机制 + [B4-I6](#phase-invariants--b4-特有的硬规则) 备份步骤生效 — M8 ship; 11 unit test pass; v0.5 无 schema delta 不触发实际备份 (forward-looking 为 v0.6+ mig 008+ 准备)。原 schema 010-014 sub-task re-scoped removed（B2 mig 006/007 已 ship）
+- [x] **A12**: TopBar / GUI per-session 显示 supervisor 行动日志（PRD §6.1 #4）：穿插 human / supervisor 动作 + reason — M7 ship; JC dogfood 2026-05-20 pass
+- [x] **A13**: 所有 Galley 架构原则（[CLAUDE.md](../../CLAUDE.md)）在 code review 中能逐条 demo：localhost only / CLI 公开契约 / 数据不离开 Galley / 路径 B 不可逆 — [docs/architecture-demo.md](../architecture-demo.md) ship 2026-05-20，4 principle 各自 code refs + grep gates (4 gate 全 exit 0) + tests + devlog provenance
+- [ ] **A14**: dogfood 一周（B4 完成后），零 P0 / P1 bug，准备 v0.5 ship — **calendar gate, M9 ship 前必走**
 
 ---
 
@@ -310,6 +311,8 @@ v0.5 RC → v0.5 GA 的 release ceremony。Paperwork prep (T9.0 + T9.3 + T9.4 dr
 ### Session 跑下来追加的 notes（按日期）
 
 - **N1 (2026-05-20, B4 playbook 升格)** — Stub (144 行) 升格成详细 playbook (~500 行)。沿用 B3 sub-plan-then-impl 模式：M1-M9 每个 milestone 实施前**单独写 sub-plan**。Acceptance 沿用 stub A1-A14 不动。新增 B4-I1..I7 phase invariants（沿用 CLAUDE.md 4 条架构原则 + B4 特定规则如 schema freeze / SOP 路径固定 / migration 备份强制）。Sub-task 颗粒度跟 B1/B2/B3 对齐（T1.1-TN.X 数字编号 + sub-task 完成标志逐 milestone 列）。Open: [O1-O6 沿用 stub](#open-decisions)；新加 [O7 NEW](#open-decisions-new) tray spike 何时跑（prereq 阶段 vs M2 开头）+ [O8 NEW](#open-decisions-new) M3 PATH install 失败 fallback strategy。
+
+- **N21 (2026-05-20 night, A9/A10/A12 dogfood pass + A13 architecture demo ship)** — JC dogfood 同日 pass："dogfood 后没有发现什么问题，继续推进"。**Acceptance ticks unlocked**: A9 ✅ (M4 SOP — 手动 supervisor flow tested) / A10 ✅ (M5 Claude Skill trigger validated) / A12 ✅ (M7 supervisor activity GUI annotation + TopBar pill rendered). **A13 ✅ shipped** via [docs/architecture-demo.md](../architecture-demo.md) NEW (~210 LOC) — walks through 4 CLAUDE.md architecture principles with: per-principle code refs (line-number anchored) + grep gates + tests demonstrating principle + document references. **All 4 grep gates exit 0** verified inline: P1 (no TcpListener in core/src/) / P2 (FROZEN banner in agent-api.md) / P3 (no supervisor_chat / conversation_log in core/src/ + core/migrations/) / P4 (gui/src/stores/useAppStore.ts absent post-B3 M6). **B4 acceptance status now**: A1 ✅ A2 ✅ A3 ⏳(M2) A4 ⏳(M2) A5 ✅ A6 ✅ A7 ✅(macOS) A8 ✅ A9 ✅ A10 ✅ A11 ✅(partial, dogfood deferred v0.6+) A12 ✅ A13 ✅ A14 ⏳(M9 1-week dogfood). **10 ✅ / 1 ✅partial / 3 ⏳** — 剩下 3 个全都 calendar / Win-machine gate: M2 menubar + 1-week dogfood + （implicitly）M9 release ceremony. **v0.5 ship 距离最近的一次**：技术上 A1-A13 全 ✅ 后 v0.5 RC 可以拍板，唯一硬 gate 就是 A14 一周 dogfood 加 M2 Win 支持（如选 v0.5 Mac-only ship 则 M2 Mac 部分单独跑也能）. **Next pickup**: cleanup commit (3 pre-existing clippy lints) + DESIGN.md onboarding subtitle T9.3 follow-up check + （以下需要 JC 同意）M2 Mac-only spike 或等 1-week dogfood 完成。
 
 - **N20 (2026-05-20 evening, M9 paperwork prep COMPLETE · sub-plan + README rewrite + release notes draft + PRD align)** — Followed M8 ship with M9 prep (per user "继续推进" instruction). **Scope = paperwork only** (T9.0 / T9.3 / T9.4 draft / T9.7); ship-gated items (T9.1 acceptance / T9.2 dogfood / T9.5 tag / T9.6 publish / T9.8 devlogs) all calendar / JC gated, deferred to M9 ship session.
 

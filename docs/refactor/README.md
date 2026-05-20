@@ -32,28 +32,29 @@ docs/refactor/
 ```
 Phase:    Prototype ✅ → B1 ✅ → B2 ✅ → B3 ✅ → [B4 7/9 milestones ✅] → v0.5
                                                 ↑ 现在在这里
-Status:   B4 M8 + M9 prep COMPLETE (2026-05-20):
-          (M8) Pre-migration backup mechanism — `core/src/migration_backup.rs`
-          ships 4-state BackupOutcome enum + sqlx read-only probe of
-          `_sqlx_migrations.MAX(version)` + 14-line hand-rolled recursive
-          copy_dir_all + UTC compact timestamp. Setup hook backs up data dir
-          to sibling `app.galley.backup.<ts>/` when on-disk version <
-          code-side max (v0.5 unchanged so doesn't trigger; v0.6+ first
-          new mig will). Failure aborts startup with Chinese Tauri error
-          dialog + exit code 2. 11 unit tests + 180/180 workspace tests pass.
-          A11 partial ✅; full A11 wants v0.6+ real dogfood.
-          (M9 prep) Paperwork shipped: M9 sub-plan + README rewrite
-          (v0.1 工作台 framing → v0.5 dual-native orchestrator) +
-          release notes draft (in sub-plan §4) + PRD §17 roadmap status
-          align + refactor README cursor + dashboard tick.
-Next:     v0.5 ship ceremony (T9.1 acceptance run + T9.2 1-week dogfood
-          + T9.5 tag v0.5.0 + T9.6 GitHub publish + T9.8 devlogs). All
-          calendar / dogfood gated — paperwork side fully prepped.
-          Alternative paths still available: M2 tray spike (Win-gated),
-          M4 T4.2-T4.5 SOP dogfood iteration (IM bot calendar-gated),
-          JC dogfood interleave for M5 / M7 full A10/A12 ticks.
-Blocker:  M2 gated on tray spike (Windows machine access). M9 ship
-          gated on dogfood + JC's acceptance walkthrough.
+Status:   B4 acceptance 10 ✅ / 1 ✅partial / 3 ⏳ (2026-05-20 night):
+          (M8) Pre-migration backup mechanism (B4-I6) ships. 4-state
+          BackupOutcome enum + sqlx read-only probe + hand-rolled
+          copy_dir_all + UTC compact timestamp. 11 unit tests pass.
+          A11 ✅ partial.
+          (M9 paperwork prep) sub-plan + README dual-native rewrite +
+          release notes draft + PRD §17 roadmap status align.
+          (Dogfood) JC dogfood pass 2026-05-20 — A9 (M4 SOP手动flow) /
+          A10 (M5 Claude Skill trigger) / A12 (M7 supervisor activity
+          GUI) all full ✅.
+          (A13) docs/architecture-demo.md ship — walks 4 CLAUDE.md
+          architecture principles with code refs + grep gates (4 gate
+          all exit 0) + tests + devlog provenance.
+Next:     v0.5 ship gate = A14 1-week dogfood + (optional) M2 menubar
+          daemon. With current 10 ✅, A14 is the only remaining
+          procedural gate. M9 ship session = T9.1 acceptance walkthrough
+          + T9.5 tag v0.5.0 + T9.6 GitHub publish + T9.8 devlogs.
+          Immediate pickup options: (a) cleanup 3 pre-existing clippy
+          lints (b) DESIGN.md onboarding subtitle T9.3 follow-up
+          (c) M2 Mac-only spike (if v0.5 ships Mac-first) (d) wait for
+          A14 dogfood.
+Blocker:  A14 calendar gate (1-week). M2 Win-gate if v0.5 wants Win
+          parity.
 ```
 
 **Cursor 更新协议**：每个 sub-task 完成 → 当前 phase playbook 顶部的 cursor 行更新 → 本文件总 cursor 表跟着更新（只 phase 级别）。**不要批量更新**——每 task 一更，防止 session 中断后丢状态。
@@ -66,7 +67,7 @@ Blocker:  M2 gated on tray spike (Windows machine access). M9 ship
 | B1: Rust core 骨架 + CLI 只读 | ✅ COMPLETE · M1-M7 · 11/12 A acceptance | — | [B1-rust-core.md](./B1-rust-core.md) · [devlog](../devlog/2026-05-18-b1-rust-core-complete.md) | 2026-05-18 single session — 21× faster than 3-week estimate |
 | B2: Bridge ownership 迁 Rust | ✅ COMPLETE · M1-M7 · 83 tests pass · tag `b2-complete` | — | [B2-bridge-ownership.md](./B2-bridge-ownership.md) · [devlog](../devlog/2026-05-19-b2-bridge-ownership-complete.md) | 2026-05-19 single session — full pipeline + docs + tag. Dogfood validation moved to B3 M2 启动门 ([prereq relaxation devlog](../devlog/2026-05-19-b3-prereq-relaxation.md)) |
 | B3: useAppStore 拆 slice + 改订阅 | ✅ COMPLETE · M1-M6 · A1-A11 全 tick · tag `b3-complete` | — | [B3-store-slice.md](./B3-store-slice.md) · [B3 完成 devlog](../devlog/2026-05-20-b3-store-slice-complete.md) · M1 [devlog](../devlog/2026-05-19-b3-m1-design-complete.md) · M3 [devlog](../devlog/2026-05-19-b3-m3-complete.md) · M4 [devlog](../devlog/2026-05-19-b3-m4-complete.md) · M5 [devlog](../devlog/2026-05-19-b3-m5-complete.md) · 3 M1 design artifact [mapping](./b3-slice-mapping.md)/[ADR](./b3-slice-adr.md)/[emit catalogue](./b3-rust-emit-catalogue.md) · [M3 sub-plan](./B3-M3-sub-plan.md) · [M4 sub-plan](./B3-M4-sub-plan.md) · [M5 sub-plan](./B3-M5-sub-plan.md) · [M6 sub-plan](./B3-M6-sub-plan.md) | 2026-05-20 sixth session: M6 sub-plan + impl + M7 acceptance + devlog + tag 全 ship。B3 整体跨 6 session、2 day calendar (estimate 3-4 weeks)，21× faster. JC dev dogfood 2026-05-20 initial pass。最终 6 文件 + 1 lib orchestrator. useAppStore.ts 整文件删除. tag `b3-complete`. |
-| B4: CLI feature-complete + background + artifact | ✅ 7/9 milestones shipped (M1 + M3 + M4 T4.1 + M5 + M6 + M7 + M8) + M9 paperwork prep · M2 / M9 ship gate next | v0.5 release ceremony (T9.1 acceptance + T9.2 dogfood + T9.5 tag) | [B4-cli-bg-artifact.md](./B4-cli-bg-artifact.md) · [B4 M1 sub-plan](./B4-M1-sub-plan.md) · [B4 M8 sub-plan](./B4-M8-sub-plan.md) · [B4 M9 sub-plan](./B4-M9-sub-plan.md) | 2026-05-20 continuing spree: M1 (4 commits) → M4 T4.1 SOP doc `bf9e607` → M3 (4 commits) → M5 → M6 schema freeze → M7 supervisor activity GUI → **M8 COMPLETE (2 commits `12277ad` + `81fc691`)** pre-migration backup mechanism (B4-I6) — re-scoped first (B2 mig 006/007 already shipped origin fields, v0.5 no schema delta), real work = backup mechanism + 11 unit tests + sub-plan + devlog → **M9 paperwork prep**: sub-plan + README rewrite (v0.1 工作台 → v0.5 dual-native) + release notes draft + PRD §17 roadmap align. A1 ✅ A2 ✅ A5 ✅ A6 ✅ A7 ✅ A8 ✅ A10 partial ✅ A11 partial ✅ A12 partial ✅. `schemaVersion: 1` FROZEN. 180 tests + typecheck/lint clean throughout. |
+| B4: CLI feature-complete + background + artifact | ✅ 10 acceptance ticks (A1/A2/A5/A6/A7/A8/A9/A10/A12/A13) + A11 partial · M2 / A14 / M9 ship next | A14 1-week dogfood OR M2 Mac-only spike OR cleanup | [B4-cli-bg-artifact.md](./B4-cli-bg-artifact.md) · [B4 M1 sub-plan](./B4-M1-sub-plan.md) · [B4 M8 sub-plan](./B4-M8-sub-plan.md) · [B4 M9 sub-plan](./B4-M9-sub-plan.md) | 2026-05-20 continuing spree: M1 (4 commits) → M4 T4.1 SOP doc `bf9e607` → M3 (4 commits) → M5 → M6 schema freeze → M7 supervisor activity GUI → **M8 COMPLETE (2 commits `12277ad` + `81fc691`)** pre-migration backup mechanism (B4-I6) — re-scoped first (B2 mig 006/007 already shipped origin fields, v0.5 no schema delta), real work = backup mechanism + 11 unit tests + sub-plan + devlog → **M9 paperwork prep `3f3ab84`**: sub-plan + README rewrite (v0.1 工作台 → v0.5 dual-native) + release notes draft + PRD §17 roadmap align → **A9/A10/A12 ✅** JC dogfood pass + **A13 ✅** [architecture-demo.md](../architecture-demo.md) ship (4 principle × code refs × grep gates × tests). `schemaVersion: 1` FROZEN. 180 tests + typecheck/lint clean throughout. |
 | **v0.5 milestone** | ⏳ ship gated on dogfood + A1-A14 acceptance walkthrough | T9.1 acceptance run + T9.2 1-week dogfood + T9.5 tag v0.5.0 | [B4-M9-sub-plan.md](./B4-M9-sub-plan.md) | M9 paperwork prep done 2026-05-20; tag + publish pending dogfood |
 
 预计总时长：**10-12 周**（不含 v0.2 Windows release）。
