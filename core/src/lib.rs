@@ -3,6 +3,7 @@ pub mod db;
 pub mod discovery;
 pub mod error;
 pub mod ipc;
+pub mod path_install;
 pub mod runner_commands;
 pub mod runner_manager;
 pub mod socket_listener;
@@ -69,6 +70,31 @@ fn install_supervisor_sop(
     overwrite: bool,
 ) -> sop_install::InstallSopOutcome {
     sop_install::install_to_ga_memory(&ga_path, overwrite)
+}
+
+/// B4 M3 T3.3 — query whether `/usr/local/bin/galley` exists and
+/// matches the CLI binary we'd install. No elevation required.
+/// Wrapper over [`path_install::check_status`].
+#[tauri::command]
+fn check_path_install_status() -> path_install::PathInstallStatus {
+    path_install::check_status()
+}
+
+/// B4 M3 T3.3 — create `/usr/local/bin/galley → <CLI absolute path>`
+/// via an `osascript` admin-privileges shell-script call. The macOS
+/// auth dialog appears synchronously; if the user cancels, the
+/// outcome is `UserCancelled` (not an error). Wrapper over
+/// [`path_install::install_to_path`].
+#[tauri::command]
+fn install_galley_to_path() -> path_install::PathInstallOutcome {
+    path_install::install_to_path()
+}
+
+/// B4 M3 T3.3 — remove `/usr/local/bin/galley` via the same elevated
+/// `osascript` path. Wrapper over [`path_install::uninstall_from_path`].
+#[tauri::command]
+fn uninstall_galley_from_path() -> path_install::PathUninstallOutcome {
+    path_install::uninstall_from_path()
 }
 
 /// Stringify a [`crate::error::GalleyError`] for the Tauri invoke wire.
@@ -374,6 +400,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             path_exists,
             install_supervisor_sop,
+            check_path_install_status,
+            install_galley_to_path,
+            uninstall_galley_from_path,
             list_sessions,
             // B3 M4a session writes
             create_session,

@@ -1,6 +1,6 @@
 import { ArrowSquareOut, BookOpen, Folder, Terminal } from "@phosphor-icons/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { usePrefsStore } from "@/stores/prefs";
@@ -24,6 +24,29 @@ type SopInstallState =
   | { kind: "already_exists"; path: string }
   | { kind: "installed"; path: string }
   | { kind: "error"; reason: string };
+
+/** Mirror of Rust core/src/path_install.rs::PathInstallStatus. */
+type PathInstallStatus =
+  | { status: "installed"; symlink: string; target: string }
+  | { status: "not_installed" }
+  | { status: "other_target"; symlink: string; actual: string }
+  | { status: "unsupported"; reason: string };
+
+/** Mirror of PathInstallOutcome (install). */
+type PathInstallOutcome =
+  | { outcome: "installed"; symlink: string; target: string }
+  | { outcome: "user_cancelled" }
+  | { outcome: "cli_binary_not_found"; searched: string }
+  | { outcome: "failed"; reason: string; details: string }
+  | { outcome: "unsupported"; reason: string };
+
+/** Mirror of PathUninstallOutcome. */
+type PathUninstallOutcome =
+  | { outcome: "uninstalled"; symlink: string }
+  | { outcome: "not_installed" }
+  | { outcome: "user_cancelled" }
+  | { outcome: "failed"; reason: string; details: string }
+  | { outcome: "unsupported"; reason: string };
 
 /**
  * Settings → Integration tab. PRD §12 / B4 M3 surface — the screen
@@ -54,6 +77,47 @@ type SopInstallState =
 export function SettingsIntegration() {
   const gaPath = usePrefsStore((s) => s.gaConfig.gaPath);
   const [sopState, setSopState] = useState<SopInstallState>({ kind: "idle" });
+  const [pathStatus, setPathStatus] = useState<PathInstallStatus | null>(null);
+  const [pathBusy, setPathBusy] = useState(false);
+  const [pathError, setPathError] = useState<string | null>(null);
+
+  // Load PATH install status when the tab mounts. Status check is
+  // unprivileged (lstat + readlink), so this is safe to fire eagerly.
+  // We re-query after every install / uninstall to keep the UI in
+  // sync without polling.
+  //
+  // refreshPathStatus is also used after install/uninstall outside
+  // the effect — kept as a standalone async closure so both call
+  // sites share the same query path.
+  const refreshPathStatus = async () => {
+    try {
+      const next = await invoke<PathInstallStatus>("check_path_install_status");
+      setPathStatus(next);
+    } catch (e) {
+      setPathStatus(null);
+      setPathError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  useEffect(() => {
+    // Standard async-effect pattern: spawn a cancellable closure so
+    // setState only fires when the component is still mounted. Matches
+    // the listener pattern in App.tsx (`cancelled` flag + early-return).
+    let cancelled = false;
+    void (async () => {
+      try {
+        const next = await invoke<PathInstallStatus>("check_path_install_status");
+        if (!cancelled) setPathStatus(next);
+      } catch (e) {
+        if (!cancelled) {
+          setPathStatus(null);
+          setPathError(e instanceof Error ? e.message : String(e));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openExternal = (url: string) => {
     // Tauri exposes the OS shell via the plugin-shell capability;
@@ -62,6 +126,60 @@ export function SettingsIntegration() {
     // handler (Chrome / Safari). For both dev and packaged builds
     // window.open is the simplest portable hook.
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const installPath = async () => {
+    setPathBusy(true);
+    setPathError(null);
+    try {
+      const result = await invoke<PathInstallOutcome>("install_galley_to_path");
+      switch (result.outcome) {
+        case "installed":
+        case "user_cancelled":
+          break; // expected outcomes; refresh status to reflect reality
+        case "cli_binary_not_found":
+          setPathError(
+            `没找到 galley 二进制（${result.searched}）。dev 模式需要先 cargo build -p galley-cli。`,
+          );
+          break;
+        case "failed":
+          setPathError(`${result.reason}: ${result.details.slice(0, 200)}`);
+          break;
+        case "unsupported":
+          setPathError(result.reason);
+          break;
+      }
+    } catch (e) {
+      setPathError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPathBusy(false);
+      await refreshPathStatus();
+    }
+  };
+
+  const uninstallPath = async () => {
+    setPathBusy(true);
+    setPathError(null);
+    try {
+      const result = await invoke<PathUninstallOutcome>("uninstall_galley_from_path");
+      switch (result.outcome) {
+        case "uninstalled":
+        case "not_installed":
+        case "user_cancelled":
+          break;
+        case "failed":
+          setPathError(`${result.reason}: ${result.details.slice(0, 200)}`);
+          break;
+        case "unsupported":
+          setPathError(result.reason);
+          break;
+      }
+    } catch (e) {
+      setPathError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPathBusy(false);
+      await refreshPathStatus();
+    }
   };
 
   const installSop = async (overwrite: boolean) => {
@@ -181,28 +299,34 @@ export function SettingsIntegration() {
         )}
       </section>
 
-      {/* PATH escape hatch — disabled stub for T3.2; T3.3 wires the
-          osascript sudo / Windows registry write. */}
+      {/* PATH escape hatch (T3.3). macOS shells out to osascript with
+          administrator privileges to create /usr/local/bin/galley as
+          a symlink to the CLI binary. Status check is unprivileged and
+          runs on mount + after every install/uninstall.
+
+          Windows lands separately — non-macOS platforms surface as
+          "unsupported" status with a clear reason. */}
       <section>
         <SubLabel>命令行 PATH</SubLabel>
         <p className="mt-2 text-[12.5px] leading-[1.6] text-ink-soft">
           Supervisor 用 discovery file 找 CLI 不需要 PATH。这个按钮是给
           人类用户的便利——装完可以直接在终端敲
-          <code className="font-mono">galley</code>。可逆，再点一次可以卸载。
+          <code className="font-mono">galley</code>。macOS 装到{" "}
+          <code className="font-mono">/usr/local/bin/galley</code>
+          ，会弹系统鉴权对话框。可逆。
         </p>
-        <div className="mt-3 flex items-center gap-3">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled
-            title="T3.3 实现中"
-          >
-            <Terminal size={14} weight="thin" />
-            把 galley 装到 PATH
-          </Button>
-          <span className="text-[11px] text-ink-muted">实现中</span>
-        </div>
+        <PathInstallRow
+          status={pathStatus}
+          busy={pathBusy}
+          onInstall={() => void installPath()}
+          onUninstall={() => void uninstallPath()}
+        />
+        {pathError && (
+          <p className="mt-2 break-all text-[11px] text-error" title={pathError}>
+            {pathError.slice(0, 140)}
+            {pathError.length > 140 && "…"}
+          </p>
+        )}
       </section>
 
       {/* Docs link. T3.5 — pure external link, no install. */}
@@ -237,6 +361,116 @@ function SubLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
       {children}
+    </div>
+  );
+}
+
+/**
+ * Three states map to three UI shapes:
+ *   - not_installed     [ 把 galley 装到 PATH ] button only
+ *   - installed          status line + [ 移除 ] button
+ *   - other_target       status line ("指向：…") + [ 替换 / 移除 ] buttons
+ *   - unsupported        explanatory text only, no button
+ *
+ * Loading state (`busy`) disables every button uniformly so the user
+ * can't double-click during the auth prompt. `null` status (the brief
+ * window before the first refreshPathStatus resolves) renders the
+ * default install button without preloading any state — first paint
+ * stays responsive.
+ */
+function PathInstallRow({
+  status,
+  busy,
+  onInstall,
+  onUninstall,
+}: {
+  status: PathInstallStatus | null;
+  busy: boolean;
+  onInstall: () => void;
+  onUninstall: () => void;
+}) {
+  if (status?.status === "unsupported") {
+    return (
+      <p className="mt-3 text-[12px] text-ink-muted">{status.reason}</p>
+    );
+  }
+
+  // installed: current symlink matches our CLI binary
+  if (status?.status === "installed") {
+    return (
+      <div className="mt-3 space-y-2">
+        <p
+          className="break-all text-[12px] text-ink-soft"
+          title={status.target}
+        >
+          已装：
+          <code className="font-mono text-ink">{status.symlink}</code>
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={busy}
+          onClick={onUninstall}
+        >
+          <Terminal size={14} weight="thin" />
+          {busy ? "处理中…" : "移除"}
+        </Button>
+      </div>
+    );
+  }
+
+  // other_target: someone else (or stale Galley install) owns the path
+  if (status?.status === "other_target") {
+    return (
+      <div className="mt-3 space-y-2">
+        <p
+          className="break-all text-[12px] text-ink-soft"
+          title={status.actual}
+        >
+          <code className="font-mono">{status.symlink}</code>{" "}
+          已存在，指向：
+          <code className="font-mono">{status.actual.slice(0, 60)}</code>
+          {status.actual.length > 60 && "…"}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="destructive-soft"
+            size="sm"
+            disabled={busy}
+            onClick={onInstall}
+          >
+            <Terminal size={14} weight="thin" />
+            {busy ? "处理中…" : "替换为本 Galley"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={onUninstall}
+          >
+            {busy ? "处理中…" : "移除"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // not_installed (or null status before first check completes)
+  return (
+    <div className="mt-3">
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled={busy}
+        onClick={onInstall}
+      >
+        <Terminal size={14} weight="thin" />
+        {busy ? "等鉴权…" : "把 galley 装到 PATH"}
+      </Button>
     </div>
   );
 }

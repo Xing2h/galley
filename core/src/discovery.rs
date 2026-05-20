@@ -109,7 +109,10 @@ pub enum DiscoveryOutcome {
 /// Until externalBin bundling lands, production .app won't have the
 /// sibling — we surface that as `CliBinaryNotFound` so the dogfood log
 /// flags it clearly.
-fn locate_cli_binary() -> Option<PathBuf> {
+///
+/// Public so the path-install module (M3 T3.3) can reuse the same
+/// resolution — both features need to know the same answer.
+pub fn locate_cli_binary() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let parent = exe.parent()?;
     let candidate = parent.join(CLI_BIN_NAME);
