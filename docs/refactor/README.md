@@ -30,22 +30,26 @@ docs/refactor/
 ## 当前 cursor
 
 ```
-Phase:    Prototype ✅ → B1 ✅ → B2 ✅ → B3 ✅ → [B4 M1.2 ✅] → v0.5
+Phase:    Prototype ✅ → B1 ✅ → B2 ✅ → B3 ✅ → [B4 M1.3 ✅] → v0.5
                                                 ↑ 现在在这里
-Status:   B4 M1.2 session-write commit shipped (2026-05-20, `3cfb8de`):
-          6 socket handlers (session.new tx-wrapped via begin_tx +
-          create_session_in_tx + send_message_in_tx; session.btw transient
-          runner-only; session.stop = Abort 不 Shutdown idempotent;
-          session.archive / restore / move thin wrappers over GalleyApi)
-          + 6 CLI subcommands with self-documenting clap help text +
-          4 GUI listeners (session-{created,archived,unarchived,moved}-
-          external) + 2 sessionsStore actions (applyExternalSessionCreated
-          / applyExternalSessionUpdated). 1044 LOC across 4 files.
-          140/140 cargo test pass + typecheck/lint clean.
-Next:     M1.3 project + llm write commands (T1.7-T1.9 in sub-plan §3):
-          project create/list/delete (O2 rename from archive) + llm list
-          (SQLite cache direct) + llm set. Mirror M1.2 commit pattern.
-Blocker:  None for M1.3. M2 still gated on tray spike + dogfood window.
+Status:   B4 M1.3 project + llm commit shipped (2026-05-20, `8f1f4b0`):
+          3 socket handlers (project.create mints id server-side +
+          emit project-created-external; project.delete snapshots
+          child sessions BEFORE delete so response surfaces
+          detachedSessions count + ids; llm.set reuses M1.2
+          resolve_llm_name + best-effort SetLlm dispatch + emit
+          session-updated-external) + 5 CLI subcommands (project + llm
+          list paths bypass socket and read SQLite directly) + 2 new
+          GUI listeners (project-created/deleted-external) + 3 new
+          sessionsStore actions (applyExternalSessionUpdated extended
+          for LLM fields + applyExternalProjectCreated +
+          applyExternalProjectDeleted with FK SET NULL mirror). 620 LOC
+          across 4 files. 140/140 cargo test pass + typecheck/lint clean.
+Next:     M1.4 — agent-api.md §5.7-§5.17 (11 command schemas) + §3
+          exit code 5 row + §1 stable-error-discriminants update +
+          15-22 integration tests under cli/tests/m1_*.rs. Sub-plan
+          §3 T1.11 + T1.12 spec.
+Blocker:  None for M1.4. M2 still gated on tray spike + dogfood window.
 ```
 
 **Cursor 更新协议**：每个 sub-task 完成 → 当前 phase playbook 顶部的 cursor 行更新 → 本文件总 cursor 表跟着更新（只 phase 级别）。**不要批量更新**——每 task 一更，防止 session 中断后丢状态。
@@ -58,7 +62,7 @@ Blocker:  None for M1.3. M2 still gated on tray spike + dogfood window.
 | B1: Rust core 骨架 + CLI 只读 | ✅ COMPLETE · M1-M7 · 11/12 A acceptance | — | [B1-rust-core.md](./B1-rust-core.md) · [devlog](../devlog/2026-05-18-b1-rust-core-complete.md) | 2026-05-18 single session — 21× faster than 3-week estimate |
 | B2: Bridge ownership 迁 Rust | ✅ COMPLETE · M1-M7 · 83 tests pass · tag `b2-complete` | — | [B2-bridge-ownership.md](./B2-bridge-ownership.md) · [devlog](../devlog/2026-05-19-b2-bridge-ownership-complete.md) | 2026-05-19 single session — full pipeline + docs + tag. Dogfood validation moved to B3 M2 启动门 ([prereq relaxation devlog](../devlog/2026-05-19-b3-prereq-relaxation.md)) |
 | B3: useAppStore 拆 slice + 改订阅 | ✅ COMPLETE · M1-M6 · A1-A11 全 tick · tag `b3-complete` | — | [B3-store-slice.md](./B3-store-slice.md) · [B3 完成 devlog](../devlog/2026-05-20-b3-store-slice-complete.md) · M1 [devlog](../devlog/2026-05-19-b3-m1-design-complete.md) · M3 [devlog](../devlog/2026-05-19-b3-m3-complete.md) · M4 [devlog](../devlog/2026-05-19-b3-m4-complete.md) · M5 [devlog](../devlog/2026-05-19-b3-m5-complete.md) · 3 M1 design artifact [mapping](./b3-slice-mapping.md)/[ADR](./b3-slice-adr.md)/[emit catalogue](./b3-rust-emit-catalogue.md) · [M3 sub-plan](./B3-M3-sub-plan.md) · [M4 sub-plan](./B3-M4-sub-plan.md) · [M5 sub-plan](./B3-M5-sub-plan.md) · [M6 sub-plan](./B3-M6-sub-plan.md) | 2026-05-20 sixth session: M6 sub-plan + impl + M7 acceptance + devlog + tag 全 ship。B3 整体跨 6 session、2 day calendar (estimate 3-4 weeks)，21× faster. JC dev dogfood 2026-05-20 initial pass。最终 6 文件 + 1 lib orchestrator. useAppStore.ts 整文件删除. tag `b3-complete`. |
-| B4: CLI feature-complete + background + artifact | 🔨 M1.1 prereq + M1.2 session-write shipped · M1.3 project+llm next | T1.7 project create/list/delete + llm list/set (tray spike + dogfood window still gate M2) | [B4-cli-bg-artifact.md](./B4-cli-bg-artifact.md) · [B4 M1 sub-plan](./B4-M1-sub-plan.md) | 2026-05-20 same-day quintuple-commit: M1 sub-plan ship 661 → resolve 6 O → sub-plan 793 lines → **M1.1 prereq `dd4f6cf`** (GalleyError::RunnerError + socket helpers + tx-aware trait variants + get_pref_json + 6 new tests) → **M1.2 session-write `3cfb8de`** (6 socket handler + 6 CLI subcommand + 4 GUI external-emit listener + 2 sessionsStore action; 1044 LOC; 140/140 cargo test pass + typecheck/lint clean). O1 atomicity tx-wrap exercised in `session.new`; sub-plan §1.4/§1.5 decisions (Abort 不 Shutdown / btw transient) implemented as specified. **N6 dogfood watch**: bridge wedge complaints → v0.6+ `session kill`. |
+| B4: CLI feature-complete + background + artifact | 🔨 M1.1 prereq + M1.2 session-write + M1.3 project+llm shipped · M1.4 docs+tests next | T1.11 agent-api.md schemas + integration tests (tray spike + dogfood window still gate M2) | [B4-cli-bg-artifact.md](./B4-cli-bg-artifact.md) · [B4 M1 sub-plan](./B4-M1-sub-plan.md) | 2026-05-20 same-day sextuple-commit: M1 sub-plan ship 661 → resolve 6 O → sub-plan 793 lines → **M1.1 prereq `dd4f6cf`** → **M1.2 session-write `3cfb8de`** (6 socket handler + 6 CLI subcommand + 4 GUI listener; 1044 LOC) → **M1.3 project+llm `8f1f4b0`** (3 socket handler + 5 CLI subcommand + 2 GUI listener + 3 sessionsStore action; 620 LOC). All 11 PRD §11.1 write commands reachable from CLI; agent-api schemas + integration tests are the only M1 remainder. 140/140 cargo + typecheck/lint clean throughout. **N6 dogfood watch**: bridge wedge complaints → v0.6+ `session kill`. |
 | **v0.5 milestone** | ⏳ | — | — | — |
 
 预计总时长：**10-12 周**（不含 v0.2 Windows release）。
