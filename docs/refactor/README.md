@@ -30,20 +30,31 @@ docs/refactor/
 ## 当前 cursor
 
 ```
-Phase:    Prototype ✅ → B1 ✅ → B2 ✅ → B3 ✅ → [B4 M1 + M3 + M4 T4.1 ✅] → v0.5
+Phase:    Prototype ✅ → B1 ✅ → B2 ✅ → B3 ✅ → [B4 M1+M3+M4 T4.1+M5 ✅] → v0.5
                                                 ↑ 现在在这里
-Status:   B4 M3 COMPLETE (2026-05-20, 4 commits: T3.1 discovery file
-          `f0e6306` → T3.2+T3.5 Settings → Integration tab + docs link
-          `2554cb7` → T3.4 SOP install button `a218b00` → T3.3 macOS
-          PATH install `d23dfc6`). A6 ✅ A7 ✅ A8 ✅ for the supervisor
-          surface stack. Windows PATH path stays as a flagged
-          follow-up (path_install.rs Unsupported cfg-gated branch;
-          GUI surface zero-change when Windows impl lands).
-Next:     M5 Claude `galley-supervisor` Skill package — builds on the
-          SOP we shipped in M4 T4.1 + the discovery file from M3 T3.1.
-          Paperwork-style work; no external blocker. M2 still gated
-          on tray spike (Windows machine).
-Blocker:  M2 gated on tray spike. M5 has no external blocker.
+Status:   B4 M5 COMPLETE (2026-05-20, 1 feature commit + closeout):
+          `.claude/skills/galley-supervisor/` ship — SKILL.md 316 lines
+          (frontmatter bilingual trigger keywords + 6-step body covering
+          discovery / cheatsheet / scenarios / destructive / origin
+          convention / exit codes) + references/galley-supervisor-sop.md
+          448 lines (verbatim copy of docs/integrations/SOP + sync
+          header) + README.md 80 lines (install via symlink or copy).
+          Skill smoke-test PASS — symlinked into ~/.claude/skills/ and
+          Claude Code harness immediately picked it up in the
+          available-skills list with full description. A10 partial
+          tick — files shipped + harness loads; full A10 requires JC
+          firing a real trigger prompt. Supervisor identity convention
+          codified at 3 layers: ga-{platform}-bot (IM bots) /
+          claude-skill-galley-supervisor/v1 (Claude users) / forks.
+Next:     M6 agent-api.md v1 schema freeze — review §5.1-§5.18 schemas
+          one more pass for stability promise; lock down enum values +
+          error codes; publish ?schema=1 query parameter pattern. Closes
+          out the supervisor stack so v0.5 RC criteria mostly collapse
+          to menubar (A3/A4) + migration (A11) + activity GUI (A12) +
+          dogfood (A13/A14). Alternative: JC dogfood M5+M3 interleave
+          whenever convenient; doesn't gate other milestones.
+Blocker:  M2 gated on tray spike (Windows machine access). M6 has no
+          external blocker.
 ```
 
 **Cursor 更新协议**：每个 sub-task 完成 → 当前 phase playbook 顶部的 cursor 行更新 → 本文件总 cursor 表跟着更新（只 phase 级别）。**不要批量更新**——每 task 一更，防止 session 中断后丢状态。
@@ -56,7 +67,7 @@ Blocker:  M2 gated on tray spike. M5 has no external blocker.
 | B1: Rust core 骨架 + CLI 只读 | ✅ COMPLETE · M1-M7 · 11/12 A acceptance | — | [B1-rust-core.md](./B1-rust-core.md) · [devlog](../devlog/2026-05-18-b1-rust-core-complete.md) | 2026-05-18 single session — 21× faster than 3-week estimate |
 | B2: Bridge ownership 迁 Rust | ✅ COMPLETE · M1-M7 · 83 tests pass · tag `b2-complete` | — | [B2-bridge-ownership.md](./B2-bridge-ownership.md) · [devlog](../devlog/2026-05-19-b2-bridge-ownership-complete.md) | 2026-05-19 single session — full pipeline + docs + tag. Dogfood validation moved to B3 M2 启动门 ([prereq relaxation devlog](../devlog/2026-05-19-b3-prereq-relaxation.md)) |
 | B3: useAppStore 拆 slice + 改订阅 | ✅ COMPLETE · M1-M6 · A1-A11 全 tick · tag `b3-complete` | — | [B3-store-slice.md](./B3-store-slice.md) · [B3 完成 devlog](../devlog/2026-05-20-b3-store-slice-complete.md) · M1 [devlog](../devlog/2026-05-19-b3-m1-design-complete.md) · M3 [devlog](../devlog/2026-05-19-b3-m3-complete.md) · M4 [devlog](../devlog/2026-05-19-b3-m4-complete.md) · M5 [devlog](../devlog/2026-05-19-b3-m5-complete.md) · 3 M1 design artifact [mapping](./b3-slice-mapping.md)/[ADR](./b3-slice-adr.md)/[emit catalogue](./b3-rust-emit-catalogue.md) · [M3 sub-plan](./B3-M3-sub-plan.md) · [M4 sub-plan](./B3-M4-sub-plan.md) · [M5 sub-plan](./B3-M5-sub-plan.md) · [M6 sub-plan](./B3-M6-sub-plan.md) | 2026-05-20 sixth session: M6 sub-plan + impl + M7 acceptance + devlog + tag 全 ship。B3 整体跨 6 session、2 day calendar (estimate 3-4 weeks)，21× faster. JC dev dogfood 2026-05-20 initial pass。最终 6 文件 + 1 lib orchestrator. useAppStore.ts 整文件删除. tag `b3-complete`. |
-| B4: CLI feature-complete + background + artifact | ✅ M1 + M3 + M4 T4.1 shipped (9 commits) · M5 next | M5 Claude Skill package | [B4-cli-bg-artifact.md](./B4-cli-bg-artifact.md) · [B4 M1 sub-plan](./B4-M1-sub-plan.md) | 2026-05-20 single-day spree: M1 (4 commits) → M4 T4.1 SOP doc `bf9e607` → **M3 COMPLETE (4 commits)**: T3.1 `f0e6306` discovery file Rust setup hook + T3.2+T3.5 `2554cb7` Settings → Integration tab + docs link + T3.4 `a218b00` SOP install button + T3.3 `d23dfc6` macOS PATH install. A6 ✅ A7 ✅ A8 ✅ for the supervisor surface stack. 167/167 cargo + typecheck/lint clean throughout. Windows PATH path flagged as M3 follow-up (GUI surface zero-change when Windows impl lands). |
+| B4: CLI feature-complete + background + artifact | ✅ M1 + M3 + M4 T4.1 + M5 shipped (10+ commits) · M6 next | M6 agent-api.md v1 schema freeze | [B4-cli-bg-artifact.md](./B4-cli-bg-artifact.md) · [B4 M1 sub-plan](./B4-M1-sub-plan.md) | 2026-05-20 single-day spree: M1 (4 commits) → M4 T4.1 SOP doc `bf9e607` → **M3 COMPLETE (4 commits)**: T3.1 `f0e6306` discovery file + T3.2+T3.5 `2554cb7` Settings → Integration tab + T3.4 `a218b00` SOP install button + T3.3 `d23dfc6` macOS PATH install → **M5 COMPLETE**: `.claude/skills/galley-supervisor/` ship — SKILL.md 316 lines (bilingual trigger keywords + 6-step body) + references/galley-supervisor-sop.md 448 lines (verbatim SOP + sync header) + README.md 80 lines (install via symlink or copy). A6 ✅ A7 ✅ A8 ✅ A10 partial ✅ for the supervisor surface stack. 167/167 cargo + typecheck/lint clean throughout. Windows PATH path flagged as M3 follow-up (GUI surface zero-change when Windows impl lands). |
 | **v0.5 milestone** | ⏳ | — | — | — |
 
 预计总时长：**10-12 周**（不含 v0.2 Windows release）。
