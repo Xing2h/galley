@@ -140,8 +140,6 @@ interface RuntimeActions {
   spawnBridge: (args: BridgeSpawnArgs) => Promise<void>;
   /** Graceful shutdown. No-op if no bridge alive for `sid`. */
   shutdownBridge: (sid: string) => Promise<void>;
-  /** Shutdown every alive bridge — App-quit cleanup path. */
-  shutdownAllBridges: () => Promise<void>;
   /** Send an IPC command to `sid`'s bridge over stdin. Warns + no-op
    * if no live bridge. */
   sendIPCCommand: (sid: string, cmd: IPCCommand) => Promise<void>;
@@ -611,13 +609,6 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
         },
       }));
     }
-  },
-
-  shutdownAllBridges: async () => {
-    const ids = Array.from(_bridgeClients.keys());
-    await Promise.all(
-      ids.map((id) => useRuntimeStore.getState().shutdownBridge(id)),
-    );
   },
 
   sendIPCCommand: async (sessionId, cmd) => {

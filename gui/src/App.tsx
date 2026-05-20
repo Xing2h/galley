@@ -24,8 +24,6 @@ import {
 } from "@/components/screens/project/EditProjectDialog";
 import { ProjectsDialog } from "@/components/screens/project/ProjectsDialog";
 import { bucketSession } from "@/lib/sessions";
-import { cn } from "@/lib/utils";
-import { makeDemoToast } from "@/stores/demo";
 import {
   EMPTY_APPROVALS,
   EMPTY_DECISIONS,
@@ -35,7 +33,7 @@ import {
 import { usePrefsStore } from "@/stores/prefs";
 import { useRuntimeStore } from "@/stores/runtime";
 import { useSessionsStore } from "@/stores/sessions";
-import { useUiStore, type Screen } from "@/stores/ui";
+import { useUiStore } from "@/stores/ui";
 import { hydrateApp } from "@/lib/hydrate";
 import type { Turn } from "@/types/conversation";
 
@@ -107,16 +105,11 @@ function deriveSupervisorActivity(
 /**
  * V0.1 Stage 2 #8 — App entry.
  *
- * State lives in the Zustand store at `stores/useAppStore.ts`. App is
- * now mostly wiring: pull screen / approval / runtime out of the
- * store, feed them down to the four screens (Onboarding, Empty State,
- * Main View, plus the modal-y Settings + Command Palette + ToastHost),
+ * State lives in the Zustand slices under `stores/`. App is now
+ * mostly wiring: pull screen / approval / runtime out of the stores,
+ * feed them down to the four screens (Onboarding, Empty State, Main
+ * View, plus the modal-y Settings + Command Palette + ToastHost),
  * route component callbacks back to store actions.
- *
- * The DEV-only screen toggle (top-right, only when import.meta.env.DEV)
- * lets us flip between Onboarding / Empty State / Main View; the
- * "+ toast" button cycles through the four hint variants for visual
- * review of the Error Card. Both vanish in production builds.
  */
 function App() {
   const screen = useUiStore((s) => s.screen);
@@ -165,7 +158,6 @@ function App() {
   const deleteSessionsPermanentlyBulk = useSessionsStore(
     (s) => s.deleteSessionsPermanentlyBulk,
   );
-  const seedMockSessions = useSessionsStore((s) => s.seedMockSessions);
   const deleteSessionPermanently = useSessionsStore(
     (s) => s.deleteSessionPermanently,
   );
@@ -233,13 +225,11 @@ function App() {
   const setPendingPetMigration = useUiStore((s) => s.setPendingPetMigration);
 
   const toasts = useUiStore((s) => s.toasts);
-  const pushToast = useUiStore((s) => s.pushToast);
   const dismissToast = useUiStore((s) => s.dismissToast);
 
   const bridgeStatus = useRuntimeStore((s) =>
     activeSessionId ? (s.byId[activeSessionId]?.bridgeStatus ?? "idle") : "idle",
   );
-  const shutdownAllBridges = useRuntimeStore((s) => s.shutdownAllBridges);
   const sendIPCCommand = useRuntimeStore((s) => s.sendIPCCommand);
   const setGAConfig = usePrefsStore((s) => s.setGAConfig);
   const gaConfig = usePrefsStore((s) => s.gaConfig);
@@ -627,27 +617,6 @@ function App() {
             setSettingsOpen(true);
           }}
         />
-        {import.meta.env.DEV && (
-          <DevScreenToggle
-            screen={screen}
-            setScreen={setScreen}
-            onTriggerToast={() => pushToast(makeDemoToast())}
-            bridgeStatus={bridgeStatus}
-            onSpawnBridge={() => {
-              // Dev "spawn" walks the same path as production
-              // "新 chat": create a session row + activate (which
-              // spawns its bridge). Keeps the dev tool from
-              // diverging into a separate flow.
-              const id = createSession();
-              void activateSession(id);
-            }}
-            onShutdownBridge={() => {
-              // Dev-only kill switch. Multi-session is N-active, so
-              // "kill" maps to "shutdown every alive bridge".
-              void shutdownAllBridges();
-            }}
-          />
-        )}
       </>
     );
   }
@@ -1124,16 +1093,6 @@ function App() {
         }}
       />
 
-      {import.meta.env.DEV && (
-        <DevScreenToggle
-          screen={screen}
-          setScreen={setScreen}
-          onTriggerToast={() => pushToast(makeDemoToast())}
-          onSeedMockSessions={() => {
-            void seedMockSessions();
-          }}
-        />
-      )}
     </>
   );
 }
@@ -1218,103 +1177,3 @@ async function pickGAPath(
   }
 }
 
-// ---------------- dev-only screen toggle ----------------
-
-const SCREEN_TOGGLE_LABEL: Record<Screen, string> = {
-  onboarding: "intro",
-  empty: "empty",
-  main: "main",
-};
-
-function DevScreenToggle({
-  screen,
-  setScreen,
-  onTriggerToast,
-  onSeedMockSessions,
-  bridgeStatus,
-  onSpawnBridge,
-  onShutdownBridge,
-}: {
-  screen: Screen;
-  setScreen: (s: Screen) => void;
-  onTriggerToast?: () => void;
-  onSeedMockSessions?: () => void;
-  bridgeStatus?: import("@/stores/runtime").BridgeStatus;
-  onSpawnBridge?: () => void;
-  onShutdownBridge?: () => void;
-}) {
-  return (
-    <div className="pointer-events-none fixed right-4 top-14 z-[60] flex gap-1.5">
-      <DevSegment>
-        {(["onboarding", "empty", "main"] as Screen[]).map((s) => (
-          <DevButton key={s} active={screen === s} onClick={() => setScreen(s)}>
-            {SCREEN_TOGGLE_LABEL[s]}
-          </DevButton>
-        ))}
-      </DevSegment>
-      {onTriggerToast && (
-        <DevSegment>
-          <DevButton onClick={onTriggerToast}>+ toast</DevButton>
-        </DevSegment>
-      )}
-      {onSeedMockSessions && (
-        <DevSegment>
-          <DevButton onClick={onSeedMockSessions}>+ mock</DevButton>
-        </DevSegment>
-      )}
-      {bridgeStatus !== undefined && onSpawnBridge && onShutdownBridge && (
-        <DevSegment>
-          <span
-            className={cn(
-              "self-center px-1 font-mono text-[10px] uppercase tracking-wider",
-              bridgeStatus === "connected" && "text-success",
-              bridgeStatus === "spawning" && "text-warning",
-              bridgeStatus === "error" && "text-error",
-              (bridgeStatus === "idle" || bridgeStatus === "closed") &&
-                "text-ink-muted",
-            )}
-            title={`bridge: ${bridgeStatus}`}
-          >
-            br: {bridgeStatus}
-          </span>
-          {bridgeStatus === "connected" || bridgeStatus === "spawning" ? (
-            <DevButton onClick={onShutdownBridge}>kill</DevButton>
-          ) : (
-            <DevButton onClick={onSpawnBridge}>spawn</DevButton>
-          )}
-        </DevSegment>
-      )}
-    </div>
-  );
-}
-
-function DevSegment({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="pointer-events-auto flex gap-1 rounded-md border border-line bg-elevated px-1.5 py-1 shadow-elevated">
-      {children}
-    </div>
-  );
-}
-
-function DevButton({
-  active,
-  onClick,
-  children,
-}: {
-  active?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-sm px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider transition-colors",
-        active ? "bg-ink text-elevated" : "text-ink-muted hover:bg-hover",
-      )}
-    >
-      {children}
-    </button>
-  );
-}

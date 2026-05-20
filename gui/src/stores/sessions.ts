@@ -187,132 +187,6 @@ function clearSessionMessages(sid: string): void {
   useMessagesStore.getState().clearSessionMessages(sid);
 }
 
-// ---------------- mock fixture (dev only) ----------------
-//
-// Kept inside sessionsStore (mapping § B "保留 — dev/contrib 起步").
-// Used by `seedMockSessions` action and exposed via Settings dev
-// command. Persistence is via createSession invoke — Rust assigns
-// no special id, the mock id (`mock-<batch>-<i>`) is caller-supplied.
-
-const MOCK_TITLES_TODAY = [
-  "重构 IPC 协议的 dataclass 验证",
-  "调研 Tauri v2 plugin-shell sidecar",
-  "整理本周设计评审纪要",
-];
-const MOCK_TITLES_WEEK = [
-  "修复 turn_end summary 偶尔丢失",
-  "shadcn Command 组件样式对齐",
-  "Sidebar 状态机的三态可视化",
-  "Bridge LRU 5 alive 行为验证",
-];
-const MOCK_TITLES_EARLIER = [
-  "Tauri vs Electron 调研结论",
-  "DESIGN.md v0.2 token 表定稿",
-  "SQLite FTS5 中文分词调研",
-  "PRD §11 审批模型补完",
-  "Stage 2 desktop skeleton 完成总结",
-  "Onboarding fs.exists health check",
-  "TopBar drag region 与 traffic light 冲突",
-  "ApprovalDock 二段确认的交互草稿",
-  "Composer auto-grow 行高计算",
-  "Sidebar bucket grouping 时区边界 bug",
-  "GA agent._turn_end_hooks 兼容测试",
-  "Inspector 面板的 tool event 时序",
-  "Settings → Approval tab 信息架构",
-  "Error Card 四种 hint 变体定稿",
-  "macOS DMG 公证流程笔记",
-];
-const MOCK_TITLES_PINNED = [
-  "GA 0.4 升级 baseline 评估",
-  "V0.2 路线图（Pin / Project / Search）",
-];
-
-const MOCK_SUMMARIES = [
-  "GA 同意按方案 B 推进",
-  "拆成 4 个独立 PR",
-  "结论是先做 trigram 兜底",
-  "等用户回 spec 后再继续",
-  "已落 commit 9c3aa1f",
-  "切到下一个 session 处理",
-  "需要补一个 e2e case",
-  "讨论后决定先不做",
-];
-
-const MOCK_STATUSES: Array<Session["status"]> = [
-  "idle",
-  "idle",
-  "idle",
-  "idle",
-  "completed",
-  "completed",
-  "error",
-];
-
-let mockBatchCounter = 0;
-
-function buildMockSessions(): Session[] {
-  const batchId = ++mockBatchCounter;
-  const now = Date.now();
-  const day = 86_400_000;
-  let titleCursor = 0;
-  let summaryCursor = 0;
-  let statusCursor = 0;
-  let idCursor = 0;
-  const make = (
-    titlePool: string[],
-    activityAtMs: number,
-    overrides: Partial<Session> = {},
-  ): Session => {
-    const title = titlePool[titleCursor++ % titlePool.length]!;
-    const summary = MOCK_SUMMARIES[summaryCursor++ % MOCK_SUMMARIES.length];
-    const status =
-      overrides.status ??
-      MOCK_STATUSES[statusCursor++ % MOCK_STATUSES.length]!;
-    const iso = new Date(activityAtMs).toISOString();
-    const id = `mock-${batchId}-${++idCursor}`;
-    return {
-      id,
-      title,
-      status,
-      summary,
-      turnCount: 2 + ((idCursor * 7) % 12),
-      pendingApprovalCount: status === "waiting_approval" ? 1 : 0,
-      errorCount: status === "error" ? 1 : 0,
-      lastActivityAt: iso,
-      createdAt: iso,
-      updatedAt: iso,
-      ...overrides,
-    };
-  };
-
-  const out: Session[] = [];
-  MOCK_TITLES_PINNED.forEach((_, i) =>
-    out.push(
-      make(MOCK_TITLES_PINNED, now - (5 + i * 3) * day, {
-        pinned: true,
-        status: "idle",
-      }),
-    ),
-  );
-  out.push(make(MOCK_TITLES_TODAY, now - 30 * 60_000, { status: "running" }));
-  out.push(
-    make(MOCK_TITLES_TODAY, now - 2 * 3_600_000, {
-      status: "waiting_approval",
-    }),
-  );
-  out.push(make(MOCK_TITLES_TODAY, now - 5 * 3_600_000, { status: "idle" }));
-  [1, 2, 4, 6].forEach((d) =>
-    out.push(make(MOCK_TITLES_WEEK, now - d * day - 2 * 3_600_000)),
-  );
-  const earlierDayOffsets = [
-    8, 11, 14, 19, 24, 32, 45, 58, 73, 95, 130, 180, 240, 330, 420,
-  ];
-  earlierDayOffsets.forEach((d) =>
-    out.push(make(MOCK_TITLES_EARLIER, now - d * day)),
-  );
-  return out;
-}
-
 // ---------------- store shape ----------------
 
 interface SessionsState {
@@ -434,12 +308,11 @@ interface SessionsActions {
    * active filter if it pointed at this project. */
   applyExternalProjectDeleted: (projectId: string) => void;
 
-  // ---- hydrate / dev ----
+  // ---- hydrate ----
   /** Load sessions + projects from Rust core. Called by the cold-start
    * orchestrator at `lib/hydrate.ts`. Mutates state directly; errors
    * are logged but don't throw — start-empty is a recoverable cold path. */
   hydrate: () => Promise<void>;
-  seedMockSessions: () => Promise<void>;
 }
 
 export type SessionsStore = SessionsState & SessionsActions;
@@ -1231,26 +1104,6 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     } catch (e) {
       console.debug("[sessions] hydrate projects failed.", e);
     }
-  },
-
-  seedMockSessions: async () => {
-    const batch = buildMockSessions();
-    set((state) => ({ sessions: [...batch, ...state.sessions] }));
-    for (const s of batch) {
-      try {
-        await invoke("create_session", {
-          input: {
-            id: s.id,
-            title: s.title,
-            projectId: s.projectId,
-          } as CreateSessionInputWire,
-          origin: GUI_ORIGIN,
-        });
-      } catch (e) {
-        console.debug("[sessions] seedMockSessions invoke failed.", e);
-      }
-    }
-    console.info(`[sessions] seedMockSessions: inserted ${batch.length} rows.`);
   },
 }));
 
