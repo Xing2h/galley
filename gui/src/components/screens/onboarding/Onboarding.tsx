@@ -18,7 +18,7 @@ import {
 } from "@/lib/onboarding-tutorials";
 import { EXAMPLE_GA_PATH } from "@/lib/platform";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/stores/useAppStore";
+import { usePrefsStore } from "@/stores/prefs";
 import type { HealthCheckItem } from "@/types/inspector";
 
 export type OnboardingStep = "welcome" | "attach" | "health";
@@ -168,7 +168,7 @@ export function Onboarding({
   // probe + populates probedPython. We still subscribe to the toggle
   // value so a user flipping the Settings switch mid-revisit triggers
   // a re-run with the new mode.
-  const useExternalPython = useAppStore(
+  const useExternalPython = usePrefsStore(
     (s) => s.gaConfig.useExternalPython,
   );
 

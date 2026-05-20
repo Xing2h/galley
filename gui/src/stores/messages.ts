@@ -52,8 +52,7 @@ export const EMPTY_DECISIONS: Record<string, ApprovalDecision> = Object.freeze(
 // ============================================================
 
 /**
- * All per-session conversation state. Mirror of the messages-side
- * fields that lived on `useAppStore._runtimes` pre-B3 M5.
+ * All per-session conversation state owned by messagesStore.
  *
  * `turnIndexOffset` deserves the long comment — see the docblock on
  * `appendUserTurn` for full rationale. TL;DR: GA's
@@ -111,8 +110,8 @@ interface MessagesState {
    * `appendSideQuestionUserTurn`) in ANY session. MainView's
    * stick-to-top scroll effect uses this as a trigger. Lives at the
    * store root rather than per-session because session switching
-   * shouldn't fire the scroll effect — see useAppStore's original
-   * `userSubmitTick` doc comment for the full reasoning.
+   * shouldn't fire the scroll effect — the user's intent is "see what
+   * I just sent," not "I navigated and want auto-scroll."
    */
   userSubmitTick: number;
 }

@@ -13,10 +13,10 @@ import type {
 } from "@/types/ipc";
 
 import { useMessagesStore } from "@/stores/messages";
+import { usePrefsStore } from "@/stores/prefs";
 import { useRuntimeStore } from "@/stores/runtime";
 import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
-import type { useAppStore } from "@/stores/useAppStore";
 
 /**
  * Routes an IPC event from the bridge into store actions.
@@ -42,15 +42,9 @@ import type { useAppStore } from "@/stores/useAppStore";
  * Tool ids: turn_end's toolCalls / toolResults are positional, so we
  * walk them in order with synthetic ids when none is supplied.
  */
-export function dispatchIPCEvent(
-  event: IPCEvent,
-  store: typeof useAppStore,
-): void {
-  // `s` only carries prefs-level state still owned by useAppStore
-  // (yoloMode). All per-session conversation state moved to
-  // messagesStore in B3 M5 — accessed via useMessagesStore.getState()
-  // directly so the receiving slice is obvious at the call site.
-  const s = store.getState();
+export function dispatchIPCEvent(event: IPCEvent): void {
+  // Each slice store is accessed directly via its getState() so the
+  // receiving slice is obvious at the call site.
   const messages = useMessagesStore.getState();
 
   switch (event.kind) {
@@ -90,7 +84,7 @@ export function dispatchIPCEvent(
       // if the user has it persisted as on, push the override now —
       // it's queued in the bridge's command pipeline and processed
       // before any subsequent user message can trigger a tool call.
-      if (s.yoloMode) {
+      if (usePrefsStore.getState().yoloMode) {
         void useRuntimeStore
           .getState()
           .sendIPCCommand(event.sessionId, {

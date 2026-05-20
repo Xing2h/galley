@@ -32,10 +32,11 @@ import {
   EMPTY_TURNS,
   useMessagesStore,
 } from "@/stores/messages";
+import { usePrefsStore } from "@/stores/prefs";
 import { useRuntimeStore } from "@/stores/runtime";
 import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore, type Screen } from "@/stores/ui";
-import { useAppStore } from "@/stores/useAppStore";
+import { hydrateApp } from "@/lib/hydrate";
 
 /**
  * V0.1 Stage 2 #8 — App entry.
@@ -98,7 +99,7 @@ function App() {
   const deleteSessionsPermanentlyBulk = useSessionsStore(
     (s) => s.deleteSessionsPermanentlyBulk,
   );
-  const seedMockSessions = useAppStore((s) => s.seedMockSessions);
+  const seedMockSessions = useSessionsStore((s) => s.seedMockSessions);
   const deleteSessionPermanently = useSessionsStore(
     (s) => s.deleteSessionPermanently,
   );
@@ -137,17 +138,17 @@ function App() {
   const recordApprovalDecision = useMessagesStore(
     (s) => s.recordApprovalDecision,
   );
-  const approvalConfig = useAppStore((s) => s.approvalConfig);
-  const setApprovalRequiredTools = useAppStore(
+  const approvalConfig = usePrefsStore((s) => s.approvalConfig);
+  const setApprovalRequiredTools = usePrefsStore(
     (s) => s.setApprovalRequiredTools,
   );
-  const removeAlwaysAllow = useAppStore((s) => s.removeAlwaysAllow);
-  const yoloMode = useAppStore((s) => s.yoloMode);
-  const setYoloMode = useAppStore((s) => s.setYoloMode);
-  const yoloIntroSeen = useAppStore((s) => s.yoloIntroSeen);
-  const acknowledgeYoloIntro = useAppStore((s) => s.acknowledgeYoloIntro);
-  const conversationWidth = useAppStore((s) => s.conversationWidth);
-  const setConversationWidth = useAppStore((s) => s.setConversationWidth);
+  const removeAlwaysAllow = usePrefsStore((s) => s.removeAlwaysAllow);
+  const yoloMode = usePrefsStore((s) => s.yoloMode);
+  const setYoloMode = usePrefsStore((s) => s.setYoloMode);
+  const yoloIntroSeen = usePrefsStore((s) => s.yoloIntroSeen);
+  const acknowledgeYoloIntro = usePrefsStore((s) => s.acknowledgeYoloIntro);
+  const conversationWidth = usePrefsStore((s) => s.conversationWidth);
+  const setConversationWidth = usePrefsStore((s) => s.setConversationWidth);
   const petAttachedSessionId = useRuntimeStore(
     (s) => s.petAttachedSessionId,
   );
@@ -162,8 +163,8 @@ function App() {
   );
   const shutdownAllBridges = useRuntimeStore((s) => s.shutdownAllBridges);
   const sendIPCCommand = useRuntimeStore((s) => s.sendIPCCommand);
-  const setGAConfig = useAppStore((s) => s.setGAConfig);
-  const gaConfig = useAppStore((s) => s.gaConfig);
+  const setGAConfig = usePrefsStore((s) => s.setGAConfig);
+  const gaConfig = usePrefsStore((s) => s.gaConfig);
   // Sidebar runtime indicator. Two states for V0.1 — see Sidebar.tsx
   // `RuntimeStatus` type for the rationale. The previous indicator
   // was a stub: defaulted to "healthy" and never wired up to a real
@@ -204,15 +205,12 @@ function App() {
     (s) => s.removePendingApproval,
   );
 
-  const hydrateFromDB = useAppStore((s) => s.hydrateFromDB);
-
-  // Hydrate sessions from SQLite on mount. Falls through to the demo
-  // seed already in the store if SQLite isn't ready (Vite-only dev,
-  // first launch). #10 will hydrate conversation / approval rules /
-  // prefs here too.
+  // Drives the slice-store hydrate sequence in order: app version →
+  // SQLite housekeeping → sessions hydrate → FTS backfill → prefs
+  // hydrate → cached LLM seed → Onboarding routing OR warmup.
   useEffect(() => {
-    hydrateFromDB();
-  }, [hydrateFromDB]);
+    void hydrateApp();
+  }, []);
 
   // Session creation is **lazy** — we no longer auto-create on
   // landing in the empty screen. Earlier versions did, which

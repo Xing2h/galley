@@ -7,6 +7,7 @@ import { create } from "zustand";
 // rather than module evaluation time — exactly the case here
 // (everything is `useFooStore.getState()` inside an async action).
 import { useMessagesStore } from "@/stores/messages";
+import { usePrefsStore } from "@/stores/prefs";
 import { useRuntimeStore } from "@/stores/runtime";
 import { useUiStore } from "@/stores/ui";
 import { makeAppError } from "@/types/app-error";
@@ -103,7 +104,7 @@ interface CreateProjectInputWire {
 
 /**
  * Title length cap for the derived title path (`maybeDeriveTitle` —
- * called from useAppStore.appendUserTurn). Chinese chars eat one cell
+ * called from messagesStore.appendUserTurn). Chinese chars eat one cell
  * each; ~30 fills the Sidebar row's truncate window without wrapping.
  */
 const TITLE_DERIVE_MAX = 30;
@@ -333,9 +334,7 @@ interface SessionsActions {
    * because sessionsStore owns the active id and is the natural
    * entry point for "switch to this session" UX events.
    *
-   * Reads `useAppStore.gaConfig` via dynamic import (gaConfig moves
-   * to prefsStore in M6 — the dynamic import will resolve cleanly
-   * after that move too).
+   * Reads `prefsStore.gaConfig` for the spawn args.
    */
   activateSession: (id: string) => Promise<void>;
   /** Synchronous create — returns the new id for chaining. Rust write
@@ -392,10 +391,10 @@ interface SessionsActions {
     patch: Partial<Pick<Session, "status" | "pendingApprovalCount" | "hasPendingAskUser">>,
   ) => void;
   /**
-   * Used by useAppStore.appendUserTurn / appendUserTurnExternal on the
-   * first user message in a fresh session: if the title is still the
-   * seed placeholder, auto-derive from the message text. Server write
-   * is fire-and-forget.
+   * Used by messagesStore.appendUserTurn / appendUserTurnExternal on
+   * the first user message in a fresh session: if the title is still
+   * the seed placeholder, auto-derive from the message text. Server
+   * write is fire-and-forget.
    *
    * No-op when the title has already been edited or the text trims to
    * empty. Returns the new title for the caller to log / scroll-snap.
@@ -409,9 +408,9 @@ interface SessionsActions {
   setLastStepIndex: (sessionId: string, step: number) => void;
 
   // ---- hydrate / dev ----
-  /** Load sessions + projects from Rust core. Called by
-   * useAppStore.hydrateFromDB. Mutates state directly; errors are
-   * logged but don't throw — start-empty is a recoverable cold path. */
+  /** Load sessions + projects from Rust core. Called by the cold-start
+   * orchestrator at `lib/hydrate.ts`. Mutates state directly; errors
+   * are logged but don't throw — start-empty is a recoverable cold path. */
   hydrate: () => Promise<void>;
   seedMockSessions: () => Promise<void>;
 }
@@ -531,11 +530,10 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
         !consumePending && !isFreshSession
           ? session?.selectedLlmIndex
           : undefined;
-      // gaConfig lives in useAppStore until M6 prefsStore. Dynamic
-      // import keeps the static graph free of cycles (useAppStore
-      // imports sessionsStore via hydrateFromDB orchestration).
-      const { useAppStore } = await import("@/stores/useAppStore");
-      const gaConfig = useAppStore.getState().gaConfig;
+      // prefsStore is a leaf in the slice DAG (AD-09) — no cycle
+      // concern with the cross-store static import block at the
+      // top of this file.
+      const gaConfig = usePrefsStore.getState().gaConfig;
       await useRuntimeStore.getState().spawnBridge({
         ...gaConfig,
         sessionId: id,

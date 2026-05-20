@@ -13,18 +13,18 @@ import type { IPCCommand, IPCEvent } from "@/types/ipc";
  * The body of `spawnBridge` and the `BridgeClient` methods are now Tauri
  * `invoke()` wrappers against the Rust-side `RunnerManager`. The function
  * signatures are byte-identical to the v0.1 plugin-shell-backed version
- * (B2 invariant I1 locks the surface so `useAppStore` doesn't need to
- * change for B2). All bridge-process ownership lives in Rust now —
- * spawn / stdin / stdout / stderr / kill are commands invoked into Rust,
- * and IPC events arrive as Tauri events that this file fans back out to
- * the registered `BridgeHandlers` callbacks.
+ * (B2 invariant I1 locks the surface so callers don't change shape).
+ * All bridge-process ownership lives in Rust now — spawn / stdin /
+ * stdout / stderr / kill are commands invoked into Rust, and IPC events
+ * arrive as Tauri events that this file fans back out to the registered
+ * `BridgeHandlers` callbacks.
  *
  * ## Why this is still wired in TS
  *
  * The single-frontend v0.1 wiring (each spawn registers its own handlers
- * object, store dispatches via `dispatchIPCEvent`) is kept intact. B3
- * will retire useAppStore's per-session handler model in favor of slice
- * stores subscribing directly to Rust events.
+ * object, dispatches via `dispatchIPCEvent`) is kept intact for the GUI
+ * front-end. A future iteration can replace this with slice stores
+ * subscribing directly to Rust events.
  *
  * ## Stderr handling
  *
@@ -189,8 +189,8 @@ export async function spawnBridge(
     if (alreadyClosed) return;
     alreadyClosed = true;
     // Surface stderr tail (if any) before the onClose callback so the
-    // toast in useAppStore.onClose has the lines available via the
-    // sync rolling buffer it maintains.
+    // toast in runtimeStore's onClose handler has the lines available
+    // via the sync rolling buffer it maintains.
     try {
       const tail: string[] = await invoke("runner_stderr_tail", { sessionId });
       for (const line of tail) {

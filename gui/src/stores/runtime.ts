@@ -13,14 +13,9 @@ import {
   DEMO_RUNTIME_INFO,
 } from "@/stores/demo";
 import { useMessagesStore } from "@/stores/messages";
+import { usePrefsStore } from "@/stores/prefs";
 import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
-// useAppStore is still imported for one last cross-store read in M5:
-// `gaConfig` (line ~696). M6 prefsStore will move gaConfig out and
-// remove this import entirely. messagesStore extraction in M5
-// already retired the `_runtimes` cross-store writes that used to
-// live here (onClose stub + _enforceLRUCap agentRunning probe).
-import { useAppStore } from "@/stores/useAppStore";
 import { makeAppError } from "@/types/app-error";
 import type { RuntimeInfo } from "@/types/inspector";
 import type { IPCCommand } from "@/types/ipc";
@@ -36,9 +31,8 @@ export interface LLMOption {
 }
 
 /**
- * Bridge subprocess lifecycle status. Mirrors the type previously
- * defined in useAppStore.ts (BridgeStatus); kept here now that
- * runtimeStore owns the bridge fields.
+ * Bridge subprocess lifecycle status. runtimeStore owns the bridge
+ * fields and the lifecycle they describe.
  */
 export type BridgeStatus =
   | "idle"
@@ -63,7 +57,7 @@ export interface PerSessionRuntime {
 }
 
 /**
- * Seed hints fed by `useAppStore.setActiveSession` when lazy-creating
+ * Seed hints fed by `sessionsStore.setActiveSession` when lazy-creating
  * a runtime entry. Carry the session row's persisted `selectedLlm*`
  * fields so the pill renders correctly from t=0 — without these, the
  * picker flashes the cross-session hydrate-cached current LLM (or
@@ -74,7 +68,7 @@ export interface RuntimeSeedHints {
   persistedDisplayName?: string;
   /**
    * Cross-session hydrate cache; passed in by setActiveSession so
-   * runtimeStore doesn't have to depend on useAppStore for the
+   * runtimeStore doesn't have to read sessionsStore for the
    * cached list. Used when `persistedIndex` is undefined.
    */
   cachedLLMs?: LLMOption[];
@@ -99,11 +93,13 @@ interface RuntimeState {
    * Cross-session display-name companion to {@link cachedLLMs}. The
    * "current" entry's displayName when the cached list was captured.
    * Falls back into seed when a session has no persisted choice.
+   *
+   * Seeded by `lib/hydrate.ts` from the `llm_list` pref at cold start.
    */
   cachedLLMDisplayName: string;
   /**
    * EmptyState's inline LLM picker stash. Consumed by
-   * `useAppStore.activateSession` when it spawns the bridge for a
+   * `sessionsStore.activateSession` when it spawns the bridge for a
    * fresh session with zero turns. Cleared after consumption so an
    * abandoned pick (user picked LLM then clicked an existing
    * session) doesn't leak into a later unrelated spawn.
@@ -119,8 +115,8 @@ interface RuntimeState {
   /**
    * Idempotence flag for `warmupLLMList` (one-shot bridge spawn at
    * launch to capture the GA mykey.py list before the first user
-   * session). Reset by `setGAConfig` cross-store so changing GA
-   * path re-runs warmup.
+   * session). Reset by `prefsStore.setGAConfig` cross-store so
+   * changing GA path re-runs warmup.
    */
   _warmupComplete: boolean;
 }
@@ -130,16 +126,16 @@ interface RuntimeActions {
    * Lazy-create or refresh the LLM-side of a session's runtime. Idempotent —
    * if `byId[sid]` already exists, the seed is ignored (existing values
    * win because they reflect the live bridge's authoritative state).
-   * Called from `useAppStore.setActiveSession`.
+   * Called from `sessionsStore.setActiveSession`.
    */
   ensureRuntime: (sid: string, seed: RuntimeSeedHints) => void;
   /** Set bridge status. Used by ipc-handlers ready event. */
   setBridgeStatus: (sid: string, status: BridgeStatus) => void;
   /**
    * Spawn a GA bridge subprocess for `args.sessionId`. If that session
-   * already has a live bridge, shut it down first. See useAppStore's
-   * historical doc for the LRU rationale (now enforced inside this
-   * action via the runtime-private `_bridgeClients` / `_lruOrder` maps).
+   * already has a live bridge, shut it down first. LRU eviction
+   * enforced inside this action via the runtime-private
+   * `_bridgeClients` / `_lruOrder` maps (LRU_CAP = 5 active bridges).
    */
   spawnBridge: (args: BridgeSpawnArgs) => Promise<void>;
   /** Graceful shutdown. No-op if no bridge alive for `sid`. */
@@ -152,9 +148,9 @@ interface RuntimeActions {
   /**
    * Apply the LLM list reported by a bridge's `ready` / `llm_changed`
    * event. Updates byId[sid], caches the list to `llm_list` pref, and
-   * (transitional, M4 will own this) mirrors the user's choice onto
-   * the session row in `useAppStore.sessions` for persistence across
-   * app restart.
+   * mirrors the user's selected LLM onto the session row in
+   * sessionsStore (via `setSessionLlm`) for persistence across app
+   * restart.
    */
   replaceLLMs: (sid: string, llms: LLMOption[]) => void;
   /**
@@ -173,11 +169,10 @@ interface RuntimeActions {
   setPetAttachedSession: (sid: string | null) => void;
   patchRuntimeInfo: (patch: Partial<RuntimeInfo>) => void;
   /**
-   * Cross-store: useAppStore.setGAConfig calls this when gaPath /
+   * Cross-store: prefsStore.setGAConfig calls this when gaPath /
    * python changes so a future `warmupLLMList` re-runs against the
-   * new install. M6 prefsStore will own setGAConfig and emit a
-   * prefs-updated event that this store listens to — for now it's a
-   * direct call.
+   * new install. A direct call is fine — prefs is the only writer
+   * and the relationship is purely intra-process.
    */
   resetWarmup: () => void;
   /**
@@ -207,10 +202,9 @@ export type RuntimeStore = RuntimeState & RuntimeActions;
  */
 // ---- Module-level bridge resources (private to runtime slice) ----
 //
-// These were 9 module-level symbols in useAppStore.ts (the per-AD-07
-// dead-after-B3 list). In M3b they move here as runtime-internal
-// state: bridge process handles + stderr buffers + LRU ordering.
-// Not exported — outside callers go through the actions below.
+// Runtime-internal state: bridge process handles + stderr buffers +
+// LRU ordering. Not exported — outside callers go through the
+// actions below.
 //
 // Why module-level (not Zustand state):
 // - The `BridgeClient` value carries a tokio handle to a Tauri-side
@@ -352,12 +346,10 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
     void setPref("llm_list", llms).catch((e) => {
       console.debug("[runtime] replaceLLMs llm_list cache failed.", e);
     });
-    // TRANSITIONAL (M4): mirror the user's current LLM onto the
-    // session row + persistSession so the choice survives app
-    // restart. After M4 lands sessionsStore, this becomes
-    // `useSessionsStore.getState().patchSession(sid, { selectedLlm*
-    // })` or even pure Rust event-driven. For now we reach into
-    // useAppStore directly — annotated to find on M4 grep.
+    // Mirror the user's current LLM onto the session row via
+    // sessionsStore.setSessionLlm so the choice survives app
+    // restart (routes through the Rust `set_session_llm` trait
+    // method for SQLite persistence).
     if (current) {
       void mirrorSelectedLLMOnSession(sid, current).catch((e) => {
         console.debug("[runtime] replaceLLMs session mirror failed.", e);
@@ -391,10 +383,9 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
 
   warmupLLMList: async () => {
     if (get()._warmupComplete) return;
-    // Read the GA config from useAppStore. Cross-store read is
-    // allowed per AD-09 DAG; M6 will move gaConfig to prefsStore
-    // and this becomes `useAppStore` → `usePrefsStore`.
-    const config = readGAConfigFromAppStore();
+    // Read the GA config from prefsStore. Cross-store read is allowed
+    // per AD-09 DAG (runtimeStore depends on prefsStore for gaConfig).
+    const config = readGAConfigFromPrefs();
     if (!config.gaPath) return;
     set({ _warmupComplete: true });
 
@@ -493,7 +484,7 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
 
     try {
       const client = await spawnBridgeProcess(args, {
-        onEvent: (event) => dispatchIPCEvent(event, useAppStore),
+        onEvent: (event) => dispatchIPCEvent(event),
         onStderr: (line) => {
           console.warn(`[bridge ${sessionId} stderr]`, line);
           const buf = _stderrTails.get(sessionId) ?? [];
@@ -672,21 +663,21 @@ export function getActiveRuntime(): PerSessionRuntime | undefined {
   return useRuntimeStore.getState().byId[activeId];
 }
 
-// ---- Cross-store transitional helpers ----
+// ---- Cross-store helpers ----
 //
-// Each annotated `TRANSITIONAL: <when-removable>` so M4 / M5 / M6
-// can find and remove the cross-store reach.
+// Read-only or single-direction-write reaches into prefsStore /
+// sessionsStore. Per AD-09 slice DAG, runtimeStore is allowed to
+// depend on prefsStore (leaf-like) and sessionsStore for these
+// specific paths.
 
-function readGAConfigFromAppStore() {
-  // TRANSITIONAL (M6 prefsStore): when gaConfig moves to prefsStore,
-  // switch to `usePrefsStore.getState().gaConfig`.
-  // (Function name avoids the `use*` prefix so eslint-plugin-react-hooks
-  // doesn't classify it as a hook call inside non-component code.)
-  return useAppStore.getState().gaConfig;
+function readGAConfigFromPrefs() {
+  // Function name avoids the `use*` prefix so eslint-plugin-react-hooks
+  // doesn't classify it as a hook call inside non-component code.
+  return usePrefsStore.getState().gaConfig;
 }
 
 async function mirrorSelectedLLMOnSession(sid: string, current: LLMOption) {
-  // M4b: route through sessionsStore.setSessionLlm which invokes the
+  // Route through sessionsStore.setSessionLlm which invokes the
   // Rust `set_session_llm` trait method. The store action mutates the
   // in-memory row + fires the invoke; we don't have to round-trip a
   // separate persistSession call.
