@@ -28,7 +28,7 @@ B4 ship = v0.5 RC，dogfood 一周后 ship 正式 v0.5（dual-native orchestrato
 
 - [x] B3 全部 acceptance criteria 跑过 + devlog ship + tag `b3-complete`（2026-05-20）
 - [ ] B3 dogfood 1 周稳定期 — 严格 vs event-driven 由 JC 体感决定（B4 是 phase 切换不是 milestone 切换，应该比 milestone 切换更慎；但具体长度 event-driven per [N17](./B3-store-slice.md#running-notes--gotchas)）
-- [ ] **Tauri tray plugin v2 spike**（1 day）— B4-R1 大风险，启动前先验证：(a) menubar 图标在 macOS + Windows 都能渲染 (b) hide window + WebView 在 background 仍能跑 JS (c) macOS App Nap 不卡死 IPC 响应。Prototype 在 `core/experiments/tray-mode/`（独立可丢弃实验目录，mirror bridge-owner prototype pattern）
+- [ ] **Tauri tray plugin v2 spike**（1 day）— B4-R1 大风险，启动前先验证：(a) menubar 图标在 macOS + Windows 都能渲染 (b) hide window + WebView 在 background 仍能跑 JS (c) macOS App Nap 不卡死 IPC 响应。Spike spec [core/experiments/tray-mode/README.md](../../core/experiments/tray-mode/README.md) ship 2026-05-20（20 个 T 项 checklist · 6 验证段 · macOS T17-T19 单独 App Nap 测量段 · GO/NO-GO 决策 + 3 fallback strategy）；scaffold + 实跑留下次 dedicated session 跑（mirror bridge-owner prototype pattern）
 - [ ] v0.1 / v0.2 dogfood 数据 migration 路径设计 + 本地测试（参考 [PRD §16](../PRD.md#16-数据迁移v01--v10)）—— 本人 dogfood 数据 6+ 月积累不能丢
 - [ ] CLAUDE.md 阶段表 9. B4 row 加入 + B4 启动 commit 时一并更（current state 表的 row 9 是 B4 stub）
 
@@ -124,7 +124,7 @@ B4 ship = v0.5 RC，dogfood 一周后 ship 正式 v0.5（dual-native orchestrato
 
 ### Sub-tasks
 
-- [ ] **T2.0** Tray spike (prereq, 1 day) — `core/experiments/tray-mode/` 独立 prototype；ship 通过 → spike report devlog
+- [ ] **T2.0** Tray spike (prereq, 1 day) — [spike spec](../../core/experiments/tray-mode/README.md) (2026-05-20 ship)；scaffold + 实跑 → ship 通过 → spike report devlog
 - [ ] **T2.1** M2 sub-plan ship
 - [ ] **T2.2** Tauri tray plugin v2 setup — `cargo add tauri-plugin-window-state` / `tauri-plugin-positioner` (per spike findings)；`tauri.conf.json` tray icon resource
 - [ ] **T2.3** 关窗事件改 hide：在 Rust `setup` hook 注册 window event listener，`WindowEvent::CloseRequested` → `window.hide()` + `api.prevent_close()`；**Cmd+Q 例外**：menubar Quit menu item 走 `app.exit(0)` 真退
@@ -326,6 +326,8 @@ v0.5 RC → v0.5 GA 的 release ceremony。
 ### Session 跑下来追加的 notes（按日期）
 
 - **N1 (2026-05-20, B4 playbook 升格)** — Stub (144 行) 升格成详细 playbook (~500 行)。沿用 B3 sub-plan-then-impl 模式：M1-M9 每个 milestone 实施前**单独写 sub-plan**。Acceptance 沿用 stub A1-A14 不动。新增 B4-I1..I7 phase invariants（沿用 CLAUDE.md 4 条架构原则 + B4 特定规则如 schema freeze / SOP 路径固定 / migration 备份强制）。Sub-task 颗粒度跟 B1/B2/B3 对齐（T1.1-TN.X 数字编号 + sub-task 完成标志逐 milestone 列）。Open: [O1-O6 沿用 stub](#open-decisions)；新加 [O7 NEW](#open-decisions-new) tray spike 何时跑（prereq 阶段 vs M2 开头）+ [O8 NEW](#open-decisions-new) M3 PATH install 失败 fallback strategy。
+
+- **N2 (2026-05-20, Tray spike spec ship — paperwork-only)** — JC explicit「在这个 session 继续推进」推到 tray spike spec 写作（不跑 spike 本身，spike 需要真 Tauri 实验 + 跨平台机器访问）。[core/experiments/tray-mode/README.md](../../core/experiments/tray-mode/README.md) 391 行 mirror bridge-owner README 结构：Status/Purpose/Gate-for/Related header + Why we need this + Non-goals + Architecture (under test) + 20-item checklist (T1-T20 across 6 capability sections: tray registration / hide-window / show / quit / WebView keep-alive / App Nap defeat / cross-platform parity) + Implementation outline (Cargo build config + pseudo-code for main.rs / app_nap.rs / index.html / tests.sh) + GO/NO-GO decision with 3 fallback strategies (Mac-only v0.5 if Win T3-T16 fail / NO-GO if T14 WebView pause / investigate if T18 App Nap) + Findings (empty) + Cleanup section + Cursor notes。**关键 design call**: T14 + T16 「WebView keep-alive while hidden」是 spike 的 critical PASS gate —— Tauri 默认是否 pause WebView 没有 documented guarantee，FAIL 触发 B4 M2 re-design（背景模式整段重新设计）。**App Nap defeat 路径选定**: `NSProcessInfo.beginActivity` 通过 `objc2-foundation` crate，比 `cocoa` crate 新 + safer + 已有 macOS-only cfg gate 模式（runtime 代码里已有 `window-shadows-v2` 类似 cfg 模式）。**Spike 跑 estimate**: 1 day (4-6h) optimistic per bridge-owner prototype precedent；risk: Windows 机访问 (JC 借) 可能延 1 day；contingency 是 ship spike report with Mac-only findings + 推 Mac-only v0.5 fallback。Cursor: B4 prereq gate / spike 等运行。
 
 ---
 
