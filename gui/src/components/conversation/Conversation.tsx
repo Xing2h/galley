@@ -56,7 +56,12 @@ export function Conversation({
       {turns.map((t, i) => (
         <Fragment key={i}>
           {t.role === "user" ? (
-            <MessageUser content={t.content} onResend={onResendUserMessage} />
+            <MessageUser
+              content={t.content}
+              onResend={onResendUserMessage}
+              origin={t.origin}
+              createdAt={t.createdAt}
+            />
           ) : t.role === "system" ? (
             <SystemMessageBubble content={t.content} variant={t.variant} />
           ) : (

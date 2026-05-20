@@ -4,7 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { ToastHost } from "@/components/error-card/ToastHost";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { TopBar } from "@/components/layout/TopBar";
+import {
+  TopBar,
+  type SupervisorActivity,
+  type SupervisorBucket,
+} from "@/components/layout/TopBar";
 import { CommandPalette } from "@/components/overlay/CommandPalette";
 import { EmptyState } from "@/components/screens/EmptyState";
 import { MainView } from "@/components/screens/MainView";
@@ -37,6 +41,72 @@ import { useRuntimeStore } from "@/stores/runtime";
 import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore, type Screen } from "@/stores/ui";
 import { hydrateApp } from "@/lib/hydrate";
+import type { Turn } from "@/types/conversation";
+
+/**
+ * Aggregate B4 M7 supervisor activity from a session's turns. Returns
+ * undefined when no supervisor-driven user message exists so the
+ * TopBar pill stays hidden by default. Buckets are ordered most-
+ * recently-seen first to match the user's expectation when the
+ * Popover lists them (latest supervisor at the top).
+ *
+ * v1 only walks UserTurn rows; non-message supervisor actions
+ * (archive / move / llm set) don't leave a per-event trace in the
+ * v0.5 data model. If a v0.6+ supervisor_actions table ever lands,
+ * fold its rows in here.
+ */
+function deriveSupervisorActivity(
+  turns: ReadonlyArray<Turn>,
+): SupervisorActivity | undefined {
+  type BucketAccum = {
+    name: string;
+    count: number;
+    lastAt?: string;
+    lastSeenIndex: number;
+  };
+  const buckets = new Map<string, BucketAccum>();
+  let total = 0;
+  let lastSupervisor: string | undefined;
+  let lastAt: string | undefined;
+  let lastSeenIndex = -1;
+
+  turns.forEach((t, i) => {
+    if (t.role !== "user") return;
+    const origin = t.origin;
+    if (!origin || origin.via !== "supervisor") return;
+    const name = origin.supervisor ?? "supervisor";
+    total += 1;
+    const bucket = buckets.get(name) ?? {
+      name,
+      count: 0,
+      lastAt: undefined,
+      lastSeenIndex: -1,
+    };
+    bucket.count += 1;
+    if (i > bucket.lastSeenIndex) {
+      bucket.lastSeenIndex = i;
+      bucket.lastAt = t.createdAt;
+    }
+    buckets.set(name, bucket);
+    if (i > lastSeenIndex) {
+      lastSeenIndex = i;
+      lastSupervisor = name;
+      lastAt = t.createdAt;
+    }
+  });
+
+  if (total === 0) return undefined;
+
+  const bySupervisor: SupervisorBucket[] = Array.from(buckets.values())
+    .sort((a, b) => b.lastSeenIndex - a.lastSeenIndex)
+    .map(({ name, count, lastAt: bucketLastAt }) => ({
+      name,
+      count,
+      lastAt: bucketLastAt,
+    }));
+
+  return { count: total, lastSupervisor, lastAt, bySupervisor };
+}
 
 /**
  * V0.1 Stage 2 #8 — App entry.
@@ -191,6 +261,16 @@ function App() {
   const storeTurns = useMessagesStore((s) =>
     activeSessionId ? (s.byId[activeSessionId]?.turns ?? EMPTY_TURNS) : EMPTY_TURNS,
   );
+  // B4 M7: derive the TopBar supervisor-activity summary from the
+  // current session's persisted turns. Memoized on `storeTurns` so the
+  // pill doesn't churn on unrelated state updates. v1 only counts
+  // supervisor-driven user messages (the only origin trace we surface
+  // — see M7 N17 for the v0.6+ extension path covering archive / move
+  // / llm set non-message writes).
+  const supervisorActivity = useMemo(
+    () => deriveSupervisorActivity(storeTurns),
+    [storeTurns],
+  );
   const storePending = useMessagesStore((s) =>
     activeSessionId
       ? (s.byId[activeSessionId]?.pendingApprovals ?? EMPTY_APPROVALS)
@@ -317,10 +397,23 @@ function App() {
     void (async () => {
       const fn = await listen<{
         sessionId: string;
-        message: { content: string };
+        message: {
+          content: string;
+          createdAt?: string;
+          origin?: {
+            via: "gui" | "cli" | "supervisor" | "system";
+            supervisor?: string;
+            reason?: string;
+          };
+        };
       }>("user-message-persisted", (e) => {
         const { sessionId, message } = e.payload;
-        appendUserTurnExternal(sessionId, message.content);
+        appendUserTurnExternal(
+          sessionId,
+          message.content,
+          message.origin,
+          message.createdAt,
+        );
       });
       if (cancelled) {
         fn();
@@ -606,6 +699,7 @@ function App() {
           <TopBar
             sessionTitle={activeSession?.title}
             yoloMode={yoloMode}
+            supervisorActivity={supervisorActivity}
             onDisableYolo={() => {
               void setYoloMode(false);
             }}

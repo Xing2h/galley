@@ -60,6 +60,16 @@ export interface MessageRow {
    * only). Added in migration v5; pre-v5 rows have NULL. Drives the
    * TurnMarker DetailPanel content after restore. */
   preamble: string | null;
+  /** Origin via — `gui` / `cli` / `supervisor` / `system`. Added in
+   * migration 006 (B2). Pre-006 rows have NULL → treat as `gui`.
+   * Drives the M7 supervisor activity annotation on UserTurn. */
+  created_via: string | null;
+  /** Supervisor label when `created_via === 'supervisor'` (e.g.
+   * `ga-claude-1`). NULL otherwise. Added in migration 006. */
+  supervisor: string | null;
+  /** Free-text rationale ("user said tldr"). NULL when supervisor
+   * didn't supply one. Added in migration 007. */
+  origin_note: string | null;
   created_at: string;
 }
 

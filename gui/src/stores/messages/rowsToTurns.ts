@@ -7,6 +7,7 @@
 import type {
   AgentTurn,
   ConversationToolEvent,
+  Origin,
   Turn,
   UserTurn,
 } from "@/types/conversation";
@@ -47,7 +48,14 @@ export function rowsToTurns(rows: MessageRow[]): Turn[] {
   for (const row of rows) {
     if (row.role === "user") {
       currentMessageBase = row.turn_index;
-      turns.push({ role: "user", content: row.content } as UserTurn);
+      const userTurn: UserTurn = {
+        role: "user",
+        content: row.content,
+        createdAt: row.created_at,
+      };
+      const origin = originFromRow(row);
+      if (origin) userTurn.origin = origin;
+      turns.push(userTurn);
     } else if (row.role === "assistant") {
       const toolCalls = safeParseJsonArray(row.tool_calls);
       const toolResults = safeParseJsonArray(row.tool_results);
@@ -98,6 +106,25 @@ export function rowsToTurns(rows: MessageRow[]): Turn[] {
     // system / tool rows: skipped at v0.1.
   }
   return turns;
+}
+
+/**
+ * Lift the SQLite origin triple onto a Turn-level Origin object. Returns
+ * undefined when the row has the default `gui` via — supervisor / cli /
+ * system rows get a populated Origin so MessageUser can show the M7
+ * annotation strip. Pre-migration-006 rows (NULL `created_via`) treat
+ * as `gui` and return undefined.
+ */
+function originFromRow(row: MessageRow): Origin | undefined {
+  const via = row.created_via;
+  if (!via || via === "gui") return undefined;
+  if (via !== "cli" && via !== "supervisor" && via !== "system") {
+    return undefined;
+  }
+  const origin: Origin = { via };
+  if (row.supervisor) origin.supervisor = row.supervisor;
+  if (row.origin_note) origin.reason = row.origin_note;
+  return origin;
 }
 
 /** Defensive JSON.parse — returns `[]` on malformed / null / non-array. */

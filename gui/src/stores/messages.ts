@@ -11,6 +11,7 @@ import { useSessionsStore } from "@/stores/sessions";
 import { rowsToTurns } from "@/stores/messages/rowsToTurns";
 import type {
   AgentTurn,
+  Origin,
   PendingApproval,
   PendingAskUser,
   SystemTurn,
@@ -160,7 +161,12 @@ interface MessagesActions {
    * `userSubmitTick` so the conversation scrolls to the new message,
    * derives the sidebar title on first message.
    */
-  appendUserTurnExternal: (sid: string, text: string) => void;
+  appendUserTurnExternal: (
+    sid: string,
+    text: string,
+    origin?: Origin,
+    createdAt?: string,
+  ) => void;
   /**
    * Append a transient user message for `/btw` side questions.
    * Distinct from `appendUserTurn`:
@@ -384,18 +390,24 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     });
   },
 
-  appendUserTurnExternal: (sid, text) => {
+  appendUserTurnExternal: (sid, text, origin, createdAt) => {
     // Mirror of appendUserTurn — see that action's comments for
     // rationale on each field. Difference: skips `persistUserMessage`
     // because Rust already wrote the row before emitting
-    // `user-message-persisted`.
+    // `user-message-persisted`. Carries the Origin triple through from
+    // the socket envelope (B4 M7) so MessageUser can render the
+    // supervisor annotation strip in the live path the same way
+    // rowsToTurns reconstructs it on restore.
     const currentTurnCount =
       useSessionsStore.getState().sessions.find((s) => s.id === sid)
         ?.turnCount ?? 0;
+    const userTurn: UserTurn = { role: "user", content: text };
+    if (origin) userTurn.origin = origin;
+    if (createdAt) userTurn.createdAt = createdAt;
     const state = get();
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
-      turns: [...m.turns, { role: "user", content: text } as UserTurn],
+      turns: [...m.turns, userTurn],
       agentRunning: true,
       inFlightContent: "",
       currentTurnIndex: null,

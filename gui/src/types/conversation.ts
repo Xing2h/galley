@@ -55,9 +55,37 @@ export interface ConversationToolEvent {
   approvalId?: string;
 }
 
+/**
+ * Audit metadata for any persisted write. Three-field tuple persisted in
+ * SQLite (messages.created_via / supervisor / origin_note since B2 mig
+ * 006). Drives the M7 inline supervisor annotation: when `via` is
+ * `supervisor`, the UserTurn renders a small metadata strip showing who
+ * relayed the message + their stated reason. Other `via` values
+ * (`gui` / `cli` / `system`) render no annotation — they're the default
+ * Galley-driven origin and don't need to interrupt the reading flow.
+ *
+ * agent-api.md §6A is the canonical contract.
+ */
+export interface Origin {
+  via: "gui" | "cli" | "supervisor" | "system";
+  /** Supervisor label / agent identity (e.g. `ga-claude-1`). Required
+   * when `via === "supervisor"`; optional otherwise. */
+  supervisor?: string;
+  /** Free-text rationale ("user said tldr"). */
+  reason?: string;
+}
+
 export interface UserTurn {
   role: "user";
   content: string;
+  /** Audit origin for the user message. When `origin.via ===
+   * "supervisor"`, MessageUser renders a one-line metadata strip
+   * (B4 M7). Absent / `gui` means the local user typed it directly. */
+  origin?: Origin;
+  /** ISO timestamp from `messages.created_at` — only consumed for the
+   * supervisor-annotation timestamp render (M7). Optional so existing
+   * UserTurn constructions in tests / demo data don't need to change. */
+  createdAt?: string;
 }
 
 /**
