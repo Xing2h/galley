@@ -2,8 +2,15 @@ use serde::{Deserialize, Serialize};
 
 /// Errors surfaced from the Galley Core API. Mapped 1-1 to the CLI exit
 /// code categories per playbook T4.11 / agent-api.md (B1 M5).
+///
+/// Wire shape (B4 M6 freeze): `{"error": "<tag>", "message": "..."}` —
+/// `error` is the stable discriminant, `message` is the human-readable
+/// explanation. Matches the socket transport envelope so SOPs parse one
+/// shape across both transports. A future v1-additive `detail` field
+/// can carry structured context (session_id, path, expected, ...)
+/// without breaking parsers that already pattern-match on `error`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "error", content = "detail", rename_all = "snake_case")]
+#[serde(tag = "error", rename_all = "snake_case")]
 pub enum GalleyError {
     /// Resource not found (session id / message id / project id missing).
     /// CLI exit code 3.

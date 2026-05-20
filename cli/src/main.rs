@@ -8,9 +8,11 @@
 //!   - Success → JSON on stdout. List-returning commands emit
 //!     NDJSON (one object per line) so agents can stream-parse.
 //!   - Error   → JSON on stdout matching `GalleyError`'s
-//!     `{"error": "<category>", "detail": …}` shape. **Errors go to
-//!     stdout, not stderr** — agents read one stream. stderr is
-//!     reserved for unrecoverable runtime panics.
+//!     `{"error": "<category>", "message": "..."}` shape (B4 M6 freeze:
+//!     `message` is flat at the top level, matching the socket
+//!     transport envelope so SOPs parse one shape across both
+//!     transports). **Errors go to stdout, not stderr** — agents read
+//!     one stream. stderr is reserved for unrecoverable runtime panics.
 //!   - Exit code maps `GalleyError` variants to fixed categories
 //!     (see [`run`]) so SOPs can branch without parsing.
 
@@ -34,6 +36,13 @@ const SCHEMA_VERSION: u32 = 1;
     about = "Agent-first interface to Galley (the local agent team orchestrator)."
 )]
 struct Cli {
+    /// Pin the schema version the supervisor expects. v0.5 only knows
+    /// `1`; mismatch exits 2 with `error: "schema_mismatch"`. Future
+    /// binaries that speak multiple schema versions will accept all of
+    /// them. Omit to let the binary use its default (currently `1`).
+    #[arg(long = "schema", value_name = "N", global = true)]
+    schema: Option<u32>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -306,12 +315,31 @@ enum SessionCmd {
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
+    // §1.2 schema pin: if the caller pinned --schema=N, verify the binary
+    // speaks that schema. v0.5 only knows SCHEMA_VERSION (1); future
+    // multi-schema binaries widen this check to a set.
+    if let Some(pinned) = cli.schema {
+        if pinned != SCHEMA_VERSION {
+            let err = GalleyError::InvalidArgs {
+                message: format!(
+                    "schema_mismatch: client requested schema {pinned}, server speaks {SCHEMA_VERSION}"
+                ),
+            };
+            println!(
+                "{}",
+                serde_json::to_string(&err).expect("serialize GalleyError")
+            );
+            return ExitCode::from(exit_code_for(&err));
+        }
+    }
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             // Error → JSON on stdout (agents read one stream).
-            let json = serde_json::to_string(&e)
-                .unwrap_or_else(|_| format!("{{\"error\":\"internal\",\"detail\":{{\"message\":\"{}\"}}}}", e));
+            let json = serde_json::to_string(&e).unwrap_or_else(|_| {
+                let escaped = e.to_string().replace('\\', "\\\\").replace('"', "\\\"");
+                format!("{{\"error\":\"internal\",\"message\":\"{escaped}\"}}")
+            });
             println!("{json}");
             ExitCode::from(exit_code_for(&e))
         }
@@ -443,6 +471,7 @@ async fn run(cli: Cli) -> Result<(), GalleyError> {
         }
         Command::Version => {
             #[derive(serde::Serialize)]
+            #[serde(rename_all = "camelCase")]
             struct VersionPayload<'a> {
                 galley_version: &'a str,
                 schema_version: u32,

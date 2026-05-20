@@ -93,8 +93,40 @@ async fn version_subcommand_prints_schema_v1() {
     let (stdout, code) = run_galley(&db, &["version"]);
     assert_eq!(code, Some(0));
     let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
-    assert_eq!(payload["schema_version"], 1);
-    assert!(payload.get("galley_version").is_some());
+    // B4 M6 freeze: version output uses camelCase to align with the rest
+    // of the wire format (sessions/projects/etc all camelCase).
+    assert_eq!(payload["schemaVersion"], 1);
+    assert!(payload.get("galleyVersion").is_some());
+}
+
+#[tokio::test]
+async fn schema_pin_matching_v1_passes_through() {
+    let td = tempdir();
+    let db = td.path().join("workbench.db");
+    let _pool = seeded_db_at(&db).await;
+    // B4 M6: --schema=1 against a v1 binary passes through to the command.
+    let (stdout, code) = run_galley(&db, &["--schema", "1", "version"]);
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+    assert_eq!(payload["schemaVersion"], 1);
+}
+
+#[tokio::test]
+async fn schema_pin_mismatch_exits_2_invalid_args() {
+    let td = tempdir();
+    let db = td.path().join("workbench.db");
+    let _pool = seeded_db_at(&db).await;
+    // B4 M6: pinning to an unknown schema → exit 2 invalid_args with
+    // `schema_mismatch:` prefix in the message.
+    let (stdout, code) = run_galley(&db, &["--schema", "99", "version"]);
+    assert_eq!(code, Some(2), "stdout: {stdout}");
+    let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+    assert_eq!(payload["error"], "invalid_args");
+    let msg = payload["message"].as_str().expect("message string");
+    assert!(
+        msg.starts_with("schema_mismatch:"),
+        "message should start with schema_mismatch: — got {msg}"
+    );
 }
 
 #[tokio::test]
