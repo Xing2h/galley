@@ -3,6 +3,7 @@ import {
   Cpu,
   Info,
   Keyboard,
+  PlugsConnected,
   ShieldCheck,
   X as XIcon,
 } from "@phosphor-icons/react";
@@ -10,12 +11,18 @@ import { useState } from "react";
 
 import { SettingsAbout } from "@/components/screens/settings/SettingsAbout";
 import { SettingsApproval } from "@/components/screens/settings/SettingsApproval";
+import { SettingsIntegration } from "@/components/screens/settings/SettingsIntegration";
 import { SettingsRuntime } from "@/components/screens/settings/SettingsRuntime";
 import { SettingsShortcuts } from "@/components/screens/settings/SettingsShortcuts";
 import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
 
-export type SettingsTab = "runtime" | "approval" | "shortcuts" | "about";
+export type SettingsTab =
+  | "runtime"
+  | "approval"
+  | "integration"
+  | "shortcuts"
+  | "about";
 
 export interface ApprovalConfig {
   /** Tools that require approval before dispatch. */
@@ -141,6 +148,7 @@ export function Settings({
                   onRemoveAlwaysAllow={onRemoveAlwaysAllow}
                 />
               )}
+              {tab === "integration" && <SettingsIntegration />}
               {tab === "shortcuts" && <SettingsShortcuts />}
               {tab === "about" && (
                 <SettingsAbout
@@ -178,6 +186,12 @@ function SettingsTabList({
         Icon={ShieldCheck}
         label="Approval"
         onClick={() => onChange("approval")}
+      />
+      <SettingsTabButton
+        active={tab === "integration"}
+        Icon={PlugsConnected}
+        label="Integration"
+        onClick={() => onChange("integration")}
       />
       <SettingsTabButton
         active={tab === "shortcuts"}
