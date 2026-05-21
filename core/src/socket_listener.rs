@@ -1485,6 +1485,7 @@ async fn resolve_llm_name(
 #[derive(Debug, Deserialize)]
 struct LlmListEntry {
     index: u32,
+    #[serde(alias = "displayName")]
     name: String,
 }
 
@@ -2024,6 +2025,14 @@ mod tests {
         let req: SocketRequest = serde_json::from_str(line).unwrap();
         assert_eq!(req.command, "sessions.list");
         assert_eq!(req.request_id, Some("abc-123".into()));
+    }
+
+    #[test]
+    fn llm_list_entry_accepts_gui_display_name_cache() {
+        let entry: LlmListEntry =
+            serde_json::from_str(r#"{"index":0,"displayName":"GPT 5.5"}"#).unwrap();
+        assert_eq!(entry.index, 0);
+        assert_eq!(entry.name, "GPT 5.5");
     }
 
     #[test]
