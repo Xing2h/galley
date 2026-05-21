@@ -8,7 +8,7 @@
 -- The naming differs slightly from messages because "supervisor" /
 -- "origin_note" without a `created_by_` prefix on a session would be
 -- ambiguous — sessions also have a "last touched by supervisor" concept
--- in v0.2 that's separate from "originally created by supervisor".
+-- in v0.5 that's separate from "originally created by supervisor".
 -- Explicit prefixes future-proof the schema.
 
 ALTER TABLE sessions ADD COLUMN created_via TEXT NOT NULL DEFAULT 'gui'

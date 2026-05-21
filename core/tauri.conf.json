@@ -53,5 +53,10 @@
         "installMode": "currentUser"
       }
     }
+  },
+  "plugins": {
+    "sql": {
+      "preload": ["sqlite:workbench.db"]
+    }
   }
 }

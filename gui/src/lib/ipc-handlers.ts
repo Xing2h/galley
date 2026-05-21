@@ -209,7 +209,7 @@ export function dispatchIPCEvent(event: IPCEvent): void {
         args: event.args,
       };
       messages.addPendingApproval(event.sessionId, pending);
-      // Best-effort SQLite double-write for audit trail. tool_events
+      // Best-effort Core DB write for audit trail. tool_events
       // joins to messages by (session_id, turn_index) — must use
       // absolute turn index so the join works after restore.
       void persistToolEventPendingFromIPC({
@@ -836,17 +836,14 @@ export function extractPreamble(text: string): string | undefined {
   return trimmed || undefined;
 }
 
-// ---------------- SQLite persistence (best-effort) ----------------
+// ---------------- Core DB persistence (best-effort) ----------------
 
 /**
- * Best-effort SQLite write. Imported lazily so a non-Tauri runtime
- * (Vite-only dev) doesn't fail hard at IPC dispatch time; if the DB
- * isn't available we just log and move on.
- */
-/**
- * Best-effort SQLite write for the audit trail. See db.ts
- * `persistToolEventPending` for the v0.1 scoping rationale (audit only,
- * no completion rows).
+ * Best-effort Core DB write for the approval audit trail. Imported
+ * lazily so a non-Tauri runtime (Vite-only dev) doesn't fail hard at
+ * IPC dispatch time; if persistence isn't available we just log and
+ * move on. See db.ts `persistToolEventPending` for the v0.1 scoping
+ * rationale (audit only, no completion rows).
  */
 async function persistToolEventPendingFromIPC(event: {
   sessionId: string;
@@ -877,7 +874,7 @@ async function persistToolEventPendingFromIPC(event: {
       startedAt: event.timestamp,
     });
   } catch (e) {
-    console.debug("[ipc] persistToolEventPending: SQLite unavailable.", e);
+    console.debug("[ipc] persistToolEventPending: Core DB unavailable.", e);
   }
 }
 
@@ -921,14 +918,14 @@ async function persistTurnEndToMessages(event: {
       },
     });
   } catch (e) {
-    console.debug("[ipc] persistTurnEndToMessages: SQLite unavailable.", e);
+    console.debug("[ipc] persistTurnEndToMessages: Core DB unavailable.", e);
   }
 }
 
 // ---------------- Session restore ----------------
 
 /**
- * Replay this session's SQLite message history into the bridge's
+ * Replay this session's persisted message history into the bridge's
  * GA backend via `load_history` IPC. Called from the `ready` event
  * handler when `session.turnCount > 0` indicates prior conversation.
  *

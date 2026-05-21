@@ -14,7 +14,10 @@ use api::{
     CreateProjectInput, CreateSessionInput, GalleyApi, Origin, ProjectBrief, ProjectId,
     ProjectPatch, SessionBrief, SessionFilter, SessionId,
 };
-use db::{PersistAssistantMessage, PersistedMessageRow, SqliteGalley};
+use db::{
+    MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
+    SqliteGalley, ToolEventRow,
+};
 use serde::Deserialize;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -124,10 +127,8 @@ async fn list_sessions(filter: SessionFilter) -> std::result::Result<Vec<Session
 //   2. forward the args;
 //   3. stringify the `GalleyError` envelope for the invoke wire.
 //
-// B3 M4a SHIPS these commands but does NOT route the GUI through them
-// yet — M4b will replace the existing `tauri-plugin-sql` direct SQL
-// writes in gui/src/lib/db.ts with `invoke("<command>", ...)`. Until
-// M4b lands, these commands compile-test the surface and stay dormant.
+// The GUI routes through these commands instead of opening SQLite
+// directly; CLI/socket transports wrap the same Core layer.
 
 #[tauri::command]
 async fn create_session(
@@ -310,6 +311,99 @@ async fn persist_assistant_message(
 }
 
 #[tauri::command]
+async fn delete_empty_new_sessions() -> std::result::Result<u32, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .delete_empty_new_sessions()
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn delete_demo_sessions() -> std::result::Result<u32, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley.delete_demo_sessions().await.map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn backfill_fts_if_empty() -> std::result::Result<u32, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .backfill_fts_if_empty()
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn search_messages(
+    query: String,
+    limit: u32,
+) -> std::result::Result<Vec<MessageSearchHit>, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .search_message_hits(query, limit)
+        .await
+        .map_err(stringify_error)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistToolEventPendingInput {
+    approval_id: String,
+    session_id: SessionId,
+    turn_index: u32,
+    tool_name: String,
+    args: serde_json::Value,
+    args_preview: String,
+    risk_level: String,
+    started_at: String,
+}
+
+#[tauri::command]
+async fn persist_tool_event_pending(
+    input: PersistToolEventPendingInput,
+) -> std::result::Result<(), String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .persist_tool_event_pending(PersistToolEventPending {
+            approval_id: input.approval_id,
+            session_id: input.session_id,
+            turn_index: input.turn_index,
+            tool_name: input.tool_name,
+            args: input.args,
+            args_preview: input.args_preview,
+            risk_level: input.risk_level,
+            started_at: input.started_at,
+        })
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn persist_tool_event_approval_decision(
+    approval_id: String,
+    decision: String,
+    decided_at: String,
+) -> std::result::Result<(), String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .persist_tool_event_approval_decision(&approval_id, &decision, &decided_at)
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn load_tool_events_by_session(
+    session_id: SessionId,
+) -> std::result::Result<Vec<ToolEventRow>, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .tool_event_rows_by_session(&session_id)
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
 async fn get_pref_json(key: String) -> std::result::Result<Option<serde_json::Value>, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley.get_pref_json(&key).await.map_err(stringify_error)
@@ -465,11 +559,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations(DB_URL, migrations)
-                .build(),
-        )
         // RunnerManager is the single Rust authority for Python runner
         // subprocesses (B2 M1). Held as Tauri app state inside an `Arc`
         // so the `spawn_runner` / `send_to_runner` / etc. commands AND
@@ -499,6 +588,13 @@ pub fn run() {
             session_message_rows,
             persist_user_message,
             persist_assistant_message,
+            delete_empty_new_sessions,
+            delete_demo_sessions,
+            backfill_fts_if_empty,
+            search_messages,
+            persist_tool_event_pending,
+            persist_tool_event_approval_decision,
+            load_tool_events_by_session,
             get_pref_json,
             set_pref_json,
             bulk_archive_sessions,
@@ -519,14 +615,14 @@ pub fn run() {
         ])
         .setup(move |_app| {
             // Pre-migration backup (B4 M8 · invariant B4-I6). Runs
-            // BEFORE `tauri-plugin-sql` opens the DB — the plugin
-            // doesn't connect until the JS side calls `Database.load()`
-            // after webview ready, which is after this setup closure
-            // returns. If the on-disk schema is older than the latest
-            // we know about, we copy the entire data dir to a sibling
-            // `app.galley.backup.<utc-timestamp>/` first. A failure
-            // here aborts startup — we'd rather refuse to open than
-            // attempt a migration with no safety net.
+            // BEFORE `tauri-plugin-sql` opens the DB. We register the
+            // SQL plugin below only after this guard succeeds, and its
+            // preload then runs pending migrations. If the on-disk
+            // schema is older than the latest we know about, we copy the
+            // entire data dir to a sibling
+            // `app.galley.backup.<utc-timestamp>/` first. A failure here
+            // aborts startup — we'd rather refuse to open than attempt a
+            // migration with no safety net.
             match migration_backup::ensure_backup_before_migrate(latest_migration_version) {
                 Ok(outcome) => {
                     eprintln!("[backup] {outcome:?}");
@@ -549,6 +645,19 @@ pub fn run() {
                     std::process::exit(2);
                 }
             }
+
+            // Register the SQL plugin only after the backup gate. The
+            // plugin is configured with `plugins.sql.preload` in
+            // tauri.conf.json, so registration immediately opens
+            // `workbench.db` and runs pending migrations. GUI code no
+            // longer calls the SQL plugin directly; Galley Core owns all
+            // DB reads/writes, while this Rust-side plugin registration
+            // remains the migration runner.
+            _app.handle().plugin(
+                tauri_plugin_sql::Builder::default()
+                    .add_migrations(DB_URL, migrations)
+                    .build(),
+            )?;
 
             // Start the local socket listener (Unix socket on macOS/Linux,
             // Windows named pipe on Windows). CLI clients connect here to

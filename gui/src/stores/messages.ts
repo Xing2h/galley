@@ -582,7 +582,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     }));
     set({ byId });
     fireSessionMirror(sid, next);
-    // Best-effort SQLite double-write for the approval audit trail.
+    // Best-effort Core DB write for the approval audit trail.
     // The matching `pending` row was written when tool_call_pending
     // arrived (see ipc-handlers.persistToolEventPendingFromIPC); this
     // update fills in approval_decision + terminal status.

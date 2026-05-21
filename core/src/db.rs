@@ -10,8 +10,8 @@
 //!
 //! **Path resolution.** The DB file lives in the platform-specific
 //! app-data directory under the Tauri identifier `app.galley` —
-//! exactly where `tauri-plugin-sql`'s `Database.load("sqlite:workbench.db")`
-//! places it. [`db_path`] reproduces that lookup without an `AppHandle`
+//! exactly where `tauri-plugin-sql` resolves the `sqlite:workbench.db`
+//! URL. [`db_path`] reproduces that lookup without an `AppHandle`
 //! so the future Galley CLI binary (no Tauri context) can find the
 //! same DB. **Identifier change == data move** — see
 //! [desktop runtime](../../docs/desktop-runtime.md#tauri-identifier).
@@ -229,6 +229,243 @@ impl SqliteGalley {
         Ok(())
     }
 
+    pub async fn delete_empty_new_sessions(&self) -> Result<u32> {
+        let res = sqlx::query(
+            "DELETE FROM sessions \
+             WHERE title = ? \
+               AND turn_count = 0 \
+               AND status != 'archived'",
+        )
+        .bind(DEFAULT_NEW_SESSION_TITLE)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        Ok(res.rows_affected() as u32)
+    }
+
+    pub async fn delete_demo_sessions(&self) -> Result<u32> {
+        let res = sqlx::query(
+            "DELETE FROM sessions \
+             WHERE id IN ('s-today-1','s-today-2','s-today-3', \
+                          's-week-1','s-week-2','s-earlier-1')",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        Ok(res.rows_affected() as u32)
+    }
+
+    pub async fn backfill_fts_if_empty(&self) -> Result<u32> {
+        let msg_cnt: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages \
+             WHERE role IN ('user','assistant') \
+               AND COALESCE(NULLIF(TRIM(CASE \
+                 WHEN role = 'user' THEN content \
+                 WHEN role = 'assistant' THEN COALESCE(final_answer, content) \
+               END), ''), '') != ''",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        let fts_cnt: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+        if fts_cnt >= msg_cnt {
+            return Ok(0);
+        }
+
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
+        sqlx::query("DELETE FROM messages_fts")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_err)?;
+        let res = sqlx::query(
+            "INSERT INTO messages_fts (message_id, session_id, role, turn_index, body) \
+             SELECT \
+               id, \
+               session_id, \
+               role, \
+               turn_index, \
+               CASE \
+                 WHEN role = 'user' THEN content \
+                 WHEN role = 'assistant' THEN COALESCE(final_answer, content) \
+               END AS body \
+             FROM messages \
+             WHERE role IN ('user','assistant') \
+               AND COALESCE(NULLIF(TRIM(CASE \
+                 WHEN role = 'user' THEN content \
+                 WHEN role = 'assistant' THEN COALESCE(final_answer, content) \
+               END), ''), '') != ''",
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx_err)?;
+        tx.commit().await.map_err(map_sqlx_err)?;
+        Ok(res.rows_affected() as u32)
+    }
+
+    pub async fn search_message_hits(
+        &self,
+        query: String,
+        limit: u32,
+    ) -> Result<Vec<MessageSearchHit>> {
+        let q = query.trim();
+        if q.chars().count() < 2 {
+            return Ok(vec![]);
+        }
+        let limit = i64::from(limit);
+
+        if q.chars().count() >= 3 {
+            let phrase = format!("\"{}\"", q.replace('"', "\"\""));
+            let res = sqlx::query_as::<_, MessageSearchHit>(
+                "SELECT \
+                   fts.message_id AS message_id, \
+                   fts.session_id AS session_id, \
+                   fts.role AS role, \
+                   fts.turn_index AS turn_index, \
+                   snippet(messages_fts, 4, '«', '»', '…', 16) AS snippet, \
+                   s.title AS session_title, \
+                   s.last_activity_at AS session_activity_at \
+                 FROM messages_fts fts \
+                 JOIN sessions s ON s.id = fts.session_id \
+                 WHERE messages_fts MATCH ? \
+                   AND s.status != 'archived' \
+                 ORDER BY s.last_activity_at DESC \
+                 LIMIT ?",
+            )
+            .bind(&phrase)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await;
+            match res {
+                Ok(rows) => return Ok(rows),
+                Err(e) => {
+                    eprintln!("[galley-core] GUI FTS5 search failed, falling back: {e}");
+                }
+            }
+        }
+
+        let like = format!("%{}%", escape_like(q));
+        let rows = sqlx::query_as::<_, MessageSearchHit>(
+            "SELECT \
+               m.id AS message_id, \
+               m.session_id AS session_id, \
+               m.role AS role, \
+               m.turn_index AS turn_index, \
+               substr(CASE \
+                 WHEN m.role = 'user' THEN m.content \
+                 WHEN m.role = 'assistant' THEN COALESCE(m.final_answer, m.content) \
+               END, 1, 200) AS snippet, \
+               s.title AS session_title, \
+               s.last_activity_at AS session_activity_at \
+             FROM messages m \
+             JOIN sessions s ON s.id = m.session_id \
+             WHERE m.role IN ('user','assistant') \
+               AND s.status != 'archived' \
+               AND ( \
+                 m.content LIKE ? ESCAPE '\\' \
+                 OR m.final_answer LIKE ? ESCAPE '\\' \
+               ) \
+             ORDER BY s.last_activity_at DESC \
+             LIMIT ?",
+        )
+        .bind(&like)
+        .bind(&like)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        Ok(rows
+            .into_iter()
+            .map(|mut row| {
+                row.snippet = highlight_like(&row.snippet, q);
+                row
+            })
+            .collect())
+    }
+
+    pub async fn persist_tool_event_pending(&self, p: PersistToolEventPending) -> Result<()> {
+        let args_json = serde_json::to_string(&p.args).ok();
+        sqlx::query(
+            "INSERT INTO tool_events ( \
+               id, session_id, turn_index, tool_name, status, \
+               args_json, args_preview, result_preview, \
+               risk_level, approval_id, approval_decision, \
+               elapsed_ms, started_at, ended_at \
+             ) VALUES ( \
+               ?, ?, ?, ?, 'waiting_approval', \
+               ?, ?, NULL, \
+               ?, ?, NULL, \
+               NULL, ?, NULL \
+             ) \
+             ON CONFLICT(id) DO UPDATE SET \
+               session_id   = excluded.session_id, \
+               turn_index   = excluded.turn_index, \
+               tool_name    = excluded.tool_name, \
+               args_json    = excluded.args_json, \
+               args_preview = excluded.args_preview, \
+               risk_level   = excluded.risk_level, \
+               started_at   = excluded.started_at",
+        )
+        .bind(&p.approval_id)
+        .bind(p.session_id.as_str())
+        .bind(i64::from(p.turn_index))
+        .bind(&p.tool_name)
+        .bind(args_json)
+        .bind(&p.args_preview)
+        .bind(&p.risk_level)
+        .bind(&p.approval_id)
+        .bind(&p.started_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| map_constraint_err("persist_tool_event_pending", e))?;
+        Ok(())
+    }
+
+    pub async fn persist_tool_event_approval_decision(
+        &self,
+        approval_id: &str,
+        decision: &str,
+        decided_at: &str,
+    ) -> Result<()> {
+        let denied = decision == "deny";
+        sqlx::query(
+            "UPDATE tool_events \
+               SET status = ?, \
+                   approval_decision = ?, \
+                   ended_at = ? \
+             WHERE id = ?",
+        )
+        .bind(if denied { "denied" } else { "running" })
+        .bind(decision)
+        .bind(if denied { Some(decided_at) } else { None })
+        .bind(approval_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| map_constraint_err("persist_tool_event_approval_decision", e))?;
+        Ok(())
+    }
+
+    pub async fn tool_event_rows_by_session(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Vec<ToolEventRow>> {
+        sqlx::query_as::<_, ToolEventRow>(
+            "SELECT id, session_id, turn_index, tool_name, status, \
+                    args_json, args_preview, result_preview, risk_level, \
+                    approval_id, approval_decision, elapsed_ms, \
+                    started_at, ended_at \
+             FROM tool_events \
+             WHERE session_id = ? \
+             ORDER BY started_at ASC",
+        )
+        .bind(session_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)
+    }
+
     async fn index_message_fts(
         &self,
         message_id: &str,
@@ -365,6 +602,47 @@ pub struct PersistAssistantMessage {
     pub final_answer: Option<String>,
     pub summary: Option<String>,
     pub preamble: Option<String>,
+}
+
+pub struct PersistToolEventPending {
+    pub approval_id: String,
+    pub session_id: SessionId,
+    pub turn_index: u32,
+    pub tool_name: String,
+    pub args: serde_json::Value,
+    pub args_preview: String,
+    pub risk_level: String,
+    pub started_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageSearchHit {
+    pub message_id: String,
+    pub session_id: String,
+    pub session_title: String,
+    pub role: String,
+    pub turn_index: i64,
+    pub snippet: String,
+    pub session_activity_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct ToolEventRow {
+    pub id: String,
+    pub session_id: String,
+    pub turn_index: i64,
+    pub tool_name: String,
+    pub status: String,
+    pub args_json: Option<String>,
+    pub args_preview: Option<String>,
+    pub result_preview: Option<String>,
+    pub risk_level: Option<String>,
+    pub approval_id: Option<String>,
+    pub approval_decision: Option<String>,
+    pub elapsed_ms: Option<i64>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -1618,4 +1896,38 @@ fn escape_like(s: &str) -> String {
         }
     }
     out
+}
+
+fn highlight_like(snippet: &str, q: &str) -> String {
+    let q_chars = q.chars().count();
+    if q_chars == 0 {
+        return snippet.to_string();
+    }
+    let needle = q.to_lowercase();
+    for (start, _) in snippet.char_indices() {
+        let Some(end) = nth_char_boundary(snippet, start, q_chars) else {
+            break;
+        };
+        if snippet[start..end].to_lowercase() == needle {
+            return format!(
+                "{}«{}»{}",
+                &snippet[..start],
+                &snippet[start..end],
+                &snippet[end..]
+            );
+        }
+    }
+    snippet.to_string()
+}
+
+fn nth_char_boundary(s: &str, start: usize, n: usize) -> Option<usize> {
+    let mut iter = s[start..].char_indices();
+    for _ in 0..n {
+        iter.next()?;
+    }
+    Some(
+        iter.next()
+            .map(|(offset, _)| start + offset)
+            .unwrap_or_else(|| s.len()),
+    )
 }

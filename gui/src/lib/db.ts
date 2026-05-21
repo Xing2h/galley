@@ -1,57 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
-import Database from "@tauri-apps/plugin-sql";
 
 import type { MessageRow, ToolEventRow } from "@/types/db";
 import type { ApprovalDecision } from "@/types/ipc";
 
 /**
- * SQLite client wrapper. Migrations run automatically through
- * tauri-plugin-sql; `getDB()` remains for search/tool-event/backfill
- * surfaces that still use direct SQL.
- *
- * Session/project, message history, and prefs reads/writes now route
- * through Rust Core Tauri commands so the GUI and CLI use the same DB
- * path for startup-critical state.
+ * Thin GUI wrappers over Galley Core Tauri commands. The GUI does not
+ * hold a SQLite connection; Rust owns persistence so GUI and CLI share
+ * the same authority path.
  */
-
-const DB_URL = "sqlite:workbench.db";
-
-let _db: Database | null = null;
-let _loadPromise: Promise<Database> | null = null;
-
-/**
- * Lazy-loaded singleton DB connection. Subsequent calls return the
- * same instance; the in-flight Promise is reused so concurrent
- * callers don't trigger duplicate `Database.load`.
- */
-export async function getDB(): Promise<Database> {
-  if (_db) return _db;
-  if (_loadPromise) return _loadPromise;
-  _loadPromise = Database.load(DB_URL).then((db) => {
-    _db = db;
-    return db;
-  });
-  return _loadPromise;
-}
-
-/**
- * Reset the cached connection (test helper). Real callers should
- * never need this.
- */
-export function _resetDBForTest(): void {
-  _db = null;
-  _loadPromise = null;
-}
 
 // ---------------- sessions ----------------
 //
 // All session writes (create / archive / rename / pin / delete +
 // bulk variants + project CRUD) moved to sessionsStore in M4b
-// (2026-05-19). They invoke the Rust GalleyApi trait methods through
-// Tauri commands; the tauri-plugin-sql direct SQL surface that used
-// to live here is gone. The mapper helpers + a couple of sweep
-// utilities are still in this file because they have no good slice
-// home (yet).
+// (2026-05-19). They invoke Rust Galley Core commands; the sweep
+// utilities below now do the same.
 
 /**
  * Sweep "absolutely empty" sessions on launch — title still at the
@@ -70,15 +33,7 @@ export function _resetDBForTest(): void {
  * debugging cleanups that prune more than expected.
  */
 export async function deleteEmptyNewSessions(): Promise<number> {
-  const db = await getDB();
-  // tauri-plugin-sql's execute returns { rowsAffected, lastInsertId }.
-  const result = await db.execute(
-    `DELETE FROM sessions
-     WHERE title = '新对话'
-       AND turn_count = 0
-       AND status != 'archived'`,
-  );
-  return result.rowsAffected ?? 0;
+  return invoke<number>("delete_empty_new_sessions");
 }
 
 /**
@@ -92,13 +47,7 @@ export async function deleteEmptyNewSessions(): Promise<number> {
  * Returns rows deleted, primarily for debug logging.
  */
 export async function deleteDemoSessions(): Promise<number> {
-  const db = await getDB();
-  const result = await db.execute(
-    `DELETE FROM sessions
-     WHERE id IN ('s-today-1','s-today-2','s-today-3',
-                  's-week-1','s-week-2','s-earlier-1')`,
-  );
-  return result.rowsAffected ?? 0;
+  return invoke<number>("delete_demo_sessions");
 }
 
 // Session + project row mappers moved to sessionsStore in M4b
@@ -148,36 +97,6 @@ export async function persistUserMessage(
 }
 
 /**
- * Maintain the messages_fts index for a single message. Called on
- * every persistUserMessage / persistTurnEndToMessages write. We
- * DELETE then INSERT (instead of using ON CONFLICT) because FTS5
- * external-content tables don't enforce uniqueness on UNINDEXED
- * columns; the delete/insert pair is the documented update pattern.
- *
- * Empty `body` is skipped (no point indexing nothing). This means
- * tool-only assistant turns whose `final_answer` is empty don't
- * pollute the index.
- */
-export async function indexMessageFts(p: {
-  messageId: string;
-  sessionId: string;
-  role: "user" | "assistant";
-  turnIndex: number;
-  body: string;
-}): Promise<void> {
-  if (!p.body || p.body.trim() === "") return;
-  const db = await getDB();
-  await db.execute("DELETE FROM messages_fts WHERE message_id = $1", [
-    p.messageId,
-  ]);
-  await db.execute(
-    `INSERT INTO messages_fts (message_id, session_id, role, turn_index, body)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [p.messageId, p.sessionId, p.role, p.turnIndex, p.body],
-  );
-}
-
-/**
  * One-time backfill of messages_fts from existing messages rows.
  * Runs on hydrate when the FTS table is empty but `messages` has
  * content — covers (a) fresh upgrade to the FTS migration, and
@@ -193,39 +112,7 @@ export async function indexMessageFts(p: {
  * with text that isn't user-facing).
  */
 export async function backfillFtsIfEmpty(): Promise<number> {
-  const db = await getDB();
-  const [msgCnt] = await db.select<Array<{ cnt: number }>>(
-    `SELECT COUNT(*) AS cnt FROM messages
-     WHERE role IN ('user','assistant')
-       AND COALESCE(NULLIF(TRIM(CASE
-         WHEN role = 'user' THEN content
-         WHEN role = 'assistant' THEN COALESCE(final_answer, content)
-       END), ''), '') != ''`,
-  );
-  const [ftsCnt] = await db.select<Array<{ cnt: number }>>(
-    "SELECT COUNT(*) AS cnt FROM messages_fts",
-  );
-  if (ftsCnt.cnt >= msgCnt.cnt) return 0;
-  await db.execute("DELETE FROM messages_fts");
-  const result = await db.execute(
-    `INSERT INTO messages_fts (message_id, session_id, role, turn_index, body)
-     SELECT
-       id,
-       session_id,
-       role,
-       turn_index,
-       CASE
-         WHEN role = 'user' THEN content
-         WHEN role = 'assistant' THEN COALESCE(final_answer, content)
-       END AS body
-     FROM messages
-     WHERE role IN ('user','assistant')
-       AND COALESCE(NULLIF(TRIM(CASE
-         WHEN role = 'user' THEN content
-         WHEN role = 'assistant' THEN COALESCE(final_answer, content)
-       END), ''), '') != ''`,
-  );
-  return result.rowsAffected ?? 0;
+  return invoke<number>("backfill_fts_if_empty");
 }
 
 /**
@@ -262,124 +149,21 @@ export interface MessageSearchHit {
  * deduped at the message level — one message produces one hit even
  * if its body matches multiple times.
  */
-/**
- * @deprecated B1 M3 — Rust port available at `galley_core_lib::db::SqliteGalley::search_messages`.
- * Migrate call sites to `invoke("search_messages", {...})` then delete this
- * once no callers remain. Kept alive in parallel per refactor/invariants.md §I1.
- */
 export async function searchMessages(
   query: string,
   limit = 20,
 ): Promise<MessageSearchHit[]> {
   const q = query.trim();
   if (q.length < 2) return [];
-  const db = await getDB();
-
-  if (q.length >= 3) {
-    // Wrap as an FTS5 phrase. Escape embedded double-quotes by
-    // doubling them per SQLite's standard escape rule.
-    const escaped = `"${q.replace(/"/g, '""')}"`;
-    try {
-      const rows = await db.select<RawHitRow[]>(
-        `SELECT
-           fts.message_id    AS message_id,
-           fts.session_id    AS session_id,
-           fts.role          AS role,
-           fts.turn_index    AS turn_index,
-           snippet(messages_fts, 4, '«', '»', '…', 16) AS snippet,
-           s.title           AS session_title,
-           s.last_activity_at AS session_activity_at
-         FROM messages_fts fts
-         JOIN sessions s ON s.id = fts.session_id
-         WHERE messages_fts MATCH $1
-           AND s.status != 'archived'
-         ORDER BY s.last_activity_at DESC
-         LIMIT $2`,
-        [escaped, limit],
-      );
-      return rows.map(rowToHit);
-    } catch (e) {
-      // FTS5 MATCH can throw on malformed input (rare with our
-      // phrase wrapping but possible with weird unicode). Fall
-      // through to LIKE so the search still returns something.
-      console.debug("[db] searchMessages FTS5 query failed.", e);
-    }
-  }
-
-  // 2-char fallback (or FTS error recovery) — LIKE substring.
-  const like = `%${q.replace(/[\\%_]/g, "\\$&")}%`;
-  const rows = await db.select<RawHitRow[]>(
-    `SELECT
-       m.id              AS message_id,
-       m.session_id      AS session_id,
-       m.role            AS role,
-       m.turn_index      AS turn_index,
-       substr(
-         CASE
-           WHEN m.role = 'user' THEN m.content
-           WHEN m.role = 'assistant' THEN COALESCE(m.final_answer, m.content)
-         END,
-         1, 200
-       )                 AS snippet,
-       s.title           AS session_title,
-       s.last_activity_at AS session_activity_at
-     FROM messages m
-     JOIN sessions s ON s.id = m.session_id
-     WHERE m.role IN ('user','assistant')
-       AND s.status != 'archived'
-       AND (
-         m.content LIKE $1 ESCAPE '\\'
-         OR m.final_answer LIKE $1 ESCAPE '\\'
-       )
-     ORDER BY s.last_activity_at DESC
-     LIMIT $2`,
-    [like, limit],
-  );
-  return rows.map((r) => rowToHit({ ...r, snippet: highlightLike(r.snippet, q) }));
-}
-
-interface RawHitRow {
-  message_id: string;
-  session_id: string;
-  role: string;
-  turn_index: number;
-  snippet: string;
-  session_title: string;
-  session_activity_at: string;
-}
-
-function rowToHit(r: RawHitRow): MessageSearchHit {
-  return {
-    messageId: r.message_id,
-    sessionId: r.session_id,
-    sessionTitle: r.session_title,
-    role: r.role === "user" ? "user" : "assistant",
-    turnIndex: r.turn_index,
-    snippet: r.snippet,
-    sessionActivityAt: r.session_activity_at,
-  };
+  return invoke<MessageSearchHit[]>("search_messages", { query: q, limit });
 }
 
 /**
- * Wrap the first occurrence of `q` in the LIKE-fallback snippet
- * with FTS5-style `«` `»` delimiters so both paths produce
- * uniformly-renderable output. Case-insensitive match.
- */
-function highlightLike(snippet: string, q: string): string {
-  const idx = snippet.toLowerCase().indexOf(q.toLowerCase());
-  if (idx === -1) return snippet;
-  const before = snippet.slice(0, idx);
-  const hit = snippet.slice(idx, idx + q.length);
-  const after = snippet.slice(idx + q.length);
-  return `${before}«${hit}»${after}`;
-}
-
-/**
- * Load all messages for a session in conversation order. Returns raw
- * SQLite rows; callers convert to either `Turn[]` (for UI hydration
- * via `restoreSessionTurns`) or `ConversationMessage[]` (for GA
- * `load_history` IPC). The two consumers need slightly different
- * shapes — keep the conversion out of this primitive.
+ * Load all messages for a session in conversation order. Returns
+ * persisted message rows; callers convert to either `Turn[]` (for UI
+ * hydration via `restoreSessionTurns`) or `ConversationMessage[]`
+ * (for GA `load_history` IPC). The two consumers need slightly
+ * different shapes — keep the conversion out of this primitive.
  */
 /**
  * @deprecated B1 M3 — Rust port available at `galley_core_lib::db::SqliteGalley::session_messages`.
@@ -439,44 +223,18 @@ export interface PersistToolEventPendingParams {
 export async function persistToolEventPending(
   p: PersistToolEventPendingParams,
 ): Promise<void> {
-  const db = await getDB();
-  let argsJson: string | null;
-  try {
-    argsJson = JSON.stringify(p.args);
-  } catch {
-    argsJson = null;
-  }
-  await db.execute(
-    `INSERT INTO tool_events (
-       id, session_id, turn_index, tool_name, status,
-       args_json, args_preview, result_preview,
-       risk_level, approval_id, approval_decision,
-       elapsed_ms, started_at, ended_at
-     ) VALUES (
-       $1, $2, $3, $4, 'waiting_approval',
-       $5, $6, NULL,
-       $7, $1, NULL,
-       NULL, $8, NULL
-     )
-     ON CONFLICT(id) DO UPDATE SET
-       session_id   = excluded.session_id,
-       turn_index   = excluded.turn_index,
-       tool_name    = excluded.tool_name,
-       args_json    = excluded.args_json,
-       args_preview = excluded.args_preview,
-       risk_level   = excluded.risk_level,
-       started_at   = excluded.started_at`,
-    [
-      p.approvalId,
-      p.sessionId,
-      p.turnIndex,
-      p.toolName,
-      argsJson,
-      p.argsPreview,
-      p.riskLevel,
-      p.startedAt,
-    ],
-  );
+  await invoke("persist_tool_event_pending", {
+    input: {
+      approvalId: p.approvalId,
+      sessionId: p.sessionId,
+      turnIndex: p.turnIndex,
+      toolName: p.toolName,
+      args: p.args,
+      argsPreview: p.argsPreview,
+      riskLevel: p.riskLevel,
+      startedAt: p.startedAt,
+    },
+  });
 }
 
 /**
@@ -493,21 +251,11 @@ export async function persistToolEventApprovalDecision(
   decision: ApprovalDecision,
   decidedAt: string,
 ): Promise<void> {
-  const db = await getDB();
-  const denied = decision === "deny";
-  await db.execute(
-    `UPDATE tool_events
-       SET status            = $1,
-           approval_decision = $2,
-           ended_at          = $3
-     WHERE id = $4`,
-    [
-      denied ? "denied" : "running",
-      decision,
-      denied ? decidedAt : null,
-      approvalId,
-    ],
-  );
+  await invoke("persist_tool_event_approval_decision", {
+    approvalId,
+    decision,
+    decidedAt,
+  });
 }
 
 /**
@@ -517,11 +265,7 @@ export async function persistToolEventApprovalDecision(
 export async function loadToolEventsBySession(
   sessionId: string,
 ): Promise<ToolEventRow[]> {
-  const db = await getDB();
-  return db.select<ToolEventRow[]>(
-    "SELECT * FROM tool_events WHERE session_id = $1 ORDER BY started_at ASC",
-    [sessionId],
-  );
+  return invoke<ToolEventRow[]>("load_tool_events_by_session", { sessionId });
 }
 
 
@@ -534,7 +278,8 @@ export async function loadToolEventsBySession(
 
 /**
  * Load a typed pref by key. Returns `undefined` when missing or when
- * SQLite isn't available (callers fall back to their default state).
+ * Core persistence isn't available (callers fall back to their default
+ * state).
  *
  * Note: `T` is a type assertion — JSON has no type system, so a
  * caller asking for `boolean` on a key that was written as a string
