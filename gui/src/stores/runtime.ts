@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 
 import { dispatchIPCEvent } from "@/lib/ipc-handlers";
@@ -143,6 +144,8 @@ interface RuntimeActions {
   /** Send an IPC command to `sid`'s bridge over stdin. Warns + no-op
    * if no live bridge. */
   sendIPCCommand: (sid: string, cmd: IPCCommand) => Promise<void>;
+  /** True only when this JS runtime has a live client/listener handle. */
+  hasBridgeClient: (sid: string) => boolean;
   /**
    * Apply the LLM list reported by a bridge's `ready` / `llm_changed`
    * event. Updates byId[sid], caches the list to `llm_list` pref, and
@@ -157,6 +160,12 @@ interface RuntimeActions {
    * to `--llm-no` at spawn time.
    */
   selectLLMForNewSession: (index: number) => void;
+  /**
+   * Optimistically switch the visible LLM for an existing session.
+   * Bridge `llm_changed` will later confirm the same state when a
+   * live bridge is available.
+   */
+  selectLLMForSession: (sid: string, index: number) => void;
   /**
    * One-shot bridge spawn at app launch to capture the GA mykey.py
    * LLM list before any user session exists. Caches the list to prefs
@@ -216,6 +225,12 @@ const _stderrTails = new Map<string, string[]>();
 const _STDERR_TAIL_MAX = 8;
 const _lruOrder: string[] = [];
 const LRU_CAP = 20;
+const BRIDGE_CLIENT_WAIT_MS = 15_000;
+const CONNECTED_CLIENT_WAIT_MS = 1_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function _lruTouch(sessionId: string): void {
   const idx = _lruOrder.indexOf(sessionId);
@@ -226,6 +241,22 @@ function _lruTouch(sessionId: string): void {
 function _lruRemove(sessionId: string): void {
   const idx = _lruOrder.indexOf(sessionId);
   if (idx !== -1) _lruOrder.splice(idx, 1);
+}
+
+async function _waitForBridgeClient(
+  sessionId: string,
+  timeoutMs: number = BRIDGE_CLIENT_WAIT_MS,
+): Promise<BridgeClient | undefined> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const client = _bridgeClients.get(sessionId);
+    if (client) return client;
+    const status =
+      useRuntimeStore.getState().byId[sessionId]?.bridgeStatus ?? "idle";
+    if (status !== "spawning" && status !== "connected") return undefined;
+    await sleep(50);
+  }
+  return _bridgeClients.get(sessionId);
 }
 
 async function _enforceLRUCap(): Promise<void> {
@@ -297,6 +328,21 @@ function buildSeedRuntime(seed: RuntimeSeedHints): PerSessionRuntime {
   return { llms, llmDisplayName, ...baseBridge };
 }
 
+function selectLLMInList(
+  list: LLMOption[],
+  index: number,
+): { llms: LLMOption[]; current: LLMOption } | null {
+  const current = list.find((l) => l.index === index);
+  if (!current) return null;
+  return {
+    current,
+    llms: list.map((l) => ({
+      ...l,
+      isCurrent: l.index === index,
+    })),
+  };
+}
+
 export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
   byId: {},
   cachedLLMs: [],
@@ -357,27 +403,51 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
 
   selectLLMForNewSession: (index) =>
     set((state) => {
-      // Apply the choice to ALL sessions' per-runtime cache so the
-      // Composer pill flips immediately on the empty screen. Future
-      // bridge spawns inherit via `pendingLLMIndex` → `--llm-no`.
-      const nextById: Record<string, PerSessionRuntime> = {};
-      for (const [sid, rt] of Object.entries(state.byId)) {
-        if (index < 0 || index >= rt.llms.length) {
-          nextById[sid] = rt;
-          continue;
-        }
-        const flipped = rt.llms.map((l, i) => ({
-          ...l,
-          isCurrent: i === index,
-        }));
-        nextById[sid] = {
-          ...rt,
-          llms: flipped,
-          llmDisplayName: flipped[index].displayName,
-        };
-      }
-      return { byId: nextById, pendingLLMIndex: index };
+      // EmptyState has no session runtime yet, so its Composer reads
+      // the cross-session cache. Flip that cache immediately for UI
+      // feedback; activateSession later consumes pendingLLMIndex and
+      // passes it to the fresh bridge as `--llm-no`.
+      const selected = selectLLMInList(
+        state.cachedLLMs.length > 0 ? state.cachedLLMs : DEFAULT_LLMS,
+        index,
+      );
+      if (!selected) return { pendingLLMIndex: index };
+      return {
+        cachedLLMs: selected.llms,
+        cachedLLMDisplayName: selected.current.displayName,
+        pendingLLMIndex: selected.current.index,
+      };
     }),
+
+  selectLLMForSession: (sid, index) => {
+    let picked: LLMOption | null = null;
+    set((state) => {
+      const existing = state.byId[sid];
+      const selected = selectLLMInList(
+        existing?.llms?.length
+          ? existing.llms
+          : state.cachedLLMs.length > 0
+            ? state.cachedLLMs
+            : DEFAULT_LLMS,
+        index,
+      );
+      if (!selected) return {};
+      picked = selected.current;
+      const next: PerSessionRuntime = {
+        llms: selected.llms,
+        llmDisplayName: selected.current.displayName,
+        bridgeStatus: existing?.bridgeStatus ?? "idle",
+        bridgeError: existing?.bridgeError ?? null,
+        bridgePid: existing?.bridgePid ?? null,
+      };
+      return { byId: { ...state.byId, [sid]: next } };
+    });
+    if (picked) {
+      void mirrorSelectedLLMOnSession(sid, picked).catch((e) => {
+        console.debug("[runtime] selectLLMForSession mirror failed.", e);
+      });
+    }
+  },
 
   warmupLLMList: async () => {
     if (get()._warmupComplete) return;
@@ -593,9 +663,17 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
 
   shutdownBridge: async (sessionId) => {
     const client = _bridgeClients.get(sessionId);
-    if (!client) return;
     try {
-      await client.shutdown();
+      if (client) {
+        await client.shutdown();
+      } else {
+        await invoke("shutdown_runner", {
+          sessionId,
+          timeoutMs: 3000,
+        }).catch(() => {
+          // Already gone or owned by a previous dev-HMR listener.
+        });
+      }
     } finally {
       _bridgeClients.delete(sessionId);
       _lruRemove(sessionId);
@@ -612,7 +690,18 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
   },
 
   sendIPCCommand: async (sessionId, cmd) => {
-    const client = _bridgeClients.get(sessionId);
+    let client = _bridgeClients.get(sessionId);
+    if (!client) {
+      const status = get().byId[sessionId]?.bridgeStatus ?? "idle";
+      if (status === "spawning" || status === "connected") {
+        client = await _waitForBridgeClient(
+          sessionId,
+          status === "connected"
+            ? CONNECTED_CLIENT_WAIT_MS
+            : BRIDGE_CLIENT_WAIT_MS,
+        );
+      }
+    }
     if (!client) {
       console.warn(
         `[runtime] sendIPCCommand(${sessionId}) called but no bridge is alive:`,
@@ -622,6 +711,8 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
     }
     await client.send(cmd);
   },
+
+  hasBridgeClient: (sid) => _bridgeClients.has(sid),
 
   patchRuntimeInfo: (patch) =>
     set((state) => ({ runtimeInfo: { ...state.runtimeInfo, ...patch } })),

@@ -23,6 +23,7 @@ import {
   EditProjectDialog,
 } from "@/components/screens/project/EditProjectDialog";
 import { ProjectsDialog } from "@/components/screens/project/ProjectsDialog";
+import { ensureHistoryReplayComplete } from "@/lib/ipc-handlers";
 import { bucketSession } from "@/lib/sessions";
 import {
   EMPTY_APPROVALS,
@@ -35,6 +36,7 @@ import { useRuntimeStore } from "@/stores/runtime";
 import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
 import { hydrateApp } from "@/lib/hydrate";
+import { makeAppError } from "@/types/app-error";
 import type { Turn } from "@/types/conversation";
 
 /**
@@ -181,10 +183,14 @@ function App() {
   // Subscribe to the active session's per-runtime entry so the
   // Composer pill + dropdown + Inspector tab re-render on changes.
   const activeRuntimeLLMs = useRuntimeStore((s) =>
-    activeSessionId ? s.byId[activeSessionId]?.llms : undefined,
+    screen === "main" && activeSessionId
+      ? s.byId[activeSessionId]?.llms
+      : undefined,
   );
   const activeRuntimeDisplayName = useRuntimeStore((s) =>
-    activeSessionId ? s.byId[activeSessionId]?.llmDisplayName : undefined,
+    screen === "main" && activeSessionId
+      ? s.byId[activeSessionId]?.llmDisplayName
+      : undefined,
   );
   const cachedLLMs = useRuntimeStore((s) => s.cachedLLMs);
   const cachedLLMDisplayName = useRuntimeStore((s) => s.cachedLLMDisplayName);
@@ -194,6 +200,7 @@ function App() {
   const selectLLMForNewSession = useRuntimeStore(
     (s) => s.selectLLMForNewSession,
   );
+  const selectLLMForSession = useRuntimeStore((s) => s.selectLLMForSession);
   const runtimeInfo = useRuntimeStore((s) => s.runtimeInfo);
 
   // Per-session conversation reads — activeSessionId comes from
@@ -231,6 +238,7 @@ function App() {
     activeSessionId ? (s.byId[activeSessionId]?.bridgeStatus ?? "idle") : "idle",
   );
   const sendIPCCommand = useRuntimeStore((s) => s.sendIPCCommand);
+  const shutdownBridge = useRuntimeStore((s) => s.shutdownBridge);
   const setGAConfig = usePrefsStore((s) => s.setGAConfig);
   const gaConfig = usePrefsStore((s) => s.gaConfig);
   // Sidebar runtime indicator. Two states for V0.1 — see Sidebar.tsx
@@ -314,12 +322,13 @@ function App() {
         setSettingsOpen(true);
       } else if (e.key === "n" || e.key === "N") {
         e.preventDefault();
+        setActiveSession(undefined);
         setScreen("empty");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [togglePalette, setSettingsOpen, setScreen]);
+  }, [togglePalette, setSettingsOpen, setActiveSession, setScreen]);
 
   // macOS menubar bridge: core/src/lib.rs installs a native menu
   // on Mac that emits `menu:<id>` events. We subscribe and route each
@@ -341,7 +350,13 @@ function App() {
 
     const handlers: Array<[string, () => void]> = [
       ["menu:settings", () => setSettingsOpen(true)],
-      ["menu:new_chat", () => setScreen("empty")],
+      [
+        "menu:new_chat",
+        () => {
+          setActiveSession(undefined);
+          setScreen("empty");
+        },
+      ],
       ["menu:width_compact", () => {
         void setConversationWidth("compact");
       }],
@@ -365,7 +380,7 @@ function App() {
       cancelled = true;
       unlisteners.forEach((fn) => fn());
     };
-  }, [setSettingsOpen, setScreen, setConversationWidth]);
+  }, [setSettingsOpen, setActiveSession, setScreen, setConversationWidth]);
 
   // `user-message-persisted` listener: Rust core's socket_listener emits
   // this Tauri event whenever a user message is persisted via the socket
@@ -791,16 +806,13 @@ function App() {
               }
               llms={llms}
               onSelectLLM={(idx) => {
-                // Send set_llm whenever a bridge subprocess exists
-                // (spawning or connected). The pre-seed makes the
-                // picker display real models from t=0 (before ready
-                // fires), so gating clicks on "connected" only would
-                // silently drop clicks during the ~430ms cold-spawn
-                // window — popover closes, pill doesn't change, user
-                // perceives "click failed". sendIPCCommand internally
-                // no-ops if `_bridgeClients` has no entry, so idle /
-                // closed / error states still drop safely.
                 if (!activeSessionId) return;
+                // Flip local + persisted state immediately so the
+                // picker never depends on a bridge round-trip for
+                // visible feedback. The live bridge, when available,
+                // still receives set_llm and will confirm via
+                // llm_changed.
+                selectLLMForSession(activeSessionId, idx);
                 if (
                   bridgeStatus === "connected" ||
                   bridgeStatus === "spawning"
@@ -818,47 +830,96 @@ function App() {
                 // Main screen always has an active session — Sidebar
                 // / EmptyState set it before transitioning here.
                 if (!activeSessionId) return;
-                if (bridgeStatus === "connected") {
-                  // `/btw` is a side question (interruption-free,
-                  // not a main-agent turn). Route to the transient
-                  // user-turn path so it doesn't disturb the main
-                  // agent's running state — bridge intercepts the
-                  // user_message command and runs the btw worker
-                  // independently of the task queue.
-                  const trimmed = t.trimStart();
-                  if (trimmed === "/btw" || trimmed.startsWith("/btw ")) {
-                    appendSideQuestionUserTurn(activeSessionId, t);
-                    sendIPCCommand(activeSessionId, {
-                      kind: "user_message",
-                      text: t,
-                      images: [],
-                    });
-                    return;
+                const sid = activeSessionId;
+                const ensureBridgeThenSend = async (
+                  cmd:
+                    | { kind: "user_message"; text: string; images: string[] }
+                    | { kind: "ask_user_response"; text: string },
+                ) => {
+                  const runtime = useRuntimeStore.getState();
+                  const latestStatus =
+                    runtime.byId[sid]?.bridgeStatus ?? "idle";
+                  if (
+                    latestStatus !== "spawning" &&
+                    (latestStatus !== "connected" ||
+                      !runtime.hasBridgeClient(sid))
+                  ) {
+                    await activateSession(sid);
                   }
-                  // Snapshot pendingAskUser **before** appendUserTurn
-                  // clears it — we need to know which IPC command to
-                  // send. ask_user_response and user_message both
-                  // ultimately call agent.put_task on the bridge side
-                  // (same agent_runner_loop kickoff), but keeping
-                  // them distinct preserves audit-trail clarity:
-                  // "this user message was a reply to a specific
-                  // question" vs "this was a fresh prompt".
-                  const wasAskUser = pendingAskUser !== null;
-                  appendUserTurn(activeSessionId, t);
-                  if (wasAskUser) {
-                    sendIPCCommand(activeSessionId, {
-                      kind: "ask_user_response",
-                      text: t,
-                    });
-                  } else {
-                    sendIPCCommand(activeSessionId, {
-                      kind: "user_message",
-                      text: t,
-                      images: [],
-                    });
+                  if (cmd.kind === "user_message") {
+                    let historyReady = await ensureHistoryReplayComplete(sid);
+                    if (!historyReady) {
+                      console.warn(
+                        "[main] history replay did not confirm; restarting bridge.",
+                        { sid },
+                      );
+                      await shutdownBridge(sid);
+                      await activateSession(sid);
+                      historyReady = await ensureHistoryReplayComplete(sid);
+                      if (!historyReady) {
+                        throw new Error("历史会话恢复超时");
+                      }
+                    }
                   }
+                  await sendIPCCommand(sid, cmd);
+                };
+                const reportSendFailure = (e: unknown) => {
+                  const message = e instanceof Error ? e.message : String(e);
+                  console.warn("[main] send failed", { sid, message });
+                  const m = useMessagesStore.getState();
+                  m.setAgentRunning(sid, false);
+                  m.setCurrentTurnIndex(sid, null);
+                  m.clearInFlightContent(sid);
+                  useUiStore.getState().pushToast(
+                    makeAppError({
+                      category: "bridge",
+                      severity: "error",
+                      title: "发送失败",
+                      message,
+                      hint: null,
+                      retryable: true,
+                      context: "send_user_message",
+                      traceback: null,
+                    }),
+                  );
+                };
+                // `/btw` is a side question (interruption-free,
+                // not a main-agent turn). Route to the transient
+                // user-turn path so it doesn't disturb the main
+                // agent's running state — bridge intercepts the
+                // user_message command and runs the btw worker
+                // independently of the task queue.
+                const trimmed = t.trimStart();
+                if (trimmed === "/btw" || trimmed.startsWith("/btw ")) {
+                  appendSideQuestionUserTurn(sid, t);
+                  void ensureBridgeThenSend({
+                    kind: "user_message",
+                    text: t,
+                    images: [],
+                  }).catch(reportSendFailure);
+                  return;
+                }
+                // Snapshot pendingAskUser **before** appendUserTurn
+                // clears it — we need to know which IPC command to
+                // send. ask_user_response and user_message both
+                // ultimately call agent.put_task on the bridge side
+                // (same agent_runner_loop kickoff), but keeping
+                // them distinct preserves audit-trail clarity:
+                // "this user message was a reply to a specific
+                // question" vs "this was a fresh prompt".
+                const wasAskUser = pendingAskUser !== null;
+                appendUserTurn(sid, t);
+                if (wasAskUser) {
+                  void ensureBridgeThenSend({
+                    kind: "ask_user_response",
+                    text: t,
+                  }).catch(reportSendFailure);
                 } else {
-                  console.info("[main] submit (bridge not ready):", t);
+                  void ensureBridgeThenSend({
+                    kind: "user_message",
+                    text: t,
+                    images: [],
+                  }).catch(reportSendFailure);
                 }
               }}
               onApprove={(approvalId, decision) => {
@@ -900,7 +961,10 @@ function App() {
         onOpenChange={setPaletteOpen}
         sessions={visibleSessions}
         llms={llms}
-        onNewChat={() => setScreen("empty")}
+        onNewChat={() => {
+          setActiveSession(undefined);
+          setScreen("empty");
+        }}
         onNewProject={() => setCreateProjectOpen(true)}
         onOpenSession={(id) => {
           void activateSession(id);
@@ -915,6 +979,7 @@ function App() {
             console.info("[palette] switch llm: no active session, idx=", idx);
             return;
           }
+          selectLLMForSession(activeSessionId, idx);
           // Same relaxed gate as MainView's onSelectLLM — allow during
           // spawning so users don't get silent drops in the cold-start
           // window. sendIPCCommand internally no-ops if no live bridge.
@@ -1176,4 +1241,3 @@ async function pickGAPath(
     console.warn("[settings] pickGAPath failed.", e);
   }
 }
-

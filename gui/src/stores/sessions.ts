@@ -409,10 +409,12 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     // SQLite history.
     const bridgeStatus =
       useRuntimeStore.getState().byId[id]?.bridgeStatus ?? "idle";
+    const hasBridgeClient = useRuntimeStore.getState().hasBridgeClient(id);
     const needsSpawn =
       bridgeStatus === "idle" ||
       bridgeStatus === "closed" ||
-      bridgeStatus === "error";
+      bridgeStatus === "error" ||
+      (bridgeStatus === "connected" && !hasBridgeClient);
     if (needsSpawn) {
       // Project = pure grouping. We deliberately do NOT inject the
       // project's rootPath as the bridge cwd here — doing so would

@@ -138,6 +138,7 @@ docs/     Product, architecture, workflow, and history
 | Rust core refactor / B-phase work | [refactor README](./docs/refactor/README.md) |
 | Architecture invariant proof | [architecture demo](./docs/architecture-demo.md) |
 | Release work | [release workflow](./docs/release-workflow.md) |
+| Closing a long coding session | [session close SOP](./docs/session-close-sop.md) |
 | Windows smoke | [Windows checklist](./docs/windows-build-checklist.md) |
 | GUI / engineering conventions | [engineering workflow](./docs/engineering-workflow.md) |
 | Visual design | [DESIGN.md](./docs/DESIGN.md) |
@@ -177,3 +178,10 @@ the task is explicitly web-only.
 - Put task detail in focused docs under `docs/`.
 - Put decision history and rejected alternatives in [devlog](./docs/devlog/README.md).
 - Update [docs index](./docs/README.md) when adding a major new document.
+
+## Session Close
+
+When the user asks to end, close, or "session close" a long coding session,
+follow [Session Close SOP](./docs/session-close-sop.md): summarize outcome,
+persist durable decisions, update docs/devlog if needed, verify, clean the
+workspace, commit, and leave a short handoff.

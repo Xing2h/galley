@@ -26,6 +26,7 @@ matches who you are and what you are trying to do.
 | Work on Rust core refactor | [refactor README](./refactor/README.md) |
 | Check architecture invariants | [architecture demo](./architecture-demo.md) |
 | Prepare a release | [release workflow](./release-workflow.md) |
+| Close a long coding session | [session close SOP](./session-close-sop.md) |
 | Smoke Windows builds | [Windows checklist](./windows-build-checklist.md) |
 | Touch GenericAgent integration | [GA baseline](./ga-baseline.md) |
 | Touch app packaging / runtime | [desktop runtime](./desktop-runtime.md) |
@@ -44,6 +45,8 @@ matches who you are and what you are trying to do.
 - [agent-api](./agent-api.md): stable CLI / socket contract for agents.
 - [architecture demo](./architecture-demo.md): code-level proof of the four
   architecture principles.
+- [session close SOP](./session-close-sop.md): closeout checklist for long
+  coding sessions.
 - [refactor](./refactor/README.md): B-phase implementation playbooks,
   invariants, and execution cursor.
 - [devlog](./devlog/README.md): chronological decision history and rejected

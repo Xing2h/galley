@@ -20,6 +20,18 @@ import { useRuntimeStore } from "@/stores/runtime";
 import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
 
+type HistoryReplayState = {
+  promise: Promise<boolean>;
+  resolve: (ok: boolean) => void;
+  timeout: number;
+};
+
+type HistoryReplaySendResult = "sent" | "skipped" | "failed";
+
+const HISTORY_REPLAY_TIMEOUT_MS = 8_000;
+const _historyReplayPending = new Map<string, HistoryReplayState>();
+const _historyReplayReady = new Set<string>();
+
 /**
  * Routes an IPC event from the bridge into store actions.
  *
@@ -96,9 +108,9 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       }
       // Session Restore (Stage 3 Task 3). If this session has prior
       // turn history on disk, replay it into GA `backend.history` via
-      // load_history. Bridge processes commands in FIFO order — even
-      // if the user submits a `user_message` immediately, this lands
-      // first.
+      // load_history. The MainView submit path waits on the same gate
+      // before it writes a fresh `user_message`, so a quick submit
+      // after opening history cannot race ahead of load_history.
       //
       // The session-list check uses `turnCount > 0` rather than the
       // SQLite query result so we skip the round-trip for newly
@@ -108,7 +120,8 @@ export function dispatchIPCEvent(event: IPCEvent): void {
         .getState()
         .sessions.find((x) => x.id === event.sessionId);
       if (session && (session.turnCount ?? 0) > 0) {
-        void replayHistoryToBridge(event.sessionId);
+        markHistoryReplayStale(event.sessionId);
+        void ensureHistoryReplayComplete(event.sessionId);
       }
       return;
     }
@@ -139,6 +152,9 @@ export function dispatchIPCEvent(event: IPCEvent): void {
 
     case "error": {
       console.warn("[ipc] error", event);
+      if (event.context === "load_history") {
+        finishHistoryReplay(event.sessionId, false);
+      }
       useUiStore.getState().pushToast(fromIPCError(event));
       // Bridge errors usually mean turn_end won't arrive — clear the
       // running flag so the thinking placeholder + Stop-mode Composer
@@ -378,7 +394,12 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       return;
     }
 
-    case "history_loaded":
+    case "history_loaded": {
+      finishHistoryReplay(event.sessionId, true);
+      console.debug(`[ipc] ${event.kind}`, event);
+      return;
+    }
+
     case "tool_call_start":
     case "tool_call_progress": {
       console.debug(`[ipc] ${event.kind}`, event);
@@ -942,12 +963,86 @@ async function persistTurnEndToMessages(event: {
  * just without GA remembering earlier turns. We log at debug so dev
  * builds see the failure without polluting the console for users.
  */
-async function replayHistoryToBridge(sessionId: string): Promise<void> {
+export async function ensureHistoryReplayComplete(
+  sessionId: string,
+): Promise<boolean> {
+  const session = useSessionsStore
+    .getState()
+    .sessions.find((x) => x.id === sessionId);
+  if (!session || (session.turnCount ?? 0) <= 0) return true;
+  if (_historyReplayReady.has(sessionId)) return true;
+
+  const existing = _historyReplayPending.get(sessionId);
+  if (existing) {
+    return await existing.promise;
+  }
+
+  let resolveReplay!: (ok: boolean) => void;
+  const promise = new Promise<boolean>((resolve) => {
+    resolveReplay = resolve;
+  });
+  const timeout = window.setTimeout(() => {
+    console.warn("[ipc] load_history timed out; continuing.", {
+      sessionId,
+    });
+    finishHistoryReplay(sessionId, false);
+  }, HISTORY_REPLAY_TIMEOUT_MS);
+  _historyReplayPending.set(sessionId, {
+    promise,
+    resolve: resolveReplay,
+    timeout,
+  });
+
+  void replayHistoryToBridge(sessionId)
+    .then((result) => {
+      if (result === "skipped") finishHistoryReplay(sessionId, true);
+      if (result === "failed") finishHistoryReplay(sessionId, false);
+    })
+    .catch((e) => {
+      console.debug("[ipc] replayHistoryToBridge failed.", e);
+      finishHistoryReplay(sessionId, false);
+    });
+
+  return await promise;
+}
+
+function markHistoryReplayStale(sessionId: string): void {
+  // A ready event means this bridge needs a fresh load_history before
+  // the next user_message, but it must not release an in-flight replay
+  // waiter. The user can submit while the bridge is still spawning;
+  // that submit path may already be waiting for this same replay.
+  _historyReplayReady.delete(sessionId);
+}
+
+function finishHistoryReplay(sessionId: string, ok: boolean): void {
+  const pending = _historyReplayPending.get(sessionId);
+  if (!pending) {
+    if (ok) _historyReplayReady.add(sessionId);
+    return;
+  }
+  window.clearTimeout(pending.timeout);
+  _historyReplayPending.delete(sessionId);
+  if (ok) {
+    _historyReplayReady.add(sessionId);
+  } else {
+    _historyReplayReady.delete(sessionId);
+  }
+  pending.resolve(ok);
+}
+
+async function replayHistoryToBridge(
+  sessionId: string,
+): Promise<HistoryReplaySendResult> {
   try {
     const { loadMessagesBySession } = await import("@/lib/db");
     const rows = await loadMessagesBySession(sessionId);
-    if (rows.length === 0) return;
-    const messages = rowsToConversationMessages(rows);
+    if (rows.length === 0) return "skipped";
+    const completedTurnCount =
+      useSessionsStore
+        .getState()
+        .sessions.find((x) => x.id === sessionId)?.turnCount ?? 0;
+    const messages = rowsToConversationMessages(rows, completedTurnCount);
+    if (messages.length === 0) return "skipped";
     await useRuntimeStore.getState().sendIPCCommand(sessionId, {
       kind: "load_history",
       messages,
@@ -956,18 +1051,38 @@ async function replayHistoryToBridge(sessionId: string): Promise<void> {
       sessionId,
       messageCount: messages.length,
     });
+    return "sent";
   } catch (e) {
     console.debug("[ipc] replayHistoryToBridge failed.", e);
+    return "failed";
   }
 }
 
 function rowsToConversationMessages(
   rows: MessageRow[],
+  completedTurnCount: number,
 ): ConversationMessage[] {
-  return rows
-    .filter((r) => r.role === "user" || r.role === "assistant")
-    .map((r) => ({
+  const messages: ConversationMessage[] = [];
+  for (const r of rows) {
+    if (r.role !== "user" && r.role !== "assistant") continue;
+    // `messages` may contain a just-submitted user row before the
+    // bridge has produced its assistant row. That row is live input,
+    // not history. Replaying it would leave GA's backend history
+    // ending with user, then the same user_message arrives again.
+    if (r.turn_index > completedTurnCount) continue;
+    const next: ConversationMessage = {
       role: r.role as "user" | "assistant",
       content: r.content,
-    }));
+    };
+    const prev = messages[messages.length - 1];
+    if (prev?.role === next.role) {
+      prev.content = `${prev.content}\n\n${next.content}`;
+    } else {
+      messages.push(next);
+    }
+  }
+  if (messages[messages.length - 1]?.role === "user") {
+    messages.pop();
+  }
+  return messages;
 }
