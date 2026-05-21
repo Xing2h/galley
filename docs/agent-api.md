@@ -85,12 +85,13 @@ The `dispatch` field uses different value sets per command — semantics
 differ enough that a blanket `dispatch == "dispatched"` pattern would
 mislead. SOPs branch per command:
 
-| Command                          | Possible `dispatch` values                |
-| -------------------------------- | ----------------------------------------- |
-| `session send`, `session new`    | `dispatched` / `persisted_only`           |
-| `session btw`                    | `dispatched` (only — exit 5 on no bridge) |
-| `session stop`                   | `abort_sent` / `already_stopped`          |
-| `llm set`                        | `dispatched` / `persisted_only`           |
+| Command                          | Possible `dispatch` values                         |
+| -------------------------------- | -------------------------------------------------- |
+| `session send`                   | `dispatched` / `persisted_only`                    |
+| `session new`                    | `dispatched` (exit 5 if runner cannot start/send)  |
+| `session btw`                    | `dispatched` (only — exit 5 on no bridge)          |
+| `session stop`                   | `abort_sent` / `already_stopped`                   |
+| `llm set`                        | `dispatched` / `persisted_only`                    |
 
 #### `stream.reason` values (subscription commands)
 
@@ -536,12 +537,11 @@ this — trust other signals or wait for B4").
 
 ### 5.8 · `galley session new "<task>" [--project=<id>] [--llm=<name>] [--supervisor=<x>] [--reason=<y>]`
 
-**Write command** — creates a session and persists the first user
-message in **one SQLite transaction** (sub-plan O1 atomicity). Either
-both rows commit or neither does; a transient SQL failure mid-write
-leaves no orphan session row. Best-effort dispatch to the runner
-follows (CLI does *not* spawn bridges; the next GUI activation or
-`session send` warms one up).
+**Write command** — creates a session, persists the first user message
+in **one SQLite transaction**, starts a runner, and dispatches the first
+task. Either both DB rows commit or neither does; once the rows commit,
+runner spawn/dispatch failures surface as `runner_error` (exit 5) so
+agents know the delegated task did not actually start.
 
 | Flag           | Default                              | Notes                                                                                          |
 | -------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------- |
@@ -555,7 +555,7 @@ $ galley session new "summarize CLAUDE.md" --project=proj_demo --llm=glm-4.5-x \
     --supervisor=ga-claude-1 --reason="weekly review"
 {"session":{"id":"s-mvr2-3a7q","title":"新对话","status":"idle",…},
  "message":{"id":"msg_…","sessionId":"s-mvr2-3a7q","role":"user","content":"summarize CLAUDE.md", …},
- "dispatch":"persisted_only"}
+ "dispatch":"dispatched"}
 ```
 
 Response:
@@ -564,12 +564,13 @@ Response:
 | ---------- | -------------- | ------------------------------------------------------------------------------------------------------ |
 | `session`  | `SessionBrief` | Newly-created row. `title` is the seed `新对话`; the bridge derives a better one after the first turn. |
 | `message`  | `MessageBrief` | The persisted first user message.                                                                      |
-| `dispatch` | string enum    | `"dispatched"` if a runner happened to be alive; `"persisted_only"` otherwise (the common case).       |
+| `dispatch` | string enum    | `"dispatched"` on success. Runner start/send failure returns exit 5 instead of a success envelope.     |
 
 Exit codes: `0` success / `2 invalid_args` (empty `task`, unknown
 `--llm`, unknown project, empty `llm_list` cache) / `3 not_found` /
-`4 db_unavailable` / `1 internal` (commit failure — both rows roll
-back).
+`4 db_unavailable` / `5 runner_error` (session/message may be saved,
+but the task did not start) / `1 internal` (commit failure — both rows
+roll back).
 
 ### 5.9 · `galley session btw <id> "<question>" [--supervisor=<x>] [--reason=<y>]`
 

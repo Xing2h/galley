@@ -25,7 +25,9 @@ async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
         .await
         .expect("open in-memory sqlite");
-    for sql in [MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007] {
+    for sql in [
+        MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007,
+    ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
             .await
@@ -100,7 +102,14 @@ async fn list_sessions_default_filter_returns_all_in_recency_order() {
     let pool = fresh_pool().await;
     seed_session(&pool, "sess_old", "old", "idle", "2026-05-10T00:00:00Z").await;
     seed_session(&pool, "sess_new", "new", "idle", "2026-05-18T00:00:00Z").await;
-    seed_session(&pool, "sess_arch", "old archived", "archived", "2026-05-15T00:00:00Z").await;
+    seed_session(
+        &pool,
+        "sess_arch",
+        "old archived",
+        "archived",
+        "2026-05-15T00:00:00Z",
+    )
+    .await;
 
     let galley = SqliteGalley::from_pool(pool);
     // Default SessionFilter has archived=None → no filter (active +
@@ -120,7 +129,14 @@ async fn list_sessions_archived_false_excludes_archived() {
     let pool = fresh_pool().await;
     seed_session(&pool, "sess_old", "old", "idle", "2026-05-10T00:00:00Z").await;
     seed_session(&pool, "sess_new", "new", "idle", "2026-05-18T00:00:00Z").await;
-    seed_session(&pool, "sess_arch", "archived", "archived", "2026-05-15T00:00:00Z").await;
+    seed_session(
+        &pool,
+        "sess_arch",
+        "archived",
+        "archived",
+        "2026-05-15T00:00:00Z",
+    )
+    .await;
 
     let galley = SqliteGalley::from_pool(pool);
     let rows = galley
@@ -139,7 +155,14 @@ async fn list_sessions_archived_false_excludes_archived() {
 async fn list_sessions_with_archived_true_returns_only_archived() {
     let pool = fresh_pool().await;
     seed_session(&pool, "sess_live", "live", "idle", "2026-05-18T00:00:00Z").await;
-    seed_session(&pool, "sess_arch", "archived", "archived", "2026-05-10T00:00:00Z").await;
+    seed_session(
+        &pool,
+        "sess_arch",
+        "archived",
+        "archived",
+        "2026-05-10T00:00:00Z",
+    )
+    .await;
 
     let galley = SqliteGalley::from_pool(pool);
     let rows = galley
@@ -206,9 +229,39 @@ async fn session_brief_returns_one_row() {
 async fn session_messages_returns_chronological_order() {
     let pool = fresh_pool().await;
     seed_session(&pool, "sess_x", "Conv", "idle", "2026-05-18T00:00:00Z").await;
-    seed_message(&pool, "m1", "sess_x", 1, 0, "user", "hi", "2026-05-18T00:00:00Z").await;
-    seed_message(&pool, "m2", "sess_x", 1, 1, "assistant", "hello", "2026-05-18T00:00:01Z").await;
-    seed_message(&pool, "m3", "sess_x", 2, 0, "user", "how?", "2026-05-18T00:00:02Z").await;
+    seed_message(
+        &pool,
+        "m1",
+        "sess_x",
+        1,
+        0,
+        "user",
+        "hi",
+        "2026-05-18T00:00:00Z",
+    )
+    .await;
+    seed_message(
+        &pool,
+        "m2",
+        "sess_x",
+        1,
+        1,
+        "assistant",
+        "hello",
+        "2026-05-18T00:00:01Z",
+    )
+    .await;
+    seed_message(
+        &pool,
+        "m3",
+        "sess_x",
+        2,
+        0,
+        "user",
+        "how?",
+        "2026-05-18T00:00:02Z",
+    )
+    .await;
 
     let galley = SqliteGalley::from_pool(pool);
     let msgs = galley
@@ -250,7 +303,17 @@ async fn session_messages_tail_returns_last_n_in_order() {
 async fn search_messages_short_query_returns_empty() {
     let pool = fresh_pool().await;
     seed_session(&pool, "sess_x", "x", "idle", "2026-05-18T00:00:00Z").await;
-    seed_message(&pool, "m1", "sess_x", 1, 0, "user", "anything", "2026-05-18T00:00:00Z").await;
+    seed_message(
+        &pool,
+        "m1",
+        "sess_x",
+        1,
+        0,
+        "user",
+        "anything",
+        "2026-05-18T00:00:00Z",
+    )
+    .await;
 
     let galley = SqliteGalley::from_pool(pool);
     assert!(galley
@@ -303,9 +366,36 @@ async fn search_messages_fts_finds_hit() {
 async fn search_messages_active_scope_excludes_archived() {
     let pool = fresh_pool().await;
     seed_session(&pool, "sess_live", "live", "idle", "2026-05-18T00:00:00Z").await;
-    seed_session(&pool, "sess_arch", "archived", "archived", "2026-05-15T00:00:00Z").await;
-    seed_message(&pool, "m1", "sess_live", 1, 0, "user", "needle", "2026-05-18T00:00:00Z").await;
-    seed_message(&pool, "m2", "sess_arch", 1, 0, "user", "needle", "2026-05-15T00:00:00Z").await;
+    seed_session(
+        &pool,
+        "sess_arch",
+        "archived",
+        "archived",
+        "2026-05-15T00:00:00Z",
+    )
+    .await;
+    seed_message(
+        &pool,
+        "m1",
+        "sess_live",
+        1,
+        0,
+        "user",
+        "needle",
+        "2026-05-18T00:00:00Z",
+    )
+    .await;
+    seed_message(
+        &pool,
+        "m2",
+        "sess_arch",
+        1,
+        0,
+        "user",
+        "needle",
+        "2026-05-15T00:00:00Z",
+    )
+    .await;
 
     let galley = SqliteGalley::from_pool(pool);
     let active_hits = galley

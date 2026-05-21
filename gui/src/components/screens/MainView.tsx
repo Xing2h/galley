@@ -5,10 +5,12 @@ import { ApprovalDock } from "@/components/conversation/ApprovalDock";
 import { AskUserBubble } from "@/components/conversation/AskUserBubble";
 import {
   Composer,
-  type ComposerHandle,
   type ComposerLLMOption,
 } from "@/components/conversation/Composer";
-import { Conversation, TurnMarker } from "@/components/conversation/Conversation";
+import {
+  Conversation,
+  TurnMarker,
+} from "@/components/conversation/Conversation";
 import { StreamingCursor } from "@/components/conversation/LiveIndicators";
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
@@ -139,11 +141,6 @@ export function MainView({
 }: MainViewProps) {
   const stillWaiting = pendingApprovals.length > 0;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  // Imperative handle to the Composer — used by the MessageUser ↻
-  // resend button. The handler routes through composerRef.prefillText
-  // rather than hoisting Composer to controlled mode, which would
-  // require lifting its paste-fold registry state too.
-  const composerRef = useRef<ComposerHandle>(null);
   // Stripped partial — empty when nothing renderable yet (e.g. only
   // `<thinking>...` partial has come through). We hide the
   // ThinkingSummary placeholder once we have user-visible streaming
@@ -178,8 +175,7 @@ export function MainView({
     const el = scrollContainerRef.current;
     if (!el) return;
     const onScroll = () => {
-      const distFromBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight;
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       setAtBottom(distFromBottom < 24);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -357,11 +353,7 @@ export function MainView({
       const active = document.activeElement as HTMLElement | null;
       if (active) {
         const tag = active.tagName;
-        if (
-          tag === "INPUT" ||
-          tag === "TEXTAREA" ||
-          active.isContentEditable
-        ) {
+        if (tag === "INPUT" || tag === "TEXTAREA" || active.isContentEditable) {
           return;
         }
       }
@@ -424,26 +416,23 @@ export function MainView({
           inset-0` — same scroll behavior as before; the wrapper just
           gives the rail a fixed-height parent to position against. */}
       <div className="relative min-h-0 flex-1">
-      <div
-        ref={scrollContainerRef}
-        className="absolute inset-0 overflow-y-auto px-8 py-6"
-      >
         <div
-          className={cn(
-            "mx-auto",
-            conversationWidth === "wide" ? "max-w-[1200px]" : "max-w-[760px]",
-          )}
+          ref={scrollContainerRef}
+          className="absolute inset-0 overflow-y-auto px-8 py-6"
         >
-          <Conversation
-            turns={turns}
-            approvalDecisions={approvalDecisions}
-            onApprove={onApprove}
-            projectName={projectName}
-            onResendUserMessage={(content) =>
-              composerRef.current?.prefillText(content)
-            }
-          />
-          {/* In-flight pending approvals — rendered after the
+          <div
+            className={cn(
+              "mx-auto",
+              conversationWidth === "wide" ? "max-w-[1200px]" : "max-w-[760px]",
+            )}
+          >
+            <Conversation
+              turns={turns}
+              approvalDecisions={approvalDecisions}
+              onApprove={onApprove}
+              projectName={projectName}
+            />
+            {/* In-flight pending approvals — rendered after the
               completed turns. The agent has emitted tool_call_pending
               but the turn hasn't ended yet, so these tools aren't in
               `turns[].tools` (turn_end is what folds them in). We
@@ -452,26 +441,28 @@ export function MainView({
               "等待审批中" placeholder. Once the user decides, the
               store removes the pending entry; the eventual turn_end
               brings the same tool back as part of a finalized turn. */}
-          {stillWaiting && (
-            // No wrapper margin — TurnMarker provides its own
-            // mt-7, and ToolCallout's my-3 spaces successive cards.
-            // space-y-2 stays for the multi-pending case.
-            <div className="space-y-2">
-              {currentTurnIndex != null && (
-                <TurnMarker index={currentTurnIndex} />
-              )}
-              {pendingApprovals.map((p) => (
-                <ToolCallout
-                  key={p.approvalId}
-                  tool={pendingToToolEvent(p)}
-                  onApprove={(decision) => onApprove?.(p.approvalId, decision)}
-                  projectName={projectName}
-                />
-              ))}
-            </div>
-          )}
+            {stillWaiting && (
+              // No wrapper margin — TurnMarker provides its own
+              // mt-7, and ToolCallout's my-3 spaces successive cards.
+              // space-y-2 stays for the multi-pending case.
+              <div className="space-y-2">
+                {currentTurnIndex != null && (
+                  <TurnMarker index={currentTurnIndex} />
+                )}
+                {pendingApprovals.map((p) => (
+                  <ToolCallout
+                    key={p.approvalId}
+                    tool={pendingToToolEvent(p)}
+                    onApprove={(decision) =>
+                      onApprove?.(p.approvalId, decision)
+                    }
+                    projectName={projectName}
+                  />
+                ))}
+              </div>
+            )}
 
-          {/* In-flight placeholder. User sent a message; the bridge
+            {/* In-flight placeholder. User sent a message; the bridge
               is dispatching but turn_end hasn't come back yet (LLM
               TTFT can be several seconds). Without this the
               conversation looks frozen. Hidden once an Approval Card
@@ -487,28 +478,28 @@ export function MainView({
               thinking content, not a one-liner "still working"
               line. Sharing visual register with TurnMarker collapses
               the before/after into one per-step rhythm. */}
-          {isRunning && !stillWaiting && !visiblePartial && (
-            // `key` ties the TurnMarker instance to the current step
-            // (when known) so the elapsed clock inside resets when
-            // the step changes — step 1 took 30s; step 2's clock
-            // starts at 0 again. Falls back to "pending" while we
-            // wait for the bridge's first `turn_start` to land
-            // (synchronously-set `agentRunning` outruns it by a
-            // few hundred ms); when `currentTurnIndex` arrives the
-            // key flips, the placeholder remounts, and the clock
-            // resets there too — which is fine since the user just
-            // saw "思考中" for that brief window.
-            <div>
-              <TurnMarker
-                key={currentTurnIndex ?? "pending"}
-                index={currentTurnIndex ?? undefined}
-                thinking
-              />
-              {livePreamble && <TurnTicker text={livePreamble} />}
-            </div>
-          )}
+            {isRunning && !stillWaiting && !visiblePartial && (
+              // `key` ties the TurnMarker instance to the current step
+              // (when known) so the elapsed clock inside resets when
+              // the step changes — step 1 took 30s; step 2's clock
+              // starts at 0 again. Falls back to "pending" while we
+              // wait for the bridge's first `turn_start` to land
+              // (synchronously-set `agentRunning` outruns it by a
+              // few hundred ms); when `currentTurnIndex` arrives the
+              // key flips, the placeholder remounts, and the clock
+              // resets there too — which is fine since the user just
+              // saw "思考中" for that brief window.
+              <div>
+                <TurnMarker
+                  key={currentTurnIndex ?? "pending"}
+                  index={currentTurnIndex ?? undefined}
+                  thinking
+                />
+                {livePreamble && <TurnTicker text={livePreamble} />}
+              </div>
+            )}
 
-          {/* In-flight streaming partial (DESIGN.md §4.3 streaming
+            {/* In-flight streaming partial (DESIGN.md §4.3 streaming
               generation). Renders the LLM's tokens as they arrive
               via turn_progress IPC events. Replaced by the canonical
               AgentTurn the moment turn_end fires (store clears
@@ -518,39 +509,39 @@ export function MainView({
               pushes — without it the partial reads as "stalled"
               between chunks. Real fix needs token-level streaming
               from GA core; this is the UI-side mitigation. */}
-          {isRunning && !stillWaiting && visiblePartial && (
-            <div>
-              {currentTurnIndex != null && (
-                <TurnMarker index={currentTurnIndex} />
-              )}
-              {livePreamble && <TurnTicker text={livePreamble} />}
-              {/* `typedPartial` is the typewriter-throttled view of
+            {isRunning && !stillWaiting && visiblePartial && (
+              <div>
+                {currentTurnIndex != null && (
+                  <TurnMarker index={currentTurnIndex} />
+                )}
+                {livePreamble && <TurnTicker text={livePreamble} />}
+                {/* `typedPartial` is the typewriter-throttled view of
                   `visiblePartial`. The condition above gates on
                   visiblePartial (so the placeholder→partial swap
                   happens the instant GA's first chunk arrives, not
                   a frame later); the actual render uses typedPartial
                   so the content reveals character-by-character. */}
-              <MarkdownView source={typedPartial} variant="agent" />
-              <div className="mt-1 leading-none">
-                <StreamingCursor />
+                <MarkdownView source={typedPartial} variant="agent" />
+                <div className="mt-1 leading-none">
+                  <StreamingCursor />
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* GA-initiated question awaiting reply. Always at the
+            {/* GA-initiated question awaiting reply. Always at the
               conversation tail — by the time ask_user fires, the
               agent has EXITED its run loop so `isRunning` is false
               and the placeholder / streaming partial above won't
               render. Submitting (chip OR Composer text) clears this
               via store.appendUserTurn. */}
-          {pendingAskUser && (
-            <AskUserBubble
-              pending={pendingAskUser}
-              onPickCandidate={(text) => onSubmit?.(text)}
-            />
-          )}
+            {pendingAskUser && (
+              <AskUserBubble
+                pending={pendingAskUser}
+                onPickCandidate={(text) => onSubmit?.(text)}
+              />
+            )}
+          </div>
         </div>
-      </div>
 
         {/* Right-edge question index — one dot per user-msg, click to
             jump. Sibling of the scroll container (not inside it) so
@@ -597,12 +588,9 @@ export function MainView({
           />
 
           <Composer
-            ref={composerRef}
             llmDisplayName={llmDisplayName}
             placeholder={
-              pendingAskUser
-                ? "回复以继续，或选择上方候选"
-                : "继续这个对话…"
+              pendingAskUser ? "回复以继续，或选择上方候选" : "继续这个对话…"
             }
             onSubmit={onSubmit}
             stopMode={isRunning}

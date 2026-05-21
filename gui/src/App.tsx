@@ -4,11 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ToastHost } from "@/components/error-card/ToastHost";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
-import {
-  TopBar,
-  type SupervisorActivity,
-  type SupervisorBucket,
-} from "@/components/layout/TopBar";
+import { TopBar } from "@/components/layout/TopBar";
 import { CommandPalette } from "@/components/overlay/CommandPalette";
 import { EmptyState } from "@/components/screens/EmptyState";
 import { MainView } from "@/components/screens/MainView";
@@ -37,72 +33,6 @@ import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
 import { hydrateApp } from "@/lib/hydrate";
 import { makeAppError } from "@/types/app-error";
-import type { Turn } from "@/types/conversation";
-
-/**
- * Aggregate B4 M7 supervisor activity from a session's turns. Returns
- * undefined when no supervisor-driven user message exists so the
- * TopBar pill stays hidden by default. Buckets are ordered most-
- * recently-seen first to match the user's expectation when the
- * Popover lists them (latest supervisor at the top).
- *
- * v1 only walks UserTurn rows; non-message supervisor actions
- * (archive / move / llm set) don't leave a per-event trace in the
- * v0.2 data model. If a v0.6+ supervisor_actions table ever lands,
- * fold its rows in here.
- */
-function deriveSupervisorActivity(
-  turns: ReadonlyArray<Turn>,
-): SupervisorActivity | undefined {
-  type BucketAccum = {
-    name: string;
-    count: number;
-    lastAt?: string;
-    lastSeenIndex: number;
-  };
-  const buckets = new Map<string, BucketAccum>();
-  let total = 0;
-  let lastSupervisor: string | undefined;
-  let lastAt: string | undefined;
-  let lastSeenIndex = -1;
-
-  turns.forEach((t, i) => {
-    if (t.role !== "user") return;
-    const origin = t.origin;
-    if (!origin || origin.via !== "supervisor") return;
-    const name = origin.supervisor ?? "supervisor";
-    total += 1;
-    const bucket = buckets.get(name) ?? {
-      name,
-      count: 0,
-      lastAt: undefined,
-      lastSeenIndex: -1,
-    };
-    bucket.count += 1;
-    if (i > bucket.lastSeenIndex) {
-      bucket.lastSeenIndex = i;
-      bucket.lastAt = t.createdAt;
-    }
-    buckets.set(name, bucket);
-    if (i > lastSeenIndex) {
-      lastSeenIndex = i;
-      lastSupervisor = name;
-      lastAt = t.createdAt;
-    }
-  });
-
-  if (total === 0) return undefined;
-
-  const bySupervisor: SupervisorBucket[] = Array.from(buckets.values())
-    .sort((a, b) => b.lastSeenIndex - a.lastSeenIndex)
-    .map(({ name, count, lastAt: bucketLastAt }) => ({
-      name,
-      count,
-      lastAt: bucketLastAt,
-    }));
-
-  return { count: total, lastSupervisor, lastAt, bySupervisor };
-}
 
 /**
  * V0.1 Stage 2 #8 — App entry.
@@ -167,6 +97,7 @@ function App() {
   const appendUserTurnExternal = useMessagesStore(
     (s) => s.appendUserTurnExternal,
   );
+  const attachExternalBridge = useRuntimeStore((s) => s.attachExternalBridge);
   const applyExternalSessionCreated = useSessionsStore(
     (s) => s.applyExternalSessionCreated,
   );
@@ -195,8 +126,7 @@ function App() {
   const cachedLLMs = useRuntimeStore((s) => s.cachedLLMs);
   const cachedLLMDisplayName = useRuntimeStore((s) => s.cachedLLMDisplayName);
   const llms = activeRuntimeLLMs ?? cachedLLMs;
-  const llmDisplayName =
-    activeRuntimeDisplayName ?? cachedLLMDisplayName ?? "";
+  const llmDisplayName = activeRuntimeDisplayName ?? cachedLLMDisplayName ?? "";
   const selectLLMForNewSession = useRuntimeStore(
     (s) => s.selectLLMForNewSession,
   );
@@ -226,16 +156,16 @@ function App() {
   const acknowledgeYoloIntro = usePrefsStore((s) => s.acknowledgeYoloIntro);
   const conversationWidth = usePrefsStore((s) => s.conversationWidth);
   const setConversationWidth = usePrefsStore((s) => s.setConversationWidth);
-  const petAttachedSessionId = useRuntimeStore(
-    (s) => s.petAttachedSessionId,
-  );
+  const petAttachedSessionId = useRuntimeStore((s) => s.petAttachedSessionId);
   const setPendingPetMigration = useUiStore((s) => s.setPendingPetMigration);
 
   const toasts = useUiStore((s) => s.toasts);
   const dismissToast = useUiStore((s) => s.dismissToast);
 
   const bridgeStatus = useRuntimeStore((s) =>
-    activeSessionId ? (s.byId[activeSessionId]?.bridgeStatus ?? "idle") : "idle",
+    activeSessionId
+      ? (s.byId[activeSessionId]?.bridgeStatus ?? "idle")
+      : "idle",
   );
   const sendIPCCommand = useRuntimeStore((s) => s.sendIPCCommand);
   const shutdownBridge = useRuntimeStore((s) => s.shutdownBridge);
@@ -253,17 +183,9 @@ function App() {
       : "unconfigured";
 
   const storeTurns = useMessagesStore((s) =>
-    activeSessionId ? (s.byId[activeSessionId]?.turns ?? EMPTY_TURNS) : EMPTY_TURNS,
-  );
-  // B4 M7: derive the TopBar supervisor-activity summary from the
-  // current session's persisted turns. Memoized on `storeTurns` so the
-  // pill doesn't churn on unrelated state updates. v1 only counts
-  // supervisor-driven user messages (the only origin trace we surface
-  // — see M7 N17 for the v0.6+ extension path covering archive / move
-  // / llm set non-message writes).
-  const supervisorActivity = useMemo(
-    () => deriveSupervisorActivity(storeTurns),
-    [storeTurns],
+    activeSessionId
+      ? (s.byId[activeSessionId]?.turns ?? EMPTY_TURNS)
+      : EMPTY_TURNS,
   );
   const storePending = useMessagesStore((s) =>
     activeSessionId
@@ -274,7 +196,9 @@ function App() {
     activeSessionId ? (s.byId[activeSessionId]?.agentRunning ?? false) : false,
   );
   const currentTurnIndex = useMessagesStore((s) =>
-    activeSessionId ? (s.byId[activeSessionId]?.currentTurnIndex ?? null) : null,
+    activeSessionId
+      ? (s.byId[activeSessionId]?.currentTurnIndex ?? null)
+      : null,
   );
   const userSubmitTick = useMessagesStore((s) => s.userSubmitTick);
   const inFlightContent = useMessagesStore((s) =>
@@ -357,12 +281,18 @@ function App() {
           setScreen("empty");
         },
       ],
-      ["menu:width_compact", () => {
-        void setConversationWidth("compact");
-      }],
-      ["menu:width_wide", () => {
-        void setConversationWidth("wide");
-      }],
+      [
+        "menu:width_compact",
+        () => {
+          void setConversationWidth("compact");
+        },
+      ],
+      [
+        "menu:width_wide",
+        () => {
+          void setConversationWidth("wide");
+        },
+      ],
     ];
 
     void (async () => {
@@ -398,6 +328,7 @@ function App() {
     void (async () => {
       const fn = await listen<{
         sessionId: string;
+        dispatch?: "dispatched" | "persisted_only" | "spawn_failed";
         message: {
           content: string;
           createdAt?: string;
@@ -408,12 +339,13 @@ function App() {
           };
         };
       }>("user-message-persisted", (e) => {
-        const { sessionId, message } = e.payload;
+        const { sessionId, message, dispatch } = e.payload;
         appendUserTurnExternal(
           sessionId,
           message.content,
           message.origin,
           message.createdAt,
+          dispatch === undefined ? true : dispatch === "dispatched",
         );
       });
       if (cancelled) {
@@ -427,6 +359,32 @@ function App() {
       unlisten?.();
     };
   }, [appendUserTurnExternal]);
+
+  // A socket-created session can now start its own runner immediately.
+  // Attach the same JS-side event listeners used by GUI-spawned bridges
+  // so assistant turns, approvals, and close events flow into stores.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    void (async () => {
+      const fn = await listen<{
+        sessionId: string;
+        pid: number;
+        via: string;
+      }>("runner-spawned-external", (e) => {
+        void attachExternalBridge(e.payload.sessionId, e.payload.pid);
+      });
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [attachExternalBridge]);
 
   // B4 M1 session-write listeners. Socket handlers in
   // core/src/socket_listener.rs emit these whenever a CLI / supervisor
@@ -553,8 +511,7 @@ function App() {
   // archivedOpen.
   const [earlierOpen, setEarlierOpen] = useState(false);
   const earlierSessions = useMemo(
-    () =>
-      visibleSessions.filter((s) => bucketSession(s) === "earlier"),
+    () => visibleSessions.filter((s) => bucketSession(s) === "earlier"),
     [visibleSessions],
   );
   // CreateProjectDialog open state. Local for the same reason as the
@@ -567,9 +524,7 @@ function App() {
   // EditProjectDialog: stores the full project being edited so the
   // dialog can reset its inputs from the row that triggered it.
   // `null` = closed.
-  const [editingProjectId, setEditingProjectId] = useState<string | null>(
-    null,
-  );
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const editingProject = useMemo(
     () => projects.find((p) => p.id === editingProjectId) ?? null,
     [projects, editingProjectId],
@@ -643,7 +598,6 @@ function App() {
           <TopBar
             sessionTitle={activeSession?.title}
             yoloMode={yoloMode}
-            supervisorActivity={supervisorActivity}
             onDisableYolo={() => {
               void setYoloMode(false);
             }}
@@ -983,10 +937,7 @@ function App() {
           // Same relaxed gate as MainView's onSelectLLM — allow during
           // spawning so users don't get silent drops in the cold-start
           // window. sendIPCCommand internally no-ops if no live bridge.
-          if (
-            bridgeStatus === "connected" ||
-            bridgeStatus === "spawning"
-          ) {
+          if (bridgeStatus === "connected" || bridgeStatus === "spawning") {
             void sendIPCCommand(activeSessionId, {
               kind: "set_llm",
               llmIndex: idx,
@@ -1157,7 +1108,6 @@ function App() {
           void acknowledgeYoloIntro(revertToApproval);
         }}
       />
-
     </>
   );
 }

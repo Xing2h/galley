@@ -50,18 +50,38 @@ creating sessions.
 
 ## 4. Resolve Galley CLI
 
-Always read the discovery file first. Do not assume `galley` is on PATH.
+Always read the discovery file first. Do not assume `galley` is on PATH. The
+first line is the CLI executable path; later lines may contain metadata such as
+`schema_version=1`.
 
 macOS / Linux:
 
 ```bash
-GALLEY="$(cat ~/.config/galley/cli-path)"
+DISCOVERY="${XDG_CONFIG_HOME:-$HOME/.config}/galley/cli-path"
+if [ ! -f "$DISCOVERY" ]; then
+  echo "I cannot find Galley's discovery file. Please open Galley once so it can write the CLI path, then ask me again."
+  exit 4
+fi
+GALLEY="$(sed -n '1p' "$DISCOVERY")"
+test -x "$GALLEY" || {
+  echo "Galley CLI path is not executable: $GALLEY"
+  exit 4
+}
 ```
 
 Windows PowerShell:
 
 ```powershell
-$GALLEY = Get-Content "$env:APPDATA\galley\cli-path"
+$Discovery = "$env:APPDATA\galley\cli-path"
+if (-not (Test-Path $Discovery)) {
+  Write-Error "I cannot find Galley's discovery file. Please open Galley once so it can write the CLI path, then ask me again."
+  exit 4
+}
+$GALLEY = Get-Content $Discovery | Select-Object -First 1
+if (-not (Test-Path $GALLEY)) {
+  Write-Error "Galley CLI path does not exist: $GALLEY"
+  exit 4
+}
 ```
 
 If the file is missing, tell the user:
@@ -69,7 +89,8 @@ If the file is missing, tell the user:
 > I cannot find Galley's discovery file. Please open Galley once so it can
 > write the CLI path, then ask me again.
 
-After resolving the path, use `"$GALLEY"` for every command.
+After resolving the path, use `"$GALLEY"` for every macOS / Linux command, or
+`& $GALLEY` in PowerShell.
 
 ## 5. Task Splitting And Session Prompts
 
@@ -162,8 +183,11 @@ First search for related work. If no suitable session exists:
   --reason="user asked me to start this Galley task"
 ```
 
-If the response says `dispatch: "persisted_only"`, that is not an error. Do not
-send the same task again.
+On success, expect `dispatch: "dispatched"`: the session was created, a runner
+was started, and the first task was sent. If `session new` returns
+`runner_error` (exit 5), do not send the same task again blindly. Tell the user
+the session may have been saved but did not start, then inspect it with
+`session show` or ask the user before retrying.
 
 ### "Continue / add this requirement"
 
@@ -246,10 +270,12 @@ CLI errors are JSON on stdout:
 | `2 invalid_args` | Bad arguments | Fix arguments; retry once |
 | `3 not_found` | Wrong id | Run list/search again |
 | `4 db_unavailable` | Galley app/DB unavailable | Ask user to open Galley |
-| `5 runner_error` | Live runner missing | Ask user to open the session in Galley |
+| `5 runner_error` | Runner could not start or receive the command | Inspect the session, explain the task did not start, and ask before retrying |
 | `1 internal` | Galley internal error | Report to user; do not loop |
 
-Never blindly retry. `dispatch: "persisted_only"` is success, not an error.
+Never blindly retry. For `session send` and `llm set`, `dispatch:
+"persisted_only"` means the DB write succeeded but no live runner consumed the
+command; report that distinction instead of resending the same message.
 
 ## 11. Boundaries
 

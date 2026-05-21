@@ -24,9 +24,7 @@ pub use message::{MessageBrief, MessageId, MessageRole};
 pub use origin::{Origin, OriginVia};
 pub use project::{CreateProjectInput, ProjectBrief, ProjectId, ProjectPatch};
 pub use search::{SearchHit, SearchScope};
-pub use session::{
-    CreateSessionInput, SessionBrief, SessionFilter, SessionId, SessionStatus,
-};
+pub use session::{CreateSessionInput, SessionBrief, SessionFilter, SessionId, SessionStatus};
 pub use status::StatusSummary;
 
 use async_trait::async_trait;
@@ -52,11 +50,7 @@ pub trait GalleyApi: Send + Sync {
     ) -> Result<Vec<MessageBrief>>;
 
     /// FTS5 search across messages.
-    async fn search_messages(
-        &self,
-        query: String,
-        scope: SearchScope,
-    ) -> Result<Vec<SearchHit>>;
+    async fn search_messages(&self, query: String, scope: SearchScope) -> Result<Vec<SearchHit>>;
 
     /// Aggregate counts useful for status dashboards.
     async fn status(&self) -> Result<StatusSummary>;
@@ -216,27 +210,15 @@ pub trait GalleyApi: Send + Sync {
     /// Bulk archive — UPDATE WHERE id IN (…). Returns count of rows
     /// actually mutated (i.e. were not already archived). Wrapped in a
     /// transaction so partial failure rolls back.
-    async fn bulk_archive_sessions(
-        &self,
-        ids: Vec<SessionId>,
-        origin: Origin,
-    ) -> Result<u32>;
+    async fn bulk_archive_sessions(&self, ids: Vec<SessionId>, origin: Origin) -> Result<u32>;
 
     /// Bulk unarchive — inverse of `bulk_archive_sessions`. Returns
     /// count of rows actually flipped (i.e. were archived).
-    async fn bulk_unarchive_sessions(
-        &self,
-        ids: Vec<SessionId>,
-        origin: Origin,
-    ) -> Result<u32>;
+    async fn bulk_unarchive_sessions(&self, ids: Vec<SessionId>, origin: Origin) -> Result<u32>;
 
     /// Bulk delete — DELETE WHERE id IN (…), CASCADE handles messages /
     /// tool_events. Returns count of rows deleted.
-    async fn bulk_delete_sessions(
-        &self,
-        ids: Vec<SessionId>,
-        origin: Origin,
-    ) -> Result<u32>;
+    async fn bulk_delete_sessions(&self, ids: Vec<SessionId>, origin: Origin) -> Result<u32>;
 
     // ---------------- projects ----------------
 

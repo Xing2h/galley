@@ -337,9 +337,7 @@ async fn scenario_c2() -> anyhow::Result<()> {
     }
 
     println!();
-    println!(
-        "C2 PASS — 3 ordered round-trips in {total:?} (sent in {sent_at:?})"
-    );
+    println!("C2 PASS — 3 ordered round-trips in {total:?} (sent in {sent_at:?})");
 
     bridge.shutdown().await?;
     Ok(())
@@ -364,9 +362,7 @@ async fn scenario_c3() -> anyhow::Result<()> {
             .await?;
     }
     let sent_at = started.elapsed();
-    eprintln!(
-        "[experiment] 5 commands sent in {sent_at:?} without reading any response"
-    );
+    eprintln!("[experiment] 5 commands sent in {sent_at:?} without reading any response");
 
     let mut seen = Vec::new();
     for _ in 0..indexes.len() {
@@ -397,7 +393,10 @@ async fn scenario_c3() -> anyhow::Result<()> {
 /// Path for the per-scenario Unix socket. Embeds scenario name + own pid
 /// to avoid collisions when multiple test runs overlap.
 fn socket_path(scenario: &str) -> String {
-    format!("/tmp/galley-bridge-owner-{scenario}-{}.sock", std::process::id())
+    format!(
+        "/tmp/galley-bridge-owner-{scenario}-{}.sock",
+        std::process::id()
+    )
 }
 
 async fn scenario_s1() -> anyhow::Result<()> {
@@ -486,9 +485,7 @@ async fn scenario_s2() -> anyhow::Result<()> {
     }
 
     if a_events != b_events {
-        anyhow::bail!(
-            "S2 content mismatch:\n A: {a_events:?}\n B: {b_events:?}"
-        );
+        anyhow::bail!("S2 content mismatch:\n A: {a_events:?}\n B: {b_events:?}");
     }
 
     println!();
@@ -651,7 +648,9 @@ async fn scenario_s4() -> anyhow::Result<()> {
     while a_batch2 < 3 {
         let line = tokio::time::timeout(Duration::from_secs(5), rx_a.recv())
             .await
-            .map_err(|_| anyhow::anyhow!("timeout on subscriber A batch2 — disconnect of B affected A"))??;
+            .map_err(|_| {
+                anyhow::anyhow!("timeout on subscriber A batch2 — disconnect of B affected A")
+            })??;
         if line.contains(r#""kind":"llm_changed""#) {
             a_batch2 += 1;
         }
@@ -864,14 +863,19 @@ async fn scenario_p3() -> anyhow::Result<()> {
             .args(["-o", "rss=", "-p", &own_pid.to_string()])
             .output()?;
         let s = String::from_utf8_lossy(&out.stdout);
-        let kb: u64 = s.trim().parse().map_err(|e| {
-            anyhow::anyhow!("ps rss parse {label} (raw={s:?}): {e}")
-        })?;
+        let kb: u64 = s
+            .trim()
+            .parse()
+            .map_err(|e| anyhow::anyhow!("ps rss parse {label} (raw={s:?}): {e}"))?;
         Ok(kb)
     };
 
     let baseline_kb = rss_at("baseline")?;
-    eprintln!("[experiment] baseline RSS: {} KB ({:.1} MB)", baseline_kb, baseline_kb as f64 / 1024.0);
+    eprintln!(
+        "[experiment] baseline RSS: {} KB ({:.1} MB)",
+        baseline_kb,
+        baseline_kb as f64 / 1024.0
+    );
 
     // Background draining tasks so the broadcast channels never back up.
     let drain1 = tokio::spawn(async move {
@@ -1067,9 +1071,10 @@ async fn outer_l5_orchestrator() -> anyhow::Result<()> {
         Err(_) => anyhow::bail!("timeout (25s) reading bridge pid from inner stdout"),
     };
 
-    let bridge_pid: u32 = pid_line.trim().parse().map_err(|e| {
-        anyhow::anyhow!("inner printed non-numeric pid line {pid_line:?}: {e}")
-    })?;
+    let bridge_pid: u32 = pid_line
+        .trim()
+        .parse()
+        .map_err(|e| anyhow::anyhow!("inner printed non-numeric pid line {pid_line:?}: {e}"))?;
     eprintln!("[outer] inner reported bridge pid={bridge_pid}");
 
     // Wait for the inner process to die (panic should terminate it).
@@ -1164,8 +1169,7 @@ async fn scenario_l4() -> anyhow::Result<()> {
 
 async fn spawn_default(session_id: &str) -> anyhow::Result<BridgeProcess> {
     let home = env::var("HOME").map_err(|_| anyhow::anyhow!("HOME env not set"))?;
-    let ga_path =
-        env::var("GA_PATH").unwrap_or_else(|_| format!("{home}/Documents/GenericAgent"));
+    let ga_path = env::var("GA_PATH").unwrap_or_else(|_| format!("{home}/Documents/GenericAgent"));
     let python = env::var("PYTHON").unwrap_or_else(|_| "python3".into());
     let bridge_cwd = env::current_dir()?;
 

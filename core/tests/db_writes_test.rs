@@ -35,7 +35,9 @@ async fn fresh_pool() -> SqlitePool {
         .execute(&pool)
         .await
         .expect("enable foreign keys");
-    for sql in [MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007] {
+    for sql in [
+        MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007,
+    ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
             .await
@@ -319,7 +321,10 @@ async fn set_session_pinned_rejects_archived() {
     let pool = fresh_pool().await;
     seed_session_idle(&pool, "s1").await;
     let galley = SqliteGalley::from_pool(pool);
-    galley.archive_session(sid("s1"), Origin::gui()).await.unwrap();
+    galley
+        .archive_session(sid("s1"), Origin::gui())
+        .await
+        .unwrap();
     let err = galley
         .set_session_pinned(sid("s1"), true, Origin::gui())
         .await
@@ -475,12 +480,10 @@ async fn set_session_llm_persists_choice() {
 async fn set_session_llm_clear_with_none() {
     let pool = fresh_pool().await;
     seed_session_idle(&pool, "s1").await;
-    sqlx::query(
-        "UPDATE sessions SET llm_index = 2, llm_display_name = 'old' WHERE id = 's1'",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("UPDATE sessions SET llm_index = 2, llm_display_name = 'old' WHERE id = 's1'")
+        .execute(&pool)
+        .await
+        .unwrap();
     let galley = SqliteGalley::from_pool(pool);
     let brief = galley
         .set_session_llm(sid("s1"), None, None)
@@ -1054,7 +1057,10 @@ async fn tx_drop_without_commit_rolls_back() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(session_count, 0, "session row must NOT be persisted (rollback)");
+    assert_eq!(
+        session_count, 0,
+        "session row must NOT be persisted (rollback)"
+    );
 }
 
 #[tokio::test]

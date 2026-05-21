@@ -150,9 +150,7 @@ pub fn ensure_backup_before_migrate_in(
 
     // 4. Decide.
     if on_disk == latest_version {
-        return Ok(BackupOutcome::UpToDate {
-            version: on_disk,
-        });
+        return Ok(BackupOutcome::UpToDate { version: on_disk });
     }
     if on_disk > latest_version {
         return Ok(BackupOutcome::NotApplicable {
@@ -191,12 +189,9 @@ fn probe_on_disk_version(db_path: &Path) -> Result<i64, BackupError> {
     // async-runtime's block_on (same pattern as socket_listener
     // start in lib.rs).
     tauri::async_runtime::block_on(async move {
-        let mut conn = opts
-            .connect()
-            .await
-            .map_err(|e| BackupError::DbProbe {
-                message: format!("opening {}: {e}", db_path.display()),
-            })?;
+        let mut conn = opts.connect().await.map_err(|e| BackupError::DbProbe {
+            message: format!("opening {}: {e}", db_path.display()),
+        })?;
 
         // `_sqlx_migrations` is the table `sqlx` (and therefore
         // `tauri-plugin-sql`) writes per its standard migrator. If
@@ -322,7 +317,10 @@ mod tests {
         copy_dir_all(&src, &dst).unwrap();
         assert_eq!(fs::read(dst.join("top.txt")).unwrap(), b"top");
         assert_eq!(fs::read(dst.join("inner/mid.txt")).unwrap(), b"mid");
-        assert_eq!(fs::read(dst.join("inner/deep/bottom.txt")).unwrap(), b"bottom");
+        assert_eq!(
+            fs::read(dst.join("inner/deep/bottom.txt")).unwrap(),
+            b"bottom"
+        );
     }
 
     #[test]
@@ -388,9 +386,7 @@ mod tests {
             .filter_map(|e| e.ok())
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(!siblings
-            .iter()
-            .any(|n| n.starts_with(BACKUP_DIR_PREFIX)));
+        assert!(!siblings.iter().any(|n| n.starts_with(BACKUP_DIR_PREFIX)));
     }
 
     #[test]
@@ -474,8 +470,10 @@ mod tests {
         // YYYYMMDDTHHMMSSZ → 16 chars, all alphanumeric (no ':')
         assert_eq!(ts.len(), 16);
         assert!(ts.ends_with('Z'));
-        assert!(ts.chars().all(|c| c.is_ascii_alphanumeric()),
-            "timestamp must be filename-safe: {ts}");
+        assert!(
+            ts.chars().all(|c| c.is_ascii_alphanumeric()),
+            "timestamp must be filename-safe: {ts}"
+        );
         assert!(!ts.contains(':'));
     }
 }

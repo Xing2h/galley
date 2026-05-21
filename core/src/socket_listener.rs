@@ -57,20 +57,20 @@ use crate::api::session::{CreateSessionInput, SessionBrief};
 use crate::api::{GalleyApi, Origin, OriginVia, SessionFilter, SessionId};
 use crate::db::SqliteGalley;
 use crate::ipc::{IpcCommand, SetLlmCommand, UserMessageCommand};
-use crate::runner_manager::SendCommandError;
-use crate::runner_manager::{BroadcastItem, RunnerManager};
+use crate::runner_commands::spawn_emit_task;
+use crate::runner_manager::{BroadcastItem, RunnerManager, SendCommandError, SpawnArgs};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast;
 
-#[cfg(unix)]
-use tokio::net::{UnixListener, UnixStream};
 #[cfg(windows)]
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+#[cfg(unix)]
+use tokio::net::{UnixListener, UnixStream};
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
@@ -130,7 +130,11 @@ impl SocketResponse {
         }
     }
 
-    fn err(request_id: Option<String>, error: impl Into<String>, message: impl Into<String>) -> Self {
+    fn err(
+        request_id: Option<String>,
+        error: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             ok: false,
             request_id,
@@ -165,10 +169,7 @@ fn origin_from_args(supervisor: Option<String>, reason: Option<String>) -> Origi
 /// Each variant gets its own stable `error` discriminant string so
 /// `cli/src/main.rs::map_error_tag` can round-trip back to a typed
 /// error (and `exit_code_for` lands on the right exit category).
-fn map_galley_err(
-    request_id: Option<String>,
-    err: crate::error::GalleyError,
-) -> SocketResponse {
+fn map_galley_err(request_id: Option<String>, err: crate::error::GalleyError) -> SocketResponse {
     use crate::error::GalleyError;
     match err {
         GalleyError::NotFound { message } => SocketResponse::err(request_id, "not_found", message),
@@ -428,7 +429,10 @@ async fn handle_stream<R, W>(
                 loop {
                     match rx.recv().await {
                         Ok(BroadcastItem::Event(boxed)) => {
-                            let payload = StreamEnvelope::event(request_id.clone(), serde_json::to_value(&*boxed).unwrap_or(Value::Null));
+                            let payload = StreamEnvelope::event(
+                                request_id.clone(),
+                                serde_json::to_value(&*boxed).unwrap_or(Value::Null),
+                            );
                             if write_stream_line(&mut write_half, &payload).await.is_err() {
                                 return;
                             }
@@ -444,7 +448,8 @@ async fn handle_stream<R, W>(
                         }
                         Err(RecvError::Lagged(_)) => continue,
                         Err(RecvError::Closed) => {
-                            let payload = StreamEnvelope::end(request_id.clone(), "subprocess_exited");
+                            let payload =
+                                StreamEnvelope::end(request_id.clone(), "subprocess_exited");
                             let _ = write_stream_line(&mut write_half, &payload).await;
                             return;
                         }
@@ -552,7 +557,9 @@ async fn dispatch_line(
     let request_id = req.request_id.clone();
     match req.command.as_str() {
         // ---- B1 read commands ----
-        "sessions.list" => DispatchResult::Unary(dispatch_sessions_list(request_id, req.args).await),
+        "sessions.list" => {
+            DispatchResult::Unary(dispatch_sessions_list(request_id, req.args).await)
+        }
         "ping" => DispatchResult::Unary(SocketResponse::ok(
             request_id,
             serde_json::json!({ "pong": true }),
@@ -562,20 +569,20 @@ async fn dispatch_line(
             serde_json::json!({ "schemaVersion": SCHEMA_VERSION }),
         )),
         // ---- B2 M4 write commands ----
-        "session.send" => DispatchResult::Unary(
-            dispatch_session_send(request_id, req.args, app, manager).await,
-        ),
+        "session.send" => {
+            DispatchResult::Unary(dispatch_session_send(request_id, req.args, app, manager).await)
+        }
         "session.watch" => dispatch_session_watch(request_id, req.args, manager).await,
         // ---- B4 M1 session write commands ----
-        "session.new" => DispatchResult::Unary(
-            dispatch_session_new(request_id, req.args, app, manager).await,
-        ),
-        "session.btw" => DispatchResult::Unary(
-            dispatch_session_btw(request_id, req.args, manager).await,
-        ),
-        "session.stop" => DispatchResult::Unary(
-            dispatch_session_stop(request_id, req.args, manager).await,
-        ),
+        "session.new" => {
+            DispatchResult::Unary(dispatch_session_new(request_id, req.args, app, manager).await)
+        }
+        "session.btw" => {
+            DispatchResult::Unary(dispatch_session_btw(request_id, req.args, manager).await)
+        }
+        "session.stop" => {
+            DispatchResult::Unary(dispatch_session_stop(request_id, req.args, manager).await)
+        }
         "session.archive" => {
             DispatchResult::Unary(dispatch_session_archive(request_id, req.args, app).await)
         }
@@ -592,9 +599,9 @@ async fn dispatch_line(
         "project.delete" => {
             DispatchResult::Unary(dispatch_project_delete(request_id, req.args, app).await)
         }
-        "llm.set" => DispatchResult::Unary(
-            dispatch_llm_set(request_id, req.args, app, manager).await,
-        ),
+        "llm.set" => {
+            DispatchResult::Unary(dispatch_llm_set(request_id, req.args, app, manager).await)
+        }
         other => DispatchResult::Unary(SocketResponse::err(
             request_id,
             "unknown_command",
@@ -634,6 +641,22 @@ struct SessionWatchArgs {
 struct UserMessagePersistedPayload {
     session_id: String,
     message: MessageBrief,
+    /// Whether the persisted message reached a runner in this command.
+    /// GUI uses this to avoid showing "thinking" for saved-but-not-run
+    /// messages.
+    dispatch: &'static str,
+}
+
+/// Tauri event payload broadcast when the socket transport starts a
+/// runner itself (currently `session.new`). The GUI attaches listeners
+/// to this already-alive bridge so assistant events render/persist the
+/// same way as GUI-spawned bridges.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RunnerSpawnedExternalPayload {
+    session_id: String,
+    pid: u32,
+    via: &'static str,
 }
 
 async fn dispatch_session_send(
@@ -656,11 +679,7 @@ async fn dispatch_session_send(
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
     let origin = origin_from_args(parsed.supervisor.clone(), parsed.reason.clone());
@@ -702,6 +721,7 @@ async fn dispatch_session_send(
         let payload = UserMessagePersistedPayload {
             session_id: brief.session_id.0.clone(),
             message: brief.clone(),
+            dispatch: dispatch_status,
         };
         let _ = app.emit("user-message-persisted", payload);
     }
@@ -748,8 +768,8 @@ async fn dispatch_session_watch(
 //      can mirror the row into its in-memory stores without polling
 //
 // `session.new` is the only handler that needs the runner_manager AND a
-// SQLite transaction (sub-plan O1 atomicity — create + first message
-// commit together or roll back together). `session.btw` and `session.stop`
+// SQLite transaction (create + first message commit together, then a
+// runner is spawned for true delegation). `session.btw` and `session.stop`
 // drive the runner but don't persist anything new. `session.archive`,
 // `session.restore`, `session.move` are thin GalleyApi wrappers.
 
@@ -780,10 +800,187 @@ struct SessionNewArgs {
     reason: Option<String>,
 }
 
-/// Atomically create a session + persist its first user message + best-
-/// effort dispatch the message to the runner. Per sub-plan O1, the two
-/// writes go through a single SQLite transaction so a send failure rolls
-/// back the orphan session row.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GaConfigPref {
+    #[serde(default)]
+    python: Option<String>,
+    #[serde(default)]
+    ga_path: Option<String>,
+    #[serde(default)]
+    bridge_cwd: Option<String>,
+    #[serde(default)]
+    use_external_python: Option<bool>,
+}
+
+async fn spawn_args_for_session_new(
+    galley: &SqliteGalley,
+    app: Option<&AppHandle>,
+    session_id: &str,
+    llm_index: Option<u32>,
+) -> Result<SpawnArgs, SocketResponseLite> {
+    let raw = galley
+        .get_pref_json("ga_config")
+        .await
+        .map_err(SocketResponseLite::from_err)?
+        .ok_or_else(|| {
+            SocketResponseLite::runner_error(
+                "session.new runner config is missing; open Galley Settings once to save runtime paths",
+            )
+        })?;
+    let config: GaConfigPref = serde_json::from_value(raw).map_err(|e| {
+        SocketResponseLite::runner_error(format!("ga_config pref shape mismatch: {e}"))
+    })?;
+    let ga_path = non_empty_pref(config.ga_path.as_deref(), "gaPath")?;
+    let ga_path = PathBuf::from(ga_path);
+    if !ga_path.is_dir() {
+        return Err(SocketResponseLite::runner_error(format!(
+            "GA path invalid: not a directory: {}",
+            ga_path.display()
+        )));
+    }
+
+    let bridge_cwd = resolve_bridge_cwd(&config, app)?;
+    let python = resolve_python_for_socket(&config, app)?;
+
+    Ok(SpawnArgs {
+        python,
+        ga_path,
+        session_id: session_id.to_string(),
+        cwd: None,
+        bridge_cwd,
+        llm_index: llm_index.map(i64::from),
+        env: Vec::new(),
+    })
+}
+
+fn non_empty_pref(value: Option<&str>, key: &str) -> Result<String, SocketResponseLite> {
+    let Some(v) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Err(SocketResponseLite::runner_error(format!(
+            "session.new runner config missing {key}"
+        )));
+    };
+    Ok(v.to_string())
+}
+
+fn resolve_bridge_cwd(
+    config: &GaConfigPref,
+    app: Option<&AppHandle>,
+) -> Result<PathBuf, SocketResponseLite> {
+    if !cfg!(debug_assertions) {
+        if let Some(app) = app {
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                return Ok(resource_dir);
+            }
+        }
+    }
+    let bridge_cwd = PathBuf::from(non_empty_pref(config.bridge_cwd.as_deref(), "bridgeCwd")?);
+    if !bridge_cwd.is_dir() {
+        return Err(SocketResponseLite::runner_error(format!(
+            "bridge cwd invalid: not a directory: {}",
+            bridge_cwd.display()
+        )));
+    }
+    Ok(bridge_cwd)
+}
+
+fn resolve_python_for_socket(
+    config: &GaConfigPref,
+    app: Option<&AppHandle>,
+) -> Result<String, SocketResponseLite> {
+    let want_bundled = !cfg!(debug_assertions) && !config.use_external_python.unwrap_or(false);
+    if want_bundled {
+        if let Some(app) = app {
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                let rel = if cfg!(windows) {
+                    "python/python.exe"
+                } else {
+                    "python/bin/python3"
+                };
+                return path_to_utf8(resource_dir.join(rel), "bundled python");
+            }
+        }
+    }
+
+    let fallback = default_python_name();
+    let raw = config
+        .python
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or(fallback);
+    Ok(resolve_python_alias(raw).unwrap_or_else(|| fallback.to_string()))
+}
+
+fn default_python_name() -> &'static str {
+    if cfg!(windows) {
+        "python"
+    } else {
+        "python3"
+    }
+}
+
+fn resolve_python_alias(raw: &str) -> Option<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let path = match raw {
+        "python-ga-venv" => format!("{home}/Documents/GenericAgent/.venv/bin/python"),
+        "python-ga-venv-alt" => format!("{home}/Documents/GenericAgent/venv/bin/python"),
+        "python-brew-arm" => "/opt/homebrew/bin/python3".to_string(),
+        "python-brew-intel" => "/usr/local/bin/python3".to_string(),
+        "python-framework-3-14" => {
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3".to_string()
+        }
+        "python-framework-3-13" => {
+            "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3".to_string()
+        }
+        "python-framework-3-12" => {
+            "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3".to_string()
+        }
+        "python-framework-3-11" => {
+            "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3".to_string()
+        }
+        "python3" | "python" => raw.to_string(),
+        p if p.starts_with('/') || p.starts_with('\\') || looks_like_windows_abs_path(p) => {
+            p.to_string()
+        }
+        _ => return None,
+    };
+    Some(path)
+}
+
+fn looks_like_windows_abs_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
+fn path_to_utf8(path: PathBuf, label: &str) -> Result<String, SocketResponseLite> {
+    path.into_os_string().into_string().map_err(|_| {
+        SocketResponseLite::runner_error(format!("{label} path contains non-UTF-8 characters"))
+    })
+}
+
+fn emit_user_message_persisted(
+    app: Option<&AppHandle>,
+    session_id: &str,
+    message: &MessageBrief,
+    dispatch: &'static str,
+) {
+    if let Some(app) = app {
+        let _ = app.emit(
+            "user-message-persisted",
+            UserMessagePersistedPayload {
+                session_id: session_id.to_string(),
+                message: message.clone(),
+                dispatch,
+            },
+        );
+    }
+}
+
+/// Atomically create a session + persist its first user message, then
+/// spawn a runner and dispatch that first message. The DB writes still
+/// commit together; runner failures after commit surface as `runner_error`
+/// so callers know the delegated task did not actually start.
 async fn dispatch_session_new(
     request_id: Option<String>,
     args: Value,
@@ -802,21 +999,13 @@ async fn dispatch_session_new(
     };
     let task = parsed.task.trim().to_string();
     if task.is_empty() {
-        return SocketResponse::err(
-            request_id,
-            "invalid_args",
-            "session.new: task is empty",
-        );
+        return SocketResponse::err(request_id, "invalid_args", "session.new: task is empty");
     }
 
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
 
@@ -858,18 +1047,61 @@ async fn dispatch_session_new(
         Err(e) => return map_galley_err(request_id, e),
     };
     if let Err(e) = tx.commit().await {
-        return SocketResponse::err(
-            request_id,
-            "internal",
-            format!("session.new commit: {e}"),
-        );
+        return SocketResponse::err(request_id, "internal", format!("session.new commit: {e}"));
     }
 
-    // Best-effort dispatch to runner. We do NOT spawn a bridge here —
-    // CLI `session new` against a never-spawned session yields
-    // `persisted_only`; the GUI (or `session watch` + subsequent send)
-    // can warm up the bridge later. This matches `session.send` policy.
-    let dispatch_status = match manager
+    // Notify GUI early so the sidebar can show the session while we
+    // start the runner. The first message event is emitted below after
+    // we know whether it actually reached the bridge.
+    if let Some(app) = app {
+        let payload = SessionExternalPayload {
+            session: brief.clone(),
+            via: "session.new",
+        };
+        let _ = app.emit("session-created-external", payload);
+    }
+
+    let spawn_args = match spawn_args_for_session_new(&galley, app, &brief.id.0, llm_index).await {
+        Ok(args) => args,
+        Err(resp) => {
+            emit_user_message_persisted(app, &brief.id.0, &msg, "spawn_failed");
+            return resp.with_request_id(request_id);
+        }
+    };
+
+    let pid = match manager.spawn(spawn_args, Some(&brief.id.0)).await {
+        Ok(pid) => pid,
+        Err(e) => {
+            emit_user_message_persisted(app, &brief.id.0, &msg, "spawn_failed");
+            return SocketResponse::err(
+                request_id,
+                "runner_error",
+                format!("session.new runner spawn: {e}"),
+            );
+        }
+    };
+
+    let Some(rx) = manager.subscribe(&brief.id.0).await else {
+        emit_user_message_persisted(app, &brief.id.0, &msg, "spawn_failed");
+        return SocketResponse::err(
+            request_id,
+            "runner_error",
+            "session.new runner subscribe failed after spawn",
+        );
+    };
+    if let Some(app) = app {
+        let _ = app.emit(
+            "runner-spawned-external",
+            RunnerSpawnedExternalPayload {
+                session_id: brief.id.0.clone(),
+                pid,
+                via: "session.new",
+            },
+        );
+        spawn_emit_task(app.clone(), brief.id.0.clone(), rx);
+    }
+
+    match manager
         .send_command(
             &brief.id.0,
             &IpcCommand::UserMessage(UserMessageCommand {
@@ -879,31 +1111,23 @@ async fn dispatch_session_new(
         )
         .await
     {
-        Ok(()) => "dispatched",
-        Err(_) => "persisted_only",
-    };
-
-    // Notify GUI: sidebar inserts the row, conversation view picks up
-    // the user message if the session is then activated.
-    if let Some(app) = app {
-        let payload = SessionExternalPayload {
-            session: brief.clone(),
-            via: "session.new",
-        };
-        let _ = app.emit("session-created-external", payload);
-        let _ = app.emit(
-            "user-message-persisted",
-            UserMessagePersistedPayload {
-                session_id: brief.id.0.clone(),
-                message: msg.clone(),
-            },
-        );
+        Ok(()) => {}
+        Err(e) => {
+            emit_user_message_persisted(app, &brief.id.0, &msg, "spawn_failed");
+            return SocketResponse::err(
+                request_id,
+                "runner_error",
+                format!("session.new runner dispatch: {e}"),
+            );
+        }
     }
+
+    emit_user_message_persisted(app, &brief.id.0, &msg, "dispatched");
 
     let result = serde_json::json!({
         "session": brief,
         "message": msg,
-        "dispatch": dispatch_status,
+        "dispatch": "dispatched",
     });
     SocketResponse::ok(request_id, result)
 }
@@ -944,11 +1168,7 @@ async fn dispatch_session_btw(
     };
     let question = parsed.question.trim().to_string();
     if question.is_empty() {
-        return SocketResponse::err(
-            request_id,
-            "invalid_args",
-            "session.btw: question is empty",
-        );
+        return SocketResponse::err(request_id, "invalid_args", "session.btw: question is empty");
     }
 
     // Validate session exists so a typo'd id surfaces as `not_found`
@@ -956,11 +1176,7 @@ async fn dispatch_session_btw(
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
     if let Err(e) = galley
@@ -980,10 +1196,7 @@ async fn dispatch_session_btw(
         images: vec![],
     });
     match manager.send_command(&parsed.session_id, &cmd).await {
-        Ok(()) => SocketResponse::ok(
-            request_id,
-            serde_json::json!({ "dispatch": "dispatched" }),
-        ),
+        Ok(()) => SocketResponse::ok(request_id, serde_json::json!({ "dispatch": "dispatched" })),
         Err(SendCommandError::ProcessGone { .. }) => SocketResponse::err(
             request_id,
             "runner_error",
@@ -1036,11 +1249,7 @@ async fn dispatch_session_stop(
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
     if let Err(e) = galley
@@ -1057,11 +1266,11 @@ async fn dispatch_session_stop(
             serde_json::json!({ "dispatch": "already_stopped" }),
         );
     }
-    match manager.send_command(&parsed.session_id, &IpcCommand::Abort).await {
-        Ok(()) => SocketResponse::ok(
-            request_id,
-            serde_json::json!({ "dispatch": "abort_sent" }),
-        ),
+    match manager
+        .send_command(&parsed.session_id, &IpcCommand::Abort)
+        .await
+    {
+        Ok(()) => SocketResponse::ok(request_id, serde_json::json!({ "dispatch": "abort_sent" })),
         // Race: agent_running was true but the process died before
         // we got the command out. Treat as already_stopped — the
         // observable end state is the same.
@@ -1101,11 +1310,7 @@ async fn dispatch_session_archive(
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
     let origin = origin_from_args(parsed.supervisor, parsed.reason);
@@ -1148,11 +1353,7 @@ async fn dispatch_session_restore(
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
     let origin = origin_from_args(parsed.supervisor, parsed.reason);
@@ -1208,11 +1409,7 @@ async fn dispatch_session_move(
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
     let origin = origin_from_args(parsed.supervisor, parsed.reason);
@@ -1276,10 +1473,7 @@ async fn resolve_llm_name(
         ));
     }
     let target = name.to_lowercase();
-    if let Some(entry) = entries
-        .iter()
-        .find(|e| e.name.to_lowercase() == target)
-    {
+    if let Some(entry) = entries.iter().find(|e| e.name.to_lowercase() == target) {
         Ok((Some(entry.index), Some(entry.name.clone())))
     } else {
         Err(SocketResponseLite::invalid_args(format!(
@@ -1310,6 +1504,9 @@ impl SocketResponseLite {
     fn invalid_args(msg: impl Into<String>) -> Self {
         SocketResponseLite::InvalidArgs(msg.into())
     }
+    fn runner_error(msg: impl Into<String>) -> Self {
+        SocketResponseLite::RunnerError(msg.into())
+    }
     fn from_err(e: crate::error::GalleyError) -> Self {
         use crate::error::GalleyError;
         match e {
@@ -1322,13 +1519,17 @@ impl SocketResponseLite {
     }
     fn with_request_id(self, request_id: Option<String>) -> SocketResponse {
         match self {
-            SocketResponseLite::InvalidArgs(m) => SocketResponse::err(request_id, "invalid_args", m),
+            SocketResponseLite::InvalidArgs(m) => {
+                SocketResponse::err(request_id, "invalid_args", m)
+            }
             SocketResponseLite::DbUnavailable(m) => {
                 SocketResponse::err(request_id, "db_unavailable", m)
             }
             SocketResponseLite::NotFound(m) => SocketResponse::err(request_id, "not_found", m),
             SocketResponseLite::Internal(m) => SocketResponse::err(request_id, "internal", m),
-            SocketResponseLite::RunnerError(m) => SocketResponse::err(request_id, "runner_error", m),
+            SocketResponseLite::RunnerError(m) => {
+                SocketResponse::err(request_id, "runner_error", m)
+            }
         }
     }
 }
@@ -1435,20 +1636,12 @@ async fn dispatch_project_create(
     };
     let name = parsed.name.trim().to_string();
     if name.is_empty() {
-        return SocketResponse::err(
-            request_id,
-            "invalid_args",
-            "project.create: name is empty",
-        );
+        return SocketResponse::err(request_id, "invalid_args", "project.create: name is empty");
     }
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
 
@@ -1457,7 +1650,11 @@ async fn dispatch_project_create(
         name,
         root_path: parsed.root_path.and_then(|s| {
             let t = s.trim().to_string();
-            if t.is_empty() { None } else { Some(t) }
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         }),
         icon: parsed.icon,
         color: parsed.color,
@@ -1515,11 +1712,7 @@ async fn dispatch_project_delete(
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
 
@@ -1587,21 +1780,13 @@ async fn dispatch_llm_set(
     let parsed: LlmSetArgs = match serde_json::from_value(args) {
         Ok(a) => a,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "invalid_args",
-                format!("llm.set args: {e}"),
-            );
+            return SocketResponse::err(request_id, "invalid_args", format!("llm.set args: {e}"));
         }
     };
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
 
@@ -1609,18 +1794,18 @@ async fn dispatch_llm_set(
     //    Reuses the same resolver as `session.new --llm=...` so the two
     //    surfaces agree on case-insensitive matching + cache-empty
     //    diagnostics.
-    let (index, display_name) =
-        match resolve_llm_name(&galley, Some(parsed.llm_name.clone())).await {
-            Ok((Some(i), Some(n))) => (i, n),
-            Ok(_) => {
-                return SocketResponse::err(
-                    request_id,
-                    "invalid_args",
-                    "llm.set: llm name resolved to empty (cache shape unexpected)",
-                );
-            }
-            Err(resp) => return resp.with_request_id(request_id),
-        };
+    let (index, display_name) = match resolve_llm_name(&galley, Some(parsed.llm_name.clone())).await
+    {
+        Ok((Some(i), Some(n))) => (i, n),
+        Ok(_) => {
+            return SocketResponse::err(
+                request_id,
+                "invalid_args",
+                "llm.set: llm name resolved to empty (cache shape unexpected)",
+            );
+        }
+        Err(resp) => return resp.with_request_id(request_id),
+    };
 
     // 2. Validate the session exists. set_session_llm itself returns
     //    NotFound on a missing row, but we surface a clearer error here
@@ -1713,11 +1898,7 @@ async fn dispatch_sessions_list(request_id: Option<String>, args: Value) -> Sock
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
-            return SocketResponse::err(
-                request_id,
-                "db_unavailable",
-                format!("open: {e}"),
-            );
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
         }
     };
     match galley.list_sessions(filter).await {
@@ -1725,11 +1906,7 @@ async fn dispatch_sessions_list(request_id: Option<String>, args: Value) -> Sock
             let value = serde_json::to_value(&sessions).unwrap_or(Value::Null);
             SocketResponse::ok(request_id, value)
         }
-        Err(e) => SocketResponse::err(
-            request_id,
-            "internal",
-            format!("list_sessions: {e}"),
-        ),
+        Err(e) => SocketResponse::err(request_id, "internal", format!("list_sessions: {e}")),
     }
 }
 
@@ -1872,9 +2049,8 @@ mod tests {
     #[tokio::test]
     async fn dispatch_unknown_command_yields_error() {
         let mgr = RunnerManager::new();
-        let resp = expect_unary(
-            dispatch_line(r#"{"command":"nope.does_not_exist"}"#, None, &mgr).await,
-        );
+        let resp =
+            expect_unary(dispatch_line(r#"{"command":"nope.does_not_exist"}"#, None, &mgr).await);
         assert!(!resp.ok);
         assert_eq!(resp.error.as_deref(), Some("unknown_command"));
     }
@@ -1882,9 +2058,8 @@ mod tests {
     #[tokio::test]
     async fn dispatch_ping_succeeds() {
         let mgr = RunnerManager::new();
-        let resp = expect_unary(
-            dispatch_line(r#"{"command":"ping","requestId":"r1"}"#, None, &mgr).await,
-        );
+        let resp =
+            expect_unary(dispatch_line(r#"{"command":"ping","requestId":"r1"}"#, None, &mgr).await);
         assert!(resp.ok);
         assert_eq!(resp.request_id.as_deref(), Some("r1"));
     }

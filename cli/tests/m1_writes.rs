@@ -116,11 +116,9 @@ async fn session_new_without_core_exits_4() {
     let td = tempdir();
     let db = td.path().join("test.db");
     drop(seeded_db_at(&db).await);
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["session", "new", "first task"]);
+    let (stdout, code) = run_galley_isolated(&db, td.path(), &["session", "new", "first task"]);
     assert_eq!(code, Some(4), "stdout: {stdout}");
-    let parsed: serde_json::Value =
-        serde_json::from_str(stdout.trim()).expect("json");
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
     assert_eq!(parsed["error"], "db_unavailable");
 }
 
@@ -157,11 +155,8 @@ async fn session_btw_without_core_exits_4() {
     let td = tempdir();
     let db = td.path().join("test.db");
     drop(seeded_db_at(&db).await);
-    let (stdout, code) = run_galley_isolated(
-        &db,
-        td.path(),
-        &["session", "btw", "sess_x", "ping?"],
-    );
+    let (stdout, code) =
+        run_galley_isolated(&db, td.path(), &["session", "btw", "sess_x", "ping?"]);
     assert_eq!(code, Some(4), "stdout: {stdout}");
 }
 
@@ -170,8 +165,7 @@ async fn session_stop_without_core_exits_4() {
     let td = tempdir();
     let db = td.path().join("test.db");
     drop(seeded_db_at(&db).await);
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["session", "stop", "sess_x"]);
+    let (stdout, code) = run_galley_isolated(&db, td.path(), &["session", "stop", "sess_x"]);
     assert_eq!(code, Some(4), "stdout: {stdout}");
 }
 
@@ -180,8 +174,7 @@ async fn session_archive_without_core_exits_4() {
     let td = tempdir();
     let db = td.path().join("test.db");
     drop(seeded_db_at(&db).await);
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["session", "archive", "sess_x"]);
+    let (stdout, code) = run_galley_isolated(&db, td.path(), &["session", "archive", "sess_x"]);
     assert_eq!(code, Some(4), "stdout: {stdout}");
 }
 
@@ -190,8 +183,7 @@ async fn session_restore_without_core_exits_4() {
     let td = tempdir();
     let db = td.path().join("test.db");
     drop(seeded_db_at(&db).await);
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["session", "restore", "sess_x"]);
+    let (stdout, code) = run_galley_isolated(&db, td.path(), &["session", "restore", "sess_x"]);
     assert_eq!(code, Some(4), "stdout: {stdout}");
 }
 
@@ -204,8 +196,7 @@ async fn session_move_accepts_no_to_flag() {
     let td = tempdir();
     let db = td.path().join("test.db");
     drop(seeded_db_at(&db).await);
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["session", "move", "sess_x"]);
+    let (stdout, code) = run_galley_isolated(&db, td.path(), &["session", "move", "sess_x"]);
     assert_eq!(code, Some(4), "stdout: {stdout}");
 }
 
@@ -242,8 +233,7 @@ async fn project_delete_without_core_exits_4() {
     let td = tempdir();
     let db = td.path().join("test.db");
     drop(seeded_db_at(&db).await);
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["project", "delete", "proj_demo"]);
+    let (stdout, code) = run_galley_isolated(&db, td.path(), &["project", "delete", "proj_demo"]);
     assert_eq!(code, Some(4), "stdout: {stdout}");
 }
 
@@ -262,8 +252,7 @@ async fn project_list_happy_path_ndjson() {
     assert_eq!(lines.len(), 2);
     // Sort order: pinned DESC, last_activity_at DESC. Neither is pinned,
     // so most-recently-active first.
-    let first: serde_json::Value =
-        serde_json::from_str(lines[0]).expect("ndjson line 1");
+    let first: serde_json::Value = serde_json::from_str(lines[0]).expect("ndjson line 1");
     assert_eq!(first["id"], "proj_b");
 }
 
@@ -274,7 +263,10 @@ async fn project_list_empty_db_returns_empty_stdout() {
     drop(seeded_db_at(&db).await);
     let (stdout, code) = run_galley_isolated(&db, td.path(), &["project", "list"]);
     assert_eq!(code, Some(0), "stdout: {stdout}");
-    assert!(stdout.trim().is_empty(), "expected empty stdout, got: {stdout}");
+    assert!(
+        stdout.trim().is_empty(),
+        "expected empty stdout, got: {stdout}"
+    );
 }
 
 #[tokio::test]
@@ -285,8 +277,7 @@ async fn project_list_db_unavailable_exits_4() {
     let db = td.path().join("nonexistent.db");
     let (stdout, code) = run_galley_isolated(&db, td.path(), &["project", "list"]);
     assert_eq!(code, Some(4), "stdout: {stdout}");
-    let parsed: serde_json::Value =
-        serde_json::from_str(stdout.trim()).expect("json");
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
     assert_eq!(parsed["error"], "db_unavailable");
 }
 
@@ -310,8 +301,7 @@ async fn llm_list_happy_path_ndjson() {
     assert_eq!(code, Some(0), "stdout: {stdout}");
     let lines: Vec<&str> = stdout.trim().lines().collect();
     assert_eq!(lines.len(), 2);
-    let first: serde_json::Value =
-        serde_json::from_str(lines[0]).expect("ndjson line 1");
+    let first: serde_json::Value = serde_json::from_str(lines[0]).expect("ndjson line 1");
     assert_eq!(first["index"], 0);
     assert_eq!(first["name"], "glm-4.5-x");
 }
@@ -325,7 +315,10 @@ async fn llm_list_empty_cache_returns_empty_stdout_exit_0() {
     drop(seeded_db_at(&db).await);
     let (stdout, code) = run_galley_isolated(&db, td.path(), &["llm", "list"]);
     assert_eq!(code, Some(0), "stdout: {stdout}");
-    assert!(stdout.trim().is_empty(), "expected empty stdout, got: {stdout}");
+    assert!(
+        stdout.trim().is_empty(),
+        "expected empty stdout, got: {stdout}"
+    );
 }
 
 #[tokio::test]
@@ -342,8 +335,7 @@ async fn llm_list_corrupt_cache_shape_exits_2() {
 
     let (stdout, code) = run_galley_isolated(&db, td.path(), &["llm", "list"]);
     assert_eq!(code, Some(2), "stdout: {stdout}");
-    let parsed: serde_json::Value =
-        serde_json::from_str(stdout.trim()).expect("json");
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
     assert_eq!(parsed["error"], "invalid_args");
 }
 
@@ -352,10 +344,7 @@ async fn llm_set_without_core_exits_4() {
     let td = tempdir();
     let db = td.path().join("test.db");
     drop(seeded_db_at(&db).await);
-    let (stdout, code) = run_galley_isolated(
-        &db,
-        td.path(),
-        &["llm", "set", "sess_x", "glm-4.5-x"],
-    );
+    let (stdout, code) =
+        run_galley_isolated(&db, td.path(), &["llm", "set", "sess_x", "glm-4.5-x"]);
     assert_eq!(code, Some(4), "stdout: {stdout}");
 }

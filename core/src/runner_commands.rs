@@ -219,7 +219,9 @@ pub async fn runner_stderr_tail(
 }
 
 #[tauri::command]
-pub async fn shutdown_all_runners(manager: State<'_, std::sync::Arc<RunnerManager>>) -> Result<(), String> {
+pub async fn shutdown_all_runners(
+    manager: State<'_, std::sync::Arc<RunnerManager>>,
+) -> Result<(), String> {
     manager.shutdown_all(Duration::from_secs(5)).await;
     Ok(())
 }
@@ -228,7 +230,7 @@ pub async fn shutdown_all_runners(manager: State<'_, std::sync::Arc<RunnerManage
 /// as Tauri events to the GUI. Lives for the lifetime of the subprocess —
 /// when the broadcast channel closes (subprocess exited, all senders
 /// dropped) the task emits a final `runner-closed` event and terminates.
-fn spawn_emit_task(
+pub(crate) fn spawn_emit_task(
     app: AppHandle,
     session_id: String,
     mut rx: tokio::sync::broadcast::Receiver<BroadcastItem>,
@@ -338,7 +340,7 @@ mod tests {
     fn runner_event_envelope_carries_kind_tag() {
         // The envelope wraps the IpcEvent in `event:` — the inner event
         // must retain its `kind` discriminator (serde tag).
-        use crate::ipc::{ReadyEvent, IpcEvent as E};
+        use crate::ipc::{IpcEvent as E, ReadyEvent};
         let envelope = RunnerEventEnvelope {
             session_id: "s1".into(),
             event: E::Ready(ReadyEvent {

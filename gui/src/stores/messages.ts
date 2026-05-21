@@ -156,8 +156,8 @@ interface MessagesActions {
    * Triggered by the `user-message-persisted` Tauri event whenever CLI
    * / supervisor agents call `galley session send`.
    *
-   * Otherwise identical to `appendUserTurn`: appends a UserTurn, sets
-   * `agentRunning=true` (the bridge has been dispatched), bumps
+   * Otherwise close to `appendUserTurn`: appends a UserTurn, sets
+   * `agentRunning=true` only when the bridge has been dispatched, bumps
    * `userSubmitTick` so the conversation scrolls to the new message,
    * derives the sidebar title on first message.
    */
@@ -166,6 +166,7 @@ interface MessagesActions {
     text: string,
     origin?: Origin,
     createdAt?: string,
+    dispatched?: boolean,
   ) => void;
   /**
    * Append a transient user message for `/btw` side questions.
@@ -390,13 +391,13 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     });
   },
 
-  appendUserTurnExternal: (sid, text, origin, createdAt) => {
+  appendUserTurnExternal: (sid, text, origin, createdAt, dispatched = true) => {
     // Mirror of appendUserTurn — see that action's comments for
     // rationale on each field. Difference: skips `persistUserMessage`
     // because Rust already wrote the row before emitting
     // `user-message-persisted`. Carries the Origin triple through from
     // the socket envelope (B4 M7) so MessageUser can render the
-    // supervisor annotation strip in the live path the same way
+    // supervisor provenance marker in the live path the same way
     // rowsToTurns reconstructs it on restore.
     const currentTurnCount =
       useSessionsStore.getState().sessions.find((s) => s.id === sid)
@@ -408,7 +409,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
       turns: [...m.turns, userTurn],
-      agentRunning: true,
+      agentRunning: dispatched,
       inFlightContent: "",
       currentTurnIndex: null,
       pendingAskUser: null,
@@ -599,6 +600,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
 // Expose the store on `window.__messagesStore` in dev so the user can
 // inspect / mutate state from the DevTools console.
 if (import.meta.env.DEV) {
-  (globalThis as { __messagesStore?: typeof useMessagesStore }).__messagesStore =
-    useMessagesStore;
+  (
+    globalThis as { __messagesStore?: typeof useMessagesStore }
+  ).__messagesStore = useMessagesStore;
 }

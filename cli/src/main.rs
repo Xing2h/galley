@@ -19,9 +19,7 @@
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use galley_core_lib::api::{
-    GalleyApi, SearchScope, SessionFilter, SessionId, SessionStatus,
-};
+use galley_core_lib::api::{GalleyApi, SearchScope, SessionFilter, SessionId, SessionStatus};
 use galley_core_lib::db::SqliteGalley;
 use galley_core_lib::error::GalleyError;
 use galley_core_lib::socket_listener::socket_path;
@@ -220,10 +218,9 @@ enum SessionCmd {
     },
     /// Create a new session with a first user message (B4 M1). Atomic:
     /// session row + first message commit together or roll back together.
-    /// Returns `{session, message, dispatch}` — `dispatch` is `dispatched`
-    /// when the runner subprocess was alive and received the message, or
-    /// `persisted_only` when there's no live bridge (CLI doesn't spawn
-    /// runners; the GUI or a subsequent `session send` warms them up).
+    /// Returns `{session, message, dispatch}` with `dispatch=dispatched`
+    /// after Galley Core starts a runner and sends the first task. Runner
+    /// start/send failures exit 5 so callers know delegation did not begin.
     New {
         /// First user message. Doubles as the seed for title derivation
         /// after the bridge finishes the first turn.
@@ -376,10 +373,7 @@ async fn run(cli: Cli) -> Result<(), GalleyError> {
             };
             let filter = SessionFilter {
                 project_id: project,
-                status: status
-                    .as_deref()
-                    .map(parse_status_arg)
-                    .transpose()?,
+                status: status.as_deref().map(parse_status_arg).transpose()?,
                 archived: archived_flag,
             };
             let rows = galley.list_sessions(filter).await?;
@@ -543,15 +537,11 @@ async fn socket_send_recv(req: serde_json::Value) -> Result<String, GalleyError>
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::UnixStream;
     let path = socket_path();
-    let stream = UnixStream::connect(&path).await.map_err(|e| {
-        GalleyError::DbUnavailable {
-            message: format!(
-                "Galley Core not running (socket {}: {})",
-                path.display(),
-                e
-            ),
-        }
-    })?;
+    let stream = UnixStream::connect(&path)
+        .await
+        .map_err(|e| GalleyError::DbUnavailable {
+            message: format!("Galley Core not running (socket {}: {})", path.display(), e),
+        })?;
     let (read_half, mut write_half) = stream.into_split();
     let line = serde_json::to_string(&req).unwrap();
     write_half
@@ -680,15 +670,11 @@ async fn session_watch(id: String) -> Result<(), GalleyError> {
     let (read_half, mut write_half) = {
         use tokio::net::UnixStream;
         let path = socket_path();
-        let stream = UnixStream::connect(&path).await.map_err(|e| {
-            GalleyError::DbUnavailable {
-                message: format!(
-                    "Galley Core not running (socket {}: {})",
-                    path.display(),
-                    e
-                ),
-            }
-        })?;
+        let stream = UnixStream::connect(&path)
+            .await
+            .map_err(|e| GalleyError::DbUnavailable {
+                message: format!("Galley Core not running (socket {}: {})", path.display(), e),
+            })?;
         stream.into_split()
     };
     #[cfg(windows)]
@@ -698,11 +684,12 @@ async fn session_watch(id: String) -> Result<(), GalleyError> {
         let path_str = path.to_str().ok_or_else(|| GalleyError::Internal {
             message: "named pipe path not UTF-8".into(),
         })?;
-        let stream = ClientOptions::new()
-            .open(path_str)
-            .map_err(|e| GalleyError::DbUnavailable {
-                message: format!("Galley Core not running (pipe {}: {})", path_str, e),
-            })?;
+        let stream =
+            ClientOptions::new()
+                .open(path_str)
+                .map_err(|e| GalleyError::DbUnavailable {
+                    message: format!("Galley Core not running (pipe {}: {})", path_str, e),
+                })?;
         tokio::io::split(stream)
     };
 
@@ -954,10 +941,7 @@ async fn llm_list() -> Result<(), GalleyError> {
         Value::Array(xs) => xs,
         other => {
             return Err(GalleyError::InvalidArgs {
-                message: format!(
-                    "pref llm_list is not an array: {}",
-                    other
-                ),
+                message: format!("pref llm_list is not an array: {}", other),
             });
         }
     };

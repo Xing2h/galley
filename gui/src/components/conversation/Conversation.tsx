@@ -22,12 +22,6 @@ export interface ConversationProps {
    * threaded down to ToolCallout → ApprovalForm so the "Always
    * allow in {projectName}" button reflects context. */
   projectName?: string;
-  /**
-   * Resend handler — invoked when the user clicks the ↻ button on a
-   * past user-msg. Receives the message text. Host should prefill the
-   * Composer (not delete history). Omitting hides the affordance.
-   */
-  onResendUserMessage?: (content: string) => void;
 }
 
 /**
@@ -49,7 +43,6 @@ export function Conversation({
   approvalDecisions,
   onApprove,
   projectName,
-  onResendUserMessage,
 }: ConversationProps) {
   return (
     <div>
@@ -58,7 +51,6 @@ export function Conversation({
           {t.role === "user" ? (
             <MessageUser
               content={t.content}
-              onResend={onResendUserMessage}
               origin={t.origin}
               createdAt={t.createdAt}
             />
@@ -252,9 +244,8 @@ export function TurnMarker({
   preamble?: string;
 }) {
   const elapsedSec = useElapsedSeconds(thinking);
-  const elapsedLabel = thinking && elapsedSec >= 5
-    ? formatElapsedSeconds(elapsedSec)
-    : null;
+  const elapsedLabel =
+    thinking && elapsedSec >= 5 ? formatElapsedSeconds(elapsedSec) : null;
   const hasStepNumber = index != null;
   const hasDetail = !thinking && Boolean(thinkingContent || preamble);
   const [open, setOpen] = useState(false);
@@ -274,7 +265,10 @@ export function TurnMarker({
             {hasStepNumber ? " · 思考中" : "思考中"}
             <TypingDots />
             {elapsedLabel && (
-              <span className="text-ink-muted">{" · "}{elapsedLabel}</span>
+              <span className="text-ink-muted">
+                {" · "}
+                {elapsedLabel}
+              </span>
             )}
           </>
         ) : summary ? (
@@ -325,12 +319,8 @@ function DetailPanel({
 }) {
   return (
     <div className="mb-3 animate-fade-in space-y-2">
-      {thinking && (
-        <MarkdownView source={thinking} variant="thinking" />
-      )}
-      {preamble && (
-        <MarkdownView source={preamble} variant="thinking" />
-      )}
+      {thinking && <MarkdownView source={thinking} variant="thinking" />}
+      {preamble && <MarkdownView source={preamble} variant="thinking" />}
     </div>
   );
 }

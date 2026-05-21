@@ -149,7 +149,8 @@ export async function spawnBridge(
     : args.bridgeCwd;
 
   if (!bridgeCwd) {
-    const msg = "bridge cwd unresolved (production resourceDir failed and no dev path was supplied)";
+    const msg =
+      "bridge cwd unresolved (production resourceDir failed and no dev path was supplied)";
     handlers.onError?.(msg);
     throw new Error(msg);
   }
@@ -274,6 +275,89 @@ export async function spawnBridge(
   };
 }
 
+export async function attachBridge(
+  sessionId: string,
+  pid: number,
+  handlers: BridgeHandlers,
+): Promise<BridgeClient> {
+  const unlistenFns: UnlistenFn[] = [];
+  let alreadyClosed = false;
+
+  const teardown = () => {
+    for (const u of unlistenFns) {
+      try {
+        u();
+      } catch {
+        // listeners may have unregistered themselves via webview reload
+      }
+    }
+    unlistenFns.length = 0;
+  };
+
+  const onClosedSafe = async (code: number | null, signal: number | null) => {
+    if (alreadyClosed) return;
+    alreadyClosed = true;
+    try {
+      const tail: string[] = await invoke("runner_stderr_tail", { sessionId });
+      for (const line of tail) {
+        handlers.onStderr?.(line);
+      }
+    } catch {
+      // best-effort — manager may have already dropped the session
+    }
+    handlers.onClose?.(code, signal);
+    teardown();
+  };
+
+  unlistenFns.push(
+    await listen<RunnerEventEnvelope>("runner-event", (e) => {
+      if (e.payload.sessionId !== sessionId) return;
+      handlers.onEvent(e.payload.event);
+    }),
+  );
+  unlistenFns.push(
+    await listen<RunnerMalformedPayload>("runner-malformed", (e) => {
+      if (e.payload.sessionId !== sessionId) return;
+      handlers.onMalformedLine?.(e.payload.line);
+    }),
+  );
+  unlistenFns.push(
+    await listen<RunnerClosedPayload>("runner-closed", (e) => {
+      if (e.payload.sessionId !== sessionId) return;
+      void onClosedSafe(e.payload.code, e.payload.signal);
+    }),
+  );
+
+  return {
+    pid,
+    send: async (cmd) => {
+      try {
+        await invoke("send_to_runner", { sessionId, command: cmd });
+      } catch (e) {
+        const msg = formatInvokeError(e);
+        // eslint-disable-next-line preserve-caught-error
+        throw new Error(msg);
+      }
+    },
+    kill: async () => {
+      try {
+        await invoke("kill_runner", { sessionId });
+      } catch {
+        // already dead → fine
+      }
+      void onClosedSafe(null, null);
+    },
+    shutdown: async (timeoutMs = 3000) => {
+      try {
+        await invoke("shutdown_runner", { sessionId, timeoutMs });
+      } catch {
+        // graceful failed → fall through to close
+      }
+      void onClosedSafe(0, null);
+    },
+  };
+}
+
 /**
  * Resolve the Python interpreter the Rust side should spawn.
  *
@@ -320,7 +404,11 @@ async function resolvePythonPath(
     return fallback;
   }
   // Absolute path or bare command name — pass through.
-  if (userPath.startsWith("/") || userPath.startsWith("\\") || /^[A-Z]:/.test(userPath)) {
+  if (
+    userPath.startsWith("/") ||
+    userPath.startsWith("\\") ||
+    /^[A-Z]:/.test(userPath)
+  ) {
     return userPath;
   }
   if (userPath === "python3" || userPath === "python") {
@@ -376,7 +464,8 @@ async function resolveProductionBridgeCwd(
  * and surface a readable message either way.
  */
 function formatInvokeError(e: unknown): string {
-  const raw = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
+  const raw =
+    typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
   try {
     const parsed = JSON.parse(raw) as { error?: string; detail?: string };
     if (parsed.error) {

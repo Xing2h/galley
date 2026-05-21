@@ -156,9 +156,7 @@ fn make_args(session_id: &str, bridge_cwd: PathBuf) -> SpawnArgs {
 
 /// Subscribe and await the next event, with a 5s safety timeout. Returns
 /// None if the channel closed or the timer fired.
-async fn next_event(
-    rx: &mut tokio::sync::broadcast::Receiver<BroadcastItem>,
-) -> Option<IpcEvent> {
+async fn next_event(rx: &mut tokio::sync::broadcast::Receiver<BroadcastItem>) -> Option<IpcEvent> {
     loop {
         match timeout(Duration::from_secs(5), rx.recv()).await {
             Ok(Ok(BroadcastItem::Event(boxed))) => return Some(*boxed),

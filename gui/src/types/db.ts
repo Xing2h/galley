@@ -62,7 +62,7 @@ export interface MessageRow {
   preamble: string | null;
   /** Origin via — `gui` / `cli` / `supervisor` / `system`. Added in
    * migration 006 (B2). Pre-006 rows have NULL → treat as `gui`.
-   * Drives the M7 supervisor activity annotation on UserTurn. */
+   * Drives the M7 supervisor provenance marker on UserTurn. */
   created_via: string | null;
   /** Supervisor label when `created_via === 'supervisor'` (e.g.
    * `ga-claude-1`). NULL otherwise. Added in migration 006. */

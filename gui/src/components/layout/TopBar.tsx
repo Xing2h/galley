@@ -9,7 +9,6 @@ import {
   Gear,
   Lightning,
   PencilSimple,
-  Robot,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -89,41 +88,6 @@ export interface TopBarProps {
    * Default resolves from `isMac`; consumers rarely override.
    */
   trafficLightPadding?: number;
-  /**
-   * B4 M7 supervisor activity summary for the current session.
-   * Pre-aggregated by the caller (computed from `messagesStore`'s
-   * `turns`) so TopBar stays presentational and doesn't reach into
-   * the store. Empty / undefined → no pill renders (zero clutter
-   * for sessions with no supervisor writes). v1 only counts
-   * supervisor-driven user messages; non-message write commands
-   * (archive / move / llm set) intentionally aren't surfaced here
-   * per scope decision — they don't leave a per-event timeline
-   * row in v0.2.
-   */
-  supervisorActivity?: SupervisorActivity;
-}
-
-/**
- * Per-session supervisor activity summary. Drives the static pill in
- * the TopBar right cluster (B4 M7).
- */
-export interface SupervisorActivity {
-  /** Total supervisor-driven user messages in the active session. */
-  count: number;
-  /** Label of the most recent supervisor (e.g. `ga-claude-1`). */
-  lastSupervisor?: string;
-  /** ISO timestamp of the most recent supervisor write. */
-  lastAt?: string;
-  /** Per-supervisor breakdown, ordered by `lastAt` desc. Drives the
-   * Popover content when the user hovers / clicks the pill. */
-  bySupervisor: SupervisorBucket[];
-}
-
-export interface SupervisorBucket {
-  name: string;
-  count: number;
-  /** ISO timestamp of this supervisor's most recent write. */
-  lastAt?: string;
 }
 
 /**
@@ -175,7 +139,6 @@ export function TopBar({
   currentSessionHasPet = false,
   onRenameSession,
   trafficLightPadding = isMac ? 70 : 12,
-  supervisorActivity,
 }: TopBarProps) {
   return (
     <div
@@ -255,9 +218,6 @@ export function TopBar({
           are auto-excluded from drag region by Tauri so they remain
           clickable. */}
       <div className="flex shrink-0 items-center gap-2">
-        {supervisorActivity && supervisorActivity.count > 0 && (
-          <SupervisorActivityIndicator activity={supervisorActivity} />
-        )}
         {yoloMode && (
           <YoloIndicator
             onDisable={onDisableYolo}
@@ -482,7 +442,11 @@ function SessionTitleMenu({
                   "data-[highlighted]:bg-hover",
                 )}
               >
-                <PencilSimple size={14} weight="thin" className="text-ink-soft" />
+                <PencilSimple
+                  size={14}
+                  weight="thin"
+                  className="text-ink-soft"
+                />
                 <span>重命名</span>
               </DropdownMenu.Item>
               <DropdownMenu.Separator className="my-1 h-px bg-line" />
@@ -495,7 +459,11 @@ function SessionTitleMenu({
               "data-[highlighted]:bg-hover",
             )}
           >
-            <ArrowsClockwise size={14} weight="thin" className="text-ink-soft" />
+            <ArrowsClockwise
+              size={14}
+              weight="thin"
+              className="text-ink-soft"
+            />
             <span>重新注入工具</span>
           </DropdownMenu.Item>
           <DropdownMenu.Item
@@ -658,9 +626,7 @@ function WidthToggleButton({
       type="button"
       onClick={onToggle}
       title={
-        isWide
-          ? "切到紧凑（760px 阅读宽度）"
-          : "切到宽松（1200px 阅读宽度）"
+        isWide ? "切到紧凑（760px 阅读宽度）" : "切到宽松（1200px 阅读宽度）"
       }
       aria-label={isWide ? "切到紧凑阅读宽度" : "切到宽松阅读宽度"}
       className={cn(
@@ -678,111 +644,4 @@ function WidthToggleButton({
       {isWide ? "宽松" : "紧凑"}
     </button>
   );
-}
-
-/**
- * Static supervisor-activity indicator (B4 M7 / PRD §6.1 #4). Shows a
- * small pill in the TopBar right cluster when the active session has at
- * least one supervisor-driven user message. Click → Popover with the
- * per-supervisor breakdown so a human user can see who's been driving
- * this session and when.
- *
- * Visual register: neutral pill (lower contrast than YOLO, which is a
- * state warning). Matches the "this is metadata, not an alert"
- * intent — supervisor activity is normal, not an exception.
- *
- * Why no animation / live "writing now" pulse: v0.2 derives entirely
- * from persisted messages; a real-time indicator would need a separate
- * Rust event ("supervisor wrote a command at T") which we don't emit
- * yet. If dogfood reveals "I need to see when supervisor is actively
- * typing", a future iteration can wire that up additively.
- */
-function SupervisorActivityIndicator({
-  activity,
-}: {
-  activity: SupervisorActivity;
-}) {
-  const { count, lastSupervisor, lastAt, bySupervisor } = activity;
-  const lastRelative = formatTopBarRelativeTime(lastAt);
-  const triggerLabel = lastSupervisor
-    ? `@${lastSupervisor} · ${count}`
-    : `supervisor · ${count}`;
-  return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          aria-label={`Supervisor activity: ${count} message${count === 1 ? "" : "s"}, last by ${lastSupervisor ?? "unknown"} ${lastRelative}`}
-          title={`Supervisor activity · ${count} 条 · 最近 ${lastRelative}`}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1",
-            "text-[12px] font-medium text-ink-soft",
-            "transition-colors hover:bg-hover hover:text-ink",
-          )}
-        >
-          <Robot size={14} weight="thin" />
-          <span className="max-w-[120px] truncate">{triggerLabel}</span>
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="end"
-          sideOffset={8}
-          className={cn(
-            "z-50 w-[280px] rounded-[10px] border border-line bg-elevated p-3 shadow-elevated",
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Robot size={16} weight="thin" className="text-ink-soft" />
-            <div className="text-[13px] font-medium text-ink">
-              Supervisor 活动
-            </div>
-          </div>
-          <p className="mt-1 text-[11.5px] text-ink-muted">
-            本会话由 supervisor 注入的消息
-          </p>
-          <ul className="mt-2.5 space-y-1.5">
-            {bySupervisor.map((bucket) => (
-              <li
-                key={bucket.name}
-                className="flex items-baseline justify-between gap-2 text-[12px]"
-              >
-                <span className="min-w-0 truncate font-mono text-ink">
-                  @{bucket.name}
-                </span>
-                <span className="shrink-0 text-ink-muted">
-                  {bucket.count} 条 · {formatTopBarRelativeTime(bucket.lastAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
-/**
- * TopBar-local relative-time formatter. Mirrors the one in
- * MessageUser.tsx — kept inline rather than extracted to /lib because
- * the two formatters share zero state and the duplication is 15
- * lines. If a third caller arrives, extract to lib/relative-time.ts.
- */
-function formatTopBarRelativeTime(iso: string | undefined): string {
-  if (!iso) return "刚刚";
-  const ts = Date.parse(iso);
-  if (Number.isNaN(ts)) return "刚刚";
-  const delta = Math.max(0, Date.now() - ts);
-  const minutes = Math.floor(delta / 60_000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days} 天前`;
-  const d = new Date(ts);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }

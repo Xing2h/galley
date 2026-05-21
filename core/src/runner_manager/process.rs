@@ -8,12 +8,12 @@ use crate::runner_manager::error::{RunnerSpawnError, SendCommandError};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{broadcast, Mutex};
 
 /// Buffer capacity for the per-process broadcast channel. Sized for streaming
 /// `turn_progress` events (~1000 tokens per turn typically). Subscribers that

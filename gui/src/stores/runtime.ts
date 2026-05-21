@@ -3,9 +3,11 @@ import { create } from "zustand";
 
 import { dispatchIPCEvent } from "@/lib/ipc-handlers";
 import {
+  attachBridge as attachBridgeProcess,
   spawnBridge as spawnBridgeProcess,
   type BridgeClient,
   type BridgeSpawnArgs,
+  type BridgeHandlers,
 } from "@/lib/bridge";
 import { setPref } from "@/lib/db";
 import {
@@ -139,6 +141,12 @@ interface RuntimeActions {
    * `_bridgeClients` / `_lruOrder` maps (LRU_CAP = 20 active bridges).
    */
   spawnBridge: (args: BridgeSpawnArgs) => Promise<void>;
+  /**
+   * Attach JS listeners to a runner spawned by the socket transport
+   * (`galley session new`). The process already exists in Rust; this
+   * action just registers event handlers and tracks the client locally.
+   */
+  attachExternalBridge: (sessionId: string, pid: number) => Promise<void>;
   /** Graceful shutdown. No-op if no bridge alive for `sid`. */
   shutdownBridge: (sid: string) => Promise<void>;
   /** Send an IPC command to `sid`'s bridge over stdin. Warns + no-op
@@ -286,14 +294,18 @@ async function _enforceLRUCap(): Promise<void> {
 
 function _bridgeFieldsUpdate(
   rt: PerSessionRuntime | undefined,
-  patch: Partial<Pick<PerSessionRuntime, "bridgeStatus" | "bridgeError" | "bridgePid">>,
+  patch: Partial<
+    Pick<PerSessionRuntime, "bridgeStatus" | "bridgeError" | "bridgePid">
+  >,
 ): PerSessionRuntime {
   return {
     llms: rt?.llms ?? DEFAULT_LLMS,
     llmDisplayName: rt?.llmDisplayName ?? DEFAULT_LLM_DISPLAY_NAME,
     bridgeStatus: patch.bridgeStatus ?? rt?.bridgeStatus ?? "idle",
     bridgeError:
-      patch.bridgeError !== undefined ? patch.bridgeError : (rt?.bridgeError ?? null),
+      patch.bridgeError !== undefined
+        ? patch.bridgeError
+        : (rt?.bridgeError ?? null),
     bridgePid:
       patch.bridgePid !== undefined ? patch.bridgePid : (rt?.bridgePid ?? null),
   };
@@ -343,6 +355,79 @@ function selectLLMInList(
   };
 }
 
+function makeBridgeHandlers(sessionId: string): BridgeHandlers {
+  return {
+    onEvent: (event) => dispatchIPCEvent(event),
+    onStderr: (line) => {
+      console.warn(`[bridge ${sessionId} stderr]`, line);
+      const buf = _stderrTails.get(sessionId) ?? [];
+      buf.push(line);
+      if (buf.length > _STDERR_TAIL_MAX) buf.shift();
+      _stderrTails.set(sessionId, buf);
+    },
+    onClose: (code, signal) => {
+      console.info(`[bridge ${sessionId}] closed`, { code, signal });
+      if (code !== 0 && code !== null) {
+        const tail = _stderrTails.get(sessionId) ?? [];
+        const message = tail.length
+          ? tail.slice(-3).join("\n")
+          : `Bridge exited with code ${code}`;
+        useUiStore.getState().pushToast(
+          makeAppError({
+            category: "bridge",
+            severity: "error",
+            title: "Bridge 进程崩溃",
+            message,
+            hint: null,
+            retryable: false,
+            context: `session ${sessionId}`,
+            traceback: tail.join("\n"),
+          }),
+        );
+      }
+      _stderrTails.delete(sessionId);
+      _bridgeClients.delete(sessionId);
+      _lruRemove(sessionId);
+      useRuntimeStore.setState((state) => ({
+        byId: {
+          ...state.byId,
+          [sessionId]: _bridgeFieldsUpdate(state.byId[sessionId], {
+            bridgeStatus: "closed",
+            bridgePid: null,
+          }),
+        },
+      }));
+      useMessagesStore.getState().clearStreamingOnBridgeClose(sessionId);
+    },
+    onError: (msg) => {
+      console.error(`[bridge ${sessionId}] error`, msg);
+      useRuntimeStore.setState((state) => ({
+        byId: {
+          ...state.byId,
+          [sessionId]: _bridgeFieldsUpdate(state.byId[sessionId], {
+            bridgeStatus: "error",
+            bridgeError: msg,
+          }),
+        },
+      }));
+      useUiStore.getState().pushToast(
+        makeAppError({
+          category: "bridge",
+          severity: "error",
+          title: "Bridge 启动失败",
+          message: msg,
+          hint: null,
+          retryable: false,
+          context: `session ${sessionId}`,
+          traceback: null,
+        }),
+      );
+    },
+    onMalformedLine: (line) =>
+      console.warn(`[bridge ${sessionId}] malformed stdout line:`, line),
+  };
+}
+
 export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
   byId: {},
   cachedLLMs: [],
@@ -379,7 +464,8 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
       return {
         byId: { ...state.byId, [sid]: next },
         cachedLLMs: llms,
-        cachedLLMDisplayName: current?.displayName ?? state.cachedLLMDisplayName,
+        cachedLLMDisplayName:
+          current?.displayName ?? state.cachedLLMDisplayName,
       };
     });
     // Cache LLM list to prefs so future cold-starts (before any
@@ -551,86 +637,10 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
     }));
 
     try {
-      const client = await spawnBridgeProcess(args, {
-        onEvent: (event) => dispatchIPCEvent(event),
-        onStderr: (line) => {
-          console.warn(`[bridge ${sessionId} stderr]`, line);
-          const buf = _stderrTails.get(sessionId) ?? [];
-          buf.push(line);
-          if (buf.length > _STDERR_TAIL_MAX) buf.shift();
-          _stderrTails.set(sessionId, buf);
-        },
-        onClose: (code, signal) => {
-          console.info(`[bridge ${sessionId}] closed`, { code, signal });
-          if (code !== 0 && code !== null) {
-            const tail = _stderrTails.get(sessionId) ?? [];
-            const message = tail.length
-              ? tail.slice(-3).join("\n")
-              : `Bridge exited with code ${code}`;
-            useUiStore.getState().pushToast(
-              makeAppError({
-                category: "bridge",
-                severity: "error",
-                title: "Bridge 进程崩溃",
-                message,
-                hint: null,
-                retryable: false,
-                context: `session ${sessionId}`,
-                traceback: tail.join("\n"),
-              }),
-            );
-          }
-          _stderrTails.delete(sessionId);
-          _bridgeClients.delete(sessionId);
-          _lruRemove(sessionId);
-          // Bridge-side fields go to runtimeStore.
-          useRuntimeStore.setState((state) => ({
-            byId: {
-              ...state.byId,
-              [sessionId]: _bridgeFieldsUpdate(state.byId[sessionId], {
-                bridgeStatus: "closed",
-                bridgePid: null,
-              }),
-            },
-          }));
-          // Conversation-side cleanup: agentRunning / currentTurnIndex
-          // / inFlightContent live in messagesStore (B3 M5). The
-          // streaming reset leaves turns / pendingApprovals /
-          // approvalDecisions intact so the user can still read the
-          // conversation while the bridge is down. messagesStore's
-          // `fireSessionMirror` updates the sidebar status row too.
-          useMessagesStore.getState().clearStreamingOnBridgeClose(sessionId);
-        },
-        onError: (msg) => {
-          console.error(`[bridge ${sessionId}] error`, msg);
-          useRuntimeStore.setState((state) => ({
-            byId: {
-              ...state.byId,
-              [sessionId]: _bridgeFieldsUpdate(state.byId[sessionId], {
-                bridgeStatus: "error",
-                bridgeError: msg,
-              }),
-            },
-          }));
-          useUiStore.getState().pushToast(
-            makeAppError({
-              category: "bridge",
-              severity: "error",
-              title: "Bridge 启动失败",
-              message: msg,
-              hint: null,
-              retryable: false,
-              context: `session ${sessionId}`,
-              traceback: null,
-            }),
-          );
-        },
-        onMalformedLine: (line) =>
-          console.warn(
-            `[bridge ${sessionId}] malformed stdout line:`,
-            line,
-          ),
-      });
+      const client = await spawnBridgeProcess(
+        args,
+        makeBridgeHandlers(sessionId),
+      );
       _bridgeClients.set(sessionId, client);
       _lruTouch(sessionId);
       // Status flips to "connected" only after the bridge sends its
@@ -648,6 +658,44 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       _bridgeClients.delete(sessionId);
+      set((state) => ({
+        byId: {
+          ...state.byId,
+          [sessionId]: _bridgeFieldsUpdate(state.byId[sessionId], {
+            bridgeStatus: "error",
+            bridgeError: msg,
+            bridgePid: null,
+          }),
+        },
+      }));
+    }
+  },
+
+  attachExternalBridge: async (sessionId, pid) => {
+    if (_bridgeClients.has(sessionId)) {
+      return;
+    }
+    try {
+      const client = await attachBridgeProcess(
+        sessionId,
+        pid,
+        makeBridgeHandlers(sessionId),
+      );
+      _bridgeClients.set(sessionId, client);
+      _lruTouch(sessionId);
+      set((state) => ({
+        byId: {
+          ...state.byId,
+          [sessionId]: _bridgeFieldsUpdate(state.byId[sessionId], {
+            bridgeStatus: "connected",
+            bridgeError: null,
+            bridgePid: pid,
+          }),
+        },
+      }));
+      void _enforceLRUCap();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       set((state) => ({
         byId: {
           ...state.byId,

@@ -86,15 +86,9 @@ pub enum DiscoveryOutcome {
     /// a stripped-down container, `APPDATA` missing on Windows).
     ConfigDirUnresolvable { reason: String },
     /// Couldn't create the config subdir.
-    MkdirFailed {
-        path: PathBuf,
-        reason: String,
-    },
+    MkdirFailed { path: PathBuf, reason: String },
     /// Couldn't write the file itself (permission denied, disk full).
-    WriteFailed {
-        path: PathBuf,
-        reason: String,
-    },
+    WriteFailed { path: PathBuf, reason: String },
 }
 
 /// Resolve the absolute path of the `galley` CLI binary next to
@@ -141,16 +135,14 @@ fn config_root() -> Result<PathBuf, String> {
                 return Ok(PathBuf::from(xdg));
             }
         }
-        let home = std::env::var("HOME").map_err(|_| {
-            "HOME environment variable is not set".to_string()
-        })?;
+        let home = std::env::var("HOME")
+            .map_err(|_| "HOME environment variable is not set".to_string())?;
         Ok(PathBuf::from(home).join(".config"))
     }
     #[cfg(target_os = "windows")]
     {
-        let appdata = std::env::var("APPDATA").map_err(|_| {
-            "APPDATA environment variable is not set".to_string()
-        })?;
+        let appdata = std::env::var("APPDATA")
+            .map_err(|_| "APPDATA environment variable is not set".to_string())?;
         Ok(PathBuf::from(appdata))
     }
 }

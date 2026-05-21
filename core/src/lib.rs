@@ -112,10 +112,7 @@ fn stringify_error(e: crate::error::GalleyError) -> String {
 #[tauri::command]
 async fn list_sessions(filter: SessionFilter) -> std::result::Result<Vec<SessionBrief>, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
-    galley
-        .list_sessions(filter)
-        .await
-        .map_err(stringify_error)
+    galley.list_sessions(filter).await.map_err(stringify_error)
 }
 
 // ============= B3 M4a · session/project CRUD Tauri commands =============
@@ -410,10 +407,7 @@ async fn get_pref_json(key: String) -> std::result::Result<Option<serde_json::Va
 }
 
 #[tauri::command]
-async fn set_pref_json(
-    key: String,
-    value: serde_json::Value,
-) -> std::result::Result<(), String> {
+async fn set_pref_json(key: String, value: serde_json::Value) -> std::result::Result<(), String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .set_pref_json(&key, value)
@@ -538,7 +532,8 @@ pub fn run() {
         },
         Migration {
             version: 7,
-            description: "add sessions origin (created_via, created_by_supervisor, created_origin_note)",
+            description:
+                "add sessions origin (created_via, created_by_supervisor, created_origin_note)",
             sql: include_str!("../migrations/007_sessions_origin.sql"),
             kind: MigrationKind::Up,
         },
@@ -548,11 +543,7 @@ pub fn run() {
     // from the migrations vec above so adding a new migration only
     // requires editing one place. Captured into the setup closure
     // below and evaluated BEFORE `tauri-plugin-sql` opens the DB.
-    let latest_migration_version: i64 = migrations
-        .iter()
-        .map(|m| m.version)
-        .max()
-        .unwrap_or(0);
+    let latest_migration_version: i64 = migrations.iter().map(|m| m.version).max().unwrap_or(0);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

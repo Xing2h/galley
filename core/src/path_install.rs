@@ -157,7 +157,9 @@ pub fn check_status() -> PathInstallStatus {
 #[cfg(not(target_os = "macos"))]
 pub fn check_status() -> PathInstallStatus {
     PathInstallStatus::Unsupported {
-        reason: "PATH install is macOS-only in v0.2 (Windows registry path tracked as M3 follow-up)".to_string(),
+        reason:
+            "PATH install is macOS-only in v0.2 (Windows registry path tracked as M3 follow-up)"
+                .to_string(),
     }
 }
 
@@ -305,6 +307,9 @@ mod tests {
         let install = install_to_path();
         assert!(matches!(install, PathInstallOutcome::Unsupported { .. }));
         let uninstall = uninstall_from_path();
-        assert!(matches!(uninstall, PathUninstallOutcome::Unsupported { .. }));
+        assert!(matches!(
+            uninstall,
+            PathUninstallOutcome::Unsupported { .. }
+        ));
     }
 }

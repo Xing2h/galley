@@ -461,7 +461,10 @@ mod tests {
         // Smoke: at least Ready / TurnStart / Error have session_id().
         let ready: IpcEvent = serde_json::from_str(r#"{"kind":"ready","sessionId":"r1","protocolVersion":"0.1","gaCommit":"a","gaCommitDate":"x","gaPath":"/","llmName":"l","cwd":"/","pid":1,"timestamp":"t"}"#).unwrap();
         assert_eq!(ready.session_id(), "r1");
-        let ts: IpcEvent = serde_json::from_str(r#"{"kind":"turn_start","sessionId":"r2","turnIndex":1,"timestamp":"t"}"#).unwrap();
+        let ts: IpcEvent = serde_json::from_str(
+            r#"{"kind":"turn_start","sessionId":"r2","turnIndex":1,"timestamp":"t"}"#,
+        )
+        .unwrap();
         assert_eq!(ts.session_id(), "r2");
     }
 
@@ -519,9 +522,7 @@ mod tests {
     ///      `null`) so Python's int-typed default kicks in
     #[test]
     fn attach_pet_wire_uses_port_not_variant() {
-        let with_port = IpcCommand::AttachPet(AttachPetCommand {
-            port: Some(41983),
-        });
+        let with_port = IpcCommand::AttachPet(AttachPetCommand { port: Some(41983) });
         let s = serde_json::to_string(&with_port).unwrap();
         assert!(s.contains("\"kind\":\"attach_pet\""), "{s}");
         assert!(s.contains("\"port\":41983"), "{s}");

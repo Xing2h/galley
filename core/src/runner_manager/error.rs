@@ -54,7 +54,9 @@ impl fmt::Display for RunnerSpawnError {
             Self::BridgeCwdInvalid { detail } => write!(f, "bridge cwd invalid: {}", detail),
             Self::PathEncoding { detail } => write!(f, "path encoding error: {}", detail),
             Self::SpawnIo { detail } => write!(f, "subprocess spawn failed: {}", detail),
-            Self::PipeUnavailable { detail } => write!(f, "subprocess pipe unavailable: {}", detail),
+            Self::PipeUnavailable { detail } => {
+                write!(f, "subprocess pipe unavailable: {}", detail)
+            }
         }
     }
 }

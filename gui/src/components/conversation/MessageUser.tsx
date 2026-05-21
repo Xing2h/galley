@@ -1,10 +1,7 @@
-import {
-  ArrowsClockwise,
-  CaretDown,
-  CaretUp,
-} from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { CaretDown, CaretUp, Check, Copy, Robot } from "@phosphor-icons/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { IconTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Origin } from "@/types/conversation";
 
@@ -37,11 +34,13 @@ import type { Origin } from "@/types/conversation";
  *   and "收起". Saves screen real-estate in conversations where
  *   the user pasted a long prompt / stack trace / document.
  *
- * Resend ↻ button (when `onResend` is wired):
- *   Hover-revealed in the top-right corner. Click prefills the
- *   Composer with this turn's text — does NOT delete the history
- *   entry. The user can edit + re-submit to take another swing at
- *   the same question.
+ * Message actions:
+ *   Supervisor provenance stays pinned to the left brand bar so it
+ *   reads as belonging to this prompt. Copy is hover-revealed in the
+ *   prompt's upper-right corner as an absolute overlay, so showing it
+ *   never changes the message block height or nudges the assistant
+ *   answer below. Mouse leave delays hiding briefly so the user can
+ *   move from the message body to the action without chasing it.
  *
  * `data-role="user-msg"` is a stable anchor that MainView's scroll
  * effect uses to find the just-submitted user message and snap its
@@ -52,55 +51,31 @@ const COLLAPSE_LINE_THRESHOLD = 6;
 const COLLAPSE_CHAR_THRESHOLD = 500;
 // ≈ 6 lines at 15px font-size × 1.65 leading + py-2.5 (10px ea side).
 const COLLAPSED_MAX_H_PX = 175;
-
-const REASON_DISPLAY_MAX = 80;
+const ACTION_HIDE_DELAY_MS = 1800;
+const COPY_FEEDBACK_MS = 1500;
 
 /**
- * Compose the M7 supervisor annotation strip. Returns the inline
- * display string + a longer tooltip with the full untruncated reason
- * and the absolute timestamp. Format:
- *
- *   @<supervisor> · <reason ≤80 chars> · <relative time>
- *
- * Bullet separators (· U+00B7) keep the line compact and read as
- * metadata rather than prose. Reason truncation appends an ellipsis;
- * the `title` attribute exposes the full string on hover.
+ * Compose the supervisor provenance tooltip for the small icon pinned
+ * beside supervisor-originated user messages. We intentionally omit the
+ * declared supervisor id and reason here: the icon is a lightweight
+ * provenance marker, not a full audit panel.
  */
-function formatSupervisorMeta(
-  origin: Origin,
-  createdAt: string | undefined,
-): { display: string; tooltip: string } {
-  const supervisor = origin.supervisor ?? "supervisor";
-  const reason = origin.reason ?? "";
-  const reasonDisplay =
-    reason.length > REASON_DISPLAY_MAX
-      ? `${reason.slice(0, REASON_DISPLAY_MAX).trimEnd()}…`
-      : reason;
+function formatSupervisorTooltip(createdAt: string | undefined): string {
   const relative = formatRelativeTime(createdAt);
-
-  const parts = [`@${supervisor}`];
-  if (reasonDisplay) parts.push(reasonDisplay);
-  parts.push(relative);
-  const display = parts.join(" · ");
-
-  const absoluteIso = createdAt ?? "";
-  const tooltipParts = [`supervisor: ${supervisor}`];
-  if (reason) tooltipParts.push(`reason: ${reason}`);
-  if (absoluteIso) tooltipParts.push(absoluteIso);
-  return { display, tooltip: tooltipParts.join("\n") };
+  return relative ? `Supervisor · ${relative}` : "Supervisor";
 }
 
 /**
  * Lightweight Chinese-leaning relative-time formatter for the
- * supervisor strip. Sufficient precision for "this annotation is
+ * supervisor tooltip. Sufficient precision for "this annotation is
  * recent / a while ago" — falls through to YYYY-MM-DD for old rows.
  * Inlined here (rather than a /lib helper) because this is the only
  * caller; if a second site needs relative time, extract it.
  */
-function formatRelativeTime(iso: string | undefined): string {
-  if (!iso) return "刚刚";
+function formatRelativeTime(iso: string | undefined): string | undefined {
+  if (!iso) return undefined;
   const ts = Date.parse(iso);
-  if (Number.isNaN(ts)) return "刚刚";
+  if (Number.isNaN(ts)) return undefined;
   const delta = Math.max(0, Date.now() - ts);
   const minutes = Math.floor(delta / 60_000);
   if (minutes < 1) return "刚刚";
@@ -120,59 +95,109 @@ function formatRelativeTime(iso: string | undefined): string {
 export interface MessageUserProps {
   content: string;
   /**
-   * Optional resend handler. When provided, hover reveals a small ↻
-   * button in the top-right corner; click invokes the callback with
-   * this message's content. The host (MainView) typically wires this
-   * to a Composer prefill. Omitting it hides the affordance entirely.
-   */
-  onResend?: (content: string) => void;
-  /**
    * Audit origin for this user message (B4 M7). When `origin.via ===
-   * "supervisor"`, a small inline metadata strip renders above the
-   * callout: `@<supervisor> · <reason> · <relative time>`. Other via
-   * values (gui / cli / system) render no annotation — the default
-   * Galley-driven origin shouldn't interrupt the reading flow.
+   * "supervisor"`, a small robot provenance icon renders by the left
+   * identity bar. Other via values (gui / cli / system) render no
+   * annotation — the default Galley-driven origin shouldn't interrupt
+   * the reading flow.
    */
   origin?: Origin;
   /**
-   * ISO timestamp from `messages.created_at`. Drives the relative-
-   * time tail of the supervisor annotation. Optional so tests / demo
-   * data don't have to plumb it; falls back to "刚刚" when absent.
+   * ISO timestamp from `messages.created_at`. Drives the relative-time
+   * tail of the supervisor tooltip. Optional so tests / demo
+   * data don't have to plumb it; the tooltip omits time when absent.
    */
   createdAt?: string;
 }
 
-export function MessageUser({
-  content,
-  onResend,
-  origin,
-  createdAt,
-}: MessageUserProps) {
+export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
   const lineCount = useMemo(() => content.split("\n").length, [content]);
   const isLong =
     lineCount > COLLAPSE_LINE_THRESHOLD ||
     content.length > COLLAPSE_CHAR_THRESHOLD;
   const [collapsed, setCollapsed] = useState(true);
+  const [actionsVisible, setActionsVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const hideTimer = useRef<number | null>(null);
+  const copyTimer = useRef<number | null>(null);
 
-  const supervisorMeta =
-    origin?.via === "supervisor"
-      ? formatSupervisorMeta(origin, createdAt)
-      : null;
+  const supervisorTooltip =
+    origin?.via === "supervisor" ? formatSupervisorTooltip(createdAt) : null;
+
+  useEffect(() => {
+    return () => {
+      if (hideTimer.current) window.clearTimeout(hideTimer.current);
+      if (copyTimer.current) window.clearTimeout(copyTimer.current);
+    };
+  }, []);
+
+  const showActions = () => {
+    if (hideTimer.current) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setActionsVisible(true);
+  };
+
+  const scheduleHideActions = () => {
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => {
+      setActionsVisible(false);
+      hideTimer.current = null;
+    }, ACTION_HIDE_DELAY_MS);
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      showActions();
+      if (copyTimer.current) window.clearTimeout(copyTimer.current);
+      copyTimer.current = window.setTimeout(() => {
+        setCopied(false);
+        copyTimer.current = null;
+      }, COPY_FEEDBACK_MS);
+    } catch (e) {
+      console.warn("[MessageUser] copy failed", e);
+    }
+  };
+
+  const copyLabel = copied ? "已复制" : "复制";
+  const copyVisible = actionsVisible || copied;
 
   return (
-    <div className="group my-5">
-      {supervisorMeta && (
-        <div
-          className="mb-1.5 px-1 text-[11.5px] italic leading-[1.5] text-ink-muted"
-          title={supervisorMeta.tooltip}
-        >
-          {supervisorMeta.display}
+    <div
+      className="group relative my-5"
+      onMouseEnter={showActions}
+      onMouseLeave={scheduleHideActions}
+      onFocusCapture={showActions}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          scheduleHideActions();
+        }
+      }}
+    >
+      {supervisorTooltip && (
+        <div className="absolute -left-6 top-2 z-10">
+          <IconTooltip text={supervisorTooltip} side="left">
+            <span
+              role="img"
+              tabIndex={0}
+              aria-label="Supervisor 添加的消息"
+              className={cn(
+                "inline-flex size-5 items-center justify-center rounded-sm transition-colors",
+                "text-ink-muted hover:bg-hover hover:text-ink-soft focus-visible:bg-hover focus-visible:text-ink-soft focus-visible:outline-none",
+              )}
+            >
+              <Robot size={13} weight="thin" />
+            </span>
+          </IconTooltip>
         </div>
       )}
       <div
         data-role="user-msg"
         className={cn(
-          "relative rounded-r-[6px] border-l-[3px] border-brand-strong bg-brand-soft px-4 py-2.5 text-[15px] font-medium leading-[1.65] text-ink",
+          "relative rounded-r-[6px] border-l-[3px] border-brand-strong bg-brand-soft px-4 py-2.5 pr-12 text-[15px] font-medium leading-[1.65] text-ink",
           "whitespace-pre-wrap break-words",
           isLong && collapsed && "overflow-hidden",
         )}
@@ -181,6 +206,31 @@ export function MessageUser({
         }
       >
         {content}
+        <IconTooltip text={copyLabel}>
+          <button
+            type="button"
+            onClick={() => void handleCopy()}
+            aria-hidden={!copyVisible}
+            aria-label={copyLabel}
+            tabIndex={copyVisible ? 0 : -1}
+            className={cn(
+              "absolute right-1.5 top-1.5 z-10 inline-flex size-6 items-center justify-center rounded-sm transition-[color,background-color,opacity]",
+              copyVisible ? "opacity-100" : "pointer-events-none opacity-0",
+              copied
+                ? "text-success"
+                : "text-ink-muted hover:bg-elevated hover:text-ink-soft focus-visible:bg-elevated focus-visible:text-ink-soft focus-visible:outline-none",
+            )}
+          >
+            {copied ? (
+              <Check size={14} weight="bold" />
+            ) : (
+              <Copy size={14} weight="thin" />
+            )}
+            <span className="sr-only" aria-live="polite">
+              {copyLabel}
+            </span>
+          </button>
+        </IconTooltip>
         {/* Fade-out gradient at the bottom of the collapsed view — a
             soft visual hint that more content is hidden below. Matches
             the brand-soft background so the gradient blends into the
@@ -191,45 +241,28 @@ export function MessageUser({
             className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-brand-soft via-brand-soft/85 to-transparent"
           />
         )}
-        {/* Resend button — hover-revealed (keyboard-focus also reveals
-            it for a11y). Positioned in the top-right so it doesn't
-            collide with the fade mask at the bottom. */}
-        {onResend && (
-          <button
-            type="button"
-            onClick={() => onResend(content)}
-            aria-label="重发这条"
-            title="重发这条"
-            className={cn(
-              "absolute right-1.5 top-1.5 z-10 grid size-6 place-items-center rounded-sm text-ink-soft",
-              "opacity-0 transition-opacity",
-              "hover:bg-elevated hover:text-ink",
-              "group-hover:opacity-100 focus-visible:opacity-100",
-            )}
-          >
-            <ArrowsClockwise size={13} weight="thin" />
-          </button>
-        )}
       </div>
       {isLong && (
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          aria-expanded={!collapsed}
-          className="ml-1 mt-1 inline-flex items-center gap-1 text-[11.5px] text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline"
-        >
-          {collapsed ? (
-            <>
-              展开（共 {lineCount} 行）
-              <CaretDown size={10} weight="thin" />
-            </>
-          ) : (
-            <>
-              收起
-              <CaretUp size={10} weight="thin" />
-            </>
-          )}
-        </button>
+        <div className="mt-1 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            className="inline-flex h-6 items-center gap-1 rounded-sm px-1 text-[11.5px] text-ink-muted underline-offset-2 transition-colors hover:bg-hover hover:text-ink hover:underline"
+          >
+            {collapsed ? (
+              <>
+                展开（共 {lineCount} 行）
+                <CaretDown size={10} weight="thin" />
+              </>
+            ) : (
+              <>
+                收起
+                <CaretUp size={10} weight="thin" />
+              </>
+            )}
+          </button>
+        </div>
       )}
     </div>
   );

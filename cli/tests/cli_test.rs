@@ -215,11 +215,8 @@ async fn session_send_without_core_running_exits_4() {
     // way, session send should report exit 4. We pre-empt cross-test
     // pollution by setting TMPDIR to the tempdir so any (impossible)
     // existing socket in /tmp doesn't accidentally match.
-    let (stdout, code) = run_galley_with_tmpdir(
-        &db,
-        td.path(),
-        &["session", "send", "s1", "hello"],
-    );
+    let (stdout, code) =
+        run_galley_with_tmpdir(&db, td.path(), &["session", "send", "s1", "hello"]);
     assert_eq!(code, Some(4), "exit code: stdout = {stdout}");
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
     assert_eq!(parsed["error"], "db_unavailable");
@@ -233,11 +230,7 @@ async fn session_watch_without_core_running_exits_4() {
     let pool = seeded_db_at(&db).await;
     drop(pool);
 
-    let (stdout, code) = run_galley_with_tmpdir(
-        &db,
-        td.path(),
-        &["session", "watch", "s1"],
-    );
+    let (stdout, code) = run_galley_with_tmpdir(&db, td.path(), &["session", "watch", "s1"]);
     assert_eq!(code, Some(4), "exit code: stdout = {stdout}");
 }
 

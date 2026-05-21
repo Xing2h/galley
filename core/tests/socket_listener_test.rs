@@ -197,11 +197,7 @@ async fn unknown_command_returns_error() {
 async fn schema_mismatch_returns_error() {
     let tmp = TempDir::new().unwrap();
     let path = spawn_test_listener(&tmp).await;
-    let resp = round_trip(
-        &path,
-        json!({"command": "ping", "schemaVersion": 999}),
-    )
-    .await;
+    let resp = round_trip(&path, json!({"command": "ping", "schemaVersion": 999})).await;
     assert_eq!(resp["ok"], json!(false));
     assert_eq!(resp["error"], json!("schema_mismatch"));
 }
@@ -253,7 +249,8 @@ async fn concurrent_connections_work() {
     for i in 0..5 {
         let p = path.clone();
         joins.push(tokio::spawn(async move {
-            let resp = round_trip(&p, json!({"command": "ping", "requestId": format!("c{i}")})).await;
+            let resp =
+                round_trip(&p, json!({"command": "ping", "requestId": format!("c{i}")})).await;
             assert_eq!(resp["ok"], json!(true));
         }));
     }

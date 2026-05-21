@@ -532,9 +532,15 @@ impl SessionRow {
             updated_at: self.updated_at,
             pinned: Some(self.pinned != 0),
             has_unread: Some(self.has_unread != 0),
-            selected_llm_index: self.llm_index.and_then(|n| {
-                if n < 0 { None } else { Some(n as u32) }
-            }),
+            selected_llm_index: self.llm_index.and_then(
+                |n| {
+                    if n < 0 {
+                        None
+                    } else {
+                        Some(n as u32)
+                    }
+                },
+            ),
             selected_llm_display_name: self.llm_display_name,
         })
     }
@@ -972,9 +978,7 @@ impl GalleyApi for SqliteGalley {
         // Hand-build WHERE so we can bind only the filters that are
         // set. sqlx doesn't have a fluent builder; query_builder works
         // but verbose for this scale.
-        let mut sql = format!(
-            "SELECT {SESSIONS_SELECT_COLS} FROM sessions WHERE 1=1"
-        );
+        let mut sql = format!("SELECT {SESSIONS_SELECT_COLS} FROM sessions WHERE 1=1");
         if filter.project_id.is_some() {
             sql.push_str(" AND project_id = ?");
         }
@@ -1060,11 +1064,7 @@ impl GalleyApi for SqliteGalley {
         rows.into_iter().map(MessageRow::into_brief).collect()
     }
 
-    async fn search_messages(
-        &self,
-        query: String,
-        scope: SearchScope,
-    ) -> Result<Vec<SearchHit>> {
+    async fn search_messages(&self, query: String, scope: SearchScope) -> Result<Vec<SearchHit>> {
         let q = query.trim();
         if q.len() < 2 {
             return Ok(vec![]);
@@ -1296,14 +1296,13 @@ impl GalleyApi for SqliteGalley {
 
     async fn archive_session(&self, id: SessionId, _origin: Origin) -> Result<SessionBrief> {
         let now = chrono_now_iso();
-        let res = sqlx::query(
-            "UPDATE sessions SET status = 'archived', updated_at = ? WHERE id = ?",
-        )
-        .bind(&now)
-        .bind(id.as_str())
-        .execute(&self.pool)
-        .await
-        .map_err(map_sqlx_err)?;
+        let res =
+            sqlx::query("UPDATE sessions SET status = 'archived', updated_at = ? WHERE id = ?")
+                .bind(&now)
+                .bind(id.as_str())
+                .execute(&self.pool)
+                .await
+                .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
             return Err(GalleyError::NotFound {
                 message: format!("session {id} not found"),
@@ -1345,15 +1344,13 @@ impl GalleyApi for SqliteGalley {
             trimmed
         };
         let now = chrono_now_iso();
-        let res = sqlx::query(
-            "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
-        )
-        .bind(final_title)
-        .bind(&now)
-        .bind(id.as_str())
-        .execute(&self.pool)
-        .await
-        .map_err(map_sqlx_err)?;
+        let res = sqlx::query("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?")
+            .bind(final_title)
+            .bind(&now)
+            .bind(id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
             return Err(GalleyError::NotFound {
                 message: format!("session {id} not found"),
@@ -1416,15 +1413,13 @@ impl GalleyApi for SqliteGalley {
         _origin: Origin,
     ) -> Result<SessionBrief> {
         let now = chrono_now_iso();
-        let res = sqlx::query(
-            "UPDATE sessions SET project_id = ?, updated_at = ? WHERE id = ?",
-        )
-        .bind(&project_id)
-        .bind(&now)
-        .bind(session_id.as_str())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| map_constraint_err("assign_session_to_project", e))?;
+        let res = sqlx::query("UPDATE sessions SET project_id = ?, updated_at = ? WHERE id = ?")
+            .bind(&project_id)
+            .bind(&now)
+            .bind(session_id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| map_constraint_err("assign_session_to_project", e))?;
         if res.rows_affected() == 0 {
             return Err(GalleyError::NotFound {
                 message: format!("session {session_id} not found"),
@@ -1541,14 +1536,12 @@ impl GalleyApi for SqliteGalley {
 
     async fn clear_session_unread(&self, id: SessionId) -> Result<()> {
         let now = chrono_now_iso();
-        let res = sqlx::query(
-            "UPDATE sessions SET has_unread = 0, updated_at = ? WHERE id = ?",
-        )
-        .bind(&now)
-        .bind(id.as_str())
-        .execute(&self.pool)
-        .await
-        .map_err(map_sqlx_err)?;
+        let res = sqlx::query("UPDATE sessions SET has_unread = 0, updated_at = ? WHERE id = ?")
+            .bind(&now)
+            .bind(id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
         if res.rows_affected() == 0 {
             return Err(GalleyError::NotFound {
                 message: format!("session {id} not found"),
@@ -1557,11 +1550,7 @@ impl GalleyApi for SqliteGalley {
         Ok(())
     }
 
-    async fn bulk_archive_sessions(
-        &self,
-        ids: Vec<SessionId>,
-        _origin: Origin,
-    ) -> Result<u32> {
+    async fn bulk_archive_sessions(&self, ids: Vec<SessionId>, _origin: Origin) -> Result<u32> {
         if ids.is_empty() {
             return Ok(0);
         }
@@ -1581,11 +1570,7 @@ impl GalleyApi for SqliteGalley {
         Ok(res.rows_affected() as u32)
     }
 
-    async fn bulk_unarchive_sessions(
-        &self,
-        ids: Vec<SessionId>,
-        _origin: Origin,
-    ) -> Result<u32> {
+    async fn bulk_unarchive_sessions(&self, ids: Vec<SessionId>, _origin: Origin) -> Result<u32> {
         if ids.is_empty() {
             return Ok(0);
         }
@@ -1605,11 +1590,7 @@ impl GalleyApi for SqliteGalley {
         Ok(res.rows_affected() as u32)
     }
 
-    async fn bulk_delete_sessions(
-        &self,
-        ids: Vec<SessionId>,
-        _origin: Origin,
-    ) -> Result<u32> {
+    async fn bulk_delete_sessions(&self, ids: Vec<SessionId>, _origin: Origin) -> Result<u32> {
         if ids.is_empty() {
             return Ok(0);
         }
@@ -1691,12 +1672,11 @@ impl GalleyApi for SqliteGalley {
     ) -> Result<ProjectBrief> {
         // Existence check up-front gives a clean NotFound vs silently
         // 0-row UPDATE when every patch field is None.
-        let exists: Option<String> =
-            sqlx::query_scalar("SELECT id FROM projects WHERE id = ?")
-                .bind(id.as_str())
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(map_sqlx_err)?;
+        let exists: Option<String> = sqlx::query_scalar("SELECT id FROM projects WHERE id = ?")
+            .bind(id.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
         if exists.is_none() {
             return Err(GalleyError::NotFound {
                 message: format!("project {id} not found"),

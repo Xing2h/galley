@@ -9,7 +9,7 @@ use crate::runner_manager::process::{BroadcastItem, RunnerProcess};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, RwLock, broadcast};
+use tokio::sync::{broadcast, Mutex, RwLock};
 
 /// Default cap on concurrent alive runner subprocesses. Mirrored on the
 /// TS side as `LRU_CAP` in `gui/src/stores/runtime.ts` — keep the two in
@@ -172,10 +172,7 @@ impl RunnerManager {
     ///
     /// Subscribing happens synchronously relative to the broadcast channel
     /// — once `subscribe` returns, all subsequent events go to this rx.
-    pub async fn subscribe(
-        &self,
-        session_id: &str,
-    ) -> Option<broadcast::Receiver<BroadcastItem>> {
+    pub async fn subscribe(&self, session_id: &str) -> Option<broadcast::Receiver<BroadcastItem>> {
         let map = self.processes.read().await;
         let proc = map.get(session_id)?;
         let p = proc.lock().await;
@@ -189,9 +186,11 @@ impl RunnerManager {
         cmd: &IpcCommand,
     ) -> Result<(), SendCommandError> {
         let map = self.processes.read().await;
-        let proc = map.get(session_id).ok_or_else(|| SendCommandError::ProcessGone {
-            session_id: session_id.to_string(),
-        })?;
+        let proc = map
+            .get(session_id)
+            .ok_or_else(|| SendCommandError::ProcessGone {
+                session_id: session_id.to_string(),
+            })?;
         let proc = proc.clone();
         // Release the outer read lock before awaiting the per-process
         // Mutex — otherwise long writes would block siblings' reads.
@@ -372,9 +371,7 @@ mod tests {
     #[tokio::test]
     async fn send_command_unknown_session_errors() {
         let mgr = RunnerManager::new();
-        let r = mgr
-            .send_command("nope", &IpcCommand::Shutdown)
-            .await;
+        let r = mgr.send_command("nope", &IpcCommand::Shutdown).await;
         assert!(matches!(r, Err(SendCommandError::ProcessGone { .. })));
     }
 

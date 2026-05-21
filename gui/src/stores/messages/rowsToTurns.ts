@@ -111,9 +111,9 @@ export function rowsToTurns(rows: MessageRow[]): Turn[] {
 /**
  * Lift the SQLite origin triple onto a Turn-level Origin object. Returns
  * undefined when the row has the default `gui` via — supervisor / cli /
- * system rows get a populated Origin so MessageUser can show the M7
- * annotation strip. Pre-migration-006 rows (NULL `created_via`) treat
- * as `gui` and return undefined.
+ * system rows get a populated Origin so MessageUser can decide whether
+ * to show the M7 provenance marker. Pre-migration-006 rows (NULL
+ * `created_via`) treat as `gui` and return undefined.
  */
 function originFromRow(row: MessageRow): Origin | undefined {
   const via = row.created_via;
