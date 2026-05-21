@@ -883,11 +883,7 @@ async fn insert_user_message_inner(
     .await
     .map_err(map_sqlx_err)?;
     let now = chrono_now_iso();
-    let msg_id = format!(
-        "msg_{}_{}",
-        now.replace([':', '-', '.', 'T', '+'], ""),
-        next_turn
-    );
+    let msg_id = format!("msg_{}_{}_user", session_id.0, next_turn);
     sqlx::query(
         "INSERT INTO messages \
          (id, session_id, turn_index, sequence, role, content, created_at, \

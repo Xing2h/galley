@@ -1539,26 +1539,28 @@ impl SocketResponseLite {
 /// id-minting is a caller concern — `create_session_in_tx` accepts a
 /// caller-supplied id and validates the row insert.
 fn mint_session_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
-    let ts = SystemTime::now()
+    static SESSION_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    // Two cheap entropy sources mixed together. Doesn't need to be
-    // cryptographically random — collision space within one millisecond
-    // for a single user is effectively zero.
+        .unwrap_or_default();
+    let ts = dur.as_millis() as u64;
+    let counter = SESSION_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nonce = (dur.as_nanos() as u64)
+        ^ counter.rotate_left(17)
+        ^ (u64::from(std::process::id())).rotate_left(32);
     let rand: u64 = {
-        let mut x = ts as u64;
+        let mut x = ts ^ nonce;
         x ^= x.wrapping_mul(0x9E3779B97F4A7C15);
         x ^= x >> 33;
         x ^= x.wrapping_mul(0xC4CEB9FE1A85EC53);
         x
     };
-    format!(
-        "s-{}-{}",
-        radix36(ts as u64),
-        &radix36(rand)[..4.min(radix36(rand).len())]
-    )
+    let suffix = radix36(rand);
+    let suffix_start = suffix.len().saturating_sub(8);
+    format!("s-{}-{}", radix36(ts), &suffix[suffix_start..])
 }
 
 fn radix36(mut n: u64) -> String {
@@ -1990,6 +1992,16 @@ mod tests {
             let s = path.to_string_lossy();
             assert!(s.starts_with(r"\\.\pipe\galley-"));
         }
+    }
+
+    #[test]
+    fn mint_session_id_is_unique_under_burst() {
+        use std::collections::HashSet;
+
+        let ids: Vec<String> = (0..512).map(|_| mint_session_id()).collect();
+        let unique: HashSet<String> = ids.iter().cloned().collect();
+        assert_eq!(unique.len(), ids.len());
+        assert!(ids.iter().all(|id| id.starts_with("s-")));
     }
 
     #[test]

@@ -1027,6 +1027,26 @@ async fn tx_commit_persists_both_session_and_message() {
 }
 
 #[tokio::test]
+async fn socket_user_message_ids_are_session_scoped() {
+    let pool = fresh_pool().await;
+    seed_session_idle(&pool, "sess_msg_a").await;
+    seed_session_idle(&pool, "sess_msg_b").await;
+    let galley = SqliteGalley::from_pool(pool);
+
+    let msg_a = galley
+        .send_message(sid("sess_msg_a"), "task A".into(), Origin::cli(None, None))
+        .await
+        .expect("send A");
+    let msg_b = galley
+        .send_message(sid("sess_msg_b"), "task B".into(), Origin::cli(None, None))
+        .await
+        .expect("send B");
+
+    assert_eq!(msg_a.id.0, "msg_sess_msg_a_0_user");
+    assert_eq!(msg_b.id.0, "msg_sess_msg_b_0_user");
+}
+
+#[tokio::test]
 async fn tx_drop_without_commit_rolls_back() {
     // O1 atomicity invariant: drop the tx without commit → ROLLBACK,
     // no row in DB. This is what happens when the second in-tx call
