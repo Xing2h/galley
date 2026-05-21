@@ -171,13 +171,13 @@ export function Sidebar({
   // sessions that belong to that project. Active session in main
   // view is independent — user can be looking at one session while
   // filtering the sidebar to a different project.
-  const visibleSessions = activeProjectFilter
-    ? sessions.filter((s) => s.projectId === activeProjectFilter)
-    : sessions;
-  const buckets = groupSessions(visibleSessions);
   const activeProject = activeProjectFilter
     ? projects.find((p) => p.id === activeProjectFilter)
     : undefined;
+  const visibleSessions = activeProject
+    ? sessions.filter((s) => s.projectId === activeProject.id)
+    : sessions;
+  const buckets = groupSessions(visibleSessions);
   const filteredEmpty = visibleSessions.length === 0;
   const globalEmpty = sessions.length === 0;
 

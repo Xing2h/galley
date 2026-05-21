@@ -115,6 +115,24 @@ function deriveTitleFromText(text: string): string {
   return oneLine.slice(0, TITLE_DERIVE_MAX) + "…";
 }
 
+async function invokeHydrate<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  let lastError: unknown;
+  for (const delayMs of [0, 250, 750]) {
+    if (delayMs > 0) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+    }
+    try {
+      return await invoke<T>(command, args);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError;
+}
+
 /** "新对话" — seed title set by `createSession`. */
 export const DEFAULT_NEW_SESSION_TITLE = "新对话";
 
@@ -1091,7 +1109,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
 
   hydrate: async () => {
     try {
-      const briefs = await invoke<SessionBriefWire[]>("list_sessions", {
+      const briefs = await invokeHydrate<SessionBriefWire[]>("list_sessions", {
         filter: {},
       });
       set({ sessions: briefs.map(sessionFromBrief) });
@@ -1099,8 +1117,16 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       console.warn("[sessions] hydrate sessions failed.", e);
     }
     try {
-      const projects = await invoke<ProjectBriefWire[]>("list_projects");
-      set({ projects: projects.map(projectFromBrief) });
+      const projects = await invokeHydrate<ProjectBriefWire[]>("list_projects");
+      const nextProjects = projects.map(projectFromBrief);
+      set((state) => ({
+        projects: nextProjects,
+        activeProjectFilter:
+          state.activeProjectFilter &&
+          nextProjects.some((p) => p.id === state.activeProjectFilter)
+            ? state.activeProjectFilter
+            : undefined,
+      }));
     } catch (e) {
       console.debug("[sessions] hydrate projects failed.", e);
     }
