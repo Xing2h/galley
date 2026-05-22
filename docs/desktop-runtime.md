@@ -78,10 +78,10 @@ Tauri updater signing is separate from macOS codesigning / Windows Authenticode.
 The private updater key must stay in release secrets; only the public key is
 safe to embed in app builds.
 
-Release builds opt into signed updater artifacts with
-`core/tauri.updater.conf.json`. The default `tauri.conf.json` intentionally does
-not enable `createUpdaterArtifacts`, so local Dev and unsigned local builds do
-not require `TAURI_SIGNING_PRIVATE_KEY`.
+Release builds opt into signed updater artifacts by generating
+`core/tauri.updater.generated.conf.json` inside CI. The default
+`tauri.conf.json` intentionally does not enable `createUpdaterArtifacts`, so
+local Dev and unsigned local builds do not require `TAURI_SIGNING_PRIVATE_KEY`.
 
 The release workflow creates a candidate `latest.json` as a draft Release asset.
 After smoke test and publishing the release, run the manual

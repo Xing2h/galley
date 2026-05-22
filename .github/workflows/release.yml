@@ -125,14 +125,47 @@ jobs:
           if [[ -z "$GALLEY_UPDATER_PUBKEY" ]]; then
             echo "Missing GitHub variable GALLEY_UPDATER_PUBKEY." >&2
             missing=1
+          elif [[ "$GALLEY_UPDATER_PUBKEY" != untrusted\ comment:* ]]; then
+            echo "GitHub variable GALLEY_UPDATER_PUBKEY must be the decoded minisign public key text." >&2
+            missing=1
           fi
           if [[ -z "$GALLEY_UPDATER_ENDPOINT" ]]; then
             echo "Missing GitHub variable GALLEY_UPDATER_ENDPOINT." >&2
+            missing=1
+          elif [[ "$GALLEY_UPDATER_ENDPOINT" != https://* ]]; then
+            echo "GitHub variable GALLEY_UPDATER_ENDPOINT must be an HTTPS URL." >&2
             missing=1
           fi
           if [[ "$missing" -ne 0 ]]; then
             exit 1
           fi
+
+      - name: Write updater release config
+        shell: bash
+        env:
+          GALLEY_UPDATER_PUBKEY: ${{ vars.GALLEY_UPDATER_PUBKEY }}
+          GALLEY_UPDATER_ENDPOINT: ${{ vars.GALLEY_UPDATER_ENDPOINT }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const config = {
+            bundle: {
+              createUpdaterArtifacts: true,
+            },
+            plugins: {
+              updater: {
+                pubkey: process.env.GALLEY_UPDATER_PUBKEY,
+                endpoints: [process.env.GALLEY_UPDATER_ENDPOINT],
+              },
+            },
+          };
+
+          fs.writeFileSync(
+            "core/tauri.updater.generated.conf.json",
+            `${JSON.stringify(config, null, 2)}\n`,
+          );
+          NODE
 
       - name: Install frontend deps
         working-directory: ./gui
@@ -203,7 +236,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           GALLEY_UPDATER_PUBKEY: ${{ vars.GALLEY_UPDATER_PUBKEY }}
           GALLEY_UPDATER_ENDPOINT: ${{ vars.GALLEY_UPDATER_ENDPOINT }}
-        run: pnpm tauri build --target ${{ matrix.target }} --config tauri.updater.conf.json
+        run: pnpm tauri build --target ${{ matrix.target }} --config tauri.updater.generated.conf.json
 
       # Tauri's bundler names artifacts `Galley_<version>_<arch>.<ext>`
       # with no `artifactName` config to customize. Post-build, insert

@@ -576,17 +576,26 @@ build。生成 key pair：
 pnpm --dir gui tauri signer generate -w ~/.config/galley/updater.key
 ```
 
+`updater.key.pub` 文件本身是 base64 包装；`GALLEY_UPDATER_PUBKEY` 需要的是
+decode 后的 minisign public key 原文：
+
+```bash
+base64 -D < ~/.config/galley/updater.key.pub
+```
+
 配置位置：
 
 - GitHub Secrets:
   - `TAURI_SIGNING_PRIVATE_KEY`
   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，如果生成 key 时设置了密码
 - GitHub Variables:
-  - `GALLEY_UPDATER_PUBKEY`
+  - `GALLEY_UPDATER_PUBKEY`: 上面 decode 后的两行 public key 原文
   - `GALLEY_UPDATER_ENDPOINT`
 
-Release workflow 使用 `core/tauri.updater.conf.json` 打开
-`bundle.createUpdaterArtifacts`，并上传 updater artifacts：
+Release workflow 会在 CI 里临时写入
+`core/tauri.updater.generated.conf.json`，把 public key / endpoint 合并进
+Tauri config，同时打开 `bundle.createUpdaterArtifacts`，并上传 updater
+artifacts：
 
 - macOS: `Galley_<version>_macOS_<arch>.app.tar.gz` 和 `.sig`
 - Windows: `Galley_<version>_Windows_x64-setup.exe` 和 `.sig`

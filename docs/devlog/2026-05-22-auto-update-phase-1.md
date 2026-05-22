@@ -26,9 +26,10 @@
   Settings 阻止立即重启并提示先等任务结束。
 - 默认 Tauri config 不打开 updater artifact 生成，避免 Dev / local build 被
   signing key 绑定。
-- Release workflow 通过 `core/tauri.updater.conf.json` 单独打开
-  `createUpdaterArtifacts`，并要求 `TAURI_SIGNING_PRIVATE_KEY`、
-  `GALLEY_UPDATER_PUBKEY`、`GALLEY_UPDATER_ENDPOINT` 在构建前存在。
+- Release workflow 在 CI 内临时生成 `core/tauri.updater.generated.conf.json`，
+  把 public key / endpoint 合并进 Tauri config，并打开
+  `createUpdaterArtifacts`；构建前要求 `TAURI_SIGNING_PRIVATE_KEY`、
+  `GALLEY_UPDATER_PUBKEY`、`GALLEY_UPDATER_ENDPOINT` 存在。
 - Release artifacts 会包含平台安装包以及 updater 所需的 signed artifacts：
   macOS `.app.tar.gz` + `.sig`，Windows setup `.exe` + `.sig`。
 - Release workflow 生成 `latest.json` candidate 作为 draft Release asset；这个
@@ -36,6 +37,10 @@
 - 新增手动 `promote-update-channel.yml`：release publish + smoke test 之后，
   明确把某个 tag 推到 `galley-update-channel` 分支的
   `updates/beta/latest.json`，已安装 app 读取这个稳定 beta endpoint。
+- `tauri signer generate` 写出的 `.pub` 文件是 base64 包装；GitHub Variable
+  `GALLEY_UPDATER_PUBKEY` 要放 decode 后的 minisign public key 原文，否则
+  release build 会在 updater artifact signing 阶段报
+  `Missing comment in public key`。
 
 ## Rejected Alternatives
 

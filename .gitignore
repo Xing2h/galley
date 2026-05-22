@@ -39,6 +39,7 @@ node_modules/
 gui/dist/
 core/target/
 core/gen/
+core/tauri.updater.generated.conf.json
 core/experiments/tray-mode/target/
 core/experiments/tray-mode/gen/
 core/experiments/tray-mode/Cargo.lock
