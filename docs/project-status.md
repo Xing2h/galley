@@ -27,8 +27,11 @@ Before publishing `v0.2.0-beta.1`:
 2. Decide whether menubar / background mode is required for this beta or can
    stay deferred.
 3. Run Windows smoke, or explicitly ship with a documented Windows caveat.
-4. Finalize release notes and devlog.
-5. Run the standard verification set:
+4. Run release/update dry-run if packaging, signing, or updater config changed.
+5. Finalize release notes and devlog.
+6. Publish only after smoke, then promote the beta update channel with
+   [release / update SOP](./release-update-sop.md).
+7. Run the standard verification set:
    - `cargo check --workspace`
    - `cargo test --workspace`
    - `pnpm typecheck`
@@ -43,7 +46,7 @@ Before publishing `v0.2.0-beta.1`:
 | CLI / Agent API | Feature-complete for v0.2 beta; schema frozen | [agent-api](./agent-api.md) |
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
 | Data migration | Backup mechanism exists; no v0.2 schema delta beyond shipped origin fields | [B4 M8](./refactor/B4-M8-sub-plan.md) |
-| Release path | macOS DMG + Windows NSIS path inherited from v0.1.1 | [release workflow](./release-workflow.md) |
+| Release path | macOS DMG + Windows NSIS + gated beta updater channel | [release / update SOP](./release-update-sop.md) |
 | Windows | Artifact path exists; smoke remains a release gate | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream commit | [GA baseline](./ga-baseline.md) |
 
