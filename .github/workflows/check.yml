@@ -100,9 +100,10 @@ jobs:
       #
       # On Windows, the `src/lib.rs` unit-test harness currently fails before
       # any Rust test executes with STATUS_ENTRYPOINT_NOT_FOUND after Tauri
-      # updater/process plugins are linked into the app crate. Keep Windows on
-      # integration tests for now; macOS still runs the full lib + integration
-      # suite.
+      # updater/process plugins are linked into the app crate. Cargo's
+      # `--tests` selector still invokes that lib harness, so Windows runs the
+      # integration targets explicitly. macOS still runs the full lib +
+      # integration suite.
       #
       # We do NOT run `--workspace` here — the workspace currently includes
       # `core` + `../cli`, and the CLI's integration tests need the
@@ -116,7 +117,11 @@ jobs:
       - name: Cargo test (core, Windows integration)
         if: matrix.target == 'x86_64-pc-windows-msvc'
         working-directory: ./core
-        run: cargo test --target ${{ matrix.target }} -p galley-core --tests
+        run: |
+          cargo test --target ${{ matrix.target }} -p galley-core --test db_test
+          cargo test --target ${{ matrix.target }} -p galley-core --test db_writes_test
+          cargo test --target ${{ matrix.target }} -p galley-core --test runner_manager_test
+          cargo test --target ${{ matrix.target }} -p galley-core --test socket_listener_test
 
       - name: Cargo test (cli)
         working-directory: ./core
