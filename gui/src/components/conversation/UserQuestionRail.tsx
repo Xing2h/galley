@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import type { Turn } from "@/types/conversation";
@@ -12,11 +12,11 @@ import type { Turn } from "@/types/conversation";
  * only partially address.
  *
  * Position model:
- *   - Each dot at `(userMsg.offsetTop / scrollContent.scrollHeight) * 100%`
- *     of the rail's vertical extent. Adjacent user-msgs in agent-heavy
- *     stretches naturally spread apart on the rail; clusters of
- *     follow-up questions show as adjacent dots. Mirrors the native
- *     scrollbar's position semantics.
+ *   - Each dot at the user message's top edge within the scroll content,
+ *     expressed as a percentage of `scrollContent.scrollHeight`. Adjacent
+ *     user-msgs in agent-heavy stretches naturally spread apart on the
+ *     rail; clusters of follow-up questions show as adjacent dots.
+ *     Mirrors the native scrollbar's position semantics.
  *   - "Active" dot = the topmost user-msg whose top is at or above the
  *     viewport's TOP_PADDING anchor line (matches the same line MainView
  *     uses for submit-snap and ⌥↑/⌥↓).
@@ -27,7 +27,10 @@ import type { Turn } from "@/types/conversation";
  *
  * Hover (and keyboard focus) reveals a tooltip on the left with the
  * first 50 chars of the question, so users don't have to click-guess
- * which dot is which.
+ * which dot is which. When the rail gets dense, nearby questions collapse
+ * into a small vertical cluster marker; hovering that marker expands a
+ * local list so detail remains available without turning the rail into
+ * visual noise.
  *
  * Hidden under 3 user-msgs — short conversations don't need an index.
  *
@@ -40,13 +43,27 @@ import type { Turn } from "@/types/conversation";
 const TOP_PADDING = 32;
 const MIN_USER_MSGS_TO_SHOW = 3;
 const PREVIEW_CHARS = 50;
+const RAIL_VERTICAL_INSET_PX = 24;
+const DENSE_DOT_GAP_PX = 14;
+const MAX_CLUSTER_SPAN_PX = 34;
+const CLUSTER_MARKER_MIN_H_PX = 12;
+const CLUSTER_MARKER_MAX_H_PX = 26;
+const CLUSTER_CLOSE_DELAY_MS = 300;
+
+function getTopInScrollContent(
+  containerTop: number,
+  scrollTop: number,
+  el: HTMLElement,
+): number {
+  return el.getBoundingClientRect().top - containerTop + scrollTop;
+}
 
 interface UserQuestionRailProps {
   turns: Turn[];
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
-interface DotPosition {
+interface QuestionPosition {
   /** Index into the array of user-msgs (matches DOM order and the
    * filtered userContents array). */
   index: number;
@@ -55,6 +72,93 @@ interface DotPosition {
   /** Vertical position within the rail, expressed as % of
    * scroll-content height — the same axis the native scrollbar uses. */
   topPercent: number;
+  /** Pixel position on the rail, used only for density clustering. */
+  topPx: number;
+}
+
+interface SingleRailItem {
+  kind: "single";
+  id: string;
+  topPercent: number;
+  question: QuestionPosition;
+}
+
+interface ClusterRailItem {
+  kind: "cluster";
+  id: string;
+  topPercent: number;
+  firstIndex: number;
+  lastIndex: number;
+  markerHeightPx: number;
+  questions: QuestionPosition[];
+}
+
+type RailItem = SingleRailItem | ClusterRailItem;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function buildRailItems(
+  positions: QuestionPosition[],
+  railHeightPx: number,
+): RailItem[] {
+  if (positions.length === 0) return [];
+
+  const items: RailItem[] = [];
+  let group: QuestionPosition[] = [positions[0]];
+
+  const flush = () => {
+    if (group.length === 1) {
+      const question = group[0];
+      items.push({
+        kind: "single",
+        id: `q-${question.index}`,
+        topPercent: question.topPercent,
+        question,
+      });
+      group = [];
+      return;
+    }
+
+    const first = group[0];
+    const last = group[group.length - 1];
+    const spanPx = last.topPx - first.topPx;
+    const centerTopPx = first.topPx + spanPx / 2;
+    items.push({
+      kind: "cluster",
+      id: `q-${first.index}-${last.index}`,
+      topPercent: (centerTopPx / railHeightPx) * 100,
+      firstIndex: first.index,
+      lastIndex: last.index,
+      markerHeightPx: clamp(
+        spanPx + 8,
+        CLUSTER_MARKER_MIN_H_PX,
+        CLUSTER_MARKER_MAX_H_PX,
+      ),
+      questions: group,
+    });
+    group = [];
+  };
+
+  for (let i = 1; i < positions.length; i++) {
+    const current = positions[i];
+    const previous = group[group.length - 1];
+    const first = group[0];
+    const gapPx = current.topPx - previous.topPx;
+    const spanPx = current.topPx - first.topPx;
+
+    if (gapPx < DENSE_DOT_GAP_PX && spanPx <= MAX_CLUSTER_SPAN_PX) {
+      group.push(current);
+      continue;
+    }
+
+    flush();
+    group = [current];
+  }
+
+  flush();
+  return items;
 }
 
 export function UserQuestionRail({
@@ -70,8 +174,32 @@ export function UserQuestionRail({
     [turns],
   );
 
-  const [dotPositions, setDotPositions] = useState<DotPosition[]>([]);
+  const [railItems, setRailItems] = useState<RailItem[]>([]);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const closeTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    };
+  }, []);
+
+  const openCluster = (id: string) => {
+    if (closeTimer.current) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setOpenItemId(id);
+  };
+
+  const scheduleCloseCluster = () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => {
+      setOpenItemId(null);
+      closeTimer.current = null;
+    }, CLUSTER_CLOSE_DELAY_MS);
+  };
 
   // Re-measure dot positions on layout commits. ResizeObserver covers
   // streaming chunks growing the content, Shiki settling code blocks,
@@ -87,26 +215,35 @@ export function UserQuestionRail({
       );
       const scrollHeight = container.scrollHeight;
       if (scrollHeight === 0 || userMsgs.length === 0) {
-        setDotPositions([]);
+        setRailItems([]);
         return;
       }
-      const positions: DotPosition[] = [];
+      const railHeightPx = Math.max(
+        1,
+        container.clientHeight - RAIL_VERTICAL_INSET_PX * 2,
+      );
+      const positions: QuestionPosition[] = [];
+      const containerTop = container.getBoundingClientRect().top;
+      const scrollTop = container.scrollTop;
       userMsgs.forEach((el, i) => {
-        const topPercent = (el.offsetTop / scrollHeight) * 100;
+        const topInContent = getTopInScrollContent(containerTop, scrollTop, el);
+        const topPercent = (topInContent / scrollHeight) * 100;
+        const topPx = (topPercent / 100) * railHeightPx;
         const raw = userContents[i] ?? "";
         const preview =
           raw.length > PREVIEW_CHARS
             ? raw.slice(0, PREVIEW_CHARS).trimEnd() + "…"
             : raw;
-        positions.push({ index: i, topPercent, preview });
+        positions.push({ index: i, topPercent, topPx, preview });
       });
-      setDotPositions(positions);
+      setRailItems(buildRailItems(positions, railHeightPx));
     };
 
     measure();
 
     const observer = new ResizeObserver(measure);
     const inner = container.firstElementChild;
+    observer.observe(container);
     if (inner instanceof HTMLElement) observer.observe(inner);
 
     return () => observer.disconnect();
@@ -126,10 +263,14 @@ export function UserQuestionRail({
         '[data-role="user-msg"]',
       );
       if (userMsgs.length === 0) return;
-      const anchorTop = container.scrollTop + TOP_PADDING + 8;
+      const scrollTop = container.scrollTop;
+      const anchorTop = scrollTop + TOP_PADDING + 8;
+      const containerTop = container.getBoundingClientRect().top;
       let last = -1;
       userMsgs.forEach((el, i) => {
-        if (el.offsetTop <= anchorTop) last = i;
+        if (getTopInScrollContent(containerTop, scrollTop, el) <= anchorTop) {
+          last = i;
+        }
       });
       setActiveIndex(last);
     };
@@ -174,42 +315,129 @@ export function UserQuestionRail({
           aria-hidden
           className="pointer-events-none absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 bg-line-subtle"
         />
-        {dotPositions.map((dot) => (
-          <div
-            key={dot.index}
-            className="group pointer-events-auto absolute right-0 -translate-y-1/2"
-            style={{ top: `${dot.topPercent}%` }}
-          >
-            <button
-              type="button"
-              onClick={() => handleJump(dot.index)}
-              aria-label={`跳到第 ${dot.index + 1} 条提问`}
-              className="grid size-5 place-items-center focus:outline-none"
+        {railItems.map((item) => {
+          const isClusterOpen =
+            item.kind === "cluster" && openItemId === item.id;
+
+          return (
+            <div
+              key={item.id}
+              className="group pointer-events-auto absolute right-0 -translate-y-1/2"
+              style={{ top: `${item.topPercent}%` }}
+              onMouseEnter={() => {
+                if (item.kind === "cluster") openCluster(item.id);
+              }}
+              onMouseLeave={() => {
+                if (item.kind === "cluster") scheduleCloseCluster();
+              }}
+              onFocusCapture={() => {
+                if (item.kind === "cluster") openCluster(item.id);
+              }}
+              onBlurCapture={(e) => {
+                if (
+                  item.kind === "cluster" &&
+                  !e.currentTarget.contains(e.relatedTarget as Node | null)
+                ) {
+                  scheduleCloseCluster();
+                }
+              }}
             >
-              {/* Active = filled apricot disc; inactive = hollow ring.
-                  Single-axis state (fill vs no-fill) at fixed 8px
-                  size — same visual weight slot for both states, the
-                  ink reading does all the work. */}
-              <span
-                className={cn(
-                  "block size-2 rounded-full border-[1.5px] transition-colors",
-                  dot.index === activeIndex
-                    ? "border-brand-strong bg-brand-strong"
-                    : "border-line-strong bg-transparent group-hover:border-ink-soft",
-                )}
-              />
-            </button>
-            <span
-              role="tooltip"
-              className="pointer-events-none absolute right-full top-1/2 z-10 mr-2 flex max-w-[320px] -translate-y-1/2 items-baseline gap-1.5 truncate whitespace-nowrap rounded-sm border border-line bg-elevated px-2 py-1 text-[11.5px] text-ink-soft opacity-0 shadow-sm transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100"
-            >
-              <span className="font-mono text-[10.5px] text-ink-muted">
-                {dot.index + 1}
-              </span>
-              <span className="truncate">{dot.preview}</span>
-            </span>
-          </div>
-        ))}
+              {item.kind === "single" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleJump(item.question.index)}
+                    aria-label={`跳到第 ${item.question.index + 1} 条提问`}
+                    className="grid size-5 place-items-center focus:outline-none"
+                  >
+                    {/* Active = filled apricot disc; inactive = hollow ring.
+                      Single-axis state (fill vs no-fill) at fixed 8px
+                      size — same visual weight slot for both states, the
+                      ink reading does all the work. */}
+                    <span
+                      className={cn(
+                        "block size-2 rounded-full border-[1.5px] transition-colors",
+                        item.question.index === activeIndex
+                          ? "border-brand-strong bg-brand-strong"
+                          : "border-line-strong bg-transparent group-hover:border-ink-soft",
+                      )}
+                    />
+                  </button>
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none absolute right-full top-1/2 z-10 mr-2 flex max-w-[320px] -translate-y-1/2 items-baseline gap-1.5 truncate whitespace-nowrap rounded-sm border border-line bg-elevated px-2 py-1 text-[11.5px] text-ink-soft opacity-0 shadow-sm transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                  >
+                    <span className="font-mono text-[10.5px] text-ink-muted">
+                      {item.question.index + 1}
+                    </span>
+                    <span className="truncate">{item.question.preview}</span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleJump(item.firstIndex)}
+                    aria-label={`第 ${item.firstIndex + 1} 到 ${item.lastIndex + 1} 条提问组，共 ${item.questions.length} 条，点击跳到第 ${item.firstIndex + 1} 条`}
+                    className="grid size-5 place-items-center focus:outline-none"
+                  >
+                    <span
+                      className={cn(
+                        "block w-2 rounded-full border-[1.5px] transition-colors",
+                        activeIndex >= item.firstIndex &&
+                          activeIndex <= item.lastIndex
+                          ? "border-brand-strong bg-brand-soft"
+                          : "border-line-strong bg-surface group-hover:border-ink-soft group-hover:bg-elevated",
+                      )}
+                      style={{ height: item.markerHeightPx }}
+                    />
+                  </button>
+                  <div
+                    aria-hidden
+                    className={cn(
+                      "absolute right-full top-1/2 z-10 h-14 w-4 -translate-y-1/2",
+                      isClusterOpen
+                        ? "pointer-events-auto"
+                        : "pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto",
+                    )}
+                  />
+                  <div
+                    role="group"
+                    aria-label={`第 ${item.firstIndex + 1} 到 ${item.lastIndex + 1} 条提问，共 ${item.questions.length} 条`}
+                    className={cn(
+                      "absolute right-full z-10 mr-2 w-[320px] max-w-[calc(100vw-80px)] rounded-sm border border-line bg-elevated py-1 text-[11.5px] text-ink-soft shadow-sm transition-opacity duration-100",
+                      isClusterOpen
+                        ? "pointer-events-auto opacity-100"
+                        : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+                      item.topPercent < 18
+                        ? "top-0"
+                        : item.topPercent > 82
+                          ? "bottom-0"
+                          : "top-1/2 -translate-y-1/2",
+                    )}
+                  >
+                    <div className="max-h-[260px] overflow-y-auto">
+                      {item.questions.map((question) => (
+                        <button
+                          key={question.index}
+                          type="button"
+                          onClick={() => handleJump(question.index)}
+                          tabIndex={isClusterOpen ? 0 : -1}
+                          className="flex w-full items-baseline gap-1.5 px-2 py-1 text-left text-ink-soft transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none"
+                        >
+                          <span className="shrink-0 font-mono text-[10.5px] text-ink-muted">
+                            {question.index + 1}
+                          </span>
+                          <span className="truncate">{question.preview}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
