@@ -1,5 +1,12 @@
 import { Check, Copy } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import {
+  Children,
+  isValidElement,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { createHighlighterCore, type HighlighterCore } from "shiki/core";
@@ -344,23 +351,22 @@ function normalizeLanguage(language: string | null): ShikiLang | null {
 // ---------- react-markdown component overrides ----------
 
 /**
- * We override exactly two elements: `code` (to route block code
- * through Shiki) and `a` (to enforce safe target=_blank). Everything
- * else uses the default DOM tag, styled via the prose class above.
+ * We route fenced code from `pre`, not `code`: react-markdown gives
+ * no-language single-line fences as `<pre><code>...</code></pre>`,
+ * and the code node alone is indistinguishable from inline code by
+ * text shape. The pre wrapper is the reliable block signal.
  */
 const COMPONENTS: Components = {
-  code({ className, children }) {
-    const match = /language-([\w-]+)/.exec(className ?? "");
-    const text = String(children ?? "").replace(/\n$/, "");
-    // Heuristic: react-markdown sends inline code without a className
-    // (or a className that doesn't carry "language-"), and block code
-    // with `language-foo`. If `text` contains a newline, treat as a
-    // block too (covers fenced blocks without an explicit lang tag).
-    const isBlock = !!match || text.includes("\n");
-    if (!isBlock) {
-      return <code className={className}>{children}</code>;
-    }
+  pre({ children }) {
+    const codeProps = getPreCodeProps(children);
+    if (!codeProps) return <pre>{children}</pre>;
+
+    const match = /language-([\w-]+)/.exec(codeProps.className ?? "");
+    const text = String(codeProps.children ?? "").replace(/\n$/, "");
     return <CodeBlock code={text} language={match?.[1] ?? null} />;
+  },
+  code({ className, children }) {
+    return <code className={className}>{children}</code>;
   },
   a({ href, children }) {
     return (
@@ -370,3 +376,15 @@ const COMPONENTS: Components = {
     );
   },
 };
+
+interface PreCodeProps {
+  className?: string;
+  children?: ReactNode;
+}
+
+function getPreCodeProps(children: ReactNode): PreCodeProps | null {
+  for (const child of Children.toArray(children)) {
+    if (isValidElement<PreCodeProps>(child)) return child.props;
+  }
+  return null;
+}
