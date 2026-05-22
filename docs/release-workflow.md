@@ -22,7 +22,7 @@ GitHub Actions release.yml 自动触发
        │
        ├─ macos-15 (arm64 runner, native) → Galley_0.2.0-beta.1_macOS_aarch64.dmg
        ├─ macos-15 (arm64 runner, cross)  → Galley_0.2.0-beta.1_macOS_x64.dmg   ← v0.1.2 起 CI 出，cross-compile + Rosetta 2
-       └─ windows-2025-vs2026             → Galley_0.2.0-beta.1_Windows_x64-setup.exe
+       └─ windows-2025                    → Galley_0.2.0-beta.1_Windows_x64-setup.exe
        ↓
 ubuntu-latest 收集产物 + gh release create --draft
        ↓
@@ -331,7 +331,7 @@ gh run cancel <run-id>
 
 # 2a. 已 success 的 CI artifact 下载到本地
 gh run download <run-id> -n galley-macos-15-aarch64   # 出 Galley_X.Y.Z_macOS_aarch64.dmg
-gh run download <run-id> -n galley-windows-2025-vs2026-x64 # 出 Galley_X.Y.Z_Windows_x64-setup.exe
+gh run download <run-id> -n galley-windows-2025-x64 # 出 Galley_X.Y.Z_Windows_x64-setup.exe
 
 # 2b. 本地 build 兜 self-arch（Mac x64 / aarch64）— 别忘了重命名
 cd gui && pnpm tauri build --target x86_64-apple-darwin

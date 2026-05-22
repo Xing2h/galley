@@ -4,7 +4,7 @@ name: Release
 # to fire this workflow. It produces two artifacts in parallel:
 #
 #   - Galley_<version>_aarch64.dmg    (Apple Silicon Mac, macos-15 runner)
-#   - Galley_<version>_x64-setup.exe  (Windows,           windows-2025-vs2026 runner)
+#   - Galley_<version>_x64-setup.exe  (Windows,           windows-2025 runner)
 #
 # Mac Intel (x86_64-apple-darwin) was dropped from the matrix in
 # v0.1.0-alpha.2 — JC's dev machine is an Intel Mac so an Intel bundle
@@ -71,7 +71,7 @@ jobs:
             arch: x64
             bundle_dir: dmg
             bundle_glob: "*.dmg"
-          - platform: windows-2025-vs2026
+          - platform: windows-2025
             target: x86_64-pc-windows-msvc
             arch: x64
             bundle_dir: nsis
