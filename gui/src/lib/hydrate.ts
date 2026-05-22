@@ -54,14 +54,17 @@ export async function hydrateApp(): Promise<void> {
   } catch (e) {
     console.debug("[hydrate] app.getVersion failed.", e);
   }
-  void useAppUpdateStore
-    .getState()
-    .check({ silent: true, downloadIfAvailable: true });
 
   // 2. Startup-critical state: sessions/projects. Route through Rust
   // Core first so a slow direct-SQL housekeeping pass cannot leave the
   // sidebar blank on Dev hot restarts.
   await useSessionsStore.getState().hydrate();
+  // Update auto-prepare is deliberately after sessions hydrate. If a
+  // dev reload preserves an in-flight task in messagesStore, the updater
+  // guard can see it and defer install work until the session is idle.
+  void useAppUpdateStore
+    .getState()
+    .check({ silent: true, downloadIfAvailable: true });
 
   // 3-4. Non-critical SQLite housekeeping + FTS backfill. Fire-and-forget:
   // these are nice cleanup/indexing tasks, not requirements for first paint.

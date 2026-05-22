@@ -75,6 +75,11 @@ update channel and local development keeps working. This is intentional: Tauri
 updater package verification is mandatory and should not be bypassed just
 because Galley itself is still unsigned at the OS level.
 
+Update installation is task-protected. If any session is actively running,
+Galley may remember that an update is available, but it will not download,
+install, or relaunch for that update until the session is idle. This avoids
+turning a background maintenance action into a lost-task event.
+
 Tauri updater signing is separate from macOS codesigning / Windows Authenticode.
 The private updater key must stay in release secrets; only the public key is
 safe to embed in app builds.

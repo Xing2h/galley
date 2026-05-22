@@ -132,7 +132,11 @@ function updateButtonView(
         spin: true,
       };
     case "available":
-      return { label: "下载更新", Icon: DownloadSimple, disabled: false };
+      return {
+        label: hasRunningSessions ? "等待任务" : "下载更新",
+        Icon: DownloadSimple,
+        disabled: hasRunningSessions,
+      };
     case "downloading":
       return {
         label: "准备中",
@@ -167,6 +171,13 @@ function updateStatusView(
   if (status.kind === "ready" && hasRunningSessions) {
     return {
       message: `v${status.version} 已准备好；当前任务结束后再重启。`,
+      Icon: Warning,
+      className: "text-warning",
+    };
+  }
+  if (status.kind === "available" && hasRunningSessions) {
+    return {
+      message: `发现 v${status.version}；当前任务结束后再后台准备更新。`,
       Icon: Warning,
       className: "text-warning",
     };

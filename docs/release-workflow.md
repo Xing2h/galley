@@ -573,6 +573,9 @@ Today's vX.Y ships:
 还没有配置时，UI 会显示「此构建未连接更新通道；Dev 模式下这是预期状态」，
 但不会影响 Dev 或本地 build。生成 key pair：
 
+保护逻辑：只要有 session 正在运行，Galley 不会下载 / 安装 / relaunch 更新。
+后台检查可以先记住「发现新版本」，等所有任务结束后再继续准备。
+
 ```bash
 pnpm --dir gui tauri signer generate -w ~/.config/galley/updater.key
 ```

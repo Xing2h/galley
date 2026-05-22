@@ -6,6 +6,7 @@ import {
   relaunchApp,
   type AppUpdateCheckResult,
 } from "@/lib/app-update";
+import { useMessagesStore } from "@/stores/messages";
 
 export type AppUpdateStatus =
   | { kind: "idle" }
@@ -18,6 +19,7 @@ export type AppUpdateStatus =
       version: string;
       body: string | null;
       date: string | null;
+      autoDownload: boolean;
     }
   | { kind: "downloading"; version?: string }
   | { kind: "ready"; currentVersion: string; version: string }
@@ -53,10 +55,18 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
         return;
       }
       set({
-        status: statusFromCheckResult(result),
+        status: statusFromCheckResult(result, {
+          autoDownload: options?.downloadIfAvailable === true,
+        }),
         lastCheckedAt: new Date().toISOString(),
       });
-      if (options?.downloadIfAvailable && result.kind === "available") {
+      if (
+        options?.downloadIfAvailable &&
+        result.kind === "available" &&
+        hasRunningSessions()
+      ) {
+        ensureAutoPrepareOnIdleWatcher();
+      } else if (options?.downloadIfAvailable && result.kind === "available") {
         await get().downloadAndInstall();
       }
     } catch (error) {
@@ -71,6 +81,12 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
   downloadAndInstall: async () => {
     const current = get().status;
     if (current.kind === "checking" || current.kind === "downloading") return;
+    if (hasRunningSessions()) {
+      if (current.kind === "available" && current.autoDownload) {
+        ensureAutoPrepareOnIdleWatcher();
+      }
+      return;
+    }
 
     set({
       status: {
@@ -93,6 +109,7 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
   },
 
   restart: async () => {
+    if (hasRunningSessions()) return;
     await relaunchApp();
   },
 
@@ -103,7 +120,10 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
   },
 }));
 
-function statusFromCheckResult(result: AppUpdateCheckResult): AppUpdateStatus {
+function statusFromCheckResult(
+  result: AppUpdateCheckResult,
+  options: { autoDownload: boolean },
+): AppUpdateStatus {
   switch (result.kind) {
     case "unconfigured":
       return {
@@ -122,8 +142,36 @@ function statusFromCheckResult(result: AppUpdateCheckResult): AppUpdateStatus {
         version: result.version,
         body: result.body,
         date: result.date,
+        autoDownload: options.autoDownload,
       };
   }
+}
+
+function hasRunningSessions(): boolean {
+  return hasRunningSessionsInState(useMessagesStore.getState());
+}
+
+function hasRunningSessionsInState(
+  state: ReturnType<typeof useMessagesStore.getState>,
+): boolean {
+  return Object.values(state.byId).some(
+    (messages) => messages.agentRunning,
+  );
+}
+
+let autoPrepareOnIdleWatcherStarted = false;
+
+function ensureAutoPrepareOnIdleWatcher(): void {
+  if (autoPrepareOnIdleWatcherStarted) return;
+  autoPrepareOnIdleWatcherStarted = true;
+  useMessagesStore.subscribe((state, previousState) => {
+    if (hasRunningSessionsInState(state)) return;
+    if (!hasRunningSessionsInState(previousState)) return;
+
+    const status = useAppUpdateStore.getState().status;
+    if (status.kind !== "available" || !status.autoDownload) return;
+    void useAppUpdateStore.getState().downloadAndInstall();
+  });
 }
 
 function readableUpdateError(error: unknown): string {

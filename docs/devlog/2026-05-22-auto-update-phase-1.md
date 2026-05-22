@@ -25,6 +25,9 @@
   `EmptyEndpoints` 错误。
 - `plugin-process` 只用于安装完成后的 relaunch；如果仍有 session 在运行，
   Settings 阻止立即重启并提示先等任务结束。
+- 更新保护放在 store action 层，而不只放在按钮层：running session 期间拒绝
+  download / install / relaunch；后台检查发现新版本时先保留 available 状态，
+  等任务结束后再自动准备。
 - 默认 Tauri config 不打开 updater artifact 生成，避免 Dev / local build 被
   signing key 绑定。
 - Release workflow 在 CI 内临时生成 `core/tauri.updater.generated.conf.json`，
