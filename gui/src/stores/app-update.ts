@@ -25,6 +25,7 @@ export type AppUpdateStatus =
 
 interface CheckOptions {
   silent?: boolean;
+  downloadIfAvailable?: boolean;
 }
 
 interface AppUpdateStore {
@@ -55,6 +56,9 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
         status: statusFromCheckResult(result),
         lastCheckedAt: new Date().toISOString(),
       });
+      if (options?.downloadIfAvailable && result.kind === "available") {
+        await get().downloadAndInstall();
+      }
     } catch (error) {
       if (options?.silent) {
         set({ status: { kind: "idle" } });
@@ -134,7 +138,9 @@ function readableUpdateError(error: unknown): string {
   if (raw.includes("invalid_updater_endpoint")) {
     return "更新通道配置有误，请检查 GALLEY_UPDATER_ENDPOINT。";
   }
-  if (raw.includes("EmptyEndpoints")) return "当前构建未配置更新通道。";
+  if (raw.includes("EmptyEndpoints")) {
+    return "此构建未连接更新通道；Dev 模式下这是预期状态。";
+  }
   if (raw.includes("Network") || raw.includes("network")) {
     return "暂时无法连接更新通道，请稍后重试。";
   }

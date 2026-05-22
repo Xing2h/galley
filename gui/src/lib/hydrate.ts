@@ -54,7 +54,9 @@ export async function hydrateApp(): Promise<void> {
   } catch (e) {
     console.debug("[hydrate] app.getVersion failed.", e);
   }
-  void useAppUpdateStore.getState().check({ silent: true });
+  void useAppUpdateStore
+    .getState()
+    .check({ silent: true, downloadIfAvailable: true });
 
   // 2. Startup-critical state: sessions/projects. Route through Rust
   // Core first so a slow direct-SQL housekeeping pass cannot leave the

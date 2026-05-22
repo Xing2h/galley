@@ -14,11 +14,12 @@
 ## Decisions
 
 - 第一阶段先接入真实 updater plumbing：Rust 注册 `tauri-plugin-updater`，
-  Settings -> About 增加检查 / 下载 / 重启入口，启动时后台检查一次。
+  Settings -> About / Runtime 增加检查 / 下载 / 重启入口，启动时后台检查；
+  发布构建发现新版本后会后台下载并准备更新。
 - 更新通道用编译期变量显式启用：`GALLEY_UPDATER_PUBKEY` 和
   `GALLEY_UPDATER_ENDPOINT` 同时存在才会真正检查远端 manifest。
-- 未配置时 UI 显示「当前构建未配置更新通道」，但不让 Dev、本地 build、
-  或普通启动失败。
+- 未配置时 UI 显示「此构建未连接更新通道；Dev 模式下这是预期状态」，
+  但不让 Dev、本地 build、或普通启动失败。
 - Webview 不直接调用 updater plugin command；前端只调用 Galley 自己的
   Rust command。这样可以把「未配置」作为产品状态，而不是暴露成底层
   `EmptyEndpoints` 错误。
@@ -66,4 +67,4 @@
 ## Next
 
 配置 GitHub updater secrets / variables 后，跑一次 release dry-run 和真实 beta
-promote dogfood；之后再接自动静默下载。
+promote dogfood；之后再评估是否需要全局轻提示。

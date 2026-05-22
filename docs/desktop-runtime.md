@@ -57,8 +57,9 @@ this policy and [release workflow](./release-workflow.md).
 
 ## Auto Update Runtime
 
-Galley has an updater entry point in Settings -> About, but update delivery is
-enabled only for builds that provide both compile-time variables:
+Galley checks for app updates on startup and exposes the current update state in
+Settings -> About / Runtime. Update delivery is enabled only for builds that
+provide both compile-time variables:
 
 - `GALLEY_UPDATER_PUBKEY`: Tauri updater public key embedded in the app.
 - `GALLEY_UPDATER_ENDPOINT`: HTTPS URL for the updater manifest.
@@ -69,10 +70,10 @@ Current beta endpoint:
 https://raw.githubusercontent.com/wangjc683/galley/galley-update-channel/updates/beta/latest.json
 ```
 
-Without both values, the app reports "未配置更新通道" and local development keeps
-working. This is intentional: Tauri updater package verification is mandatory
-and should not be bypassed just because Galley itself is still unsigned at the
-OS level.
+Without both values, the app reports that this build is not connected to an
+update channel and local development keeps working. This is intentional: Tauri
+updater package verification is mandatory and should not be bypassed just
+because Galley itself is still unsigned at the OS level.
 
 Tauri updater signing is separate from macOS codesigning / Windows Authenticode.
 The private updater key must stay in release secrets; only the public key is

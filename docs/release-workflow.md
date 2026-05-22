@@ -561,16 +561,17 @@ Today's vX.Y ships:
 
 ### 自动更新 (`tauri-plugin-updater`)
 
-第一阶段已经接入 Settings -> About 的检查更新入口和启动后的后台检查。
-发布构建只有在同时提供下面的 release 配置时才会真正启用更新通道：
+第一阶段已经接入 Settings -> About / Runtime 的检查更新入口，以及启动后的
+后台检查。发布构建发现新版本后会后台下载并准备更新，等待用户重启生效。
+只有在同时提供下面的 release 配置时才会真正启用更新通道：
 
 - `GALLEY_UPDATER_PUBKEY`: 嵌入 app 的 Tauri updater public key
 - `GALLEY_UPDATER_ENDPOINT`: HTTPS updater manifest URL
 - `TAURI_SIGNING_PRIVATE_KEY`: Tauri updater private key, GitHub Secret
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: 可选，Tauri updater private key 密码
 
-还没有配置时，UI 会显示「当前构建未配置更新通道」，但不会影响 Dev 或本地
-build。生成 key pair：
+还没有配置时，UI 会显示「此构建未连接更新通道；Dev 模式下这是预期状态」，
+但不会影响 Dev 或本地 build。生成 key pair：
 
 ```bash
 pnpm --dir gui tauri signer generate -w ~/.config/galley/updater.key

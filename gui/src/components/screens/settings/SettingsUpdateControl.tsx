@@ -1,10 +1,13 @@
 import {
   ArrowClockwise,
   CheckCircle,
+  CircleNotch,
   DownloadSimple,
+  Info,
+  Warning,
 } from "@phosphor-icons/react";
-import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   useAppUpdateStore,
@@ -24,10 +27,8 @@ export function SettingsUpdateControl({
   const checkUpdate = useAppUpdateStore((s) => s.check);
   const downloadAndInstall = useAppUpdateStore((s) => s.downloadAndInstall);
   const restart = useAppUpdateStore((s) => s.restart);
-  const [restartBlocked, setRestartBlocked] = useState(false);
 
   const handleUpdateAction = async () => {
-    setRestartBlocked(false);
     if (updateStatus.kind === "checking" || updateStatus.kind === "downloading") {
       return;
     }
@@ -36,10 +37,7 @@ export function SettingsUpdateControl({
       return;
     }
     if (updateStatus.kind === "ready") {
-      if (hasRunningSessions) {
-        setRestartBlocked(true);
-        return;
-      }
+      if (hasRunningSessions) return;
       await restart();
       return;
     }
@@ -50,11 +48,12 @@ export function SettingsUpdateControl({
     <div className={cn("min-w-0", className)}>
       <UpdateActionButton
         status={updateStatus}
+        hasRunningSessions={hasRunningSessions}
         onClick={handleUpdateAction}
       />
       <UpdateStatusLine
         status={updateStatus}
-        restartBlocked={restartBlocked}
+        hasRunningSessions={hasRunningSessions}
       />
     </div>
   );
@@ -62,57 +61,63 @@ export function SettingsUpdateControl({
 
 function UpdateActionButton({
   status,
+  hasRunningSessions,
   onClick,
 }: {
   status: AppUpdateStatus;
+  hasRunningSessions: boolean;
   onClick: () => void;
 }) {
-  const view = updateButtonView(status);
+  const view = updateButtonView(status, hasRunningSessions);
   const Icon = view.Icon;
   return (
-    <button
-      type="button"
+    <Button
+      variant="secondary"
+      size="sm"
       onClick={onClick}
       disabled={view.disabled}
-      className={cn(
-        "inline-flex h-6 items-center gap-1.5 rounded-sm border border-line bg-elevated px-2 text-[11.5px]",
-        "text-ink-soft transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink",
-        "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-line disabled:hover:bg-elevated disabled:hover:text-ink-soft",
-      )}
+      className="h-6 px-2 text-[11.5px]"
+      leadingIcon={
+        <Icon size={12} weight="thin" className={cn(view.spin && "spin")} />
+      }
     >
-      <Icon
-        size={12}
-        weight="thin"
-        className={cn(view.spin && "spin")}
-      />
       <span>{view.label}</span>
-    </button>
+    </Button>
   );
 }
 
 function UpdateStatusLine({
   status,
-  restartBlocked,
+  hasRunningSessions,
 }: {
   status: AppUpdateStatus;
-  restartBlocked: boolean;
+  hasRunningSessions: boolean;
 }) {
-  const message = updateStatusMessage(status, restartBlocked);
-  if (!message) return null;
+  const view = updateStatusView(status, hasRunningSessions);
+  if (!view) return null;
+  const Icon = view.Icon;
   return (
     <div
+      aria-live="polite"
       className={cn(
-        "mt-1 text-[11.5px] text-ink-muted",
-        status.kind === "available" && "text-brand-strong",
-        (status.kind === "error" || restartBlocked) && "text-warning",
+        "mt-1 flex min-w-0 items-center gap-1.5 text-[11.5px] leading-[1.45]",
+        view.className,
       )}
     >
-      {message}
+      <Icon
+        size={11}
+        weight="thin"
+        className={cn("shrink-0", view.spin && "spin")}
+      />
+      <span className="min-w-0">{view.message}</span>
     </div>
   );
 }
 
-function updateButtonView(status: AppUpdateStatus): {
+function updateButtonView(
+  status: AppUpdateStatus,
+  hasRunningSessions: boolean,
+): {
   label: string;
   Icon: typeof ArrowClockwise;
   disabled: boolean;
@@ -130,39 +135,88 @@ function updateButtonView(status: AppUpdateStatus): {
       return { label: "下载更新", Icon: DownloadSimple, disabled: false };
     case "downloading":
       return {
-        label: "下载中",
+        label: "准备中",
         Icon: ArrowClockwise,
         disabled: true,
         spin: true,
       };
     case "ready":
-      return { label: "重启更新", Icon: CheckCircle, disabled: false };
+      return {
+        label: "重启更新",
+        Icon: CheckCircle,
+        disabled: hasRunningSessions,
+      };
+    case "upToDate":
+      return { label: "再次检查", Icon: ArrowClockwise, disabled: false };
+    case "error":
+      return { label: "重试", Icon: ArrowClockwise, disabled: false };
     default:
       return { label: "检查更新", Icon: ArrowClockwise, disabled: false };
   }
 }
 
-function updateStatusMessage(
+function updateStatusView(
   status: AppUpdateStatus,
-  restartBlocked: boolean,
-): string | null {
-  if (restartBlocked) return "当前任务仍在运行，结束后再重启更新。";
+  hasRunningSessions: boolean,
+): {
+  message: string;
+  Icon: typeof ArrowClockwise;
+  className: string;
+  spin?: boolean;
+} | null {
+  if (status.kind === "ready" && hasRunningSessions) {
+    return {
+      message: `v${status.version} 已准备好；当前任务结束后再重启。`,
+      Icon: Warning,
+      className: "text-warning",
+    };
+  }
 
   switch (status.kind) {
     case "checking":
-      return "正在检查更新...";
+      return {
+        message: "正在检查更新...",
+        Icon: CircleNotch,
+        className: "text-ink-muted",
+        spin: true,
+      };
     case "unconfigured":
-      return "当前构建未配置更新通道。";
+      return {
+        message: "此构建未连接更新通道；Dev 模式下这是预期状态。",
+        Icon: Info,
+        className: "text-ink-muted",
+      };
     case "upToDate":
-      return "已是最新版本。";
+      return {
+        message: "已是最新版本。",
+        Icon: CheckCircle,
+        className: "text-success",
+      };
     case "available":
-      return `发现 v${status.version}。`;
+      return {
+        message: `发现 v${status.version}，可后台下载并准备更新。`,
+        Icon: DownloadSimple,
+        className: "text-brand-strong",
+      };
     case "downloading":
-      return "正在下载并安装更新...";
+      return {
+        message: "正在后台下载并准备更新...",
+        Icon: CircleNotch,
+        className: "text-brand-strong",
+        spin: true,
+      };
     case "ready":
-      return `v${status.version} 已准备好，重启后生效。`;
+      return {
+        message: `v${status.version} 已准备好，重启后生效。`,
+        Icon: CheckCircle,
+        className: "text-success",
+      };
     case "error":
-      return status.message;
+      return {
+        message: status.message,
+        Icon: Warning,
+        className: "text-warning",
+      };
     case "idle":
       return null;
   }
