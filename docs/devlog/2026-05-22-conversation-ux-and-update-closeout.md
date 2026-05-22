@@ -36,8 +36,9 @@ UI primitive 收口。
   marker + hover 列表保持可导航，而不是把右侧 rail 变成一串不可辨认的点。
 - dot rail hover popover 必须可点击，所以触发区和浮层之间要给用户可移动的时间
   与空间；说明性文案如 "N 条提问" 价值不高，移除后更安静。
-- Scroll-to-latest 浮动按钮从右下角改成沿 conversation scroll axis 居中显示，
-  并降低尺寸 / 对比度。它是轻导航 affordance，不该像一个主要操作按钮。
+- Scroll-to-latest 浮动按钮从右下角改成沿 conversation scroll axis 居中显示。
+  点击后监控 smooth scroll，到底前隐藏按钮，避免用户误以为点击没有反馈；视觉上
+  保持轻量 elevated affordance，不做主要操作按钮。
 - Auto update 的 release gate 明确拆成两步：release workflow 只产出 draft
   Release 和 `latest.json` candidate；真实用户 update channel 只在 publish +
   smoke 后通过 `promote-update-channel.yml` 手动推进。

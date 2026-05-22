@@ -170,6 +170,8 @@ export function MainView({
   // events with a 24px tolerance so flicker around the boundary
   // doesn't toggle the mode.
   const [atBottom, setAtBottom] = useState(true);
+  const [isScrollingToBottom, setIsScrollingToBottom] = useState(false);
+  const scrollToBottomRafRef = useRef<number | null>(null);
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -216,15 +218,55 @@ export function MainView({
     pendingAskUser,
   ]);
 
+  const stopMonitoringScrollToBottom = () => {
+    setIsScrollingToBottom(false);
+    if (scrollToBottomRafRef.current !== null) {
+      cancelAnimationFrame(scrollToBottomRafRef.current);
+      scrollToBottomRafRef.current = null;
+    }
+  };
+
   const onClickScrollToBottom = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
+
+    stopMonitoringScrollToBottom();
+    setIsScrollingToBottom(true);
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    // The smooth-scroll arrives at bottom asynchronously; we
-    // optimistically flip atBottom now so subsequent stream chunks
-    // are followed without a frame's gap.
-    setAtBottom(true);
+
+    const startedAt = performance.now();
+    let lastScrollTop = el.scrollTop;
+    const monitorScroll = () => {
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distFromBottom < 24) {
+        stopMonitoringScrollToBottom();
+        setAtBottom(true);
+        return;
+      }
+
+      const userPulledAway = el.scrollTop < lastScrollTop - 2;
+      const timedOut = performance.now() - startedAt > 1600;
+      if (userPulledAway || timedOut) {
+        stopMonitoringScrollToBottom();
+        setAtBottom(false);
+        return;
+      }
+
+      lastScrollTop = el.scrollTop;
+      scrollToBottomRafRef.current = requestAnimationFrame(monitorScroll);
+    };
+    scrollToBottomRafRef.current = requestAnimationFrame(monitorScroll);
   };
+
+  useEffect(
+    () => () => {
+      if (scrollToBottomRafRef.current !== null) {
+        cancelAnimationFrame(scrollToBottomRafRef.current);
+        scrollToBottomRafRef.current = null;
+      }
+    },
+    [],
+  );
 
   const onClickAdvanceApproval = (next: PendingApproval) => {
     const container = scrollContainerRef.current;
@@ -587,19 +629,26 @@ export function MainView({
             from the bottom. Centered above the bottom stack so the
             affordance sits on the scroll axis instead of competing
             with the reading column's right edge. */}
-        {!atBottom && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center">
+        {!atBottom && !isScrollingToBottom && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center">
             <button
               type="button"
               onClick={onClickScrollToBottom}
               aria-label="Scroll to latest"
               className={cn(
-                "pointer-events-auto inline-flex size-7 items-center justify-center rounded-full",
-                "border border-line-subtle bg-app/70 text-ink-muted backdrop-blur-sm",
-                "transition-colors hover:border-line hover:bg-elevated hover:text-ink",
+                "group pointer-events-auto inline-flex size-8 items-center justify-center rounded-full",
+                "border border-line bg-elevated/92 text-ink-soft shadow-[0_6px_18px_rgba(31,27,23,0.10)] backdrop-blur-md",
+                "transition-all duration-150 ease-out",
+                "hover:-translate-y-0.5 hover:border-line-strong hover:bg-elevated hover:text-ink hover:shadow-[0_8px_22px_rgba(31,27,23,0.14)]",
+                "active:translate-y-0 active:scale-95",
+                "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
               )}
             >
-              <ArrowDown size={13} weight="thin" />
+              <ArrowDown
+                size={14}
+                weight="thin"
+                className="transition-transform duration-150 ease-out group-hover:translate-y-0.5"
+              />
             </button>
           </div>
         )}
