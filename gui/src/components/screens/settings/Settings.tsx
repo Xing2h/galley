@@ -44,6 +44,7 @@ export interface SettingsProps {
   projectCount?: number;
   /** PRD §11.5 / DESIGN.md §9 Approval. */
   yoloMode: boolean;
+  hasRunningSessions: boolean;
 
   defaultTab?: SettingsTab;
 
@@ -89,6 +90,7 @@ export function Settings({
   approval,
   projectCount,
   yoloMode,
+  hasRunningSessions,
   defaultTab = "runtime",
   useExternalPython,
   onChangeRequiredTools,
@@ -130,6 +132,7 @@ export function Settings({
               {tab === "runtime" && (
                 <SettingsRuntime
                   info={runtimeInfo}
+                  hasRunningSessions={hasRunningSessions}
                   useExternalPython={useExternalPython}
                   onChangeGAPath={onChangeGAPath}
                   onChangeBridgePython={onChangeBridgePython}
@@ -154,6 +157,7 @@ export function Settings({
                 <SettingsAbout
                   workbenchVersion={runtimeInfo.workbenchVersion}
                   gaBaseline={runtimeInfo.gaBaseline}
+                  hasRunningSessions={hasRunningSessions}
                 />
               )}
             </div>

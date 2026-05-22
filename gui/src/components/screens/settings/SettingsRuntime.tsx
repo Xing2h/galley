@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from "react";
 
 import type { PathValidation } from "@/components/screens/onboarding/StepAttach";
+import { SettingsUpdateControl } from "@/components/screens/settings/SettingsUpdateControl";
 import {
   BUNDLED_PYTHON_VERSION,
   validateGAPath,
@@ -21,6 +22,7 @@ import type { RuntimeInfo } from "@/types/inspector";
 
 interface SettingsRuntimeProps {
   info: RuntimeInfo;
+  hasRunningSessions: boolean;
   /**
    * v0.1.1+: when false (default), Galley spawns its own bundled Python
    * interpreter and the Python panel is a read-only info card. When
@@ -62,6 +64,7 @@ interface SettingsRuntimeProps {
  */
 export function SettingsRuntime({
   info,
+  hasRunningSessions,
   useExternalPython,
   onChangeGAPath,
   onChangeBridgePython,
@@ -113,8 +116,13 @@ export function SettingsRuntime({
         </button>
       </div>
 
-      <div className="border-t border-line pt-4 font-mono text-[11px] text-ink-muted">
-        Galley v{info.workbenchVersion}
+      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
+        <div className="font-mono text-[11px] text-ink-muted">
+          Galley v{info.workbenchVersion}
+        </div>
+        <SettingsUpdateControl
+          hasRunningSessions={hasRunningSessions}
+        />
       </div>
     </div>
   );

@@ -55,6 +55,10 @@
     }
   },
   "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": []
+    },
     "sql": {
       "preload": ["sqlite:workbench.db"]
     }

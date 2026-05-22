@@ -1,0 +1,90 @@
+name: Promote Update Channel
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published GitHub Release tag to promote, for example v0.2.0-beta.1"
+        required: true
+        type: string
+      channel:
+        description: "Update channel to publish"
+        required: true
+        default: beta
+        type: choice
+        options:
+          - beta
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Download release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          is_draft="$(gh release view "$TAG" --json isDraft --jq '.isDraft')"
+          if [[ "$is_draft" == "true" ]]; then
+            echo "Release $TAG is still a draft. Publish and smoke-test it before promoting the update channel." >&2
+            exit 1
+          fi
+
+          mkdir -p artifacts
+          gh release download "$TAG" --dir artifacts --clobber
+
+      - name: Generate updater manifest
+        run: |
+          node scripts/generate-tauri-update-manifest.mjs \
+            --artifacts artifacts \
+            --repo "${{ github.repository }}" \
+            --tag "${{ inputs.tag }}" \
+            --out update-channel/updates/${{ inputs.channel }}/latest.json
+
+      - name: Publish update channel
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          TAG: ${{ inputs.tag }}
+          CHANNEL_BRANCH: galley-update-channel
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          worktree_dir="$(mktemp -d)"
+          if git ls-remote --exit-code --heads origin "$CHANNEL_BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$CHANNEL_BRANCH"
+            git worktree add "$worktree_dir" "origin/$CHANNEL_BRANCH"
+          else
+            git worktree add --detach "$worktree_dir"
+            git -C "$worktree_dir" switch --orphan "$CHANNEL_BRANCH"
+            git -C "$worktree_dir" rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          mkdir -p "$worktree_dir/updates/$CHANNEL"
+          cp "update-channel/updates/$CHANNEL/latest.json" "$worktree_dir/updates/$CHANNEL/latest.json"
+          printf "Galley %s update channel.\\n\\nCurrent tag: %s\\n" "$CHANNEL" "$TAG" > "$worktree_dir/updates/$CHANNEL/README.md"
+
+          git -C "$worktree_dir" add "updates/$CHANNEL/latest.json" "updates/$CHANNEL/README.md"
+          if git -C "$worktree_dir" diff --cached --quiet; then
+            echo "Update channel $CHANNEL already points at $TAG."
+            exit 0
+          fi
+
+          git -C "$worktree_dir" commit -m "Promote Galley $TAG to $CHANNEL update channel"
+          git -C "$worktree_dir" push origin "HEAD:$CHANNEL_BRANCH"

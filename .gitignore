@@ -33,6 +33,7 @@ ENV/
 
 # Node (for gui/)
 node_modules/
+.pnpm-store/
 
 # Tauri / GUI build artifacts
 gui/dist/

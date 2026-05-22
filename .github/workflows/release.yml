@@ -110,6 +110,30 @@ jobs:
         with:
           workspaces: ./core -> target
 
+      - name: Validate updater signing config
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          GALLEY_UPDATER_PUBKEY: ${{ vars.GALLEY_UPDATER_PUBKEY }}
+          GALLEY_UPDATER_ENDPOINT: ${{ vars.GALLEY_UPDATER_ENDPOINT }}
+        run: |
+          missing=0
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo "Missing GitHub secret TAURI_SIGNING_PRIVATE_KEY." >&2
+            missing=1
+          fi
+          if [[ -z "$GALLEY_UPDATER_PUBKEY" ]]; then
+            echo "Missing GitHub variable GALLEY_UPDATER_PUBKEY." >&2
+            missing=1
+          fi
+          if [[ -z "$GALLEY_UPDATER_ENDPOINT" ]]; then
+            echo "Missing GitHub variable GALLEY_UPDATER_ENDPOINT." >&2
+            missing=1
+          fi
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
       - name: Install frontend deps
         working-directory: ./gui
         run: pnpm install --frozen-lockfile
@@ -174,7 +198,12 @@ jobs:
 
       - name: Build Tauri bundle
         working-directory: ./gui
-        run: pnpm tauri build --target ${{ matrix.target }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GALLEY_UPDATER_PUBKEY: ${{ vars.GALLEY_UPDATER_PUBKEY }}
+          GALLEY_UPDATER_ENDPOINT: ${{ vars.GALLEY_UPDATER_ENDPOINT }}
+        run: pnpm tauri build --target ${{ matrix.target }} --config tauri.updater.conf.json
 
       # Tauri's bundler names artifacts `Galley_<version>_<arch>.<ext>`
       # with no `artifactName` config to customize. Post-build, insert
@@ -185,11 +214,65 @@ jobs:
         shell: bash
         run: ./scripts/rename-artifact.sh ${{ matrix.target }}
 
-      - name: Upload bundle artifact
+      - name: Collect release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          out="artifacts/${{ matrix.target }}"
+          bundle_root="core/target/${{ matrix.target }}/release/bundle"
+          version="$(node -p 'require("./core/tauri.conf.json").version')"
+          mkdir -p "$out"
+
+          primary_files=("$bundle_root/${{ matrix.bundle_dir }}"/${{ matrix.bundle_glob }})
+          if (( ${#primary_files[@]} == 0 )); then
+            echo "No primary bundle found in $bundle_root/${{ matrix.bundle_dir }}." >&2
+            find "$bundle_root" -maxdepth 3 -type f -print >&2
+            exit 1
+          fi
+          cp "${primary_files[@]}" "$out/"
+
+          updater_count=0
+          expected_updater_count=0
+          case "${{ matrix.target }}" in
+            *-apple-darwin)
+              expected_updater_count=2
+              for file in "$bundle_root/macos"/*.app.tar.gz "$bundle_root/macos"/*.app.tar.gz.sig; do
+                name="$(basename "$file")"
+                suffix="${name#*.app.tar.gz}"
+                cp "$file" "$out/Galley_${version}_macOS_${{ matrix.arch }}.app.tar.gz${suffix}"
+                updater_count=$((updater_count + 1))
+              done
+              ;;
+            *-pc-windows-msvc)
+              expected_updater_count=1
+              setup_files=("$out"/*_Windows_*-setup.exe)
+              for file in "$bundle_root/nsis"/*-setup.exe.sig; do
+                if (( ${#setup_files[@]} == 1 )); then
+                  cp "$file" "$out/$(basename "${setup_files[0]}").sig"
+                else
+                  cp "$file" "$out/$(basename "$file")"
+                fi
+                updater_count=$((updater_count + 1))
+              done
+              ;;
+            *)
+              echo "Unmapped updater target: ${{ matrix.target }}" >&2
+              exit 1
+              ;;
+          esac
+          if (( updater_count < expected_updater_count )); then
+            echo "No updater artifacts found in $bundle_root." >&2
+            find "$bundle_root" -maxdepth 3 -type f -print >&2
+            exit 1
+          fi
+
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v7
         with:
           name: galley-${{ matrix.platform }}-${{ matrix.arch }}
-          path: core/target/${{ matrix.target }}/release/bundle/${{ matrix.bundle_dir }}/${{ matrix.bundle_glob }}
+          path: artifacts/${{ matrix.target }}/*
           if-no-files-found: error
 
   release:
@@ -206,11 +289,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Generate updater manifest candidate
+        run: |
+          node scripts/generate-tauri-update-manifest.mjs \
+            --artifacts artifacts \
+            --repo "${{ github.repository }}" \
+            --tag "${{ github.ref_name }}" \
+            --out artifacts/latest.json
 
       - name: List artifacts
         run: ls -lR artifacts/

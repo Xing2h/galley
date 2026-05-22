@@ -33,6 +33,7 @@ import {
   deleteEmptyNewSessions,
   getPref,
 } from "@/lib/db";
+import { useAppUpdateStore } from "@/stores/app-update";
 import { usePrefsStore } from "@/stores/prefs";
 import type { LLMOption } from "@/stores/runtime";
 import { useRuntimeStore } from "@/stores/runtime";
@@ -53,6 +54,7 @@ export async function hydrateApp(): Promise<void> {
   } catch (e) {
     console.debug("[hydrate] app.getVersion failed.", e);
   }
+  void useAppUpdateStore.getState().check({ silent: true });
 
   // 2. Startup-critical state: sessions/projects. Route through Rust
   // Core first so a slow direct-SQL housekeeping pass cannot leave the

@@ -55,6 +55,39 @@ Expected user flow:
 Any PR adding `codesign`, `notarytool`, or `signtool.exe` should also update
 this policy and [release workflow](./release-workflow.md).
 
+## Auto Update Runtime
+
+Galley has an updater entry point in Settings -> About, but update delivery is
+enabled only for builds that provide both compile-time variables:
+
+- `GALLEY_UPDATER_PUBKEY`: Tauri updater public key embedded in the app.
+- `GALLEY_UPDATER_ENDPOINT`: HTTPS URL for the updater manifest.
+
+Current beta endpoint:
+
+```text
+https://raw.githubusercontent.com/wangjc683/galley/galley-update-channel/updates/beta/latest.json
+```
+
+Without both values, the app reports "未配置更新通道" and local development keeps
+working. This is intentional: Tauri updater package verification is mandatory
+and should not be bypassed just because Galley itself is still unsigned at the
+OS level.
+
+Tauri updater signing is separate from macOS codesigning / Windows Authenticode.
+The private updater key must stay in release secrets; only the public key is
+safe to embed in app builds.
+
+Release builds opt into signed updater artifacts with
+`core/tauri.updater.conf.json`. The default `tauri.conf.json` intentionally does
+not enable `createUpdaterArtifacts`, so local Dev and unsigned local builds do
+not require `TAURI_SIGNING_PRIVATE_KEY`.
+
+The release workflow creates a candidate `latest.json` as a draft Release asset.
+After smoke test and publishing the release, run the manual
+`promote-update-channel.yml` workflow to update the beta manifest that installed
+apps read.
+
 ## Bundled Python
 
 Since v0.1.1, Galley release builds embed CPython 3.11.15 plus GenericAgent core

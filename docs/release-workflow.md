@@ -6,7 +6,7 @@
 Galley 发版 SOP。本文档定义 v0.2 起的正式发版流程，配合 `.github/workflows/release.yml` 工作。
 
 > **相关文档**
-> - 工作流文件: [`.github/workflows/release.yml`](../.github/workflows/release.yml) (tag 触发发版) / [`.github/workflows/check.yml`](../.github/workflows/check.yml) (PR 时三平台 build 验证)
+> - 工作流文件: [`.github/workflows/release.yml`](../.github/workflows/release.yml) (tag 触发发版) / [`.github/workflows/promote-update-channel.yml`](../.github/workflows/promote-update-channel.yml) (手动更新 beta channel) / [`.github/workflows/check.yml`](../.github/workflows/check.yml) (PR 时三平台 build 验证)
 > - Win 手动 build 指南: [`docs/windows-build-checklist.md`](./windows-build-checklist.md) — 当 CI 不可用、需要本地出一份 .exe 时参考
 
 ## 总览
@@ -29,6 +29,8 @@ ubuntu-latest 收集产物 + gh release create --draft
 手动 review: GitHub Release 页面看 draft、edit 加亮 notes、本地下载 smoke test
        ↓
 点 publish → 用户可见 + 可下载
+       ↓
+手动运行 Promote Update Channel → updates/beta/latest.json 指向该版本
 ```
 
 构建时间预估：每个 platform job 4-7 min（缓存命中后），三个并行。全流程 push tag 到 draft release ready 大约 **10-12 min**。
@@ -191,7 +193,31 @@ b) **摘 prerelease flag + 标 Latest**：选信心最高的 release：
    失去 GitHub 灰色 "Pre-release" badge，但 sidebar 现出且能下。title 文字（如 "macOS (Release Candidate)"）+ notes 内部说明仍然传达 tier。
    今天 v0.1 用了 b（详 [2026-05-15 v0.1 ship devlog](./devlog/2026-05-15-v0.1-ship-and-ci-fallback.md#d3-github-不允许-prerelease-标-latestmac-rc-摘掉-prerelease-flag)）。
 
-### Step 6. 后续
+### Step 6. Promote update channel
+
+自动更新不要直接依赖 GitHub 的 `/releases/latest`。Galley beta channel 使用
+独立分支 `galley-update-channel` 上的静态 manifest：
+
+```text
+https://raw.githubusercontent.com/wangjc683/galley/galley-update-channel/updates/beta/latest.json
+```
+
+`GALLEY_UPDATER_ENDPOINT` 应该配置成这个 URL。首次配置时这个 URL 可以还不存在；
+release publish 后跑 promote workflow 才会写入。
+
+操作：
+
+1. 确认 GitHub Release 已经 Publish，不是 Draft。
+2. 打开 https://github.com/wangjc683/galley/actions/workflows/promote-update-channel.yml
+3. 点 **Run workflow**。
+4. `tag` 填刚发布的 tag，例如 `v0.2.0-beta.1`。
+5. `channel` 选 `beta`。
+
+workflow 会拒绝 draft release，下载该 release 的 artifacts，重新生成 Tauri
+`latest.json`，然后把 `updates/beta/latest.json` 推到
+`galley-update-channel` 分支。用户侧下一次后台检查会看到这个版本。
+
+### Step 7. 后续
 
 - [ ] 用户群 / Twitter / 朋友圈 / 微博发版通告（人工）
 - [ ] 监控 [GitHub Issues](https://github.com/wangjc683/galley/issues) 头 24h，回 bug report
@@ -217,6 +243,14 @@ b) **摘 prerelease flag + 标 Latest**：选信心最高的 release：
 4. **release job 自动跳过**（`if: startsWith(github.ref, 'refs/tags/v')` 守门）—— 不创建 Release、不上传到任何 Release
 5. 三个 build job 都绿 = CI 工作流健康
 6. Artifacts 在 run 详情页右侧可下载（保留 90 天），想本地装一下 smoke test 也行
+
+从自动更新接入后，dry-run 也会校验 updater signing 配置。跑之前 GitHub repo
+里需要已有：
+
+- Secret: `TAURI_SIGNING_PRIVATE_KEY`
+- Secret: `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，如果 key 有密码
+- Variable: `GALLEY_UPDATER_PUBKEY`
+- Variable: `GALLEY_UPDATER_ENDPOINT`
 
 适用场景：
 - CI 配置改动后想验证还能跑（比如调整 matrix / 升级 actions 版本）
@@ -527,13 +561,51 @@ Today's vX.Y ships:
 
 ### 自动更新 (`tauri-plugin-updater`)
 
-签名搞定后启用：用户开 app 时自动检查新版本，提示一键升级。需要：
+第一阶段已经接入 Settings -> About 的检查更新入口和启动后的后台检查。
+发布构建只有在同时提供下面的 release 配置时才会真正启用更新通道：
 
-- Tauri signing key pair (`TAURI_SIGNING_PRIVATE_KEY` + 公钥嵌 app)
-- `latest.json` 文件托管在 GitHub Pages / S3
-- CI 加生成 + 上传 `latest.json` 步
+- `GALLEY_UPDATER_PUBKEY`: 嵌入 app 的 Tauri updater public key
+- `GALLEY_UPDATER_ENDPOINT`: HTTPS updater manifest URL
+- `TAURI_SIGNING_PRIVATE_KEY`: Tauri updater private key, GitHub Secret
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: 可选，Tauri updater private key 密码
 
-工时 ~4-6 h 一次性。属 v0.6+ scope。
+还没有配置时，UI 会显示「当前构建未配置更新通道」，但不会影响 Dev 或本地
+build。生成 key pair：
+
+```bash
+pnpm --dir gui tauri signer generate -w ~/.config/galley/updater.key
+```
+
+配置位置：
+
+- GitHub Secrets:
+  - `TAURI_SIGNING_PRIVATE_KEY`
+  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，如果生成 key 时设置了密码
+- GitHub Variables:
+  - `GALLEY_UPDATER_PUBKEY`
+  - `GALLEY_UPDATER_ENDPOINT`
+
+Release workflow 使用 `core/tauri.updater.conf.json` 打开
+`bundle.createUpdaterArtifacts`，并上传 updater artifacts：
+
+- macOS: `Galley_<version>_macOS_<arch>.app.tar.gz` 和 `.sig`
+- Windows: `Galley_<version>_Windows_x64-setup.exe` 和 `.sig`
+
+Release workflow 还会把 `latest.json` candidate 放进 draft Release，方便 review。
+真正对用户生效的 manifest 由 `promote-update-channel.yml` 手动发布到 beta
+channel：
+
+```text
+https://raw.githubusercontent.com/wangjc683/galley/galley-update-channel/updates/beta/latest.json
+```
+
+manifest 规则：
+
+- manifest 里的 `signature` 必须是 `.sig` 文件内容，不是 `.sig` URL。
+- manifest 里的 `url` 指向对应平台的 updater 包。
+- beta prerelease 不标记 GitHub Release 为 Latest，所以不要依赖
+  `/releases/latest/download/latest.json` 作为 beta channel；使用上面的显式
+  beta endpoint。
 
 ### Linux 构建
 

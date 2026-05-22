@@ -195,6 +195,9 @@ function App() {
   const agentRunning = useMessagesStore((s) =>
     activeSessionId ? (s.byId[activeSessionId]?.agentRunning ?? false) : false,
   );
+  const hasRunningSessions = useMessagesStore((s) =>
+    Object.values(s.byId).some((messages) => messages.agentRunning),
+  );
   const currentTurnIndex = useMessagesStore((s) =>
     activeSessionId
       ? (s.byId[activeSessionId]?.currentTurnIndex ?? null)
@@ -965,6 +968,7 @@ function App() {
         runtimeInfo={runtimeInfo}
         approval={approvalConfig}
         projectCount={projects.length}
+        hasRunningSessions={hasRunningSessions}
         yoloMode={yoloMode}
         useExternalPython={gaConfig.useExternalPython}
         onChangeYoloMode={(enabled) => {

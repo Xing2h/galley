@@ -1,4 +1,5 @@
 pub mod api;
+pub mod app_update;
 pub mod db;
 pub mod discovery;
 pub mod error;
@@ -550,6 +551,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // RunnerManager is the single Rust authority for Python runner
         // subprocesses (B2 M1). Held as Tauri app state inside an `Arc`
         // so the `spawn_runner` / `send_to_runner` / etc. commands AND
@@ -561,6 +564,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             path_exists,
             get_supervisor_sop,
+            app_update::check_app_update,
+            app_update::install_app_update,
             check_path_install_status,
             install_galley_to_path,
             uninstall_galley_from_path,

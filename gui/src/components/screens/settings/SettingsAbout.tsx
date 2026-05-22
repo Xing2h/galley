@@ -1,8 +1,11 @@
 import { ArrowSquareOut } from "@phosphor-icons/react";
 
+import { SettingsUpdateControl } from "@/components/screens/settings/SettingsUpdateControl";
+
 interface SettingsAboutProps {
   workbenchVersion: string;
   gaBaseline: string;
+  hasRunningSessions: boolean;
 }
 
 /**
@@ -23,6 +26,7 @@ interface SettingsAboutProps {
 export function SettingsAbout({
   workbenchVersion,
   gaBaseline,
+  hasRunningSessions,
 }: SettingsAboutProps) {
   return (
     <div className="space-y-7">
@@ -54,7 +58,14 @@ export function SettingsAbout({
 
       <dl className="m-0 grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
         <dt className="text-ink-muted">Galley 版本</dt>
-        <dd className="m-0 font-mono text-ink">v{workbenchVersion}</dd>
+        <dd className="m-0 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-ink">v{workbenchVersion}</span>
+            <SettingsUpdateControl
+              hasRunningSessions={hasRunningSessions}
+            />
+          </div>
+        </dd>
 
         <dt className="text-ink-muted">已验证 GA 版本</dt>
         <dd className="m-0 font-mono text-ink">{gaBaseline.slice(0, 7)}</dd>
