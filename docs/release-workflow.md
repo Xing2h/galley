@@ -6,6 +6,7 @@
 Galley 发版 SOP。本文档定义 v0.2 起的正式发版流程，配合 `.github/workflows/release.yml` 工作。
 
 > **相关文档**
+> - Release day checklist: [`docs/release-update-sop.md`](./release-update-sop.md)
 > - 工作流文件: [`.github/workflows/release.yml`](../.github/workflows/release.yml) (tag 触发发版) / [`.github/workflows/promote-update-channel.yml`](../.github/workflows/promote-update-channel.yml) (手动更新 beta channel) / [`.github/workflows/check.yml`](../.github/workflows/check.yml) (PR 时三平台 build 验证)
 > - Win 手动 build 指南: [`docs/windows-build-checklist.md`](./windows-build-checklist.md) — 当 CI 不可用、需要本地出一份 .exe 时参考
 

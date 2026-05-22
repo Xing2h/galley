@@ -124,6 +124,7 @@ Current release path:
   needed.
 - Windows x64 NSIS installer via CI.
 
+The release-day checklist lives in [release / update SOP](./release-update-sop.md).
 The detailed release process lives in [release workflow](./release-workflow.md).
 Windows manual smoke lives in [windows build checklist](./windows-build-checklist.md).
 

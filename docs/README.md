@@ -10,7 +10,7 @@ matches who you are and what you are trying to do.
 | User evaluating Galley | [README](../README.md), then [architecture](./architecture.md) |
 | Agent / Supervisor integrator | [Supervisor SOP](./integrations/galley-supervisor-sop.md), then [agent-api](./agent-api.md) |
 | Contributor | [CONTRIBUTING](../CONTRIBUTING.md), then [engineering workflow](./engineering-workflow.md) |
-| Maintainer | [project status](./project-status.md), [release workflow](./release-workflow.md), [GA baseline](./ga-baseline.md) |
+| Maintainer | [project status](./project-status.md), [release / update SOP](./release-update-sop.md), [release workflow](./release-workflow.md), [GA baseline](./ga-baseline.md) |
 | Historical reader | [devlog](./devlog/README.md) |
 | Coding agent | [CLAUDE.md](../CLAUDE.md), then the focused docs below |
 
@@ -25,7 +25,7 @@ matches who you are and what you are trying to do.
 | Change Supervisor / Agent integration | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
 | Work on Rust core refactor | [refactor README](./refactor/README.md) |
 | Check architecture invariants | [architecture demo](./architecture-demo.md) |
-| Prepare a release | [release workflow](./release-workflow.md) |
+| Prepare or update a release | [release / update SOP](./release-update-sop.md), then [release workflow](./release-workflow.md) |
 | Close a long coding session | [session close SOP](./session-close-sop.md) |
 | Smoke Windows builds | [Windows checklist](./windows-build-checklist.md) |
 | Touch GenericAgent integration | [GA baseline](./ga-baseline.md) |
@@ -47,6 +47,8 @@ matches who you are and what you are trying to do.
   architecture principles.
 - [session close SOP](./session-close-sop.md): closeout checklist for long
   coding sessions.
+- [release / update SOP](./release-update-sop.md): maintainer checklist for
+  release day and updater channel promotion.
 - [refactor](./refactor/README.md): B-phase implementation playbooks,
   invariants, and execution cursor.
 - [devlog](./devlog/README.md): chronological decision history and rejected
