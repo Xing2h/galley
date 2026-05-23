@@ -30,6 +30,7 @@ matches who you are and what you are trying to do.
 | Smoke Windows builds | [Windows checklist](./windows-build-checklist.md) |
 | Touch GenericAgent integration | [GA baseline](./ga-baseline.md) |
 | Touch app packaging / runtime | [desktop runtime](./desktop-runtime.md) |
+| Touch managed / bundled GA runtime | [managed GA runtime](./managed-ga-runtime.md) |
 | Touch GUI or engineering workflow | [engineering workflow](./engineering-workflow.md) |
 | Touch visual design | [DESIGN.md](./DESIGN.md) |
 | Understand history or decisions | [devlog](./devlog/README.md) |
@@ -43,6 +44,9 @@ matches who you are and what you are trying to do.
   compact phase state.
 - [PRD](./PRD.md): product definition and roadmap.
 - [agent-api](./agent-api.md): stable CLI / socket contract for agents.
+- [managed GA runtime](./managed-ga-runtime.md): design target for Galley's
+  bundled GenericAgent runtime, mode boundaries, prompt composition, model
+  config, patch discipline, and state rules.
 - [architecture demo](./architecture-demo.md): code-level proof of the four
   architecture principles.
 - [session close SOP](./session-close-sop.md): closeout checklist for long

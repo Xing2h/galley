@@ -37,18 +37,24 @@ release gates, and compact phase state.
 
 Violating any rule below breaks the core project contract.
 
-### 1. Non-Invasive To GenericAgent
+### 1. GenericAgent Runtime Boundaries
 
-Galley must not modify GenericAgent state:
+Galley has two GenericAgent runtime modes:
 
-- Do not edit files under `~/Documents/GenericAgent`.
-- Do not write GenericAgent `memory/`.
-- Do not overwrite GA venv, PATH, or environment variables.
+- **Attach / external GA**: user-owned GenericAgent. Galley wraps it.
+- **Managed / bundled GA**: Galley-owned runtime. Galley ships and maintains it.
+
+For attach / external GA, Galley must not modify GenericAgent state:
+
+- Do not edit files under the user's GenericAgent checkout.
+- Do not write external GA `memory/`, SOP, skills, or other user state.
+- Do not overwrite external GA venv, PATH, or environment variables.
+- Do not inject Galley Persona or managed-runtime patches.
 - Do not monkey-patch `agent_runner_loop` or GA tool implementations.
 
-Allowed integration points:
+Allowed attach-mode integration points:
 
-- Start GA as a child process per session.
+- Start external GA as a child process per session.
 - Use GA public APIs such as `agent.list_llms()`.
 - Register `agent._turn_end_hooks`.
 - Subclass `GenericAgentHandler` only for approval interception.
@@ -61,6 +67,20 @@ is forbidden.
 Supervisor SOP is copy-first: Settings -> Agent provides "Copy SOP". Galley does
 not install SOP content into GA memory. Read
 [Supervisor SOP](./docs/integrations/galley-supervisor-sop.md).
+
+For managed / bundled GA, Galley may patch and configure only its own managed
+runtime, under the managed-runtime rules in
+[managed GA runtime](./docs/managed-ga-runtime.md):
+
+- Keep patches minimal, isolated, documented, and replayable on top of upstream.
+- Prefer explicit extension seams over broad edits.
+- Do not fork GenericAgent into a divergent product.
+- If upstream GA provides the same capability, remove the Galley patch.
+- Code is replaceable; user state is not. Runtime upgrades may replace managed
+  GA code, but must not overwrite managed GA memory, SOP, skills, or other
+  user state.
+- Managed-runtime changes must never write into or depend on a user-owned
+  external GA checkout.
 
 ### 2. Localhost Only
 
@@ -134,6 +154,7 @@ docs/     Product, architecture, workflow, and history
 | CLI / Agent API change | [agent-api](./docs/agent-api.md) |
 | Supervisor / Agent integration | [Supervisor SOP](./docs/integrations/galley-supervisor-sop.md) |
 | GenericAgent compatibility | [GA baseline](./docs/ga-baseline.md) |
+| Managed / bundled GA runtime | [managed GA runtime](./docs/managed-ga-runtime.md) |
 | Desktop packaging / runtime | [desktop runtime](./docs/desktop-runtime.md) |
 | Rust core refactor / B-phase work | [refactor README](./docs/refactor/README.md) |
 | Architecture invariant proof | [architecture demo](./docs/architecture-demo.md) |
