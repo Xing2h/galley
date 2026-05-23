@@ -23,7 +23,8 @@ pub mod status;
 pub use health::{HealthCheck, HealthReport, HealthStatus};
 pub use message::{MessageBrief, MessageId, MessageRole};
 pub use model::{
-    ManagedModelCredentialStatus, ManagedModelProtocol, ManagedModelRecord, SaveManagedModelInput,
+    ManagedModelConnectionResult, ManagedModelCredentialStatus, ManagedModelListResult,
+    ManagedModelProbeInput, ManagedModelProtocol, ManagedModelRecord, SaveManagedModelInput,
 };
 pub use origin::{Origin, OriginVia};
 pub use project::{CreateProjectInput, ProjectBrief, ProjectId, ProjectPatch};

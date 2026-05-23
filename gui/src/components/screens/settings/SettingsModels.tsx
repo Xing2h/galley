@@ -2,7 +2,9 @@ import {
   CheckCircle,
   CircleNotch,
   Key,
+  ListMagnifyingGlass,
   Plus,
+  PlugsConnected,
   Trash,
   WarningCircle,
 } from "@phosphor-icons/react";
@@ -13,9 +15,19 @@ import {
   SettingsSectionLabel,
 } from "@/components/screens/settings/settings-ui";
 import { Button, IconButton } from "@/components/ui/button";
+import {
+  listManagedModelOptions,
+  testManagedModelConnection,
+} from "@/lib/managed-models";
+import { cn } from "@/lib/utils";
 import { useManagedModelsStore } from "@/stores/managed-models";
 import type { ManagedModelProtocol } from "@/types/managed-models";
-import { cn } from "@/lib/utils";
+
+type ProbeState =
+  | { kind: "idle" }
+  | { kind: "loading"; action: "list" | "test" }
+  | { kind: "success"; message: string }
+  | { kind: "error"; message: string };
 
 export function SettingsModels() {
   const models = useManagedModelsStore((s) => s.models);
@@ -32,6 +44,8 @@ export function SettingsModels() {
   const [apiBase, setApiBase] = useState("");
   const [model, setModel] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [probeState, setProbeState] = useState<ProbeState>({ kind: "idle" });
 
   useEffect(() => {
     void load();
@@ -45,6 +59,18 @@ export function SettingsModels() {
       !saving,
     [apiBase, apiKey, model, saving],
   );
+  const canFetchModels =
+    apiKey.trim() !== "" &&
+    apiBase.trim() !== "" &&
+    probeState.kind !== "loading";
+  const canTest = canFetchModels && model.trim() !== "";
+
+  const probeInput = () => ({
+    protocol,
+    apiKey,
+    apiBase,
+    model,
+  });
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -60,6 +86,37 @@ export function SettingsModels() {
     setApiBase("");
     setModel("");
     setDisplayName("");
+    setModelOptions([]);
+    setProbeState({ kind: "idle" });
+  };
+
+  const handleFetchModels = async () => {
+    if (!canFetchModels) return;
+    setProbeState({ kind: "loading", action: "list" });
+    try {
+      const result = await listManagedModelOptions(probeInput());
+      setModelOptions(result.models);
+      setProbeState({
+        kind: "success",
+        message:
+          result.models.length > 0
+            ? `找到 ${result.models.length} 个模型`
+            : "连接成功，但没有返回模型列表",
+      });
+    } catch (e) {
+      setProbeState({ kind: "error", message: errorMessage(e) });
+    }
+  };
+
+  const handleTest = async () => {
+    if (!canTest) return;
+    setProbeState({ kind: "loading", action: "test" });
+    try {
+      const result = await testManagedModelConnection(probeInput());
+      setProbeState({ kind: "success", message: result.message });
+    } catch (e) {
+      setProbeState({ kind: "error", message: errorMessage(e) });
+    }
   };
 
   return (
@@ -115,6 +172,73 @@ export function SettingsModels() {
               protocol === "openai" ? "gpt-4.1" : "claude-sonnet-4-6"
             }
           />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="accent-secondary"
+              size="sm"
+              disabled={!canFetchModels}
+              onClick={() => void handleFetchModels()}
+              leadingIcon={
+                probeState.kind === "loading" &&
+                probeState.action === "list" ? (
+                  <span className="spin">
+                    <CircleNotch size={12} weight="thin" />
+                  </span>
+                ) : (
+                  <ListMagnifyingGlass size={12} weight="thin" />
+                )
+              }
+            >
+              自动获取模型列表
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!canTest}
+              onClick={() => void handleTest()}
+              leadingIcon={
+                probeState.kind === "loading" &&
+                probeState.action === "test" ? (
+                  <span className="spin">
+                    <CircleNotch size={12} weight="thin" />
+                  </span>
+                ) : (
+                  <PlugsConnected size={12} weight="thin" />
+                )
+              }
+            >
+              测试连接
+            </Button>
+          </div>
+
+          {modelOptions.length > 0 && (
+            <select
+              value={modelOptions.includes(model) ? model : ""}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full rounded-sm border border-line bg-surface px-3 py-2 font-mono text-[12.5px] text-ink outline-none transition-colors focus:border-brand focus:ring-[3px] focus:ring-brand/20"
+            >
+              <option value="">选择检测到的模型</option>
+              {modelOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {probeState.kind === "success" && (
+            <div className="flex items-center gap-1.5 rounded-sm border border-success/20 bg-success/[0.06] px-3 py-2 text-[12.5px] text-success">
+              <CheckCircle size={12} weight="fill" />
+              {probeState.message}
+            </div>
+          )}
+          {probeState.kind === "error" && (
+            <div className="flex items-center gap-1.5 rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2 text-[12.5px] text-error">
+              <WarningCircle size={12} weight="fill" />
+              {probeState.message}
+            </div>
+          )}
+
           <SettingsInput
             label="显示名"
             value={displayName}
@@ -281,4 +405,17 @@ function CredentialBadge({
 
 function protocolLabel(protocol: ManagedModelProtocol): string {
   return protocol === "openai" ? "OpenAI-compatible" : "Anthropic-compatible";
+}
+
+function errorMessage(e: unknown): string {
+  if (typeof e === "string") {
+    try {
+      const parsed = JSON.parse(e) as { message?: string };
+      return parsed.message ?? e;
+    } catch {
+      return e;
+    }
+  }
+  if (e instanceof Error) return e.message;
+  return "操作失败";
 }

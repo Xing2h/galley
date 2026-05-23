@@ -770,11 +770,13 @@ Current implementation slice:
 - API keys are saved through `keyring` into the OS credential store.
 - `managed-model-config/managed-models.json` is generated with `apiKeyRef`
   values, never real API keys.
-- Settings -> Models supports adding, listing, and deleting model entries.
+- Settings -> Models supports adding, listing, deleting, model-list fetch, and
+  connection testing.
+- First-run onboarding starts with "为 Galley 配置模型" and uses the same
+  connection-test + save path before entering the empty composer.
 
-Remaining M3 work before M4 onboarding can call this path:
+Remaining follow-up work:
 
-- Connection test / model list fetch.
 - Rename / edit existing model metadata without re-entering the key.
 - Actionable credential-missing error mapping for managed session start.
 

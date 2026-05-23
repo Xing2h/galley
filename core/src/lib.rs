@@ -6,6 +6,7 @@ pub mod discovery;
 pub mod error;
 pub mod ipc;
 pub mod managed_model_config;
+pub mod managed_model_probe;
 pub mod managed_runtime;
 pub mod migration_backup;
 pub mod path_install;
@@ -15,8 +16,9 @@ pub mod socket_listener;
 pub mod sop_install;
 
 use api::{
-    CreateProjectInput, CreateSessionInput, GalleyApi, Origin, ProjectBrief, ProjectId,
-    ProjectPatch, SaveManagedModelInput, SessionBrief, SessionFilter, SessionId,
+    CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelProbeInput, Origin,
+    ProjectBrief, ProjectId, ProjectPatch, SaveManagedModelInput, SessionBrief, SessionFilter,
+    SessionId,
 };
 use db::{
     MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
@@ -181,6 +183,24 @@ async fn delete_managed_model(
         .map_err(stringify_error)?;
     sync_managed_model_config(&app, &galley).await?;
     Ok(())
+}
+
+#[tauri::command]
+async fn list_managed_model_options(
+    input: ManagedModelProbeInput,
+) -> std::result::Result<api::ManagedModelListResult, String> {
+    managed_model_probe::list_models(input)
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn test_managed_model_connection(
+    input: ManagedModelProbeInput,
+) -> std::result::Result<api::ManagedModelConnectionResult, String> {
+    managed_model_probe::test_connection(input)
+        .await
+        .map_err(stringify_error)
 }
 
 async fn sync_managed_model_config(
@@ -713,6 +733,8 @@ pub fn run() {
             list_managed_models,
             save_managed_model,
             delete_managed_model,
+            list_managed_model_options,
+            test_managed_model_connection,
             list_sessions,
             // B3 M4a session writes
             create_session,

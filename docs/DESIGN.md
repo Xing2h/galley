@@ -621,22 +621,26 @@ Context Window / 价格 / token estimate（V0.1 拿不到 + 信息噪音）
 
 ---
 
-## 5. 流程：Onboarding（4 步多页 wizard）
+## 5. 流程：Onboarding
 
-形态：多页 wizard 而非单页 scroll —— 每步只关注一件事。气质 Linear / Raycast 的极简首次启动，不教学、不讲故事。
+默认路径是 managed / bundled GA：用户只需要配置模型，不需要理解 GA
+checkout、Python、venv、`mykey.py` 或依赖安装。Attach 已有 GA 是次级入口。
 
-### Step 0 — 欢迎页
+### Step 1 — 配置模型
 
-- 大标题 `Galley`（Newsreader medium 36px）
-- 衬线副标题（italic muted 18px）："GenericAgent 的本地 agent team 编排器"
-- 三件事简列（13px Inter，charcoal）：
-  - 多 session 并行
-  - 高风险动作审批
-  - 历史会话恢复
-- 主 CTA `开始`（charcoal 填充）
-- Footer muted 一行："不会修改你的 GA，删除 Galley 后 GA 独立可用"
+- 标题：`为 Galley 配置模型`
+- 副标题：`填入你的模型 API Key 和 Base URL。`
+- 字段：
+  - `模型服务` segmented control：`OpenAI-compatible` / `Anthropic-compatible`
+  - `模型密钥`
+  - `Base URL`
+  - `模型`
+- `自动获取模型列表`：API Key + Base URL 后可点；成功后显示 select。
+- 主 CTA：`测试并开始使用 Galley`；API Key / Base URL / 模型缺一不可，缺失时 disabled。
+- 次级链接：`接入已有的 GenericAgent`，进入 attach flow。
+- 成功后进入 Empty state composer，并 focus 输入框。
 
-### Step 1 — Attach GA
+### Attach Step — Existing GenericAgent
 
 - 路径输入框（mono / 预填 `~/Documents/GenericAgent` / 可改）
 - 文件夹选择器按钮（Phosphor `FolderOpen`）
@@ -647,7 +651,7 @@ Context Window / 价格 / token estimate（V0.1 拿不到 + 信息噪音）
 - 主 CTA `继续`（路径合法时启用）
 - 弱链接 muted 文案："还没装 GenericAgent？→ 在这里安装"（外链 GA GitHub）
 
-### Step 2 — Health Check
+### Attach Health Check
 
 跑 5 项检查，**全过才能继续**：
 
@@ -661,7 +665,7 @@ Context Window / 价格 / token estimate（V0.1 拿不到 + 信息噪音）
 
 UI：嵌入 Health Check Card（详见 §6.1），失败项必须 fix 才能继续，**不允许"以只读模式进入"**（Galley 没 LLM 什么都做不了）。
 
-### Step 3 — 进入主界面
+### 进入主界面
 
 本质是"Onboarding 消失"。用户被带到主界面，看到 Empty state hero composer。
 

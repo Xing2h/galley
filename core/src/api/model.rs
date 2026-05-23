@@ -43,3 +43,29 @@ pub struct SaveManagedModelInput {
     pub api_key: Option<String>,
     pub make_default: Option<bool>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedModelProbeInput {
+    pub id: Option<String>,
+    pub protocol: ManagedModelProtocol,
+    pub api_base: String,
+    pub api_key: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedModelListResult {
+    pub models: Vec<String>,
+    pub endpoint: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedModelConnectionResult {
+    pub ok: bool,
+    pub endpoint: String,
+    pub model_found: Option<bool>,
+    pub message: String,
+}

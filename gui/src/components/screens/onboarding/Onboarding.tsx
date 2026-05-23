@@ -6,7 +6,7 @@ import {
   type PathValidation,
 } from "@/components/screens/onboarding/StepAttach";
 import { StepHealth } from "@/components/screens/onboarding/StepHealth";
-import { StepWelcome } from "@/components/screens/onboarding/StepWelcome";
+import { StepModelConfig } from "@/components/screens/onboarding/StepModelConfig";
 import { TutorialModal } from "@/components/screens/onboarding/TutorialModal";
 import {
   runHealthChecks,
@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { usePrefsStore } from "@/stores/prefs";
 import type { HealthCheckItem } from "@/types/inspector";
 
-export type OnboardingStep = "welcome" | "attach" | "health";
+export type OnboardingStep = "model" | "attach" | "health";
 
 export interface OnboardingProps {
   /** Called when the user completes Step 2 successfully. The host
@@ -35,6 +35,8 @@ export interface OnboardingProps {
    * interpreter. Null when probe failed (the Continue button is
    * disabled in that case, so this is mostly a type-safety hatch). */
   onComplete: (gaPath: string, pythonAlias: string | null) => void;
+  /** Called when managed model setup succeeds. */
+  onManagedComplete?: () => void;
   /**
    * Flow mode. Default `"fresh"` is the first-launch path: Welcome →
    * Attach → Health → Main view. `"revisit"` is the Settings → "Re-run
@@ -59,8 +61,12 @@ export interface OnboardingProps {
   initialPath?: string;
 }
 
-const STEP_LABELS: { key: OnboardingStep | "done"; label: string }[] = [
-  { key: "welcome", label: "欢迎" },
+const MANAGED_STEP_LABELS: { key: OnboardingStep | "done"; label: string }[] = [
+  { key: "model", label: "模型" },
+  { key: "done", label: "完成" },
+];
+
+const ATTACH_STEP_LABELS: { key: OnboardingStep | "done"; label: string }[] = [
   { key: "attach", label: "接入 GA" },
   { key: "health", label: "Health Check" },
   { key: "done", label: "完成" },
@@ -81,6 +87,7 @@ const STEP_LABELS: { key: OnboardingStep | "done"; label: string }[] = [
  */
 export function Onboarding({
   onComplete,
+  onManagedComplete,
   mode = "fresh",
   onCancel,
   initialPath,
@@ -91,7 +98,7 @@ export function Onboarding({
   // in this mode — the StepProgress dots still render the full chain for
   // visual continuity, but step state can't backtrack past health.
   const [step, setStep] = useState<OnboardingStep>(
-    isRevisit ? "health" : "welcome",
+    isRevisit ? "health" : "model",
   );
   const [path, setPath] = useState(initialPath ?? EXAMPLE_GA_PATH);
   const [validation, setValidation] = useState<PathValidation>(null);
@@ -239,6 +246,10 @@ export function Onboarding({
     onComplete(path, probedPython);
   };
 
+  const handleManagedComplete = () => {
+    onManagedComplete?.();
+  };
+
   return (
     // Outer container is a Tauri drag region so the user can move the
     // window by dragging the empty padding around the content (Onboarding
@@ -256,8 +267,11 @@ export function Onboarding({
         <StepProgress step={step} />
 
         <div className="mt-10">
-          {step === "welcome" && (
-            <StepWelcome onStart={() => setStep("attach")} />
+          {step === "model" && (
+            <StepModelConfig
+              onComplete={handleManagedComplete}
+              onAttachExisting={() => setStep("attach")}
+            />
           )}
           {step === "attach" && (
             <StepAttach
@@ -269,7 +283,7 @@ export function Onboarding({
                   if (picked) setPath(picked);
                 });
               }}
-              onBack={() => setStep("welcome")}
+              onBack={() => setStep("model")}
               onContinue={handleContinueAttach}
               onShowTutorial={handleShowTutorial}
             />
@@ -311,17 +325,18 @@ function isTutorialId(s: string): s is TutorialId {
 // ---------------- Progress dots ----------------
 
 function StepProgress({ step }: { step: OnboardingStep }) {
+  const labels = step === "model" ? MANAGED_STEP_LABELS : ATTACH_STEP_LABELS;
   const stepIndex: Record<OnboardingStep | "done", number> = {
-    welcome: 0,
-    attach: 1,
-    health: 2,
-    done: 3,
+    model: 0,
+    attach: 0,
+    health: 1,
+    done: step === "model" ? 1 : 2,
   };
   const current = stepIndex[step];
 
   return (
     <div className="flex items-center gap-2.5">
-      {STEP_LABELS.map((s, i) => {
+      {labels.map((s, i) => {
         const done = i < current;
         const active = i === current;
         return (
@@ -347,7 +362,7 @@ function StepProgress({ step }: { step: OnboardingStep }) {
                 {s.label}
               </span>
             </div>
-            {i < STEP_LABELS.length - 1 && (
+            {i < labels.length - 1 && (
               <span className="h-px w-[60px] bg-line" aria-hidden />
             )}
           </div>

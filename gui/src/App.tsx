@@ -26,6 +26,7 @@ import {
   EMPTY_TURNS,
   useMessagesStore,
 } from "@/stores/messages";
+import { useManagedModelsStore } from "@/stores/managed-models";
 import { usePrefsStore } from "@/stores/prefs";
 import { useRuntimeStore } from "@/stores/runtime";
 import { useSessionsStore } from "@/stores/sessions";
@@ -172,6 +173,11 @@ function App() {
   const shutdownBridge = useRuntimeStore((s) => s.shutdownBridge);
   const setGAConfig = usePrefsStore((s) => s.setGAConfig);
   const gaConfig = usePrefsStore((s) => s.gaConfig);
+  const activeRuntimeKind = usePrefsStore((s) => s.activeRuntimeKind);
+  const managedModels = useManagedModelsStore((s) => s.models);
+  const hasUsableManagedModel = managedModels.some(
+    (model) => model.credentialStatus === "present",
+  );
   // Sidebar runtime indicator. Two states for V0.1 — see Sidebar.tsx
   // `RuntimeStatus` type for the rationale. The previous indicator
   // was a stub: defaulted to "healthy" and never wired up to a real
@@ -179,7 +185,11 @@ function App() {
   // (which onboarding gates on, so post-onboarding this should
   // almost always be "ready").
   const runtimeStatus: "ready" | "unconfigured" =
-    gaConfig.gaPath.trim() !== "" && gaConfig.python.trim() !== ""
+    activeRuntimeKind === "managed"
+      ? hasUsableManagedModel
+        ? "ready"
+        : "unconfigured"
+      : gaConfig.gaPath.trim() !== "" && gaConfig.python.trim() !== ""
       ? "ready"
       : "unconfigured";
 
@@ -699,6 +709,10 @@ function App() {
             } else {
               setScreen("empty");
             }
+          }}
+          onManagedComplete={() => {
+            setScreen("empty");
+            setEmptyComposerFocusTick((tick) => tick + 1);
           }}
           onCancel={() => {
             // Revisit-only escape hatch. setGAConfig is intentionally

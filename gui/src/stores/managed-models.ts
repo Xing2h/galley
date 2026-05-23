@@ -18,7 +18,7 @@ interface ManagedModelsState {
 }
 
 interface ManagedModelsActions {
-  load: () => Promise<void>;
+  load: () => Promise<ManagedModelRecord[]>;
   save: (input: SaveManagedModelInput) => Promise<void>;
   delete: (id: string) => Promise<void>;
   clearError: () => void;
@@ -37,8 +37,10 @@ export const useManagedModelsStore = create<ManagedModelsStore>((set) => ({
     try {
       const models = await listManagedModels();
       set({ models, loading: false });
+      return models;
     } catch (e) {
       set({ loading: false, error: errorMessage(e) });
+      return [];
     }
   },
 

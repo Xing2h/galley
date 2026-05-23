@@ -12,16 +12,17 @@
  *      the sidebar can show the current runtime's sessions only.
  *   3. Managed runtime layout ensure (creates state dirs if missing and
  *      records diagnostics for Settings).
- *   4. sessionsStore.hydrate (sessions + projects via Rust Core).
- *   5. SQLite housekeeping + FTS backfill in the background.
+ *   4. Managed model records hydrate (needed for managed-mode routing).
+ *   5. sessionsStore.hydrate (sessions + projects via Rust Core).
+ *   6. SQLite housekeeping + FTS backfill in the background.
  *      Best-effort — never blocks first paint.
- *   6. Cached LLM seed → runtimeStore (short-term hint so cold-start
+ *   7. Cached LLM seed → runtimeStore (short-term hint so cold-start
  *      cosmetics show the user's real GA-configured models instead
  *      of the demo placeholders before any bridge has spawned).
- *   7. Branch on hasGAConfig:
- *      - false → route to Onboarding, skip warmup (no GA path yet)
- *      - true  → fire warmup bridge to refresh the LLM list against
- *                the current mykey.py
+ *   8. Branch on active runtime config:
+ *      - managed with no usable model → route to Onboarding
+ *      - external with no GA path     → route to Onboarding
+ *      - external configured          → warmup bridge against mykey.py
  *
  * This is a pure-function module, not a store. It has no own state —
  * it orchestrates side effects across stores. Tests can drive each
@@ -38,6 +39,7 @@ import {
   getPref,
 } from "@/lib/db";
 import { useAppUpdateStore } from "@/stores/app-update";
+import { useManagedModelsStore } from "@/stores/managed-models";
 import { usePrefsStore } from "@/stores/prefs";
 import type { LLMOption } from "@/stores/runtime";
 import { useRuntimeStore } from "@/stores/runtime";
@@ -75,7 +77,14 @@ export async function hydrateApp(): Promise<void> {
     console.warn("[hydrate] managed runtime layout init failed.", e);
   }
 
-  // 4. Startup-critical state: sessions/projects. Route through Rust
+  // 4. Managed models. A managed install is configured when at least
+  // one model has a credential in the system store.
+  const managedModels = await useManagedModelsStore.getState().load();
+  const hasUsableManagedModel = managedModels.some(
+    (model) => model.credentialStatus === "present",
+  );
+
+  // 5. Startup-critical state: sessions/projects. Route through Rust
   // Core so a slow direct-SQL housekeeping pass cannot leave the
   // sidebar blank on Dev hot restarts.
   await useSessionsStore.getState().hydrate();
@@ -86,11 +95,11 @@ export async function hydrateApp(): Promise<void> {
     .getState()
     .check({ silent: true, downloadIfAvailable: true });
 
-  // 5. Non-critical SQLite housekeeping + FTS backfill. Fire-and-forget:
+  // 6. Non-critical SQLite housekeeping + FTS backfill. Fire-and-forget:
   // these are nice cleanup/indexing tasks, not requirements for first paint.
   void runSqlHousekeeping();
 
-  // 6. Restore cached LLM list (written by replaceLLMs whenever a
+  // 7. Restore cached LLM list (written by replaceLLMs whenever a
   // bridge's `ready` event arrives). Lets cold-start cosmetics show
   // the user's real GA-configured models instead of DEFAULT_LLMS
   // before any bridge has spawned in this session. Lives outside
@@ -105,13 +114,17 @@ export async function hydrateApp(): Promise<void> {
     console.warn("[hydrate] llm_list pref load failed.", e);
   }
 
-  // 7. Branch on hasGAConfig: fresh-install users go to Onboarding,
-  // returning users get a warmup bridge to refresh the LLM list.
-  if (!hasGAConfig) {
+  // 8. Branch on active runtime config.
+  const activeRuntimeKind = usePrefsStore.getState().activeRuntimeKind;
+  const needsOnboarding =
+    activeRuntimeKind === "managed" ? !hasUsableManagedModel : !hasGAConfig;
+  if (needsOnboarding) {
     useUiStore.getState().setScreen("onboarding");
     return;
   }
-  void useRuntimeStore.getState().warmupLLMList();
+  if (activeRuntimeKind === "external") {
+    void useRuntimeStore.getState().warmupLLMList();
+  }
 }
 
 async function runSqlHousekeeping(): Promise<void> {
