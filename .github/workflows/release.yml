@@ -228,6 +228,10 @@ jobs:
       - name: Managed GA payload gate
         run: node scripts/check-managed-ga-payload.mjs
 
+      - name: Prepare CLI sidecar
+        shell: bash
+        run: ./scripts/prepare-cli-sidecar.sh --target ${{ matrix.target }}
+
       - name: Cargo check
         working-directory: ./core
         run: cargo check --target ${{ matrix.target }}
@@ -239,7 +243,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           GALLEY_UPDATER_PUBKEY: ${{ vars.GALLEY_UPDATER_PUBKEY }}
           GALLEY_UPDATER_ENDPOINT: ${{ vars.GALLEY_UPDATER_ENDPOINT }}
+          TAURI_ENV_TARGET_TRIPLE: ${{ matrix.target }}
         run: pnpm tauri build --target ${{ matrix.target }} --config tauri.updater.generated.conf.json
+
+      - name: Managed GA app bundle gate
+        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
+        run: node scripts/check-managed-ga-app-bundle.mjs core/target/${{ matrix.target }}/release/bundle/macos/Galley.app
 
       # Tauri's bundler names artifacts `Galley_<version>_<arch>.<ext>`
       # with no `artifactName` config to customize. Post-build, insert

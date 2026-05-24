@@ -79,8 +79,8 @@ pub enum PathInstallOutcome {
     /// any error banner.
     UserCancelled,
     /// CLI binary isn't where we expected (dev build with the CLI not
-    /// yet built; future production app without externalBin bundling).
-    /// Without an absolute source path we can't symlink.
+    /// yet built, or an incomplete production package). Without an
+    /// absolute source path we can't symlink.
     CliBinaryNotFound { searched: String },
     /// Anything else: osascript spawn failed, exit code non-zero with
     /// a non-cancel message, etc. `reason` is a short summary for the

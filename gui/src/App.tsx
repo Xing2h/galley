@@ -200,8 +200,8 @@ function App() {
     activeRuntimeKind === "managed"
       ? "在 Settings -> Models 调整 Galley 模型"
       : "修改 mykey.py 后重启 Galley 生效";
-  const hasUsableManagedModel = managedModels.some(
-    (model) => model.credentialStatus === "present",
+  const hasConfiguredManagedModel = managedModels.some(
+    (model) => model.credentialStatus !== "missing",
   );
   // Sidebar runtime indicator. Two states for V0.1 — see Sidebar.tsx
   // `RuntimeStatus` type for the rationale. The previous indicator
@@ -211,7 +211,7 @@ function App() {
   // almost always be "ready").
   const runtimeStatus: "ready" | "unconfigured" =
     activeRuntimeKind === "managed"
-      ? hasUsableManagedModel
+      ? hasConfiguredManagedModel
         ? "ready"
         : "unconfigured"
       : gaConfig.gaPath.trim() !== "" && gaConfig.python.trim() !== ""
@@ -1144,7 +1144,7 @@ function App() {
         projectCount={projects.length}
         hasRunningSessions={hasRunningSessions}
         activeRuntimeKind={activeRuntimeKind}
-        hasManagedRuntimeConfigured={hasUsableManagedModel}
+        hasManagedRuntimeConfigured={hasConfiguredManagedModel}
         hasExternalRuntimeConfigured={gaConfig.gaPath.trim() !== ""}
         yoloMode={yoloMode}
         useExternalPython={gaConfig.useExternalPython}

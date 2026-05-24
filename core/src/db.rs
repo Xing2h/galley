@@ -31,7 +31,6 @@ use crate::api::{
     ProjectPatch, RuntimeKind, SearchHit, SearchScope, SessionBrief, SessionFilter, SessionId,
     SessionStatus, StatusSummary,
 };
-use crate::credential_store;
 use crate::error::{GalleyError, Result};
 use crate::managed_runtime;
 
@@ -930,18 +929,13 @@ struct ManagedModelProviderRow {
 
 impl ManagedModelProviderRow {
     fn into_record(self) -> Result<ManagedModelProviderRecord> {
-        let credential_status = if credential_store::has_secret(&self.api_key_ref) {
-            ManagedModelCredentialStatus::Present
-        } else {
-            ManagedModelCredentialStatus::Missing
-        };
         Ok(ManagedModelProviderRecord {
             id: self.id,
             display_name: self.display_name,
             protocol: parse_managed_model_protocol(&self.protocol)?,
             api_base: self.api_base,
             api_key_ref: self.api_key_ref,
-            credential_status,
+            credential_status: ManagedModelCredentialStatus::Unknown,
             created_at: self.created_at,
             updated_at: self.updated_at,
         })
@@ -971,11 +965,6 @@ impl ManagedModelRow {
             .map_err(|e| GalleyError::Internal {
                 message: format!("managed model advanced_options JSON invalid: {e}"),
             })?;
-        let credential_status = if credential_store::has_secret(&self.api_key_ref) {
-            ManagedModelCredentialStatus::Present
-        } else {
-            ManagedModelCredentialStatus::Missing
-        };
         Ok(ManagedModelRecord {
             id: self.id,
             provider_id: self.provider_id,
@@ -987,7 +976,7 @@ impl ManagedModelRow {
             api_key_ref: self.api_key_ref,
             advanced_options,
             is_default: self.is_default != 0,
-            credential_status,
+            credential_status: ManagedModelCredentialStatus::Unknown,
             last_validated_at: self.last_validated_at,
             created_at: self.created_at,
             updated_at: self.updated_at,

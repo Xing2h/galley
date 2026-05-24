@@ -20,7 +20,7 @@
  *      cosmetics show the user's real GA-configured models instead
  *      of the demo placeholders before any bridge has spawned).
  *   8. Branch on active runtime config:
- *      - managed with no usable model → route to Onboarding
+ *      - managed with no configured model → route to Onboarding
  *      - external with no GA path     → route to Onboarding
  *      - external configured          → warmup bridge against mykey.py
  *
@@ -77,12 +77,11 @@ export async function hydrateApp(): Promise<void> {
     console.warn("[hydrate] managed runtime layout init failed.", e);
   }
 
-  // 4. Managed models. A managed install is configured when at least
-  // one model has a credential in the system store.
+  // 4. Managed models. Startup deliberately does not read Keychain:
+  // a managed install is configured when it has model metadata. Secret
+  // reads happen only on user-initiated test / send paths.
   const managedConfig = await useManagedModelsStore.getState().load();
-  const hasUsableManagedModel = managedConfig.models.some(
-    (model) => model.credentialStatus === "present",
-  );
+  const hasConfiguredManagedModel = managedConfig.models.length > 0;
 
   // 5. Startup-critical state: sessions/projects. Route through Rust
   // Core so a slow direct-SQL housekeeping pass cannot leave the
@@ -117,7 +116,7 @@ export async function hydrateApp(): Promise<void> {
   // 8. Branch on active runtime config.
   const activeRuntimeKind = usePrefsStore.getState().activeRuntimeKind;
   const needsOnboarding =
-    activeRuntimeKind === "managed" ? !hasUsableManagedModel : !hasGAConfig;
+    activeRuntimeKind === "managed" ? !hasConfiguredManagedModel : !hasGAConfig;
   if (needsOnboarding) {
     useUiStore.getState().setScreen("onboarding");
     return;

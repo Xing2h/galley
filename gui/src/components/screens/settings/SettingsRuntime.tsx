@@ -322,9 +322,6 @@ function ManagedRuntimeCard({
   const activeRuntimeKind = usePrefsStore((s) => s.activeRuntimeKind);
   const models = useManagedModelsStore((s) => s.models);
   const upstreamShort = diagnostics?.upstreamCommit.slice(0, 7) ?? "未加载";
-  const credentialCount = models.filter(
-    (m) => m.credentialStatus === "present",
-  ).length;
   const defaultModel = models.find((m) => m.isDefault) ?? models[0];
   const promptStatus = diagnostics
     ? diagnostics.code.runtimePromptExists && diagnostics.code.personaPromptExists
@@ -334,7 +331,7 @@ function ManagedRuntimeCard({
   const modelStatus =
     models.length === 0
       ? "未配置"
-      : `${credentialCount}/${models.length} 有凭据${
+      : `${models.length} 个模型 · 密钥按需读取${
           defaultModel ? ` · ${defaultModel.displayName}` : ""
         }`;
   return (

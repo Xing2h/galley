@@ -452,6 +452,12 @@ should contain only non-secret metadata and a key reference. At session start,
 Galley resolves the key reference from the system credential store and injects
 the secret into the managed runtime in memory.
 
+Galley must not read the system credential store during cold start, sidebar
+rendering, Settings list rendering, or passive diagnostics. Those paths show
+saved model metadata only. Secret reads are lazy and user-initiated: connection
+tests, model-list fetches, saving a new key, deleting a Provider secret, and
+starting a managed session.
+
 Recommended managed records:
 
 ```text
@@ -807,9 +813,11 @@ Current implementation slice:
 - `managed_models` stores model metadata only.
 - API keys are saved through `keyring` into the OS credential store.
 - The `keyring` dependency must enable native platform backends; otherwise it
-  falls back to an in-memory mock store and saved keys appear missing after
-  refresh. Galley verifies every key write by reading it back before saving the
-  model metadata.
+  falls back to an in-memory mock store and session start will ask the user to
+  re-enter the key.
+- Passive model/provider list APIs return credential status `unknown` rather
+  than probing secure storage. This avoids macOS Keychain prompts on ordinary
+  app startup.
 - `managed-model-config/managed-models.json` is generated with `apiKeyRef`
   values, never real API keys.
 - Settings -> Models supports adding, listing, deleting, model-list fetch, and
@@ -818,10 +826,6 @@ Current implementation slice:
   connection-test + save path before entering the empty composer.
 - Managed model spawn failures surface actionable GUI copy that sends the user
   to Settings -> Models instead of exposing GA `mykey.py` language.
-
-Remaining follow-up work:
-
-- Rename / edit existing model metadata without re-entering the key.
 
 Acceptance:
 
@@ -1021,7 +1025,7 @@ Scope:
 - Exclude API keys from ordinary backup.
 - Verify code-only managed GA upgrade behavior.
 - Add advanced diagnostics for runtime mode, code version, patch stack, state
-  location, model config status, and credential presence.
+  location, and generated model config status.
 - Add attach-mode preservation tests and managed-mode smoke tests.
 
 Acceptance:
@@ -1048,7 +1052,7 @@ Current implementation slice:
   app-data backup.
 - Settings -> Runtime -> Advanced Diagnostics now shows active runtime mode,
   managed GA baseline, patch stack, code/prompt readiness, state path,
-  managed model credential presence, and generated non-secret config presence.
+  configured managed model metadata, and generated non-secret config presence.
 - Diagnostics never display plaintext API keys.
 - Rust release-gate tests verify that managed runtime layout preserves existing
   state files and that the shipped `managed-ga/code` payload excludes
@@ -1069,6 +1073,9 @@ Scope:
 
 - Verify `core/tauri.conf.json` bundles `../managed-ga` as app resource
   `managed-ga`.
+- Verify `core/tauri.conf.json` bundles the Galley CLI as a Tauri
+  `externalBin`, so packaged GUI startup can write the Supervisor discovery
+  file and Agent / Supervisor users get the same CLI path as the GUI runtime.
 - Verify `managed-ga/manifest.json` pins an upstream commit and lists the
   replayable patch stack.
 - Verify required runtime files exist:
@@ -1095,9 +1102,18 @@ Scope:
 Acceptance:
 
 - Local release-prep can run `node scripts/check-managed-ga-payload.mjs`.
+- Local package-prep can run
+  `node scripts/check-managed-ga-app-bundle.mjs <Galley.app>`.
 - `check.yml` runs the managed GA payload gate on macOS and Windows.
 - `release.yml` runs the same gate before `tauri build`, so bad payloads fail
   before artifacts are uploaded.
+- `release.yml` prepares the CLI sidecar before Cargo / Tauri validation and
+  runs the app-bundle gate on macOS artifacts before upload.
+- The packaged `.app` contains:
+  - `Contents/MacOS/galley`
+  - `Contents/Resources/runner/`
+  - `Contents/Resources/python/`
+  - `Contents/Resources/managed-ga/`
 - The gate does not inspect or require API keys.
 - The gate is structural; it does not replace real managed-mode dogfood.
 
@@ -1113,10 +1129,15 @@ Current implementation slice:
 - `scripts/check-managed-ga-payload.mjs` parses `tauri.conf.json` and
   `managed-ga/manifest.json`, verifies required files and patch entries, and
   recursively rejects generated / local / secret / user-state artifacts.
+- `scripts/prepare-cli-sidecar.sh` builds `galley-cli` for the target triple
+  and places it at the Tauri `externalBin` source path.
+- `scripts/check-managed-ga-app-bundle.mjs` inspects the finished macOS
+  `.app`, including the CLI sibling and managed runtime resources.
 - `.github/workflows/check.yml` runs the payload gate after frontend lint and
-  before Cargo validation.
+  prepares the CLI sidecar before Cargo validation.
 - `.github/workflows/release.yml` runs the payload gate after bundled Python is
-  prepared and before `tauri build`.
+  prepared, prepares the CLI sidecar before `tauri build`, and runs the
+  app-bundle gate on macOS artifacts after packaging.
 
 ### Milestone Dependencies
 

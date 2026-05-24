@@ -24,14 +24,6 @@ pub fn set_secret(api_key_ref: &str, secret: &str) -> Result<()> {
         .map_err(|e| GalleyError::Internal {
             message: format!("credential store write failed for {api_key_ref}: {e}"),
         })?;
-    let saved = get_secret(api_key_ref).map_err(|e| GalleyError::Internal {
-        message: format!("credential store verification failed for {api_key_ref}: {e}"),
-    })?;
-    if saved != secret {
-        return Err(GalleyError::Internal {
-            message: format!("credential store verification mismatch for {api_key_ref}"),
-        });
-    }
     Ok(())
 }
 
@@ -40,10 +32,6 @@ pub fn get_secret(api_key_ref: &str) -> Result<String> {
     entry.get_password().map_err(|e| GalleyError::InvalidArgs {
         message: format!("credential missing or unavailable for {api_key_ref}: {e}"),
     })
-}
-
-pub fn has_secret(api_key_ref: &str) -> bool {
-    get_secret(api_key_ref).is_ok()
 }
 
 pub fn delete_secret(api_key_ref: &str) -> Result<()> {

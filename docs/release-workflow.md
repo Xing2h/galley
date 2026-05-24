@@ -61,6 +61,7 @@ Semver 0.x.y，pre-1.0 阶段：
 - [ ] `main` 分支 CI 全绿（`check.yml` 三平台通过）
 - [ ] 本地 `pnpm typecheck` / `pnpm lint` / `cargo check` 干净
 - [ ] 本地 `pnpm tauri dev` smoke 跑通核心流程（新对话 / multi-step / 审批 / 切 LLM）
+- [ ] 如果包含 managed GA runtime 变更：`node scripts/check-managed-ga-payload.mjs` 通过；本地成品包用 `node scripts/check-managed-ga-app-bundle.mjs <Galley.app>` 通过
 - [ ] 如果包含 GA baseline 升级：[baseline upgrade workflow](./ga-baseline.md#upgrade-procedure) 走完、devlog 写好
 
 ### 2. 文档完备

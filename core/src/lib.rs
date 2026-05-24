@@ -135,14 +135,16 @@ async fn save_managed_model_provider(
         .filter(|s| !s.is_empty())
         .map(ToOwned::to_owned)
         .unwrap_or_else(new_managed_provider_id);
-    let api_key_ref = galley
+    let existing_api_key_ref = galley
         .list_managed_model_providers()
         .await
         .map_err(stringify_error)?
         .into_iter()
         .find(|provider| provider.id == id)
-        .map(|provider| provider.api_key_ref)
-        .unwrap_or_else(|| credential_store::managed_provider_api_key_ref(&id));
+        .map(|provider| provider.api_key_ref);
+    let is_existing_provider = existing_api_key_ref.is_some();
+    let api_key_ref =
+        existing_api_key_ref.unwrap_or_else(|| credential_store::managed_provider_api_key_ref(&id));
     let api_key = input
         .api_key
         .as_deref()
@@ -150,7 +152,7 @@ async fn save_managed_model_provider(
         .filter(|s| !s.is_empty());
     if let Some(api_key) = api_key {
         credential_store::set_secret(&api_key_ref, api_key).map_err(stringify_error)?;
-    } else if !credential_store::has_secret(&api_key_ref) {
+    } else if !is_existing_provider {
         return Err(stringify_error(error::GalleyError::InvalidArgs {
             message: "managed provider API key is required".into(),
         }));
@@ -971,7 +973,7 @@ pub fn run() {
                     }
                     DiscoveryOutcome::CliBinaryNotFound { searched } => {
                         eprintln!(
-                            "[discovery] CLI binary not found at {} — supervisor SOPs will fail discovery until the galley binary is built / bundled alongside Galley Core (M3 follow-up: Tauri externalBin config)",
+                            "[discovery] CLI binary not found at {} — supervisor SOPs will fail discovery; package or dev build is missing the galley CLI sibling",
                             searched.display()
                         );
                     }

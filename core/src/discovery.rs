@@ -59,9 +59,8 @@ const FILENAME: &str = "cli-path";
 const APP_SUBDIR: &str = "galley";
 
 /// The binary name to look for next to Galley Core's `current_exe`.
-/// In dev: `target/debug/galley`. In a future bundled .app:
-/// `Galley.app/Contents/MacOS/galley` (requires Tauri `externalBin`
-/// config — not yet shipped at v0.2 alpha; tracked as M3 follow-up).
+/// In dev: `target/debug/galley`. In a bundled .app:
+/// `Galley.app/Contents/MacOS/galley`.
 #[cfg(not(target_os = "windows"))]
 const CLI_BIN_NAME: &str = "galley";
 #[cfg(target_os = "windows")]
@@ -79,7 +78,7 @@ pub enum DiscoveryOutcome {
     NoOp { path: PathBuf },
     /// Couldn't find the CLI binary next to `current_exe`. Most likely
     /// a dev build where `cargo build -p galley-cli` hasn't run yet,
-    /// or a not-yet-bundled production app. The setup hook surfaces
+    /// or an incomplete production package. The setup hook surfaces
     /// this as a warning so the user knows SOPs will fail discovery.
     CliBinaryNotFound { searched: PathBuf },
     /// Couldn't resolve the platform config dir (e.g. `HOME` unset on
@@ -98,11 +97,10 @@ pub enum DiscoveryOutcome {
 /// binary path (`galley-core` in dev, `Galley` in production after the
 /// productName rename). The CLI is a sibling in both layouts:
 ///   - dev: `target/debug/{galley-core, galley}`
-///   - bundled (future): `Galley.app/Contents/MacOS/{Galley, galley}`
+///   - bundled: `Galley.app/Contents/MacOS/{Galley, galley}`
 ///
-/// Until externalBin bundling lands, production .app won't have the
-/// sibling — we surface that as `CliBinaryNotFound` so the dogfood log
-/// flags it clearly.
+/// If a package is missing the sibling, we surface that as
+/// `CliBinaryNotFound` so the dogfood log flags it clearly.
 ///
 /// Public so the path-install module (M3 T3.3) can reuse the same
 /// resolution — both features need to know the same answer.

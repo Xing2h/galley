@@ -4,16 +4,16 @@ import type { ManagedModelRecord } from "@/types/managed-models";
 /**
  * Build the Composer/Palette model list for Galley-managed runtime.
  *
- * Indexes intentionally match Rust's managed spawn config: both paths keep
- * only models whose credential is present, in the DB order returned by
- * list_managed_models(). That keeps `--llm-no` stable for a single spawn.
+ * Startup and ordinary list paths must not read Keychain. A model is therefore
+ * shown unless a user-initiated secret read has explicitly marked it missing.
+ * Rust still filters by real credential availability at spawn time.
  */
 export function managedModelsToLLMs(
   models: ManagedModelRecord[],
   currentIndex?: number,
 ): LLMOption[] {
   const usableModels = models.filter(
-    (model) => model.credentialStatus === "present",
+    (model) => model.credentialStatus !== "missing",
   );
   if (usableModels.length === 0) return [];
 

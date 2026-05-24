@@ -10,8 +10,12 @@ pub enum ManagedModelProtocol {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ManagedModelCredentialStatus {
+    /// A user-initiated secret read succeeded in this process.
     Present,
+    /// A user-initiated secret read failed and the user should re-save the key.
     Missing,
+    /// The record has a stored key reference, but Galley has not read the
+    /// system credential store on this passive list path.
     Unknown,
 }
 

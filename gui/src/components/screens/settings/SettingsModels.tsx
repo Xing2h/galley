@@ -78,9 +78,11 @@ export function SettingsModels() {
     ? providers.find((item) => item.id === providerId)
     : undefined;
   const providerHasSavedKey =
-    editingProvider?.credentialStatus === "present";
+    !!editingProvider && editingProvider.credentialStatus !== "missing";
   const selectedProviderHasSavedKey =
-    selectedProvider?.credentialStatus === "present";
+    !!selectedProvider && selectedProvider.credentialStatus !== "missing";
+  const selectedProviderNeedsKey =
+    selectedProvider?.credentialStatus === "missing";
   const editingModel = modelId
     ? models.find((item) => item.id === modelId)
     : undefined;
@@ -373,8 +375,8 @@ export function SettingsModels() {
             </select>
           </div>
 
-          {selectedProvider && !selectedProviderHasSavedKey && (
-            <ErrorLine message="这个 Provider 缺少 Key，先编辑 Provider。" />
+          {selectedProviderNeedsKey && (
+            <ErrorLine message="这个 Provider 的密钥需要重新保存，先编辑 Provider。" />
           )}
 
           <SettingsInput
@@ -695,6 +697,14 @@ function CredentialBadge({
     return (
       <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-success/10 px-1.5 py-px text-[10.5px] text-success">
         <CheckCircle size={10} weight="fill" />
+        Key 已验证
+      </span>
+    );
+  }
+  if (status === "unknown") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-ink-muted/10 px-1.5 py-px text-[10.5px] text-ink-muted">
+        <Key size={10} weight="fill" />
         Key 已保存
       </span>
     );
@@ -702,7 +712,7 @@ function CredentialBadge({
   return (
     <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-warning/10 px-1.5 py-px text-[10.5px] text-warning">
       <WarningCircle size={10} weight="fill" />
-      Key 缺失
+      需要重新保存 Key
     </span>
   );
 }

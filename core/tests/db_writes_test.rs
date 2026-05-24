@@ -112,7 +112,7 @@ async fn managed_model_metadata_never_requires_plaintext_key_in_db() {
     assert_eq!(provider.api_key_ref, "managed-provider:mp_test");
     assert!(matches!(
         provider.credential_status,
-        ManagedModelCredentialStatus::Missing
+        ManagedModelCredentialStatus::Unknown
     ));
 
     let row = galley
@@ -134,7 +134,7 @@ async fn managed_model_metadata_never_requires_plaintext_key_in_db() {
     assert_eq!(row.api_key_ref, "managed-provider:mp_test");
     assert!(matches!(
         row.credential_status,
-        ManagedModelCredentialStatus::Missing
+        ManagedModelCredentialStatus::Unknown
     ));
     assert!(row.is_default);
 

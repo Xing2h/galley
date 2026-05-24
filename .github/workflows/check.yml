@@ -93,6 +93,10 @@ jobs:
         shell: bash
         run: mkdir -p core/python-bundle/python
 
+      - name: Prepare CLI sidecar (for cargo check)
+        shell: bash
+        run: ./scripts/prepare-cli-sidecar.sh --profile debug --target ${{ matrix.target }}
+
       - name: Cargo check
         working-directory: ./core
         run: cargo check --target ${{ matrix.target }}

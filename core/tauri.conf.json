@@ -4,9 +4,9 @@
   "version": "0.2.0-beta.1",
   "identifier": "app.galley",
   "build": {
-    "beforeDevCommand": "cargo build --manifest-path core/Cargo.toml -p galley-cli && pnpm --dir gui dev",
+    "beforeDevCommand": "./scripts/prepare-cli-sidecar.sh --profile debug && pnpm --dir gui dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm --dir gui build",
+    "beforeBuildCommand": "./scripts/prepare-cli-sidecar.sh && pnpm --dir gui build",
     "frontendDist": "../gui/dist"
   },
   "app": {
@@ -46,6 +46,7 @@
       "../managed-ga": "managed-ga",
       "python-bundle/python": "python"
     },
+    "externalBin": ["target/tauri-sidecars/galley"],
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
