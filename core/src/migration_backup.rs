@@ -401,6 +401,19 @@ mod tests {
         fs::write(data.join("sentinel.txt"), b"hello sentinel").unwrap();
         fs::create_dir(data.join("sub")).unwrap();
         fs::write(data.join("sub").join("nested.txt"), b"hello nested").unwrap();
+        fs::create_dir_all(data.join("managed-ga-state").join("memory")).unwrap();
+        fs::write(
+            data.join("managed-ga-state").join("memory").join("user.md"),
+            b"managed memory",
+        )
+        .unwrap();
+        fs::create_dir_all(data.join("managed-model-config")).unwrap();
+        fs::write(
+            data.join("managed-model-config")
+                .join("managed-models.json"),
+            br#"{"schemaVersion":1,"models":[]}"#,
+        )
+        .unwrap();
 
         let out = ensure_backup_before_migrate_in(&data, 9).unwrap();
         match out {
@@ -421,6 +434,25 @@ mod tests {
                 assert_eq!(nested, b"hello nested");
                 // DB file also copied
                 assert!(backup_path.join(DB_FILENAME).is_file());
+                // Managed GA state is Galley-owned user state and must travel
+                // with ordinary app-data backup.
+                assert_eq!(
+                    fs::read(
+                        backup_path
+                            .join("managed-ga-state")
+                            .join("memory")
+                            .join("user.md")
+                    )
+                    .unwrap(),
+                    b"managed memory"
+                );
+                // Non-secret generated model config is app data. API keys live
+                // in the system credential store, so plaintext keys are not
+                // part of this directory-level backup.
+                assert!(backup_path
+                    .join("managed-model-config")
+                    .join("managed-models.json")
+                    .is_file());
             }
             other => panic!("expected Backed, got {other:?}"),
         }

@@ -35,8 +35,8 @@ export const DEFAULT_GA_CONFIG = {
   // commonly expose `python3` while bare `python` may still point at
   // a stale Python 2 on older systems. Use the right alias per OS.
   python: isWindows ? "python" : "python3",
-  gaPath: "/Users/inkstone/Documents/GenericAgent",
-  bridgeCwd: "/Users/inkstone/Documents/genericagent-webui",
+  gaPath: "",
+  bridgeCwd: "",
   useExternalPython: false,
 };
 

@@ -112,6 +112,9 @@ export interface ComposerProps {
   llms?: ComposerLLMOption[];
   /** Called when the user picks an LLM from the inline dropdown. */
   onSelectLLM?: (index: number) => void;
+  /** Quiet footer hint in the LLM dropdown. Runtime-specific because
+   * managed mode should not teach users about external GA internals. */
+  llmConfigHint?: string;
   /** Fallback click handler for the LLM pill when `llms` is not
    * provided. Today the only caller using this path is the dev-toggle
    * harness; production wires `llms` + `onSelectLLM`. */
@@ -141,6 +144,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       autoFocus = false,
       llms,
       onSelectLLM,
+      llmConfigHint,
       onOpenLLMSwitcher,
     },
     ref,
@@ -346,6 +350,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             llmDisplayName={llmDisplayName}
             llms={llms}
             onSelectLLM={onSelectLLM}
+            llmConfigHint={llmConfigHint}
             onOpenLLMSwitcher={onOpenLLMSwitcher}
             disabled={disabled || stopMode}
             stopMode={stopMode}
@@ -410,6 +415,7 @@ function LLMPill({
   llmDisplayName,
   llms,
   onSelectLLM,
+  llmConfigHint = "修改 mykey.py 后重启 Galley 生效",
   onOpenLLMSwitcher,
   disabled,
   stopMode,
@@ -417,6 +423,7 @@ function LLMPill({
   llmDisplayName: string;
   llms?: ComposerLLMOption[];
   onSelectLLM?: (index: number) => void;
+  llmConfigHint?: string;
   onOpenLLMSwitcher?: () => void;
   disabled: boolean;
   stopMode: boolean;
@@ -498,7 +505,7 @@ function LLMPill({
               question right where it surfaces. Visually quiet on
               purpose — supplementary metadata, not a CTA. */}
           <div className="mt-1 border-t border-line/60 px-2.5 pb-1 pt-1.5 text-[10.5px] leading-[1.45] text-ink-muted/70">
-            修改 <code className="font-mono">mykey.py</code> 后重启 Galley 生效
+            {llmConfigHint}
           </div>
         </Popover.Content>
       </Popover.Portal>

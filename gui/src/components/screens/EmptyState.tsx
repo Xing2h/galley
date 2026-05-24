@@ -48,6 +48,8 @@ export interface EmptyStateProps {
   llms?: ComposerLLMOption[];
   /** Called when the user picks an LLM from the inline dropdown. */
   onSelectLLM?: (index: number) => void;
+  /** Runtime-specific footer hint in the Composer model dropdown. */
+  llmConfigHint?: string;
   /** Fallback for pre-bridge / dev when `llms` is empty. */
   onOpenLLMSwitcher?: () => void;
   /**
@@ -96,6 +98,7 @@ export function EmptyState({
   prompts = DEFAULT_QUICK_PROMPTS,
   llms,
   onSelectLLM,
+  llmConfigHint,
   onOpenLLMSwitcher,
   conversationWidth = "compact",
   projectName,
@@ -129,6 +132,7 @@ export function EmptyState({
           autoFocus
           llms={llms}
           onSelectLLM={onSelectLLM}
+          llmConfigHint={llmConfigHint}
           onOpenLLMSwitcher={onOpenLLMSwitcher}
         />
 

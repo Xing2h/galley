@@ -14,12 +14,13 @@ use crate::api::{
     ManagedModelProtocol,
 };
 use crate::credential_store;
+use crate::db::SqliteGalley;
 use crate::error::{GalleyError, Result};
 
 const PROBE_TIMEOUT_SECS: u64 = 20;
 
 pub async fn list_models(input: ManagedModelProbeInput) -> Result<ManagedModelListResult> {
-    let secret = resolve_secret(&input)?;
+    let secret = resolve_secret(&input).await?;
     let endpoint = models_endpoint(&input.api_base)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(PROBE_TIMEOUT_SECS))
@@ -82,7 +83,7 @@ pub async fn test_connection(
     })
 }
 
-fn resolve_secret(input: &ManagedModelProbeInput) -> Result<String> {
+async fn resolve_secret(input: &ManagedModelProbeInput) -> Result<String> {
     if let Some(secret) = input
         .api_key
         .as_deref()
@@ -91,12 +92,28 @@ fn resolve_secret(input: &ManagedModelProbeInput) -> Result<String> {
     {
         return Ok(secret.to_string());
     }
-    let Some(id) = input.id.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+    let id = input
+        .provider_id
+        .as_deref()
+        .or(input.id.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let Some(id) = id else {
         return Err(GalleyError::InvalidArgs {
-            message: "API key is required before testing this model".into(),
+            message: "API key is required before testing this provider".into(),
         });
     };
-    credential_store::get_secret(&credential_store::managed_model_api_key_ref(id))
+    let galley = SqliteGalley::open().await?;
+    let api_key_ref = galley
+        .list_managed_model_providers()
+        .await?
+        .into_iter()
+        .find(|provider| provider.id == id)
+        .map(|provider| provider.api_key_ref)
+        .ok_or_else(|| GalleyError::InvalidArgs {
+            message: format!("managed provider {id} not found"),
+        })?;
+    credential_store::get_secret(&api_key_ref)
 }
 
 fn apply_auth_headers(

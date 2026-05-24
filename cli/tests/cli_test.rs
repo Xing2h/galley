@@ -49,10 +49,21 @@ async fn seeded_db_at(path: &std::path::Path) -> SqlitePool {
 }
 
 async fn seed_session(pool: &SqlitePool, id: &str, title: &str, status: &str, ts: &str) {
+    seed_session_with_runtime(pool, id, title, status, ts, "external").await;
+}
+
+async fn seed_session_with_runtime(
+    pool: &SqlitePool,
+    id: &str,
+    title: &str,
+    status: &str,
+    ts: &str,
+    runtime_kind: &str,
+) {
     sqlx::query(
         "INSERT INTO sessions (id, title, status, turn_count, pending_approval_count, \
-            error_count, pinned, last_activity_at, created_at, updated_at) \
-         VALUES (?, ?, ?, 0, 0, 0, 0, ?, ?, ?)",
+            error_count, pinned, last_activity_at, created_at, updated_at, ga_runtime_kind) \
+         VALUES (?, ?, ?, 0, 0, 0, 0, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(title)
@@ -60,6 +71,7 @@ async fn seed_session(pool: &SqlitePool, id: &str, title: &str, status: &str, ts
     .bind(ts)
     .bind(ts)
     .bind(ts)
+    .bind(runtime_kind)
     .execute(pool)
     .await
     .expect("seed session");
@@ -139,7 +151,7 @@ async fn sessions_list_emits_ndjson_recent_first() {
     seed_session(&pool, "new", "new", "idle", "2026-05-18T00:00:00Z").await;
     drop(pool);
 
-    let (stdout, code) = run_galley(&db, &["sessions", "list"]);
+    let (stdout, code) = run_galley(&db, &["sessions", "list", "--runtime", "all"]);
     assert_eq!(code, Some(0));
     let lines: Vec<&str> = stdout.trim().lines().collect();
     assert_eq!(lines.len(), 2);
@@ -148,6 +160,48 @@ async fn sessions_list_emits_ndjson_recent_first() {
     let second: serde_json::Value = serde_json::from_str(lines[1]).expect("ndjson line 2");
     assert_eq!(first["id"], "new");
     assert_eq!(second["id"], "old");
+}
+
+#[tokio::test]
+async fn sessions_list_defaults_to_current_runtime() {
+    let td = tempdir();
+    let db = td.path().join("workbench.db");
+    let pool = seeded_db_at(&db).await;
+    seed_session_with_runtime(
+        &pool,
+        "external",
+        "external",
+        "idle",
+        "2026-05-18T00:00:00Z",
+        "external",
+    )
+    .await;
+    seed_session_with_runtime(
+        &pool,
+        "managed",
+        "managed",
+        "idle",
+        "2026-05-19T00:00:00Z",
+        "managed",
+    )
+    .await;
+    drop(pool);
+
+    let (stdout, code) = run_galley(&db, &["sessions", "list"]);
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    let lines: Vec<&str> = stdout.trim().lines().collect();
+    assert_eq!(lines.len(), 1);
+    let only: serde_json::Value = serde_json::from_str(lines[0]).expect("ndjson line");
+    assert_eq!(only["id"], "managed");
+    assert_eq!(only["runtimeKind"], "managed");
+
+    let (stdout, code) = run_galley(&db, &["sessions", "list", "--runtime", "external"]);
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    let lines: Vec<&str> = stdout.trim().lines().collect();
+    assert_eq!(lines.len(), 1);
+    let only: serde_json::Value = serde_json::from_str(lines[0]).expect("ndjson line");
+    assert_eq!(only["id"], "external");
+    assert_eq!(only["runtimeKind"], "external");
 }
 
 #[tokio::test]

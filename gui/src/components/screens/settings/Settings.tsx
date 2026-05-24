@@ -19,6 +19,7 @@ import { SettingsShortcuts } from "@/components/screens/settings/SettingsShortcu
 import { IconButton } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
+import type { RuntimeKind } from "@/types/session";
 
 export type SettingsTab =
   | "runtime"
@@ -49,6 +50,9 @@ export interface SettingsProps {
   /** PRD §11.5 / DESIGN.md §9 Approval. */
   yoloMode: boolean;
   hasRunningSessions: boolean;
+  activeRuntimeKind: RuntimeKind;
+  hasManagedRuntimeConfigured: boolean;
+  hasExternalRuntimeConfigured: boolean;
 
   defaultTab?: SettingsTab;
 
@@ -65,6 +69,7 @@ export interface SettingsProps {
   onReRunHealthCheck?: () => void;
   onToggleExternalPython?: (useExternal: boolean) => void;
   onCommitGAPath?: (path: string) => Promise<void>;
+  onChangeRuntimeKind?: (kind: RuntimeKind) => void;
 }
 
 /**
@@ -95,6 +100,9 @@ export function Settings({
   projectCount,
   yoloMode,
   hasRunningSessions,
+  activeRuntimeKind,
+  hasManagedRuntimeConfigured,
+  hasExternalRuntimeConfigured,
   defaultTab = "runtime",
   useExternalPython,
   onChangeRequiredTools,
@@ -105,6 +113,7 @@ export function Settings({
   onReRunHealthCheck,
   onToggleExternalPython,
   onCommitGAPath,
+  onChangeRuntimeKind,
 }: SettingsProps) {
   const [tab, setTab] = useState<SettingsTab>(defaultTab);
 
@@ -139,6 +148,10 @@ export function Settings({
                 <SettingsRuntime
                   info={runtimeInfo}
                   hasRunningSessions={hasRunningSessions}
+                  activeRuntimeKind={activeRuntimeKind}
+                  hasManagedRuntimeConfigured={hasManagedRuntimeConfigured}
+                  hasExternalRuntimeConfigured={hasExternalRuntimeConfigured}
+                  onChangeRuntimeKind={onChangeRuntimeKind}
                   useExternalPython={useExternalPython}
                   onChangeGAPath={onChangeGAPath}
                   onChangeBridgePython={onChangeBridgePython}

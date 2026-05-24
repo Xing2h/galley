@@ -325,8 +325,11 @@ function buildSeedRuntime(seed: RuntimeSeedHints): PerSessionRuntime {
       ...baseBridge,
     };
   }
+  const hasPersistedIndex =
+    seed.persistedIndex !== undefined &&
+    cached.some((l) => l.index === seed.persistedIndex);
   const llms =
-    seed.persistedIndex !== undefined
+    hasPersistedIndex
       ? cached.map((l) => ({
           ...l,
           isCurrent: l.index === seed.persistedIndex,
@@ -334,8 +337,8 @@ function buildSeedRuntime(seed: RuntimeSeedHints): PerSessionRuntime {
       : cached;
   const llmDisplayName =
     seed.persistedDisplayName ??
+    llms.find((l) => l.isCurrent)?.displayName ??
     seed.cachedDisplayName ??
-    cached.find((l) => l.isCurrent)?.displayName ??
     DEFAULT_LLM_DISPLAY_NAME;
   return { llms, llmDisplayName, ...baseBridge };
 }
@@ -446,6 +449,7 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
 
   replaceLLMs: (sid, llms) => {
     const current = llms.find((l) => l.isCurrent);
+    const shouldCache = shouldCacheLLMListForSession(sid);
     set((state) => {
       const existing = state.byId[sid];
       const next: PerSessionRuntime = {
@@ -463,19 +467,22 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
       // session activation.
       return {
         byId: { ...state.byId, [sid]: next },
-        cachedLLMs: llms,
-        cachedLLMDisplayName:
-          current?.displayName ?? state.cachedLLMDisplayName,
+        cachedLLMs: shouldCache ? llms : state.cachedLLMs,
+        cachedLLMDisplayName: shouldCache
+          ? (current?.displayName ?? state.cachedLLMDisplayName)
+          : state.cachedLLMDisplayName,
       };
     });
-    // Cache LLM list to prefs so future cold-starts (before any
+    // Cache external GA's LLM list to prefs so future cold-starts (before any
     // bridge has spawned) can show the real model names instead
-    // of the DEFAULT_LLMS seed. The LLM list is GA-install-wide
-    // (mykey.py is one file shared across sessions), so any one
-    // bridge's `ready` event is a faithful snapshot.
-    void setPref("llm_list", llms).catch((e) => {
-      console.debug("[runtime] replaceLLMs llm_list cache failed.", e);
-    });
+    // of the DEFAULT_LLMS seed. Managed model options come from
+    // Galley's model store instead; caching them here would leak one
+    // runtime's model list into the other runtime's empty state.
+    if (shouldCache) {
+      void setPref("llm_list", llms).catch((e) => {
+        console.debug("[runtime] replaceLLMs llm_list cache failed.", e);
+      });
+    }
     // Mirror the user's current LLM onto the session row via
     // sessionsStore.setSessionLlm so the choice survives app
     // restart (routes through the Rust `set_session_llm` trait
@@ -489,6 +496,9 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
 
   selectLLMForNewSession: (index) =>
     set((state) => {
+      if (usePrefsStore.getState().activeRuntimeKind === "managed") {
+        return { pendingLLMIndex: index };
+      }
       // EmptyState has no session runtime yet, so its Composer reads
       // the cross-session cache. Flip that cache immediately for UI
       // feedback; activateSession later consumes pendingLLMIndex and
@@ -814,4 +824,12 @@ async function mirrorSelectedLLMOnSession(sid: string, current: LLMOption) {
   await useSessionsStore
     .getState()
     .setSessionLlm(sid, current.index, current.displayName);
+}
+
+function shouldCacheLLMListForSession(sid: string): boolean {
+  if (sid === "__warmup__") return true;
+  const session = useSessionsStore
+    .getState()
+    .sessions.find((candidate) => candidate.id === sid);
+  return session?.gaRuntimeKind === "external";
 }

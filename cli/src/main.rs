@@ -18,8 +18,10 @@
 
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
-use galley_core_lib::api::{GalleyApi, SearchScope, SessionFilter, SessionId, SessionStatus};
+use clap::{Parser, Subcommand, ValueEnum};
+use galley_core_lib::api::{
+    GalleyApi, RuntimeKind, SearchScope, SessionFilter, SessionId, SessionStatus,
+};
 use galley_core_lib::db::SqliteGalley;
 use galley_core_lib::error::GalleyError;
 use galley_core_lib::socket_listener::socket_path;
@@ -150,6 +152,10 @@ enum LlmCmd {
 enum SessionsCmd {
     /// List sessions, ordered pinned first then by recency.
     List {
+        /// Runtime scope. Default follows the GUI's current runtime so
+        /// agents see the same session set as the human operator.
+        #[arg(long, value_enum, default_value = "current")]
+        runtime: RuntimeArg,
         /// Filter to one project id.
         #[arg(long)]
         project: Option<String>,
@@ -233,6 +239,11 @@ enum SessionCmd {
         /// cache is empty or the name is unknown, exits 2 (invalid args).
         #[arg(long)]
         llm: Option<String>,
+        /// Runtime for the new session. Default follows the GUI's
+        /// current runtime; managed/external must be explicit when an
+        /// agent intentionally creates work outside the visible mode.
+        #[arg(long, value_enum, default_value = "current")]
+        runtime: RuntimeArg,
         /// Supervisor label — agent identity / SOP name. Sets origin via
         /// to `supervisor`; omit for via=`cli`.
         #[arg(long)]
@@ -309,6 +320,14 @@ enum SessionCmd {
     },
 }
 
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum RuntimeArg {
+    Current,
+    Managed,
+    External,
+    All,
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -358,6 +377,7 @@ fn exit_code_for(e: &GalleyError) -> u8 {
 async fn run(cli: Cli) -> Result<(), GalleyError> {
     match cli.command {
         Command::Sessions(SessionsCmd::List {
+            runtime,
             project,
             status,
             archived,
@@ -375,7 +395,7 @@ async fn run(cli: Cli) -> Result<(), GalleyError> {
                 project_id: project,
                 status: status.as_deref().map(parse_status_arg).transpose()?,
                 archived: archived_flag,
-                runtime_kind: None,
+                runtime_kind: runtime_filter(&galley, runtime).await?,
             };
             let rows = galley.list_sessions(filter).await?;
             // NDJSON — one object per line, so agents can stream-parse.
@@ -422,9 +442,10 @@ async fn run(cli: Cli) -> Result<(), GalleyError> {
             task,
             project,
             llm,
+            runtime,
             supervisor,
             reason,
-        }) => session_new(task, project, llm, supervisor, reason).await,
+        }) => session_new(task, project, llm, runtime, supervisor, reason).await,
         Command::Session(SessionCmd::Btw {
             id,
             question,
@@ -518,6 +539,29 @@ fn parse_status_arg(s: &str) -> Result<SessionStatus, GalleyError> {
             })
         }
     })
+}
+
+async fn runtime_filter(
+    galley: &SqliteGalley,
+    runtime: RuntimeArg,
+) -> Result<Option<RuntimeKind>, GalleyError> {
+    Ok(match runtime {
+        RuntimeArg::Current => Some(galley.active_runtime_kind().await?),
+        RuntimeArg::Managed => Some(RuntimeKind::Managed),
+        RuntimeArg::External => Some(RuntimeKind::External),
+        RuntimeArg::All => None,
+    })
+}
+
+fn runtime_arg_for_session_new(runtime: RuntimeArg) -> Result<Option<RuntimeKind>, GalleyError> {
+    match runtime {
+        RuntimeArg::Current => Ok(None),
+        RuntimeArg::Managed => Ok(Some(RuntimeKind::Managed)),
+        RuntimeArg::External => Ok(Some(RuntimeKind::External)),
+        RuntimeArg::All => Err(GalleyError::InvalidArgs {
+            message: "session new: --runtime all is only valid for list commands".into(),
+        }),
+    }
 }
 
 fn emit_json<T: serde::Serialize>(value: &T) -> Result<(), GalleyError> {
@@ -765,15 +809,18 @@ async fn session_new(
     task: String,
     project: Option<String>,
     llm: Option<String>,
+    runtime: RuntimeArg,
     supervisor: Option<String>,
     reason: Option<String>,
 ) -> Result<(), GalleyError> {
+    let runtime_kind = runtime_arg_for_session_new(runtime)?;
     let req = serde_json::json!({
         "command": "session.new",
         "args": {
             "task": task,
             "projectId": project,
             "llmName": llm,
+            "runtimeKind": runtime_kind,
             "supervisor": supervisor,
             "reason": reason,
         },
@@ -971,7 +1018,15 @@ fn map_error_tag(tag: &str, msg: String) -> GalleyError {
         "not_found" => GalleyError::NotFound { message: msg },
         "invalid_args" => GalleyError::InvalidArgs { message: msg },
         "db_unavailable" => GalleyError::DbUnavailable { message: msg },
-        "runner_error" => GalleyError::RunnerError { message: msg },
+        "runner_error"
+        | "python_not_found"
+        | "ga_path_invalid"
+        | "managed_runtime_invalid"
+        | "managed_model_not_configured"
+        | "bridge_cwd_invalid"
+        | "path_encoding"
+        | "spawn_io"
+        | "pipe_unavailable" => GalleyError::RunnerError { message: msg },
         _ => GalleyError::Internal { message: msg },
     }
 }

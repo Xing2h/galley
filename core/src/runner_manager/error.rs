@@ -31,6 +31,10 @@ pub enum RunnerSpawnError {
     /// validate exhaustively here — Python `import agentmain` will be the
     /// authoritative check — but the path itself has to be a directory.
     GaPathInvalid { detail: String },
+    /// Galley's managed GA code/state layout is incomplete or inconsistent.
+    ManagedRuntimeInvalid { detail: String },
+    /// Managed runtime was selected but no model credential can be used.
+    ManagedModelNotConfigured { detail: String },
     /// `args.bridge_cwd` doesn't exist (used as `cwd` for the subprocess).
     BridgeCwdInvalid { detail: String },
     /// `args.ga_path` or `args.bridge_cwd` had a non-UTF-8 path component
@@ -51,6 +55,12 @@ impl fmt::Display for RunnerSpawnError {
         match self {
             Self::PythonNotFound { detail } => write!(f, "python not found: {}", detail),
             Self::GaPathInvalid { detail } => write!(f, "GA path invalid: {}", detail),
+            Self::ManagedRuntimeInvalid { detail } => {
+                write!(f, "managed runtime invalid: {}", detail)
+            }
+            Self::ManagedModelNotConfigured { detail } => {
+                write!(f, "managed model not configured: {}", detail)
+            }
             Self::BridgeCwdInvalid { detail } => write!(f, "bridge cwd invalid: {}", detail),
             Self::PathEncoding { detail } => write!(f, "path encoding error: {}", detail),
             Self::SpawnIo { detail } => write!(f, "subprocess spawn failed: {}", detail),

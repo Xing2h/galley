@@ -17,8 +17,33 @@ pub enum ManagedModelCredentialStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ManagedModelProviderRecord {
+    pub id: String,
+    pub display_name: String,
+    pub protocol: ManagedModelProtocol,
+    pub api_base: String,
+    pub api_key_ref: String,
+    pub credential_status: ManagedModelCredentialStatus,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveManagedProviderInput {
+    pub id: Option<String>,
+    pub display_name: Option<String>,
+    pub protocol: ManagedModelProtocol,
+    pub api_base: String,
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ManagedModelRecord {
     pub id: String,
+    pub provider_id: String,
+    pub provider_display_name: String,
     pub display_name: String,
     pub protocol: ManagedModelProtocol,
     pub api_base: String,
@@ -36,11 +61,10 @@ pub struct ManagedModelRecord {
 #[serde(rename_all = "camelCase")]
 pub struct SaveManagedModelInput {
     pub id: Option<String>,
+    pub provider_id: String,
     pub display_name: Option<String>,
-    pub protocol: ManagedModelProtocol,
-    pub api_base: String,
     pub model: String,
-    pub api_key: Option<String>,
+    pub advanced_options: Option<serde_json::Value>,
     pub make_default: Option<bool>,
 }
 
@@ -48,6 +72,7 @@ pub struct SaveManagedModelInput {
 #[serde(rename_all = "camelCase")]
 pub struct ManagedModelProbeInput {
     pub id: Option<String>,
+    pub provider_id: Option<String>,
     pub protocol: ManagedModelProtocol,
     pub api_base: String,
     pub api_key: Option<String>,

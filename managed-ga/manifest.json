@@ -8,7 +8,9 @@
   },
   "patchStack": {
     "id": "galley-managed-ga-patches-v1",
-    "patches": []
+    "patches": [
+      "0001-managed-state-root.patch"
+    ]
   },
   "stateSchemaVersion": 1
 }

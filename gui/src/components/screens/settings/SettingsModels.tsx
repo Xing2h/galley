@@ -3,6 +3,7 @@ import {
   CircleNotch,
   Key,
   ListMagnifyingGlass,
+  PencilSimple,
   Plus,
   PlugsConnected,
   Trash,
@@ -21,82 +22,139 @@ import {
 } from "@/lib/managed-models";
 import { cn } from "@/lib/utils";
 import { useManagedModelsStore } from "@/stores/managed-models";
-import type { ManagedModelProtocol } from "@/types/managed-models";
+import type {
+  ManagedModelProtocol,
+  ManagedModelProviderRecord,
+  ManagedModelRecord,
+} from "@/types/managed-models";
 
 type ProbeState =
   | { kind: "idle" }
-  | { kind: "loading"; action: "list" | "test" }
+  | { kind: "loading"; action: "provider-test" | "model-list" | "model-test" }
   | { kind: "success"; message: string }
   | { kind: "error"; message: string };
 
 export function SettingsModels() {
+  const providers = useManagedModelsStore((s) => s.providers);
   const models = useManagedModelsStore((s) => s.models);
   const loading = useManagedModelsStore((s) => s.loading);
   const saving = useManagedModelsStore((s) => s.saving);
   const error = useManagedModelsStore((s) => s.error);
   const load = useManagedModelsStore((s) => s.load);
-  const save = useManagedModelsStore((s) => s.save);
-  const deleteModel = useManagedModelsStore((s) => s.delete);
+  const saveProvider = useManagedModelsStore((s) => s.saveProvider);
+  const deleteProvider = useManagedModelsStore((s) => s.deleteProvider);
+  const saveModel = useManagedModelsStore((s) => s.saveModel);
+  const deleteModel = useManagedModelsStore((s) => s.deleteModel);
 
-  const [protocol, setProtocol] =
+  const [providerId, setProviderId] = useState<string | undefined>();
+  const [providerProtocol, setProviderProtocol] =
     useState<ManagedModelProtocol>("openai");
-  const [apiKey, setApiKey] = useState("");
-  const [apiBase, setApiBase] = useState("");
+  const [providerApiKey, setProviderApiKey] = useState("");
+  const [providerApiBase, setProviderApiBase] = useState("");
+  const [providerDisplayName, setProviderDisplayName] = useState("");
+
+  const [modelId, setModelId] = useState<string | undefined>();
+  const [selectedProviderId, setSelectedProviderId] = useState("");
   const [model, setModel] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [modelDisplayName, setModelDisplayName] = useState("");
   const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [probeState, setProbeState] = useState<ProbeState>({ kind: "idle" });
+  const [providerProbeState, setProviderProbeState] = useState<ProbeState>({
+    kind: "idle",
+  });
+  const [modelProbeState, setModelProbeState] = useState<ProbeState>({
+    kind: "idle",
+  });
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const canSave = useMemo(
-    () =>
-      apiKey.trim() !== "" &&
-      apiBase.trim() !== "" &&
-      model.trim() !== "" &&
-      !saving,
-    [apiBase, apiKey, model, saving],
+  const effectiveSelectedProviderId =
+    selectedProviderId || providers[0]?.id || "";
+  const selectedProvider = providers.find(
+    (p) => p.id === effectiveSelectedProviderId,
   );
-  const canFetchModels =
-    apiKey.trim() !== "" &&
-    apiBase.trim() !== "" &&
-    probeState.kind !== "loading";
-  const canTest = canFetchModels && model.trim() !== "";
+  const editingProvider = providerId
+    ? providers.find((item) => item.id === providerId)
+    : undefined;
+  const providerHasSavedKey =
+    editingProvider?.credentialStatus === "present";
+  const selectedProviderHasSavedKey =
+    selectedProvider?.credentialStatus === "present";
+  const editingModel = modelId
+    ? models.find((item) => item.id === modelId)
+    : undefined;
 
-  const probeInput = () => ({
-    protocol,
-    apiKey,
-    apiBase,
-    model,
+  const canSaveProvider = useMemo(
+    () =>
+      providerApiBase.trim() !== "" &&
+      (providerApiKey.trim() !== "" || providerHasSavedKey) &&
+      !saving,
+    [providerApiBase, providerApiKey, providerHasSavedKey, saving],
+  );
+  const canTestProvider =
+    (providerApiKey.trim() !== "" || providerHasSavedKey) &&
+    providerApiBase.trim() !== "" &&
+    providerProbeState.kind !== "loading";
+  const canFetchModels =
+    selectedProviderHasSavedKey && modelProbeState.kind !== "loading";
+  const canTestModel = canFetchModels && model.trim() !== "";
+  const canSaveModel =
+    selectedProviderHasSavedKey && model.trim() !== "" && !saving;
+
+  const providerProbeInput = () => ({
+    id: providerId,
+    protocol: providerProtocol,
+    apiKey: providerApiKey,
+    apiBase: providerApiBase,
+    model: undefined,
   });
 
-  const handleSave = async () => {
-    if (!canSave) return;
-    await save({
-      protocol,
-      apiKey,
-      apiBase,
+  const modelProbeInput = () => {
+    if (!selectedProvider) return null;
+    return {
+      providerId: selectedProvider.id,
+      protocol: selectedProvider.protocol,
+      apiBase: selectedProvider.apiBase,
       model,
-      displayName,
-      makeDefault: models.length === 0,
-    });
-    setApiKey("");
-    setApiBase("");
-    setModel("");
-    setDisplayName("");
-    setModelOptions([]);
-    setProbeState({ kind: "idle" });
+    };
+  };
+
+  const handleProviderTest = async () => {
+    if (!canTestProvider) return;
+    setProviderProbeState({ kind: "loading", action: "provider-test" });
+    try {
+      const result = await testManagedModelConnection(providerProbeInput());
+      setProviderProbeState({ kind: "success", message: result.message });
+    } catch (e) {
+      setProviderProbeState({ kind: "error", message: errorMessage(e) });
+    }
+  };
+
+  const handleProviderSave = async () => {
+    if (!canSaveProvider) return;
+    try {
+      await saveProvider({
+        id: providerId,
+        protocol: providerProtocol,
+        apiKey: providerApiKey || undefined,
+        apiBase: providerApiBase,
+        displayName: providerDisplayName,
+      });
+      resetProviderForm();
+    } catch {
+      // Store-level error is shown inline.
+    }
   };
 
   const handleFetchModels = async () => {
-    if (!canFetchModels) return;
-    setProbeState({ kind: "loading", action: "list" });
+    const input = modelProbeInput();
+    if (!input || !canFetchModels) return;
+    setModelProbeState({ kind: "loading", action: "model-list" });
     try {
-      const result = await listManagedModelOptions(probeInput());
+      const result = await listManagedModelOptions(input);
       setModelOptions(result.models);
-      setProbeState({
+      setModelProbeState({
         kind: "success",
         message:
           result.models.length > 0
@@ -104,73 +162,226 @@ export function SettingsModels() {
             : "连接成功，但没有返回模型列表",
       });
     } catch (e) {
-      setProbeState({ kind: "error", message: errorMessage(e) });
+      setModelProbeState({ kind: "error", message: errorMessage(e) });
     }
   };
 
-  const handleTest = async () => {
-    if (!canTest) return;
-    setProbeState({ kind: "loading", action: "test" });
+  const handleTestModel = async () => {
+    const input = modelProbeInput();
+    if (!input || !canTestModel) return;
+    setModelProbeState({ kind: "loading", action: "model-test" });
     try {
-      const result = await testManagedModelConnection(probeInput());
-      setProbeState({ kind: "success", message: result.message });
+      const result = await testManagedModelConnection(input);
+      setModelProbeState({ kind: "success", message: result.message });
     } catch (e) {
-      setProbeState({ kind: "error", message: errorMessage(e) });
+      setModelProbeState({ kind: "error", message: errorMessage(e) });
     }
+  };
+
+  const handleSaveModel = async () => {
+    if (!canSaveModel) return;
+    try {
+      await saveModel({
+        id: modelId,
+        providerId: effectiveSelectedProviderId,
+        model,
+        displayName: modelDisplayName,
+        makeDefault: modelId
+          ? (editingModel?.isDefault ?? false)
+          : models.length === 0,
+      });
+      resetModelForm();
+    } catch {
+      // Store-level error is shown inline.
+    }
+  };
+
+  const resetProviderForm = () => {
+    setProviderId(undefined);
+    setProviderProtocol("openai");
+    setProviderApiKey("");
+    setProviderApiBase("");
+    setProviderDisplayName("");
+    setProviderProbeState({ kind: "idle" });
+  };
+
+  const resetModelForm = () => {
+    setModelId(undefined);
+    setModel("");
+    setModelDisplayName("");
+    setModelOptions([]);
+    setModelProbeState({ kind: "idle" });
   };
 
   return (
     <div className="space-y-7">
       <SettingsPanelHeader
         title="Models"
-        subtitle="Galley 内置 GA 使用的模型 · API Key 保存在系统 Keychain"
+        subtitle="Provider 保存 API Key 和 Base URL；Model 只是启用的模型名"
       />
 
       <div>
-        <SettingsSectionLabel>添加模型</SettingsSectionLabel>
+        <SettingsSectionLabel>Providers</SettingsSectionLabel>
         <div className="mt-3 space-y-4">
           <div>
             <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-              模型服务
+              Provider Type
             </label>
             <div className="inline-flex rounded-sm border border-line bg-surface p-0.5">
               <ProtocolButton
-                active={protocol === "openai"}
+                active={providerProtocol === "openai"}
                 label="OpenAI-compatible"
-                onClick={() => setProtocol("openai")}
+                onClick={() => setProviderProtocol("openai")}
               />
               <ProtocolButton
-                active={protocol === "anthropic"}
+                active={providerProtocol === "anthropic"}
                 label="Anthropic-compatible"
-                onClick={() => setProtocol("anthropic")}
+                onClick={() => setProviderProtocol("anthropic")}
               />
             </div>
           </div>
 
           <SettingsInput
-            label="模型密钥"
-            value={apiKey}
-            onChange={setApiKey}
+            label="API Key"
+            value={providerApiKey}
+            onChange={setProviderApiKey}
             type="password"
-            placeholder="sk-..."
+            placeholder={providerId ? "留空表示不修改现有 Key" : "sk-..."}
           />
           <SettingsInput
             label="Base URL"
-            value={apiBase}
-            onChange={setApiBase}
+            value={providerApiBase}
+            onChange={setProviderApiBase}
             placeholder={
-              protocol === "openai"
+              providerProtocol === "openai"
                 ? "https://api.openai.com/v1"
                 : "https://api.anthropic.com"
             }
           />
           <SettingsInput
-            label="模型"
+            label="Provider Name"
+            value={providerDisplayName}
+            onChange={setProviderDisplayName}
+            placeholder="可选；例如 OpenRouter"
+          />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!canTestProvider}
+              onClick={() => void handleProviderTest()}
+              leadingIcon={
+                providerProbeState.kind === "loading" &&
+                providerProbeState.action === "provider-test" ? (
+                  <span className="spin">
+                    <CircleNotch size={12} weight="thin" />
+                  </span>
+                ) : (
+                  <PlugsConnected size={12} weight="thin" />
+                )
+              }
+            >
+              测试连接
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!canSaveProvider}
+              onClick={() => void handleProviderSave()}
+              leadingIcon={
+                saving ? (
+                  <span className="spin">
+                    <CircleNotch size={12} weight="thin" />
+                  </span>
+                ) : (
+                  <Plus size={12} weight="bold" />
+                )
+              }
+            >
+              {providerId ? "保存 Provider" : "添加 Provider"}
+            </Button>
+            {providerId && (
+              <Button variant="ghost" size="sm" onClick={resetProviderForm}>
+                取消编辑
+              </Button>
+            )}
+          </div>
+
+          <StatusLine state={providerProbeState} />
+          {error && <ErrorLine message={error} />}
+        </div>
+
+        <div className="mt-3 divide-y divide-line rounded-sm border border-line bg-surface">
+          {loading && <LoadingRow />}
+          {!loading && providers.length === 0 && (
+            <EmptyRow text="还没有 Provider。" />
+          )}
+          {!loading &&
+            providers.map((item) => {
+              const modelCount = models.filter(
+                (m) => m.providerId === item.id,
+              ).length;
+              return (
+                <ProviderRow
+                  key={item.id}
+                  provider={item}
+                  modelCount={modelCount}
+                  saving={saving}
+                  onEdit={() => {
+                    setProviderId(item.id);
+                    setProviderProtocol(item.protocol);
+                    setProviderApiBase(item.apiBase);
+                    setProviderDisplayName(item.displayName);
+                    setProviderApiKey("");
+                    setProviderProbeState({ kind: "idle" });
+                  }}
+                  onDelete={() => {
+                    const suffix =
+                      modelCount > 0 ? `，并移除 ${modelCount} 个 Model` : "";
+                    if (window.confirm(`删除 ${item.displayName}${suffix}？`)) {
+                      void deleteProvider(item.id);
+                    }
+                  }}
+                />
+              );
+            })}
+        </div>
+      </div>
+
+      <div>
+        <SettingsSectionLabel>Models</SettingsSectionLabel>
+        <div className="mt-3 space-y-4">
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+              Provider
+            </label>
+            <select
+              value={effectiveSelectedProviderId}
+              onChange={(e) => {
+                setSelectedProviderId(e.target.value);
+                resetModelForm();
+              }}
+              className="w-full rounded-sm border border-line bg-surface px-3 py-2 text-[12.5px] text-ink outline-none transition-colors focus:border-brand focus:ring-[3px] focus:ring-brand/20"
+            >
+              {providers.length === 0 && <option value="">先添加 Provider</option>}
+              {providers.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedProvider && !selectedProviderHasSavedKey && (
+            <ErrorLine message="这个 Provider 缺少 Key，先编辑 Provider。" />
+          )}
+
+          <SettingsInput
+            label="Model"
             value={model}
             onChange={setModel}
-            placeholder={
-              protocol === "openai" ? "gpt-4.1" : "claude-sonnet-4-6"
-            }
+            placeholder="例如 anthropic/claude-sonnet-4.5"
           />
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -179,8 +390,8 @@ export function SettingsModels() {
               disabled={!canFetchModels}
               onClick={() => void handleFetchModels()}
               leadingIcon={
-                probeState.kind === "loading" &&
-                probeState.action === "list" ? (
+                modelProbeState.kind === "loading" &&
+                modelProbeState.action === "model-list" ? (
                   <span className="spin">
                     <CircleNotch size={12} weight="thin" />
                   </span>
@@ -194,11 +405,11 @@ export function SettingsModels() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={!canTest}
-              onClick={() => void handleTest()}
+              disabled={!canTestModel}
+              onClick={() => void handleTestModel()}
               leadingIcon={
-                probeState.kind === "loading" &&
-                probeState.action === "test" ? (
+                modelProbeState.kind === "loading" &&
+                modelProbeState.action === "model-test" ? (
                   <span className="spin">
                     <CircleNotch size={12} weight="thin" />
                   </span>
@@ -207,7 +418,7 @@ export function SettingsModels() {
                 )
               }
             >
-              测试连接
+              测试模型
             </Button>
           </div>
 
@@ -226,105 +437,154 @@ export function SettingsModels() {
             </select>
           )}
 
-          {probeState.kind === "success" && (
-            <div className="flex items-center gap-1.5 rounded-sm border border-success/20 bg-success/[0.06] px-3 py-2 text-[12.5px] text-success">
-              <CheckCircle size={12} weight="fill" />
-              {probeState.message}
-            </div>
-          )}
-          {probeState.kind === "error" && (
-            <div className="flex items-center gap-1.5 rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2 text-[12.5px] text-error">
-              <WarningCircle size={12} weight="fill" />
-              {probeState.message}
-            </div>
-          )}
-
           <SettingsInput
-            label="显示名"
-            value={displayName}
-            onChange={setDisplayName}
+            label="Display Name"
+            value={modelDisplayName}
+            onChange={setModelDisplayName}
             placeholder="可选；默认使用模型名"
           />
 
-          {error && (
-            <div className="rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2 text-[12.5px] text-error">
-              {error}
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!canSaveModel}
+              onClick={() => void handleSaveModel()}
+              leadingIcon={
+                saving ? (
+                  <span className="spin">
+                    <CircleNotch size={12} weight="thin" />
+                  </span>
+                ) : (
+                  <Plus size={12} weight="bold" />
+                )
+              }
+            >
+              {modelId ? "保存 Model" : "启用 Model"}
+            </Button>
+            {modelId && (
+              <Button variant="ghost" size="sm" onClick={resetModelForm}>
+                取消编辑
+              </Button>
+            )}
+          </div>
 
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={!canSave}
-            onClick={() => void handleSave()}
-            leadingIcon={
-              saving ? (
-                <span className="spin">
-                  <CircleNotch size={14} weight="thin" />
-                </span>
-              ) : (
-                <Plus size={14} weight="bold" />
-              )
-            }
-          >
-            保存模型
-          </Button>
+          <StatusLine state={modelProbeState} />
         </div>
-      </div>
 
-      <div>
-        <SettingsSectionLabel>已保存</SettingsSectionLabel>
-        <div className="mt-2 divide-y divide-line rounded-sm border border-line bg-surface">
-          {loading && (
-            <div className="flex items-center gap-2 px-3 py-3 text-[12.5px] text-ink-muted">
-              <span className="spin">
-                <CircleNotch size={13} weight="thin" />
-              </span>
-              加载中…
-            </div>
-          )}
-          {!loading && models.length === 0 && (
-            <div className="px-3 py-3 text-[12.5px] text-ink-muted">
-              还没有模型。
-            </div>
-          )}
+        <div className="mt-3 divide-y divide-line rounded-sm border border-line bg-surface">
+          {loading && <LoadingRow />}
+          {!loading && models.length === 0 && <EmptyRow text="还没有 Model。" />}
           {!loading &&
             models.map((item) => (
-              <div
+              <ModelRow
                 key={item.id}
-                className="flex min-w-0 items-center gap-3 px-3 py-2.5"
-              >
-                <Key size={16} weight="thin" className="shrink-0 text-ink-soft" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <div className="truncate text-[13px] font-medium text-ink">
-                      {item.displayName}
-                    </div>
-                    {item.isDefault && (
-                      <span className="shrink-0 rounded-sm bg-brand-soft px-1.5 py-px text-[10.5px] text-brand-strong">
-                        默认
-                      </span>
-                    )}
-                    <CredentialBadge status={item.credentialStatus} />
-                  </div>
-                  <div className="mt-0.5 truncate font-mono text-[11.5px] text-ink-muted">
-                    {protocolLabel(item.protocol)} · {item.model} ·{" "}
-                    {item.apiBase}
-                  </div>
-                </div>
-                <IconButton
-                  ariaLabel="删除模型"
-                  variant="danger"
-                  size="sm"
-                  disabled={saving}
-                  onClick={() => void deleteModel(item.id)}
-                >
-                  <Trash size={13} weight="thin" />
-                </IconButton>
-              </div>
+                model={item}
+                saving={saving}
+                onEdit={() => {
+                  setModelId(item.id);
+                  setSelectedProviderId(item.providerId);
+                  setModel(item.model);
+                  setModelDisplayName(
+                    item.displayName === item.model ? "" : item.displayName,
+                  );
+                  setModelOptions([]);
+                  setModelProbeState({ kind: "idle" });
+                }}
+                onDelete={() => void deleteModel(item.id)}
+              />
             ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ProviderRow({
+  provider,
+  modelCount,
+  saving,
+  onEdit,
+  onDelete,
+}: {
+  provider: ManagedModelProviderRecord;
+  modelCount: number;
+  saving: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+      <Key size={16} weight="thin" className="shrink-0 text-ink-soft" />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="truncate text-[13px] font-medium text-ink">
+            {provider.displayName}
+          </div>
+          <CredentialBadge status={provider.credentialStatus} />
+        </div>
+        <div className="mt-0.5 truncate font-mono text-[11.5px] text-ink-muted">
+          {protocolLabel(provider.protocol)} · {provider.apiBase} · {modelCount} Models
+        </div>
+      </div>
+      <IconButton ariaLabel="编辑 Provider" size="sm" onClick={onEdit}>
+        <PencilSimple size={13} weight="thin" />
+      </IconButton>
+      <IconButton
+        ariaLabel="删除 Provider"
+        variant="danger"
+        size="sm"
+        disabled={saving}
+        onClick={onDelete}
+      >
+        <Trash size={13} weight="thin" />
+      </IconButton>
+    </div>
+  );
+}
+
+function ModelRow({
+  model,
+  saving,
+  onEdit,
+  onDelete,
+}: {
+  model: ManagedModelRecord;
+  saving: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+      <Key size={16} weight="thin" className="shrink-0 text-ink-soft" />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="truncate text-[13px] font-medium text-ink">
+            {model.displayName}
+          </div>
+          {model.isDefault && (
+            <span className="shrink-0 rounded-sm bg-brand-soft px-1.5 py-px text-[10.5px] text-brand-strong">
+              默认
+            </span>
+          )}
+          <CredentialBadge status={model.credentialStatus} />
+        </div>
+        <div className="mt-0.5 truncate font-mono text-[11.5px] text-ink-muted">
+          {model.providerDisplayName} · {model.model}
+        </div>
+      </div>
+      <IconButton ariaLabel="编辑 Model" size="sm" onClick={onEdit}>
+        <PencilSimple size={13} weight="thin" />
+      </IconButton>
+      <IconButton
+        ariaLabel="删除 Model"
+        variant="danger"
+        size="sm"
+        disabled={saving}
+        onClick={onDelete}
+      >
+        <Trash size={13} weight="thin" />
+      </IconButton>
     </div>
   );
 }
@@ -380,6 +640,50 @@ function SettingsInput({
       />
     </div>
   );
+}
+
+function StatusLine({ state }: { state: ProbeState }) {
+  if (state.kind !== "success" && state.kind !== "error") return null;
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 rounded-sm border px-3 py-2 text-[12.5px]",
+        state.kind === "success"
+          ? "border-success/20 bg-success/[0.06] text-success"
+          : "border-error/20 bg-error/[0.06] text-error",
+      )}
+    >
+      {state.kind === "success" ? (
+        <CheckCircle size={12} weight="fill" />
+      ) : (
+        <WarningCircle size={12} weight="fill" />
+      )}
+      {state.message}
+    </div>
+  );
+}
+
+function ErrorLine({ message }: { message: string }) {
+  return (
+    <div className="rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2 text-[12.5px] text-error">
+      {message}
+    </div>
+  );
+}
+
+function LoadingRow() {
+  return (
+    <div className="flex items-center gap-2 px-3 py-3 text-[12.5px] text-ink-muted">
+      <span className="spin">
+        <CircleNotch size={13} weight="thin" />
+      </span>
+      加载中...
+    </div>
+  );
+}
+
+function EmptyRow({ text }: { text: string }) {
+  return <div className="px-3 py-3 text-[12.5px] text-ink-muted">{text}</div>;
 }
 
 function CredentialBadge({

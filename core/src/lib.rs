@@ -17,12 +17,12 @@ pub mod sop_install;
 
 use api::{
     CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelProbeInput, Origin,
-    ProjectBrief, ProjectId, ProjectPatch, SaveManagedModelInput, SessionBrief, SessionFilter,
-    SessionId,
+    ProjectBrief, ProjectId, ProjectPatch, SaveManagedModelInput, SaveManagedProviderInput,
+    SessionBrief, SessionFilter, SessionId,
 };
 use db::{
     MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
-    SqliteGalley, ToolEventRow, UpsertManagedModelMetadata,
+    SqliteGalley, ToolEventRow, UpsertManagedModelMetadata, UpsertManagedModelProviderMetadata,
 };
 use serde::Deserialize;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -107,9 +107,97 @@ fn ensure_managed_runtime_layout(
 }
 
 #[tauri::command]
+async fn list_managed_model_providers(
+) -> std::result::Result<Vec<api::ManagedModelProviderRecord>, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .list_managed_model_providers()
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
 async fn list_managed_models() -> std::result::Result<Vec<api::ManagedModelRecord>, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley.list_managed_models().await.map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn save_managed_model_provider(
+    app: tauri::AppHandle,
+    input: SaveManagedProviderInput,
+) -> std::result::Result<api::ManagedModelProviderRecord, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    let id = input
+        .id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(new_managed_provider_id);
+    let api_key_ref = galley
+        .list_managed_model_providers()
+        .await
+        .map_err(stringify_error)?
+        .into_iter()
+        .find(|provider| provider.id == id)
+        .map(|provider| provider.api_key_ref)
+        .unwrap_or_else(|| credential_store::managed_provider_api_key_ref(&id));
+    let api_key = input
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if let Some(api_key) = api_key {
+        credential_store::set_secret(&api_key_ref, api_key).map_err(stringify_error)?;
+    } else if !credential_store::has_secret(&api_key_ref) {
+        return Err(stringify_error(error::GalleyError::InvalidArgs {
+            message: "managed provider API key is required".into(),
+        }));
+    }
+
+    let display_name = input
+        .display_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| input.api_base.trim())
+        .to_string();
+    let saved = galley
+        .upsert_managed_model_provider_metadata(UpsertManagedModelProviderMetadata {
+            id,
+            display_name,
+            protocol: input.protocol,
+            api_base: input.api_base,
+            api_key_ref,
+        })
+        .await
+        .map_err(stringify_error)?;
+    sync_managed_model_config(&app, &galley).await?;
+    Ok(saved)
+}
+
+#[tauri::command]
+async fn delete_managed_model_provider(
+    app: tauri::AppHandle,
+    id: String,
+) -> std::result::Result<(), String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    let id = id.trim();
+    if id.is_empty() {
+        return Err(stringify_error(error::GalleyError::InvalidArgs {
+            message: "managed provider id must not be empty".into(),
+        }));
+    }
+    if let Some(api_key_ref) = galley
+        .delete_managed_model_provider_metadata(id)
+        .await
+        .map_err(stringify_error)?
+    {
+        credential_store::delete_secret(&api_key_ref).map_err(stringify_error)?;
+    }
+    sync_managed_model_config(&app, &galley).await?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -125,20 +213,18 @@ async fn save_managed_model(
         .filter(|s| !s.is_empty())
         .map(ToOwned::to_owned)
         .unwrap_or_else(new_managed_model_id);
-    let api_key_ref = credential_store::managed_model_api_key_ref(&id);
-    let api_key = input
-        .api_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    if let Some(api_key) = api_key {
-        credential_store::set_secret(&api_key_ref, api_key).map_err(stringify_error)?;
-    } else if !credential_store::has_secret(&api_key_ref) {
-        return Err(stringify_error(error::GalleyError::InvalidArgs {
-            message: "managed model API key is required".into(),
-        }));
-    }
-
+    let providers = galley
+        .list_managed_model_providers()
+        .await
+        .map_err(stringify_error)?;
+    let provider = providers
+        .iter()
+        .find(|provider| provider.id == input.provider_id)
+        .ok_or_else(|| {
+            stringify_error(error::GalleyError::InvalidArgs {
+                message: format!("managed provider {} not found", input.provider_id),
+            })
+        })?;
     let display_name = input
         .display_name
         .as_deref()
@@ -149,12 +235,12 @@ async fn save_managed_model(
     let saved = galley
         .upsert_managed_model_metadata(UpsertManagedModelMetadata {
             id,
+            provider_id: input.provider_id,
             display_name,
-            protocol: input.protocol,
-            api_base: input.api_base,
             model: input.model,
-            api_key_ref,
-            advanced_options: managed_model_advanced_defaults(input.protocol),
+            advanced_options: input
+                .advanced_options
+                .unwrap_or_else(|| managed_model_advanced_defaults(provider.protocol)),
             make_default: input.make_default.unwrap_or(false),
         })
         .await
@@ -175,8 +261,6 @@ async fn delete_managed_model(
             message: "managed model id must not be empty".into(),
         }));
     }
-    let api_key_ref = credential_store::managed_model_api_key_ref(id);
-    credential_store::delete_secret(&api_key_ref).map_err(stringify_error)?;
     galley
         .delete_managed_model_metadata(id)
         .await
@@ -221,6 +305,10 @@ async fn sync_managed_model_config(
 
 fn new_managed_model_id() -> String {
     format!("mm_{}", chrono::Utc::now().timestamp_millis())
+}
+
+fn new_managed_provider_id() -> String {
+    format!("mp_{}", chrono::Utc::now().timestamp_millis())
 }
 
 fn managed_model_advanced_defaults(protocol: api::ManagedModelProtocol) -> serde_json::Value {
@@ -698,6 +786,12 @@ pub fn run() {
             sql: include_str!("../migrations/009_managed_models.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 10,
+            description: "split managed model providers from models",
+            sql: include_str!("../migrations/010_managed_model_providers.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —
@@ -730,6 +824,9 @@ pub fn run() {
             install_galley_to_path,
             uninstall_galley_from_path,
             ensure_managed_runtime_layout,
+            list_managed_model_providers,
+            save_managed_model_provider,
+            delete_managed_model_provider,
             list_managed_models,
             save_managed_model,
             delete_managed_model,

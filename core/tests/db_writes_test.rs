@@ -12,8 +12,11 @@ use galley_core_lib::api::{
     ManagedModelProtocol, Origin, ProjectId, ProjectPatch, RuntimeKind, SessionFilter, SessionId,
     SessionStatus,
 };
-use galley_core_lib::db::{SqliteGalley, UpsertManagedModelMetadata};
+use galley_core_lib::db::{
+    SqliteGalley, UpsertManagedModelMetadata, UpsertManagedModelProviderMetadata,
+};
 use galley_core_lib::error::GalleyError;
+use galley_core_lib::managed_runtime;
 use sqlx::SqlitePool;
 
 // Migration SQL — keep in sync with `core/src/lib.rs::run()`.
@@ -26,6 +29,7 @@ const MIG_006: &str = include_str!("../migrations/006_messages_origin.sql");
 const MIG_007: &str = include_str!("../migrations/007_sessions_origin.sql");
 const MIG_008: &str = include_str!("../migrations/008_runtime_identity.sql");
 const MIG_009: &str = include_str!("../migrations/009_managed_models.sql");
+const MIG_010: &str = include_str!("../migrations/010_managed_model_providers.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -39,7 +43,7 @@ async fn fresh_pool() -> SqlitePool {
         .await
         .expect("enable foreign keys");
     for sql in [
-        MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009,
+        MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -95,14 +99,28 @@ async fn managed_model_metadata_never_requires_plaintext_key_in_db() {
     let pool = fresh_pool().await;
     let galley = SqliteGalley::from_pool(pool.clone());
 
+    let provider = galley
+        .upsert_managed_model_provider_metadata(UpsertManagedModelProviderMetadata {
+            id: "mp_test".into(),
+            display_name: "Anthropic".into(),
+            protocol: ManagedModelProtocol::Anthropic,
+            api_base: "https://api.anthropic.com".into(),
+            api_key_ref: "managed-provider:mp_test".into(),
+        })
+        .await
+        .expect("upsert managed provider metadata");
+    assert_eq!(provider.api_key_ref, "managed-provider:mp_test");
+    assert!(matches!(
+        provider.credential_status,
+        ManagedModelCredentialStatus::Missing
+    ));
+
     let row = galley
         .upsert_managed_model_metadata(UpsertManagedModelMetadata {
             id: "mm_test".into(),
+            provider_id: "mp_test".into(),
             display_name: "Claude".into(),
-            protocol: ManagedModelProtocol::Anthropic,
-            api_base: "https://api.anthropic.com".into(),
             model: "claude-sonnet-4-6".into(),
-            api_key_ref: "managed-model:mm_test".into(),
             advanced_options: serde_json::json!({
                 "thinking_type": "adaptive",
                 "read_timeout": 180
@@ -112,7 +130,8 @@ async fn managed_model_metadata_never_requires_plaintext_key_in_db() {
         .await
         .expect("upsert managed model metadata");
 
-    assert_eq!(row.api_key_ref, "managed-model:mm_test");
+    assert_eq!(row.provider_id, "mp_test");
+    assert_eq!(row.api_key_ref, "managed-provider:mp_test");
     assert!(matches!(
         row.credential_status,
         ManagedModelCredentialStatus::Missing
@@ -120,12 +139,12 @@ async fn managed_model_metadata_never_requires_plaintext_key_in_db() {
     assert!(row.is_default);
 
     let raw_rows: Vec<(String,)> =
-        sqlx::query_as("SELECT api_key_ref FROM managed_models WHERE id = ?")
-            .bind("mm_test")
+        sqlx::query_as("SELECT api_key_ref FROM managed_model_providers WHERE id = ?")
+            .bind("mp_test")
             .fetch_all(&pool)
             .await
-            .expect("read raw model row");
-    assert_eq!(raw_rows, vec![("managed-model:mm_test".to_string(),)]);
+            .expect("read raw provider row");
+    assert_eq!(raw_rows, vec![("managed-provider:mp_test".to_string(),)]);
 }
 
 // ---------------- create_session ----------------
@@ -160,7 +179,10 @@ async fn create_session_happy_path_persists_all_fields() {
     );
     assert!(matches!(brief.ga_runtime_kind, RuntimeKind::Managed));
     assert!(brief.ga_runtime_id.is_none());
-    assert!(brief.prompt_profile.is_none());
+    assert_eq!(
+        brief.prompt_profile.as_deref(),
+        Some(managed_runtime::PROMPT_PROFILE_ID)
+    );
 }
 
 #[tokio::test]

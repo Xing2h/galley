@@ -142,6 +142,8 @@ async fn session_new_passes_through_optional_flags() {
             "proj_demo",
             "--llm",
             "glm-4.5-x",
+            "--runtime",
+            "external",
             "--supervisor",
             "ga-claude-1",
             "--reason",
@@ -149,6 +151,21 @@ async fn session_new_passes_through_optional_flags() {
         ],
     );
     assert_eq!(code, Some(4), "stdout: {stdout}");
+}
+
+#[tokio::test]
+async fn session_new_rejects_runtime_all() {
+    let td = tempdir();
+    let db = td.path().join("test.db");
+    drop(seeded_db_at(&db).await);
+    let (stdout, code) = run_galley_isolated(
+        &db,
+        td.path(),
+        &["session", "new", "investigate", "--runtime", "all"],
+    );
+    assert_eq!(code, Some(2), "stdout: {stdout}");
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+    assert_eq!(parsed["error"], "invalid_args");
 }
 
 #[tokio::test]

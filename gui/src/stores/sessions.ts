@@ -6,6 +6,11 @@ import { create } from "zustand";
 // Vite / ES modules as long as accesses happen at action-body time
 // rather than module evaluation time — exactly the case here
 // (everything is `useFooStore.getState()` inside an async action).
+import {
+  currentLLMDisplayName,
+  managedModelsToLLMs,
+} from "@/lib/managed-model-options";
+import { useManagedModelsStore } from "@/stores/managed-models";
 import { useMessagesStore } from "@/stores/messages";
 import { usePrefsStore } from "@/stores/prefs";
 import { useRuntimeStore } from "@/stores/runtime";
@@ -68,6 +73,8 @@ interface SessionBriefWire {
   hasUnread?: boolean;
   selectedLlmIndex?: number;
   selectedLlmDisplayName?: string;
+  runtimeKind?: RuntimeKind;
+  runtimeLabel?: string;
   gaRuntimeKind?: RuntimeKind;
   gaRuntimeId?: string;
   promptProfile?: string;
@@ -90,6 +97,7 @@ interface ProjectBriefWire {
 // system writes (B4) build their own. Created at module top so every
 // invoke can share the same instance.
 const GUI_ORIGIN = { via: "gui" } as const;
+const MANAGED_PROMPT_PROFILE = "galley-persona-v1";
 
 // Mirror of Rust `CreateSessionInput`.
 interface CreateSessionInputWire {
@@ -168,6 +176,10 @@ function sessionFromBrief(b: SessionBriefWire): Session {
     updatedAt: b.updatedAt,
     selectedLlmIndex: b.selectedLlmIndex,
     selectedLlmDisplayName: b.selectedLlmDisplayName,
+    runtimeKind: b.runtimeKind ?? gaRuntimeKind,
+    runtimeLabel:
+      b.runtimeLabel ??
+      (gaRuntimeKind === "managed" ? "Galley" : "Attached GenericAgent"),
     gaRuntimeKind,
     gaRuntimeId: b.gaRuntimeId,
     promptProfile: b.promptProfile,
@@ -389,13 +401,24 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     get().setActiveSession(id);
     const session = get().sessions.find((s) => s.id === id);
     // Step 2: lazy-init the runtime entry — LLM seed comes from the
-    // session row's persisted choice + cross-session cache.
+    // session row's persisted choice + the active runtime's own model
+    // list. Managed sessions must not seed from the external GA cache.
     const runtimeStore = useRuntimeStore.getState();
+    const runtimeKind =
+      session?.gaRuntimeKind ?? usePrefsStore.getState().activeRuntimeKind;
+    const managedSeedLLMs =
+      runtimeKind === "managed"
+        ? managedModelsToLLMs(useManagedModelsStore.getState().models)
+        : undefined;
     runtimeStore.ensureRuntime(id, {
       persistedIndex: session?.selectedLlmIndex,
-      persistedDisplayName: session?.selectedLlmDisplayName,
-      cachedLLMs: runtimeStore.cachedLLMs,
-      cachedDisplayName: runtimeStore.cachedLLMDisplayName,
+      persistedDisplayName:
+        runtimeKind === "managed" ? undefined : session?.selectedLlmDisplayName,
+      cachedLLMs: managedSeedLLMs ?? runtimeStore.cachedLLMs,
+      cachedDisplayName:
+        runtimeKind === "managed"
+          ? currentLLMDisplayName(managedSeedLLMs ?? [])
+          : runtimeStore.cachedLLMDisplayName,
     });
     // Step 3: lazy-init the messages entry for this session.
     const messagesStore = useMessagesStore.getState();
@@ -475,6 +498,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
         sessionId: id,
         cwd: undefined,
         llmIndex: consumePending ? pendingLLMIndex : restoredLlmIndex,
+        runtimeKind,
       });
     }
     // Already alive — runtimeStore.spawnBridge internally LRU-touches
@@ -487,6 +511,8 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       .slice(2, 6)}`;
     const now = new Date().toISOString();
     const gaRuntimeKind = usePrefsStore.getState().activeRuntimeKind;
+    const promptProfile =
+      gaRuntimeKind === "managed" ? MANAGED_PROMPT_PROFILE : undefined;
     const newSession: Session = {
       id,
       title: DEFAULT_NEW_SESSION_TITLE,
@@ -497,7 +523,11 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       lastActivityAt: now,
       createdAt: now,
       updatedAt: now,
+      runtimeKind: gaRuntimeKind,
+      runtimeLabel:
+        gaRuntimeKind === "managed" ? "Galley" : "Attached GenericAgent",
       gaRuntimeKind,
+      promptProfile,
     };
     set((state) => ({
       sessions: [newSession, ...state.sessions],
@@ -509,6 +539,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
         title: DEFAULT_NEW_SESSION_TITLE,
         projectId,
         gaRuntimeKind,
+        promptProfile,
       } as CreateSessionInputWire,
       origin: GUI_ORIGIN,
     }).catch((e) => {
@@ -1155,7 +1186,13 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       const briefs = await invokeHydrate<SessionBriefWire[]>("list_sessions", {
         filter: { runtimeKind: activeRuntimeKind },
       });
-      set({ sessions: briefs.map(sessionFromBrief) });
+      const sessions = briefs.map(sessionFromBrief);
+      set((state) => ({
+        sessions,
+        activeSessionId: sessions.some((s) => s.id === state.activeSessionId)
+          ? state.activeSessionId
+          : undefined,
+      }));
     } catch (e) {
       console.warn("[sessions] hydrate sessions failed.", e);
     }

@@ -96,7 +96,7 @@ tauri-plugin-process = "2"
 
 # Managed model API keys live in the platform credential store
 # (macOS Keychain, Windows Credential Manager, Linux Secret Service).
-keyring = "3"
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 
 # Managed model setup probes provider endpoints from Rust so saved Keychain
 # secrets do not need to round-trip through GUI state.

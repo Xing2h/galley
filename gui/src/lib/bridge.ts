@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isWindows } from "@/lib/platform";
 import { findCandidateByAlias } from "@/lib/python-probe";
 import type { IPCCommand, IPCEvent } from "@/types/ipc";
+import type { RuntimeKind } from "@/types/session";
 
 /**
  * Bridge subprocess client.
@@ -72,6 +73,8 @@ export interface BridgeSpawnArgs {
   llmIndex?: number;
   /** Extra environment variables passed to the Python child. */
   env?: Record<string, string>;
+  /** Runtime profile. External is the legacy attach path. */
+  runtimeKind?: RuntimeKind;
 }
 
 export interface BridgeClient {
@@ -126,6 +129,7 @@ interface SpawnRunnerArgsJson {
   bridgeCwd: string;
   llmIndex?: number;
   env: Array<[string, string]>;
+  runtimeKind?: RuntimeKind;
   activeSessionId?: string;
 }
 
@@ -163,6 +167,7 @@ export async function spawnBridge(
     bridgeCwd,
     llmIndex: args.llmIndex,
     env: args.env ? Object.entries(args.env) : [],
+    runtimeKind: args.runtimeKind,
   };
 
   // Register listeners BEFORE invoking spawn so we don't miss the very
@@ -469,6 +474,8 @@ function formatInvokeError(e: unknown): string {
   try {
     const parsed = JSON.parse(raw) as { error?: string; detail?: string };
     if (parsed.error) {
+      const specific = actionableInvokeError(parsed.error);
+      if (specific) return specific;
       const human = humanizeErrorTag(parsed.error);
       return parsed.detail ? `${human}: ${parsed.detail}` : human;
     }
@@ -478,12 +485,29 @@ function formatInvokeError(e: unknown): string {
   return raw;
 }
 
+function actionableInvokeError(tag: string): string | null {
+  switch (tag) {
+    case "managed_model_not_configured":
+      return "Galley 模型不可用。请在 Settings -> Models 添加模型，或重新输入 API Key。";
+    case "managed_runtime_invalid":
+      return "Galley 内置运行时不完整。请重新安装或更新 Galley。";
+    case "ga_path_invalid":
+      return "接入的 GenericAgent 路径不可用。请在 Settings -> Runtime 重新选择 GA 目录。";
+    default:
+      return null;
+  }
+}
+
 function humanizeErrorTag(tag: string): string {
   switch (tag) {
     case "python_not_found":
       return "Python not found";
     case "ga_path_invalid":
       return "GA path invalid";
+    case "managed_runtime_invalid":
+      return "Managed runtime invalid";
+    case "managed_model_not_configured":
+      return "Managed model not configured";
     case "bridge_cwd_invalid":
       return "Bridge working directory invalid";
     case "path_encoding":

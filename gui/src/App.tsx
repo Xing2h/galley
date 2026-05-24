@@ -19,6 +19,10 @@ import {
   EditProjectDialog,
 } from "@/components/screens/project/EditProjectDialog";
 import { ensureHistoryReplayComplete } from "@/lib/ipc-handlers";
+import {
+  currentLLMDisplayName,
+  managedModelsToLLMs,
+} from "@/lib/managed-model-options";
 import { bucketSession } from "@/lib/sessions";
 import {
   EMPTY_APPROVALS,
@@ -125,8 +129,7 @@ function App() {
   );
   const cachedLLMs = useRuntimeStore((s) => s.cachedLLMs);
   const cachedLLMDisplayName = useRuntimeStore((s) => s.cachedLLMDisplayName);
-  const llms = activeRuntimeLLMs ?? cachedLLMs;
-  const llmDisplayName = activeRuntimeDisplayName ?? cachedLLMDisplayName ?? "";
+  const pendingLLMIndex = useRuntimeStore((s) => s.pendingLLMIndex);
   const selectLLMForNewSession = useRuntimeStore(
     (s) => s.selectLLMForNewSession,
   );
@@ -172,9 +175,31 @@ function App() {
   const sendIPCCommand = useRuntimeStore((s) => s.sendIPCCommand);
   const shutdownBridge = useRuntimeStore((s) => s.shutdownBridge);
   const setGAConfig = usePrefsStore((s) => s.setGAConfig);
+  const setActiveRuntimeKind = usePrefsStore((s) => s.setActiveRuntimeKind);
   const gaConfig = usePrefsStore((s) => s.gaConfig);
   const activeRuntimeKind = usePrefsStore((s) => s.activeRuntimeKind);
   const managedModels = useManagedModelsStore((s) => s.models);
+  const managedLLMs = useMemo(
+    () => managedModelsToLLMs(managedModels, pendingLLMIndex),
+    [managedModels, pendingLLMIndex],
+  );
+  const managedLLMDisplayName = currentLLMDisplayName(
+    managedLLMs,
+    "未配置模型",
+  );
+  const fallbackLLMs =
+    activeRuntimeKind === "managed" ? managedLLMs : cachedLLMs;
+  const fallbackLLMDisplayName =
+    activeRuntimeKind === "managed"
+      ? managedLLMDisplayName
+      : cachedLLMDisplayName;
+  const llms = activeRuntimeLLMs ?? fallbackLLMs;
+  const llmDisplayName =
+    activeRuntimeDisplayName ?? fallbackLLMDisplayName ?? "";
+  const llmConfigHint =
+    activeRuntimeKind === "managed"
+      ? "在 Settings -> Models 调整 Galley 模型"
+      : "修改 mykey.py 后重启 Galley 生效";
   const hasUsableManagedModel = managedModels.some(
     (model) => model.credentialStatus === "present",
   );
@@ -857,6 +882,7 @@ function App() {
               showPromptSuggestions={!activeProject}
               focusTick={emptyComposerFocusTick}
               llms={llms}
+              llmConfigHint={llmConfigHint}
               onSelectLLM={(idx) => {
                 // EmptyState always configures the *next* new
                 // session: stash pendingLLMIndex + flip the
@@ -906,6 +932,7 @@ function App() {
                   : undefined
               }
               llms={llms}
+              llmConfigHint={llmConfigHint}
               onSelectLLM={(idx) => {
                 if (!activeSessionId) return;
                 // Flip local + persisted state immediately so the
@@ -1116,6 +1143,9 @@ function App() {
         approval={approvalConfig}
         projectCount={projects.length}
         hasRunningSessions={hasRunningSessions}
+        activeRuntimeKind={activeRuntimeKind}
+        hasManagedRuntimeConfigured={hasUsableManagedModel}
+        hasExternalRuntimeConfigured={gaConfig.gaPath.trim() !== ""}
         yoloMode={yoloMode}
         useExternalPython={gaConfig.useExternalPython}
         onChangeYoloMode={(enabled) => {
@@ -1142,6 +1172,17 @@ function App() {
           // sessions keep their current Python). setGAConfig shows
           // the same "重启 Galley" toast.
           void setGAConfig({ useExternalPython: useExternal });
+        }}
+        onChangeRuntimeKind={(kind) => {
+          if (kind === activeRuntimeKind) return;
+          void (async () => {
+            await setActiveRuntimeKind(kind);
+            useRuntimeStore.setState({ pendingLLMIndex: undefined });
+            setActiveProjectFilter(undefined);
+            setActiveSession(undefined);
+            setScreen("empty");
+            await useSessionsStore.getState().hydrate();
+          })();
         }}
         // Bridge Python picker intentionally not wired — V0.1 relies
         // on the python probe to pick the interpreter; advanced users

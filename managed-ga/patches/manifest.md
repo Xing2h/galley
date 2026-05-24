@@ -2,7 +2,11 @@
 
 Patch stack id: `galley-managed-ga-patches-v1`
 
-Current state: no managed-runtime patches are applied yet.
+Current patches:
+
+| Patch | Upstream files | Reason | Rebase risk | Removal condition |
+|---|---|---|---|---|
+| `0001-managed-state-root.patch` | `agentmain.py`, `ga.py`, `llmcore.py`, `frontends/continue_cmd.py` | Keep Galley-managed user state under `Application Support/app.galley/managed-ga-state` instead of the shipped code payload. | Medium: upstream may rename state paths or model response logging. | Remove when GenericAgent supports an explicit state root / profile path upstream. |
 
 Rules:
 

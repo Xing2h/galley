@@ -72,6 +72,8 @@ export interface MainViewProps {
   llms?: ComposerLLMOption[];
   /** Called when the user picks an LLM from the inline dropdown. */
   onSelectLLM?: (index: number) => void;
+  /** Runtime-specific footer hint in the Composer model dropdown. */
+  llmConfigHint?: string;
   /** Fallback for pre-bridge / dev when `llms` is empty. */
   onOpenLLMSwitcher?: () => void;
   /**
@@ -133,6 +135,7 @@ export function MainView({
   inFlightContent = "",
   llms,
   onSelectLLM,
+  llmConfigHint,
   onOpenLLMSwitcher,
   pendingAskUser,
   conversationWidth = "compact",
@@ -680,6 +683,7 @@ export function MainView({
             disabled={false}
             llms={llms}
             onSelectLLM={onSelectLLM}
+            llmConfigHint={llmConfigHint}
             onOpenLLMSwitcher={onOpenLLMSwitcher}
           />
 

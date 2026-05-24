@@ -41,10 +41,13 @@
 //! parse and pattern-match on the `error` discriminant — same convention
 //! as B1's [`list_sessions`].
 
+use crate::api::{ManagedModelProtocol, RuntimeKind};
+use crate::db::SqliteGalley;
 use crate::ipc::IpcCommand;
 use crate::runner_manager::{
     BroadcastItem, RunnerManager, RunnerSpawnError, SendCommandError, ShutdownError, SpawnArgs,
 };
+use crate::{credential_store, managed_model_config, managed_runtime};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -70,6 +73,10 @@ pub struct SpawnRunnerArgs {
     /// preserves insertion order if that ever matters.)
     #[serde(default)]
     pub env: Vec<(String, String)>,
+    /// Which GA runtime profile to spawn. Omitted means external for
+    /// compatibility with older GUI/socket callers.
+    #[serde(default)]
+    pub runtime_kind: Option<RuntimeKind>,
     /// Optional: if Some, the manager treats this id as the
     /// eviction-protected active session for the LRU walk.
     #[serde(default)]
@@ -129,6 +136,153 @@ fn err_to_json<T: Serialize + std::fmt::Display>(e: T) -> String {
     serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManagedRuntimeModelConfig {
+    schema_version: u32,
+    models: Vec<ManagedRuntimeModel>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManagedRuntimeModel {
+    display_name: String,
+    protocol: ManagedModelProtocol,
+    api_base: String,
+    model: String,
+    api_key: String,
+    advanced_options: serde_json::Value,
+}
+
+pub(crate) async fn prepare_managed_spawn_args(
+    mut args: SpawnArgs,
+    app: &AppHandle,
+) -> Result<SpawnArgs, RunnerSpawnError> {
+    let diagnostics = managed_runtime::ensure_for_app(app).map_err(|e| {
+        RunnerSpawnError::ManagedRuntimeInvalid {
+            detail: format!("layout initialization failed: {e}"),
+        }
+    })?;
+    if !diagnostics.code.agentmain_exists {
+        return Err(RunnerSpawnError::ManagedRuntimeInvalid {
+            detail: format!(
+                "managed GA code is missing agentmain.py at {}",
+                diagnostics.paths.code_root
+            ),
+        });
+    }
+    if !diagnostics.code.runtime_prompt_exists || !diagnostics.code.persona_prompt_exists {
+        return Err(RunnerSpawnError::ManagedRuntimeInvalid {
+            detail: format!(
+                "managed prompt profile is incomplete: runtimePrompt={}, personaPrompt={}",
+                diagnostics.paths.runtime_prompt_path, diagnostics.paths.persona_prompt_path
+            ),
+        });
+    }
+
+    let galley =
+        SqliteGalley::open()
+            .await
+            .map_err(|e| RunnerSpawnError::ManagedRuntimeInvalid {
+                detail: format!("opening Galley database failed: {e}"),
+            })?;
+    let models = galley.list_managed_models().await.map_err(|e| {
+        RunnerSpawnError::ManagedModelNotConfigured {
+            detail: format!("loading managed model records failed: {e}"),
+        }
+    })?;
+    let mut runtime_models = Vec::new();
+    for model in models {
+        let api_key = match credential_store::get_secret(&model.api_key_ref) {
+            Ok(secret) if !secret.trim().is_empty() => secret,
+            _ => continue,
+        };
+        runtime_models.push(ManagedRuntimeModel {
+            display_name: model.display_name,
+            protocol: model.protocol,
+            api_base: model.api_base,
+            model: model.model,
+            api_key,
+            advanced_options: model.advanced_options,
+        });
+    }
+    if runtime_models.is_empty() {
+        return Err(RunnerSpawnError::ManagedModelNotConfigured {
+            detail: "no managed model has a usable credential; open Settings -> Models to re-enter the model key".into(),
+        });
+    }
+
+    let model_config_dir = PathBuf::from(&diagnostics.paths.model_config_dir);
+    let model_config_path = model_config_dir.join(managed_model_config::GENERATED_CONFIG_FILENAME);
+    if !model_config_path.is_file() {
+        std::fs::create_dir_all(&model_config_dir).map_err(|e| {
+            RunnerSpawnError::ManagedRuntimeInvalid {
+                detail: format!("creating managed model config dir failed: {e}"),
+            }
+        })?;
+        std::fs::write(&model_config_path, "{\"schemaVersion\":1,\"models\":[]}\n").map_err(
+            |e| RunnerSpawnError::ManagedRuntimeInvalid {
+                detail: format!("creating managed model config marker failed: {e}"),
+            },
+        )?;
+    }
+
+    let runtime_config = serde_json::to_string(&ManagedRuntimeModelConfig {
+        schema_version: 1,
+        models: runtime_models,
+    })
+    .map_err(|e| RunnerSpawnError::ManagedRuntimeInvalid {
+        detail: format!("serializing managed runtime model config failed: {e}"),
+    })?;
+
+    args.ga_path = PathBuf::from(&diagnostics.paths.code_root);
+    args.bridge_cwd = managed_runtime::bridge_cwd_for_app(app).map_err(|e| {
+        RunnerSpawnError::ManagedRuntimeInvalid {
+            detail: format!("resolving managed bridge cwd failed: {e}"),
+        }
+    })?;
+    args.cwd = None;
+    args.env
+        .push(("GALLEY_RUNTIME_KIND".into(), "managed".into()));
+    args.env
+        .push(("PYTHONDONTWRITEBYTECODE".into(), "1".into()));
+    args.env.push((
+        "GALLEY_GA_STATE_ROOT".into(),
+        diagnostics.paths.state_root.clone(),
+    ));
+    args.env.push((
+        "GALLEY_MANAGED_MODEL_CONFIG_PATH".into(),
+        model_config_path.to_string_lossy().into_owned(),
+    ));
+    args.env.push((
+        "GALLEY_RUNTIME_PROMPT_PATH".into(),
+        diagnostics.paths.runtime_prompt_path.clone(),
+    ));
+    args.env.push((
+        "GALLEY_PERSONA_PROMPT_PATH".into(),
+        diagnostics.paths.persona_prompt_path.clone(),
+    ));
+    args.env
+        .push(("GALLEY_MANAGED_MODEL_CONFIG_JSON".into(), runtime_config));
+    Ok(args)
+}
+
+fn prepare_external_spawn_args(
+    mut args: SpawnArgs,
+    app: &AppHandle,
+) -> Result<SpawnArgs, RunnerSpawnError> {
+    // bridgeCwd is Galley's implementation detail, not user GA state.
+    // Dev should run from the repo root; production should run from the
+    // packaged resources dir. Ignore stale persisted bridgeCwd values such as
+    // old developer-machine defaults.
+    args.bridge_cwd = managed_runtime::bridge_cwd_for_app(app).map_err(|e| {
+        RunnerSpawnError::BridgeCwdInvalid {
+            detail: format!("resolving Galley bridge cwd failed: {e}"),
+        }
+    })?;
+    Ok(args)
+}
+
 #[tauri::command]
 pub async fn spawn_runner(
     args: SpawnRunnerArgs,
@@ -137,7 +291,16 @@ pub async fn spawn_runner(
 ) -> Result<u32, String> {
     let active = args.active_session_id.clone();
     let session_id = args.session_id.clone();
-    let spawn_args: SpawnArgs = args.into();
+    let runtime_kind = args.runtime_kind.unwrap_or(RuntimeKind::External);
+    let mut spawn_args: SpawnArgs = args.into();
+    if runtime_kind == RuntimeKind::Managed {
+        spawn_args = prepare_managed_spawn_args(spawn_args, &app)
+            .await
+            .map_err(err_to_json::<RunnerSpawnError>)?;
+    } else {
+        spawn_args = prepare_external_spawn_args(spawn_args, &app)
+            .map_err(err_to_json::<RunnerSpawnError>)?;
+    }
 
     let pid = manager
         .spawn(spawn_args, active.as_deref())
@@ -300,11 +463,13 @@ mod tests {
             "cwd": null,
             "bridgeCwd": "/repo/runner",
             "llmIndex": 0,
+            "runtimeKind": "managed",
             "env": [["FOO", "bar"]]
         }"#;
         let parsed: SpawnRunnerArgs = serde_json::from_str(line).expect("parse");
         assert_eq!(parsed.session_id, "s1");
         assert_eq!(parsed.bridge_cwd, "/repo/runner");
+        assert_eq!(parsed.runtime_kind, Some(RuntimeKind::Managed));
         assert_eq!(parsed.env, vec![("FOO".to_string(), "bar".to_string())]);
     }
 
@@ -319,6 +484,7 @@ mod tests {
         let parsed: SpawnRunnerArgs = serde_json::from_str(line).expect("parse");
         assert!(parsed.cwd.is_none());
         assert!(parsed.llm_index.is_none());
+        assert!(parsed.runtime_kind.is_none());
         assert!(parsed.env.is_empty());
         assert!(parsed.active_session_id.is_none());
     }

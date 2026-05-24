@@ -32,7 +32,8 @@ export function StepModelConfig({
   onComplete,
   onAttachExisting,
 }: StepModelConfigProps) {
-  const save = useManagedModelsStore((s) => s.save);
+  const saveProvider = useManagedModelsStore((s) => s.saveProvider);
+  const saveModel = useManagedModelsStore((s) => s.saveModel);
   const [protocol, setProtocol] =
     useState<ManagedModelProtocol>("openai");
   const [apiKey, setApiKey] = useState("");
@@ -84,10 +85,14 @@ export function StepModelConfig({
     setState({ kind: "loading", action: "start" });
     try {
       await testManagedModelConnection(probeInput());
-      await save({
+      const provider = await saveProvider({
         protocol,
         apiKey,
         apiBase,
+        displayName: providerDisplayName(apiBase),
+      });
+      await saveModel({
+        providerId: provider.id,
         model,
         makeDefault: true,
       });
@@ -318,4 +323,12 @@ function errorMessage(e: unknown): string {
   }
   if (e instanceof Error) return e.message;
   return "操作失败";
+}
+
+function providerDisplayName(apiBase: string): string {
+  try {
+    return new URL(apiBase).hostname;
+  } catch {
+    return apiBase.trim();
+  }
 }

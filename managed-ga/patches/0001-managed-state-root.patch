@@ -1,0 +1,161 @@
+diff --git a/agentmain.py b/agentmain.py
+index 5c40e30..df1ca3a 100644
+--- a/agentmain.py
++++ b/agentmain.py
+@@ -23,6 +23,10 @@ except Exception: pass
+ from ga import GenericAgentHandler, smart_format, get_global_memory, format_error, consume_file
+ 
+ script_dir = os.path.dirname(os.path.abspath(__file__))
++state_dir = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or script_dir)
++def state_path(*parts):
++    return os.path.join(state_dir, *parts)
++
+ def load_tool_schema(suffix=''):
+     global TOOLS_SCHEMA
+     TS = open(os.path.join(script_dir, f'assets/tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
+@@ -30,7 +34,7 @@ def load_tool_schema(suffix=''):
+ load_tool_schema()
+ 
+ lang_suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
+-mem_dir = os.path.join(script_dir, 'memory')
++mem_dir = state_path('memory')
+ if not os.path.exists(mem_dir): os.makedirs(mem_dir)
+ mem_txt = os.path.join(mem_dir, 'global_mem.txt')
+ if not os.path.exists(mem_txt): open(mem_txt, 'w', encoding='utf-8').write('# [Global Memory - L2]\n')
+@@ -53,7 +57,7 @@ def get_system_prompt():
+ 
+ class GenericAgent:
+     def __init__(self):
+-        os.makedirs(os.path.join(script_dir, 'temp'), exist_ok=True)
++        os.makedirs(state_path('temp'), exist_ok=True)
+         self.lock = threading.Lock()
+         self.task_dir = None
+         self.history = []; self.handler = None; 
+@@ -61,7 +65,7 @@ class GenericAgent:
+         self.is_running = False; self.stop_sig = False; self.llm_no = 0;  
+         self.inc_out = False; self.verbose = True; self.show_mode = 'text'
+         self.peer_hint = True
+-        self.log_path = os.path.join(script_dir, f'temp/model_responses/model_responses_{int(time.time()*1e6)%1000000:06d}.txt')
++        self.log_path = state_path('temp', 'model_responses', f'model_responses_{int(time.time()*1e6)%1000000:06d}.txt')
+         self.load_llm_sessions()
+ 
+     def load_llm_sessions(self):
+@@ -123,7 +127,7 @@ class GenericAgent:
+         if not raw_query.startswith('/'): return raw_query
+         if _sm := re.match(r'/session\.(\w+)=(.*)', raw_query.strip()):
+             k, v = _sm.group(1), _sm.group(2)
+-            vfile = os.path.join(script_dir, 'temp', v)
++            vfile = state_path('temp', v)
+             if os.path.isfile(vfile): v = open(vfile, encoding='utf-8').read().strip()
+             try: v = json.loads(v)  # cover number parsing
+             except (json.JSONDecodeError, ValueError): pass
+@@ -147,7 +151,7 @@ class GenericAgent:
+             
+             sys_prompt = get_system_prompt() + getattr(self.llmclient.backend, 'extra_sys_prompt', '')
+             if self.peer_hint: sys_prompt += f"\n[Peer] 用户提及其他会话/后台任务状态时: temp/model_responses/ (只找近期修改的文件尾部)\n"
+-            handler = GenericAgentHandler(self, self.history, os.path.join(script_dir, 'temp'))
++            handler = GenericAgentHandler(self, self.history, state_path('temp'))
+             if self.handler and 'key_info' in self.handler.working: 
+                 ki = re.sub(r'\n\[SYSTEM\] 此为.*?工作记忆[。\n]*', '', self.handler.working['key_info'])  # 去旧
+                 handler.working['key_info'] = ki
+@@ -202,7 +206,7 @@ if __name__ == '__main__':
+     if args.task and not args.nobg:
+         import subprocess, platform
+         cmd = [sys.executable, os.path.abspath(__file__)] + [a for a in sys.argv[1:]] + ['--nobg']
+-        d = os.path.join(script_dir, f'temp/{args.task}'); os.makedirs(d, exist_ok=True)
++        d = state_path('temp', args.task); os.makedirs(d, exist_ok=True)
+         p = subprocess.Popen(cmd, cwd=script_dir,
+             creationflags=0x08000000 if platform.system() == 'Windows' else 0,
+             stdout=open(os.path.join(d, 'stdout.log'), 'w', encoding='utf-8'),
+@@ -216,7 +220,7 @@ if __name__ == '__main__':
+ 
+     if args.task:
+         agent.peer_hint = False
+-        agent.task_dir = d = os.path.join(script_dir, f'temp/{args.task}'); nround = ''
++        agent.task_dir = d = state_path('temp', args.task); nround = ''
+         infile = os.path.join(d, 'input.txt')
+         if args.input:
+             os.makedirs(d, exist_ok=True)
+@@ -266,7 +270,7 @@ if __name__ == '__main__':
+             except Exception as e:
+                 if getattr(mod, 'ONCE', False): raise
+                 print(f'[Reflect] drain error: {e}'); result = f'[ERROR] {e}'
+-            log_dir = os.path.join(script_dir, 'temp/reflect_logs'); os.makedirs(log_dir, exist_ok=True)
++            log_dir = state_path('temp', 'reflect_logs'); os.makedirs(log_dir, exist_ok=True)
+             script_name = os.path.splitext(os.path.basename(args.reflect))[0]
+             open(os.path.join(log_dir, f'{script_name}_{datetime.now():%Y-%m-%d}.log'), 'a', encoding='utf-8').write(f'[{datetime.now():%m-%d %H:%M}]\n{result}\n\n')
+             if (on_done := getattr(mod, 'on_done', None)):
+diff --git a/ga.py b/ga.py
+index 4ccd84f..98d471d 100644
+--- a/ga.py
++++ b/ga.py
+@@ -8,6 +8,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+ 
+ from agent_loop import BaseHandler, StepOutcome, json_default
+ script_dir = os.path.dirname(os.path.abspath(__file__))
++state_dir = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or script_dir)
++def state_path(*parts):
++    return os.path.join(state_dir, *parts)
+ 
+ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000):
+     """代码执行器
+@@ -16,7 +19,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
+     优先使用python，仅在必要系统操作时使用powershell"""
+     preview = (code[:60].replace('\n', ' ') + '...') if len(code) > 60 else code.strip()
+     yield f"[Action] Running {code_type} in {os.path.basename(cwd)}: {preview}\n"
+-    cwd = cwd or os.path.join(script_dir, 'temp'); tmp_path = None
++    cwd = cwd or state_path('temp'); tmp_path = None
+     if code_type in ["python", "py"]:
+         tmp_file = tempfile.NamedTemporaryFile(suffix=".ai.py", delete=False, mode='w', encoding='utf-8', dir=code_cwd)
+         cr_header = os.path.join(script_dir, 'assets', 'code_run_header.py')
+@@ -153,7 +156,7 @@ def format_error(e):
+ 
+ def log_memory_access(path):
+     if 'memory' not in path: return
+-    stats_file = os.path.join(script_dir, 'memory/file_access_stats.json')
++    stats_file = state_path('memory', 'file_access_stats.json')
+     try:
+         with open(stats_file, 'r', encoding='utf-8') as f: stats = json.load(f)
+     except: stats = {}
+@@ -580,9 +583,9 @@ def get_global_memory():
+     prompt = "\n"
+     try:
+         suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
+-        with open(os.path.join(script_dir, 'memory/global_mem_insight.txt'), 'r', encoding='utf-8', errors='replace') as f: insight = f.read()
++        with open(state_path('memory', 'global_mem_insight.txt'), 'r', encoding='utf-8', errors='replace') as f: insight = f.read()
+         with open(os.path.join(script_dir, f'assets/insight_fixed_structure{suffix}.txt'), 'r', encoding='utf-8') as f: structure = f.read()
+-        prompt += f'cwd = {os.path.join(script_dir, "temp")} (./)\n'
++        prompt += f'cwd = {state_path("temp")} (./)\n'
+         prompt += f"\n[Memory] (../memory)\n"
+         prompt += structure + '\n../memory/global_mem_insight.txt:\n'
+         prompt += insight + "\n"
+diff --git a/llmcore.py b/llmcore.py
+index 704874f..e1b61b1 100644
+--- a/llmcore.py
++++ b/llmcore.py
+@@ -883,7 +883,8 @@ def _ensure_text_block(blocks):
+ 
+ def _write_llm_log(label, content, log_path=None):
+     if not log_path:
+-        log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'temp/model_responses/model_responses_{os.getpid()}.txt')
++        state_root = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or os.path.dirname(os.path.abspath(__file__)))
++        log_path = os.path.join(state_root, f'temp/model_responses/model_responses_{os.getpid()}.txt')
+     os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
+     ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+     with open(log_path, 'a', encoding='utf-8', errors='replace') as f:
+diff --git a/frontends/continue_cmd.py b/frontends/continue_cmd.py
+index dd3b30d..10c7d79 100644
+--- a/frontends/continue_cmd.py
++++ b/frontends/continue_cmd.py
+@@ -2,8 +2,9 @@
+ Pure functions + one `install(cls)` monkey-patch entry. No side effects at import.
+ """
+ import ast, glob, json, os, re, time
+-_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+-                        'temp', 'model_responses')
++_CODE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++_STATE_ROOT = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or _CODE_ROOT)
++_LOG_DIR = os.path.join(_STATE_ROOT, 'temp', 'model_responses')
+ _LOG_GLOB = os.path.join(_LOG_DIR, 'model_responses_*.txt')
+ _BLOCK_RE = re.compile(r'^=== (Prompt|Response) ===.*?\n(.*?)(?=^=== (?:Prompt|Response) ===|\Z)',
+                        re.DOTALL | re.MULTILINE)

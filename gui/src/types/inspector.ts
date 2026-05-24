@@ -78,6 +78,9 @@ export interface ManagedRuntimePaths {
   codeRoot: string;
   manifestPath: string;
   patchManifestPath: string;
+  promptDir: string;
+  runtimePromptPath: string;
+  personaPromptPath: string;
   stateRoot: string;
   memoryDir: string;
   sopDir: string;
@@ -85,6 +88,7 @@ export interface ManagedRuntimePaths {
   tempDir: string;
   modelResponsesDir: string;
   modelConfigDir: string;
+  modelConfigPath: string;
 }
 
 export interface ManagedCodeDiagnostics {
@@ -93,9 +97,12 @@ export interface ManagedCodeDiagnostics {
   agentmainExists: boolean;
   manifestExists: boolean;
   patchManifestExists: boolean;
+  runtimePromptExists: boolean;
+  personaPromptExists: boolean;
 }
 
 export interface ManagedStateDiagnostics {
   initialized: boolean;
   createdDirs: string[];
+  modelConfigExists: boolean;
 }

@@ -79,8 +79,8 @@ export async function hydrateApp(): Promise<void> {
 
   // 4. Managed models. A managed install is configured when at least
   // one model has a credential in the system store.
-  const managedModels = await useManagedModelsStore.getState().load();
-  const hasUsableManagedModel = managedModels.some(
+  const managedConfig = await useManagedModelsStore.getState().load();
+  const hasUsableManagedModel = managedConfig.models.some(
     (model) => model.credentialStatus === "present",
   );
 

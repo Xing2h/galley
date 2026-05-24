@@ -36,6 +36,7 @@ find "$DEST" -mindepth 1 -maxdepth 1 \
 
 rsync -a \
   --exclude '.git' \
+  --exclude '.DS_Store' \
   --exclude '.venv' \
   --exclude 'venv' \
   --exclude '__pycache__' \
@@ -48,5 +49,11 @@ rsync -a \
   --exclude 'temp' \
   --exclude 'model_responses' \
   "$SOURCE"/ "$DEST"/
+
+shopt -s nullglob
+for patch in "$ROOT"/managed-ga/patches/*.patch; do
+  (cd "$ROOT" && git apply --whitespace=nowarn --directory=managed-ga/code "$patch")
+  echo "Applied managed GA patch: $(basename "$patch")"
+done
 
 echo "Managed GA code copied to $DEST"

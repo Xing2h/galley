@@ -45,7 +45,8 @@ Before publishing `v0.2.0-beta.1`:
 | Core architecture | Rust Galley Core is authoritative | [architecture demo](./architecture-demo.md) |
 | CLI / Agent API | Feature-complete for v0.2 beta; schema frozen | [agent-api](./agent-api.md) |
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
-| Data migration | Backup mechanism exists; no v0.2 schema delta beyond shipped origin fields | [B4 M8](./refactor/B4-M8-sub-plan.md) |
+| Managed GA runtime | M8 release hardening; GUI / CLI runtime split and Provider / Model config in dogfood | [managed GA runtime](./managed-ga-runtime.md) |
+| Data migration | Backup mechanism exists; runtime identity and managed model config migrations are in dogfood | [B4 M8](./refactor/B4-M8-sub-plan.md) |
 | Release path | macOS DMG + Windows NSIS + gated beta updater channel | [release / update SOP](./release-update-sop.md) |
 | Windows | Artifact path exists; smoke remains a release gate | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream commit | [GA baseline](./ga-baseline.md) |

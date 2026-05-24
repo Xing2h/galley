@@ -13,13 +13,26 @@ pub fn managed_model_api_key_ref(model_id: &str) -> String {
     format!("managed-model:{model_id}")
 }
 
+pub fn managed_provider_api_key_ref(provider_id: &str) -> String {
+    format!("managed-provider:{provider_id}")
+}
+
 pub fn set_secret(api_key_ref: &str, secret: &str) -> Result<()> {
     let entry = entry(api_key_ref)?;
     entry
         .set_password(secret)
         .map_err(|e| GalleyError::Internal {
             message: format!("credential store write failed for {api_key_ref}: {e}"),
-        })
+        })?;
+    let saved = get_secret(api_key_ref).map_err(|e| GalleyError::Internal {
+        message: format!("credential store verification failed for {api_key_ref}: {e}"),
+    })?;
+    if saved != secret {
+        return Err(GalleyError::Internal {
+            message: format!("credential store verification mismatch for {api_key_ref}"),
+        });
+    }
+    Ok(())
 }
 
 pub fn get_secret(api_key_ref: &str) -> Result<String> {
@@ -37,7 +50,7 @@ pub fn delete_secret(api_key_ref: &str) -> Result<()> {
     let entry = entry(api_key_ref)?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
-        Err(e) if e.to_string().to_ascii_lowercase().contains("no entry") => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(GalleyError::Internal {
             message: format!("credential delete failed for {api_key_ref}: {e}"),
         }),

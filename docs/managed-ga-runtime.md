@@ -126,6 +126,9 @@ Interaction rules:
 - Use one screen.
 - First managed-runtime onboarding exposes only two service choices:
   `OpenAI-compatible` and `Anthropic-compatible`.
+- Keep onboarding copy plain and low-friction. Settings can use the more precise
+  terms `Provider` and `Model`, but first run should not make the user learn the
+  Provider / Model data model before starting.
 - Preserve all typed values on failure.
 - The primary button stays disabled until service, API key, Base URL, and model
   are all filled.
@@ -227,22 +230,21 @@ If the current runtime is not configured, CLI writes should fail with a specific
 actionable error instead of falling back to another runtime:
 
 ```text
-model_not_configured       # managed runtime has no usable model
-external_ga_unavailable    # external runtime path/config is missing or invalid
-runtime_not_configured     # generic runtime setup incomplete
+managed_model_not_configured # managed runtime has no usable model
+managed_runtime_invalid      # managed runtime code/prompt layout is incomplete
+ga_path_invalid              # external runtime path is invalid
+runner_error                 # generic runtime setup incomplete
 ```
 
 ### Defaults
 
-Read commands default to the current runtime:
+Session listing defaults to the current runtime:
 
 ```bash
 galley sessions list
-galley sessions search "release"
-galley llm list
 ```
 
-These are equivalent to:
+This is equivalent to:
 
 ```bash
 --runtime=current
@@ -256,6 +258,10 @@ Explicit read scopes:
 --runtime=external
 --runtime=all
 ```
+
+`sessions search` and `llm list` should become runtime-aware before release if
+we expose them prominently to supervisors. They are not part of the first
+invisible-session prevention slice because they do not create work.
 
 `session new` also defaults to the current runtime:
 
@@ -309,7 +315,7 @@ All session-facing CLI responses must include runtime metadata:
 ```json
 {
   "runtimeKind": "external",
-  "runtimeLabel": "Existing GenericAgent"
+  "runtimeLabel": "Attached GenericAgent"
 }
 ```
 
@@ -319,8 +325,10 @@ the response should include a warning:
 ```json
 {
   "warning": {
-    "code": "runtime_not_current",
-    "message": "Created in Galley mode, but the GUI is currently showing Existing GenericAgent sessions."
+    "id": "non_current_runtime",
+    "message": "session created outside the current GUI runtime",
+    "currentRuntimeKind": "external",
+    "requestedRuntimeKind": "managed"
   }
 }
 ```
@@ -330,9 +338,9 @@ toast that tells the user where the session went and how to see it.
 
 ### Status
 
-`sessions list` and `sessions search` default to current runtime only. `status`
-should still avoid hiding active work in another runtime. It can return current
-runtime detail plus aggregate counts for other runtimes:
+`sessions list` defaults to current runtime only. `status` should still avoid
+hiding active work in another runtime. It can return current runtime detail plus
+aggregate counts for other runtimes:
 
 ```json
 {
@@ -358,20 +366,37 @@ Anthropic-compatible
 OpenAI-compatible
 ```
 
-Users may add multiple providers / models. The UI should frame this as "Add
-model", not "edit mykey.py." The first managed-runtime version asks the user for
-API key, Base URL, and model because those values vary across compatible model
-providers.
-
-Each model entry should contain:
+Users may add multiple Providers and multiple Models. Settings should make the
+relationship explicit:
 
 ```text
+Provider = protocol + API key + Base URL
+Model    = one enabled model name under a Provider
+```
+
+This matters for providers such as OpenRouter: one API key and Base URL can back
+many model names. The user should enter those credentials once, then add or edit
+Models without retyping secrets.
+
+Each Provider record should contain:
+
+```text
+id
 displayName
 protocol: anthropic | openai
 apiBase
 apiKeyRef
+```
+
+Each Model record should contain:
+
+```text
+id
+providerId
+displayName
 model
 advancedOptions
+isDefault
 ```
 
 Suggested first-run presets:
@@ -427,27 +452,40 @@ should contain only non-secret metadata and a key reference. At session start,
 Galley resolves the key reference from the system credential store and injects
 the secret into the managed runtime in memory.
 
-Recommended managed model record:
+Recommended managed records:
 
 ```text
-id
-displayName
-protocol: anthropic | openai
-apiBase
-model
-apiKeyRef        # reference only; not the key
-advancedOptions
+managed_model_providers
+- id
+- displayName
+- protocol: anthropic | openai
+- apiBase
+- apiKeyRef        # reference only; not the key
+
+managed_models
+- id
+- providerId
+- displayName
+- model
+- advancedOptions
+- isDefault
 ```
 
 Recommended secret flow:
 
 ```text
 Onboarding / Settings
--> save non-secret model record to Galley DB
--> save real API key to system credential store
+-> save non-secret Provider record to Galley DB
+-> save real API key to system credential store under Provider apiKeyRef
+-> save Model record that references the Provider
 -> test model connection
 -> start managed session with runtime-resolved secret
 ```
+
+Editing an existing Provider may leave the API key field blank, meaning "keep
+the saved key." Deleting a Provider deletes its Models and then removes the
+Provider secret reference from secure storage. Deleting a Model never deletes a
+Provider key.
 
 The generated config path is an implementation detail. Users should not edit or
 rely on it. Advanced diagnostics may show that a generated config exists, but
@@ -768,23 +806,28 @@ Current implementation slice:
 
 - `managed_models` stores model metadata only.
 - API keys are saved through `keyring` into the OS credential store.
+- The `keyring` dependency must enable native platform backends; otherwise it
+  falls back to an in-memory mock store and saved keys appear missing after
+  refresh. Galley verifies every key write by reading it back before saving the
+  model metadata.
 - `managed-model-config/managed-models.json` is generated with `apiKeyRef`
   values, never real API keys.
 - Settings -> Models supports adding, listing, deleting, model-list fetch, and
   connection testing.
 - First-run onboarding starts with "为 Galley 配置模型" and uses the same
   connection-test + save path before entering the empty composer.
+- Managed model spawn failures surface actionable GUI copy that sends the user
+  to Settings -> Models instead of exposing GA `mykey.py` language.
 
 Remaining follow-up work:
 
 - Rename / edit existing model metadata without re-entering the key.
-- Actionable credential-missing error mapping for managed session start.
 
 Acceptance:
 
 - The database and generated config do not contain real API key values.
 - Deleting a key from the system credential store makes the corresponding model
-  fail with an actionable `model_not_configured` / credential error.
+  fail with an actionable `managed_model_not_configured` / credential error.
 - Galley backup does not include API keys.
 - Restoring Galley data on a new machine asks the user to re-enter model
   credentials.
@@ -817,7 +860,8 @@ Acceptance:
 
 - Fresh install enters managed onboarding by default.
 - The primary action is "测试并开始使用 Galley".
-- Successful setup creates or selects the first managed session.
+- Successful setup routes to the empty composer with focus; the first managed
+  session is created lazily when the user sends the first message.
 - Failed setup names the failing field and suggests the next action.
 - Onboarding copy does not mention GenericAgent setup internals.
 
@@ -839,6 +883,24 @@ Scope:
 - Start, restore, send, stop, and archive managed sessions through the same
   Galley Core authority as external sessions.
 - Keep external runner spawning unchanged except for shared runtime metadata.
+
+Current implementation slice:
+
+- `managed-ga/code` is a generated, code-only GenericAgent payload copied from
+  the pinned baseline. `mykey.py`, `mykey.json`, `memory`, `skills`, `temp`, and
+  `model_responses` are excluded.
+- `scripts/build-managed-ga.sh` reapplies `managed-ga/patches/*.patch` after
+  copying the upstream baseline, so Galley-managed changes are replayable.
+- `0001-managed-state-root.patch` redirects managed GA memory, temp, model
+  response logs, and `/continue` log lookup to `GALLEY_GA_STATE_ROOT`.
+- GUI bridge spawns now include `runtimeKind`; managed spawns are resolved in
+  Rust Core to the managed code path, managed state path, managed model config
+  marker, and in-memory model credential injection.
+- CLI/socket `session.new` uses the created session's recorded runtime kind.
+  This prevents the bad case where the GUI is showing one runtime while CLI
+  creates invisible work in the other runtime.
+- Managed bridge `ready` reports the pinned GA baseline from
+  `managed-ga/manifest.json`, not the surrounding Galley git commit.
 
 Acceptance:
 
@@ -869,6 +931,19 @@ Scope:
 - Store prompt files under `galley-prompts/`.
 - Record `prompt_profile = galley-persona-v1` on managed sessions.
 - Keep Persona as a product default, not a user-facing roleplay setting.
+
+Current implementation slice:
+
+- Prompt files live under `managed-ga/galley-prompts/`:
+  - `runtime-v1.md`
+  - `persona-v1.md`
+- Managed runtime diagnostics expose prompt file paths and existence checks.
+- Rust Core passes `GALLEY_RUNTIME_PROMPT_PATH` and
+  `GALLEY_PERSONA_PROMPT_PATH` only for managed spawns.
+- The Python bridge reads those files only in managed runtime and appends them
+  as `backend.extra_sys_prompt`, after GA's core prompt and memory.
+- `prompt_profile` defaults to `galley-persona-v1` for managed sessions at the
+  DB insertion boundary. External sessions keep `prompt_profile = null`.
 
 Acceptance:
 
@@ -915,6 +990,27 @@ Do not build:
 - A separate CLI-only runtime preference.
 - Silent fallback from one runtime to another.
 
+Current implementation slice:
+
+- `galley sessions list` now accepts
+  `--runtime=current|managed|external|all`; default `current` reads
+  `prefs.active_runtime_kind`, so CLI sees the same session set as the GUI.
+- `galley session new` accepts `--runtime=current|managed|external`; default
+  `current` captures the GUI active runtime before the DB transaction.
+- `session.new` socket handling accepts optional `runtimeKind`, preflights the
+  selected runtime before inserting rows, and only commits the session/message
+  after runtime configuration is usable enough to spawn.
+- Settings -> Runtime exposes `Runtime Mode` with `Galley` and `Attached GA`.
+  Switching mode persists `prefs.active_runtime_kind`, clears the active
+  session, and reloads the sidebar with that runtime's session history.
+- Composer and Command Palette model pickers are runtime-aware: managed mode
+  reads Galley's usable managed model records, while attach mode continues to
+  read the external GA model cache from bridge `ready` events.
+- New session-facing output includes `runtimeKind` and `runtimeLabel` alongside
+  the existing `gaRuntimeKind` / `gaRuntimeId` fields.
+- Explicit cross-runtime `session new` returns a structured
+  `non_current_runtime` warning in the success envelope.
+
 ### M8 · Backup, Upgrade, Diagnostics, And Release Gates
 
 Goal: make managed runtime reliable enough to ship as the default path.
@@ -942,6 +1038,27 @@ Do not build:
 - Memory management UI.
 - Encrypted all-in-one migration export.
 - Automatic external-GA import.
+
+Current implementation slice:
+
+- Existing Galley pre-migration backup copies the whole app data directory, so
+  managed sessions, `managed-ga-state/`, and non-secret
+  `managed-model-config/` are included.
+- API keys live in the system credential store and are not present in ordinary
+  app-data backup.
+- Settings -> Runtime -> Advanced Diagnostics now shows active runtime mode,
+  managed GA baseline, patch stack, code/prompt readiness, state path,
+  managed model credential presence, and generated non-secret config presence.
+- Diagnostics never display plaintext API keys.
+- Rust release-gate tests verify that managed runtime layout preserves existing
+  state files and that the shipped `managed-ga/code` payload excludes
+  user-state artifacts such as `mykey.py`, `memory/`, `skills/`, `temp/`, and
+  `model_responses/`.
+- Managed spawns set `PYTHONDONTWRITEBYTECODE=1` so dev dogfood and packaged
+  runtime execution do not write Python bytecode caches into the managed code
+  payload.
+- Release-gate tests also reject generated source-tree artifacts such as
+  `.DS_Store`, `__pycache__/`, and `*.pyc` under `managed-ga/code`.
 
 ### Milestone Dependencies
 

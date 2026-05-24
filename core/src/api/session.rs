@@ -43,6 +43,15 @@ pub enum RuntimeKind {
     External,
 }
 
+impl RuntimeKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            RuntimeKind::Managed => "Galley",
+            RuntimeKind::External => "Attached GenericAgent",
+        }
+    }
+}
+
 /// Summary projection of a session — the fields a sidebar row needs.
 /// "Brief" means: enough to list / display, not enough to render the
 /// full conversation. For history, see [`super::MessageBrief`] plus
@@ -79,6 +88,12 @@ pub struct SessionBrief {
     /// re-confirms with the live `availableLLMs` list.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_llm_display_name: Option<String>,
+    /// CLI-facing alias for the runtime ownership. Kept alongside
+    /// `gaRuntimeKind` during the managed-runtime transition so agents
+    /// can speak in product terms while GUI code preserves its existing
+    /// field.
+    pub runtime_kind: RuntimeKind,
+    pub runtime_label: String,
     pub ga_runtime_kind: RuntimeKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ga_runtime_id: Option<String>,

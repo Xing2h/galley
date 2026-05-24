@@ -1,16 +1,25 @@
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
 
 import {
+  deleteManagedModelProvider,
   deleteManagedModel,
+  listManagedModelProviders,
   listManagedModels,
+  saveManagedModelProvider,
   saveManagedModel,
 } from "@/lib/managed-models";
+import { useRuntimeStore } from "@/stores/runtime";
+import type { ManagedRuntimeDiagnostics } from "@/types/inspector";
 import type {
   ManagedModelRecord,
+  ManagedModelProviderRecord,
   SaveManagedModelInput,
+  SaveManagedProviderInput,
 } from "@/types/managed-models";
 
 interface ManagedModelsState {
+  providers: ManagedModelProviderRecord[];
   models: ManagedModelRecord[];
   loading: boolean;
   saving: boolean;
@@ -18,15 +27,21 @@ interface ManagedModelsState {
 }
 
 interface ManagedModelsActions {
-  load: () => Promise<ManagedModelRecord[]>;
-  save: (input: SaveManagedModelInput) => Promise<void>;
-  delete: (id: string) => Promise<void>;
+  load: () => Promise<{
+    providers: ManagedModelProviderRecord[];
+    models: ManagedModelRecord[];
+  }>;
+  saveProvider: (input: SaveManagedProviderInput) => Promise<ManagedModelProviderRecord>;
+  deleteProvider: (id: string) => Promise<void>;
+  saveModel: (input: SaveManagedModelInput) => Promise<void>;
+  deleteModel: (id: string) => Promise<void>;
   clearError: () => void;
 }
 
 export type ManagedModelsStore = ManagedModelsState & ManagedModelsActions;
 
 export const useManagedModelsStore = create<ManagedModelsStore>((set) => ({
+  providers: [],
   models: [],
   loading: false,
   saving: false,
@@ -35,33 +50,71 @@ export const useManagedModelsStore = create<ManagedModelsStore>((set) => ({
   load: async () => {
     set({ loading: true, error: null });
     try {
-      const models = await listManagedModels();
-      set({ models, loading: false });
-      return models;
+      const [providers, models] = await Promise.all([
+        listManagedModelProviders(),
+        listManagedModels(),
+      ]);
+      set({ providers, models, loading: false });
+      return { providers, models };
     } catch (e) {
       set({ loading: false, error: errorMessage(e) });
-      return [];
+      return { providers: [], models: [] };
     }
   },
 
-  save: async (input) => {
+  saveProvider: async (input) => {
     set({ saving: true, error: null });
     try {
-      await saveManagedModel(input);
-      const models = await listManagedModels();
-      set({ models, saving: false });
+      const provider = await saveManagedModelProvider(input);
+      const [providers, models] = await Promise.all([
+        listManagedModelProviders(),
+        listManagedModels(),
+      ]);
+      set({ providers, models, saving: false });
+      void refreshManagedRuntimeDiagnostics();
+      return provider;
     } catch (e) {
       set({ saving: false, error: errorMessage(e) });
       throw e;
     }
   },
 
-  delete: async (id) => {
+  deleteProvider: async (id) => {
+    set({ saving: true, error: null });
+    try {
+      await deleteManagedModelProvider(id);
+      const [providers, models] = await Promise.all([
+        listManagedModelProviders(),
+        listManagedModels(),
+      ]);
+      set({ providers, models, saving: false });
+      void refreshManagedRuntimeDiagnostics();
+    } catch (e) {
+      set({ saving: false, error: errorMessage(e) });
+      throw e;
+    }
+  },
+
+  saveModel: async (input) => {
+    set({ saving: true, error: null });
+    try {
+      await saveManagedModel(input);
+      const models = await listManagedModels();
+      set({ models, saving: false });
+      void refreshManagedRuntimeDiagnostics();
+    } catch (e) {
+      set({ saving: false, error: errorMessage(e) });
+      throw e;
+    }
+  },
+
+  deleteModel: async (id) => {
     set({ saving: true, error: null });
     try {
       await deleteManagedModel(id);
       const models = await listManagedModels();
       set({ models, saving: false });
+      void refreshManagedRuntimeDiagnostics();
     } catch (e) {
       set({ saving: false, error: errorMessage(e) });
       throw e;
@@ -70,6 +123,17 @@ export const useManagedModelsStore = create<ManagedModelsStore>((set) => ({
 
   clearError: () => set({ error: null }),
 }));
+
+async function refreshManagedRuntimeDiagnostics(): Promise<void> {
+  try {
+    const managedRuntime = await invoke<ManagedRuntimeDiagnostics>(
+      "ensure_managed_runtime_layout",
+    );
+    useRuntimeStore.getState().patchRuntimeInfo({ managedRuntime });
+  } catch (e) {
+    console.warn("[managed-models] refresh managed runtime diagnostics failed.", e);
+  }
+}
 
 function errorMessage(e: unknown): string {
   if (typeof e === "string") {

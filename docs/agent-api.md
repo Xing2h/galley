@@ -298,19 +298,21 @@ Response fields:
 | `galleyVersion`  | string | semver of the `galley` binary itself               |
 | `schemaVersion`  | int    | this document's stability key (`1` for v0.2.x beta) |
 
-### 5.2 · `galley sessions list [--project=X] [--status=Y] [--archived | --all]`
+### 5.2 · `galley sessions list [--runtime=current|managed|external|all] [--project=X] [--status=Y] [--archived | --all]`
 
 Lists sessions in `pinned DESC, last_activity_at DESC` order. NDJSON,
 one `SessionBrief` per line.
 
 | Flag         | Type   | Default      | Notes                                                                                             |
 | ------------ | ------ | ------------ | ------------------------------------------------------------------------------------------------- |
+| `--runtime`  | enum   | `current`    | `current` follows the GUI's active runtime; `all` is explicit cross-runtime listing                |
 | `--project`  | string | (unset)      | restrict to one project id                                                                        |
 | `--status`   | string | (unset)      | one of `idle / connecting / running / waiting_approval / error / completed / cancelled / archived` |
 | `--archived` | bool   | false        | return only archived sessions                                                                     |
 | `--all`      | bool   | false        | include archived alongside active (overrides `--archived`)                                        |
 
-Default behaviour: exclude archived (matches GUI sidebar default).
+Default behaviour: current runtime only, archived excluded (matches GUI
+sidebar default).
 
 Example:
 
@@ -337,6 +339,8 @@ $ galley sessions list --project=proj_demo
 | `hasUnread`       | bool?           | new content arrived while session was not the active one (GUI signal; B2+ writes). `null` = never set (treat as `false`) |
 | `selectedLlmIndex` | int?           | persisted per-session LLM index, when set                                          |
 | `selectedLlmDisplayName` | string?   | cached display name for the persisted LLM selection                                |
+| `runtimeKind`     | string enum     | `managed` / `external`; product-facing alias for CLI callers                       |
+| `runtimeLabel`    | string          | `Galley` / `Attached GenericAgent`                                                 |
 | `gaRuntimeKind`   | string enum     | `managed` / `external`; runtime ownership captured at session creation             |
 | `gaRuntimeId`     | string?         | stable runtime id for future multi-runtime support                                 |
 | `promptProfile`   | string?         | managed prompt profile id, when applied                                            |
@@ -540,7 +544,7 @@ Pattern: agents should branch on the `status` value (`ok` / `warn` /
 `fail` actionable; `deferred_b4` indicates "Galley can't currently check
 this — trust other signals or wait for B4").
 
-### 5.8 · `galley session new "<task>" [--project=<id>] [--llm=<name>] [--supervisor=<x>] [--reason=<y>]`
+### 5.8 · `galley session new "<task>" [--runtime=current|managed|external] [--project=<id>] [--llm=<name>] [--supervisor=<x>] [--reason=<y>]`
 
 **Write command** — creates a session, persists the first user message
 in **one SQLite transaction**, starts a runner, and dispatches the first
@@ -552,6 +556,7 @@ agents know the delegated task did not actually start.
 | -------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | `--project`    | (none → ungrouped)                   | Project id. Invalid id → `invalid_args`.                                                       |
 | `--llm`        | (none → bridge default at spawn)     | LLM display name (case-insensitive). Resolved against the cached `llm_list` pref.              |
+| `--runtime`    | `current`                            | Follows GUI active runtime by default. `managed` / `external` are explicit cross-runtime writes. |
 | `--supervisor` | (none → `origin.via = cli`)          | Supervisor label. Sets `origin.via = supervisor` on the session row + the first message.       |
 | `--reason`     | (none)                               | Free-text rationale on `origin.reason`.                                                        |
 
@@ -570,6 +575,7 @@ Response:
 | `session`  | `SessionBrief` | Newly-created row. `title` is the seed `新对话`; the bridge derives a better one after the first turn. |
 | `message`  | `MessageBrief` | The persisted first user message.                                                                      |
 | `dispatch` | string enum    | `"dispatched"` on success. Runner start/send failure returns exit 5 instead of a success envelope.     |
+| `warning`  | object?        | Present when the caller explicitly writes to a non-current runtime.                                  |
 
 Exit codes: `0` success / `2 invalid_args` (empty `task`, unknown
 `--llm`, unknown project, empty `llm_list` cache) / `3 not_found` /

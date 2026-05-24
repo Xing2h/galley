@@ -20,16 +20,23 @@ import {
 import type { PathValidation } from "@/components/screens/onboarding/StepAttach";
 import { SettingsUpdateControl } from "@/components/screens/settings/SettingsUpdateControl";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   BUNDLED_PYTHON_VERSION,
   validateGAPath,
 } from "@/lib/onboarding-validation";
 import { cn } from "@/lib/utils";
+import { useManagedModelsStore } from "@/stores/managed-models";
+import { usePrefsStore } from "@/stores/prefs";
 import type { ManagedRuntimeDiagnostics, RuntimeInfo } from "@/types/inspector";
+import type { RuntimeKind } from "@/types/session";
 
 interface SettingsRuntimeProps {
   info: RuntimeInfo;
   hasRunningSessions: boolean;
+  activeRuntimeKind: RuntimeKind;
+  hasManagedRuntimeConfigured: boolean;
+  hasExternalRuntimeConfigured: boolean;
   /**
    * v0.1.1+: when false (default), Galley spawns its own bundled Python
    * interpreter and the Python panel is a read-only info card. When
@@ -46,6 +53,7 @@ interface SettingsRuntimeProps {
    * bridge spawn — running sessions keep their current Python.
    */
   onToggleExternalPython?: (useExternal: boolean) => void;
+  onChangeRuntimeKind?: (kind: RuntimeKind) => void;
   /**
    * Commit a manually-typed GA path. Called on Enter / blur when the
    * draft differs from the saved value and validation hasn't returned
@@ -72,11 +80,15 @@ interface SettingsRuntimeProps {
 export function SettingsRuntime({
   info,
   hasRunningSessions,
+  activeRuntimeKind,
+  hasManagedRuntimeConfigured,
+  hasExternalRuntimeConfigured,
   useExternalPython,
   onChangeGAPath,
   onChangeBridgePython,
   onReRunHealthCheck,
   onToggleExternalPython,
+  onChangeRuntimeKind,
   onCommitGAPath,
 }: SettingsRuntimeProps) {
   return (
@@ -84,6 +96,14 @@ export function SettingsRuntime({
       <SettingsPanelHeader
         title="Runtime"
         subtitle="GenericAgent 的启动参数 · 改动后需要重启 Galley"
+      />
+
+      <RuntimeModeSection
+        value={activeRuntimeKind}
+        hasManagedRuntimeConfigured={hasManagedRuntimeConfigured}
+        hasExternalRuntimeConfigured={hasExternalRuntimeConfigured}
+        hasRunningSessions={hasRunningSessions}
+        onChange={onChangeRuntimeKind}
       />
 
       <PathField
@@ -133,6 +153,67 @@ export function SettingsRuntime({
         <SettingsUpdateControl
           hasRunningSessions={hasRunningSessions}
         />
+      </div>
+    </div>
+  );
+}
+
+function RuntimeModeSection({
+  value,
+  hasManagedRuntimeConfigured,
+  hasExternalRuntimeConfigured,
+  hasRunningSessions,
+  onChange,
+}: {
+  value: RuntimeKind;
+  hasManagedRuntimeConfigured: boolean;
+  hasExternalRuntimeConfigured: boolean;
+  hasRunningSessions: boolean;
+  onChange?: (kind: RuntimeKind) => void;
+}) {
+  const lockSwitching = hasRunningSessions;
+  const managedDisabled =
+    value !== "managed" && (!hasManagedRuntimeConfigured || lockSwitching);
+  const externalDisabled =
+    value !== "external" && (!hasExternalRuntimeConfigured || lockSwitching);
+  const detail = lockSwitching
+    ? "有运行中的对话，结束后可切换"
+    : value === "managed"
+      ? hasManagedRuntimeConfigured
+        ? "Galley runtime"
+        : "模型未配置"
+      : hasExternalRuntimeConfigured
+        ? "Attached GenericAgent"
+        : "GA Path 未配置";
+
+  return (
+    <div>
+      <SettingsSectionLabel>Runtime Mode</SettingsSectionLabel>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <SegmentedControl<RuntimeKind>
+          value={value}
+          ariaLabel="选择 runtime mode"
+          onValueChange={onChange}
+          options={[
+            {
+              value: "managed",
+              label: "Galley",
+              disabled: managedDisabled,
+              title: !hasManagedRuntimeConfigured
+                ? "先在 Models 配置模型"
+                : undefined,
+            },
+            {
+              value: "external",
+              label: "Attached GA",
+              disabled: externalDisabled,
+              title: !hasExternalRuntimeConfigured
+                ? "先配置 GA Path"
+                : undefined,
+            },
+          ]}
+        />
+        <span className="text-[12px] text-ink-muted">{detail}</span>
       </div>
     </div>
   );
@@ -238,7 +319,24 @@ function ManagedRuntimeCard({
   diagnostics?: ManagedRuntimeDiagnostics;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const activeRuntimeKind = usePrefsStore((s) => s.activeRuntimeKind);
+  const models = useManagedModelsStore((s) => s.models);
   const upstreamShort = diagnostics?.upstreamCommit.slice(0, 7) ?? "未加载";
+  const credentialCount = models.filter(
+    (m) => m.credentialStatus === "present",
+  ).length;
+  const defaultModel = models.find((m) => m.isDefault) ?? models[0];
+  const promptStatus = diagnostics
+    ? diagnostics.code.runtimePromptExists && diagnostics.code.personaPromptExists
+      ? "完整"
+      : "缺失"
+    : "未加载";
+  const modelStatus =
+    models.length === 0
+      ? "未配置"
+      : `${credentialCount}/${models.length} 有凭据${
+          defaultModel ? ` · ${defaultModel.displayName}` : ""
+        }`;
   return (
     <div>
       <Button
@@ -259,6 +357,14 @@ function ManagedRuntimeCard({
       {expanded && (
         <>
           <div className="mt-2 rounded-sm border border-line bg-surface px-3 py-2.5">
+            <RuntimeDiagnosticRow
+              label="当前模式"
+              value={
+                activeRuntimeKind === "managed"
+                  ? "Galley"
+                  : "Attached GenericAgent"
+              }
+            />
             <RuntimeDiagnosticRow label="内核版本" value={upstreamShort} />
             <RuntimeDiagnosticRow
               label="Patch stack"
@@ -278,17 +384,31 @@ function ManagedRuntimeCard({
                   : "未加载"
               }
             />
+            <RuntimeDiagnosticRow label="Prompts" value={promptStatus} />
             <RuntimeDiagnosticRow
               label="State"
-              value={diagnostics?.paths.stateRoot ?? "未加载"}
+              value={
+                diagnostics
+                  ? diagnostics.state.initialized
+                    ? diagnostics.paths.stateRoot
+                    : `${diagnostics.paths.stateRoot} · 未初始化`
+                  : "未加载"
+              }
             />
+            <RuntimeDiagnosticRow label="模型" value={modelStatus} />
             <RuntimeDiagnosticRow
-              label="Model config"
-              value={diagnostics?.paths.modelConfigDir ?? "未加载"}
+              label="Config file"
+              value={
+                diagnostics
+                  ? diagnostics.state.modelConfigExists
+                    ? diagnostics.paths.modelConfigPath
+                    : `${diagnostics.paths.modelConfigPath} · 未生成`
+                  : "未加载"
+              }
             />
           </div>
           <p className="mt-2 text-[11.5px] leading-[1.55] text-ink-muted">
-            诊断只显示路径和版本。API Key 不会显示在这里。
+            诊断只显示路径、版本和凭据是否存在。API Key 不会显示在这里。
           </p>
         </>
       )}

@@ -54,11 +54,14 @@
 use crate::api::message::MessageBrief;
 use crate::api::project::{CreateProjectInput, ProjectBrief, ProjectId};
 use crate::api::session::{CreateSessionInput, SessionBrief};
-use crate::api::{GalleyApi, Origin, OriginVia, SessionFilter, SessionId};
+use crate::api::{GalleyApi, Origin, OriginVia, RuntimeKind, SessionFilter, SessionId};
 use crate::db::SqliteGalley;
 use crate::ipc::{IpcCommand, SetLlmCommand, UserMessageCommand};
-use crate::runner_commands::spawn_emit_task;
-use crate::runner_manager::{BroadcastItem, RunnerManager, SendCommandError, SpawnArgs};
+use crate::managed_runtime;
+use crate::runner_commands::{prepare_managed_spawn_args, spawn_emit_task};
+use crate::runner_manager::{
+    BroadcastItem, RunnerManager, RunnerSpawnError, SendCommandError, SpawnArgs,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -795,12 +798,14 @@ struct SessionNewArgs {
     #[serde(default)]
     llm_name: Option<String>,
     #[serde(default)]
+    runtime_kind: Option<RuntimeKind>,
+    #[serde(default)]
     supervisor: Option<String>,
     #[serde(default)]
     reason: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GaConfigPref {
     #[serde(default)]
@@ -818,7 +823,28 @@ async fn spawn_args_for_session_new(
     app: Option<&AppHandle>,
     session_id: &str,
     llm_index: Option<u32>,
+    runtime_kind: RuntimeKind,
 ) -> Result<SpawnArgs, SocketResponseLite> {
+    if runtime_kind == RuntimeKind::Managed {
+        let app = app.ok_or_else(|| {
+            SocketResponseLite::runner_error(
+                "managed runtime is unavailable without a Galley app handle",
+            )
+        })?;
+        let args = SpawnArgs {
+            python: resolve_python_for_socket(&GaConfigPref::default(), Some(app))?,
+            ga_path: PathBuf::new(),
+            session_id: session_id.to_string(),
+            cwd: None,
+            bridge_cwd: PathBuf::new(),
+            llm_index: llm_index.map(i64::from),
+            env: Vec::new(),
+        };
+        return prepare_managed_spawn_args(args, app)
+            .await
+            .map_err(SocketResponseLite::runner_spawn_error);
+    }
+
     let raw = galley
         .get_pref_json("ga_config")
         .await
@@ -867,12 +893,10 @@ fn resolve_bridge_cwd(
     config: &GaConfigPref,
     app: Option<&AppHandle>,
 ) -> Result<PathBuf, SocketResponseLite> {
-    if !cfg!(debug_assertions) {
-        if let Some(app) = app {
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                return Ok(resource_dir);
-            }
-        }
+    if let Some(app) = app {
+        return managed_runtime::bridge_cwd_for_app(app).map_err(|e| {
+            SocketResponseLite::runner_error(format!("resolving Galley bridge cwd failed: {e}"))
+        });
     }
     let bridge_cwd = PathBuf::from(non_empty_pref(config.bridge_cwd.as_deref(), "bridgeCwd")?);
     if !bridge_cwd.is_dir() {
@@ -1017,14 +1041,37 @@ async fn dispatch_session_new(
         Err(resp) => return resp.with_request_id(request_id),
     };
 
+    let active_runtime_kind = match galley.active_runtime_kind().await {
+        Ok(kind) => kind,
+        Err(e) => return map_galley_err(request_id, e),
+    };
+    let target_runtime_kind = parsed.runtime_kind.unwrap_or(active_runtime_kind);
+    let runtime_warning = parsed
+        .runtime_kind
+        .filter(|requested| *requested != active_runtime_kind)
+        .map(|requested| {
+            serde_json::json!({
+                "id": "non_current_runtime",
+                "message": "session created outside the current GUI runtime",
+                "currentRuntimeKind": active_runtime_kind,
+                "requestedRuntimeKind": requested,
+            })
+        });
+
     let id = mint_session_id();
+    let spawn_args =
+        match spawn_args_for_session_new(&galley, app, &id, llm_index, target_runtime_kind).await {
+            Ok(args) => args,
+            Err(resp) => return resp.with_request_id(request_id),
+        };
+
     let input = CreateSessionInput {
         id: id.clone(),
         title: DEFAULT_NEW_SESSION_TITLE.to_string(),
         project_id: parsed.project_id,
         selected_llm_index: llm_index,
         selected_llm_display_name: llm_display_name,
-        ga_runtime_kind: None,
+        ga_runtime_kind: Some(target_runtime_kind),
         ga_runtime_id: None,
         prompt_profile: None,
     };
@@ -1063,14 +1110,6 @@ async fn dispatch_session_new(
         };
         let _ = app.emit("session-created-external", payload);
     }
-
-    let spawn_args = match spawn_args_for_session_new(&galley, app, &brief.id.0, llm_index).await {
-        Ok(args) => args,
-        Err(resp) => {
-            emit_user_message_persisted(app, &brief.id.0, &msg, "spawn_failed");
-            return resp.with_request_id(request_id);
-        }
-    };
 
     let pid = match manager.spawn(spawn_args, Some(&brief.id.0)).await {
         Ok(pid) => pid,
@@ -1127,11 +1166,14 @@ async fn dispatch_session_new(
 
     emit_user_message_persisted(app, &brief.id.0, &msg, "dispatched");
 
-    let result = serde_json::json!({
+    let mut result = serde_json::json!({
         "session": brief,
         "message": msg,
         "dispatch": "dispatched",
     });
+    if let Some(warning) = runtime_warning {
+        result["warning"] = warning;
+    }
     SocketResponse::ok(request_id, result)
 }
 
@@ -1502,6 +1544,7 @@ enum SocketResponseLite {
     NotFound(String),
     Internal(String),
     RunnerError(String),
+    RunnerSpawnError(RunnerSpawnError),
 }
 
 impl SocketResponseLite {
@@ -1510,6 +1553,9 @@ impl SocketResponseLite {
     }
     fn runner_error(msg: impl Into<String>) -> Self {
         SocketResponseLite::RunnerError(msg.into())
+    }
+    fn runner_spawn_error(e: RunnerSpawnError) -> Self {
+        SocketResponseLite::RunnerSpawnError(e)
     }
     fn from_err(e: crate::error::GalleyError) -> Self {
         use crate::error::GalleyError;
@@ -1534,7 +1580,23 @@ impl SocketResponseLite {
             SocketResponseLite::RunnerError(m) => {
                 SocketResponse::err(request_id, "runner_error", m)
             }
+            SocketResponseLite::RunnerSpawnError(e) => {
+                SocketResponse::err(request_id, runner_spawn_error_tag(&e), e.to_string())
+            }
         }
+    }
+}
+
+fn runner_spawn_error_tag(e: &RunnerSpawnError) -> &'static str {
+    match e {
+        RunnerSpawnError::PythonNotFound { .. } => "python_not_found",
+        RunnerSpawnError::GaPathInvalid { .. } => "ga_path_invalid",
+        RunnerSpawnError::ManagedRuntimeInvalid { .. } => "managed_runtime_invalid",
+        RunnerSpawnError::ManagedModelNotConfigured { .. } => "managed_model_not_configured",
+        RunnerSpawnError::BridgeCwdInvalid { .. } => "bridge_cwd_invalid",
+        RunnerSpawnError::PathEncoding { .. } => "path_encoding",
+        RunnerSpawnError::SpawnIo { .. } => "spawn_io",
+        RunnerSpawnError::PipeUnavailable { .. } => "pipe_unavailable",
     }
 }
 

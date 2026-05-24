@@ -144,6 +144,58 @@ _LLM_BRAND_NAMES: dict[str, str] = {
     "phi": "Phi",
 }
 
+_GALLEY_RUNTIME_KIND_ENV = "GALLEY_RUNTIME_KIND"
+_GALLEY_MANAGED_STATE_ROOT_ENV = "GALLEY_GA_STATE_ROOT"
+_GALLEY_MANAGED_MODEL_CONFIG_ENV = "GALLEY_MANAGED_MODEL_CONFIG_JSON"
+_GALLEY_MANAGED_MODEL_CONFIG_PATH_ENV = "GALLEY_MANAGED_MODEL_CONFIG_PATH"
+_GALLEY_RUNTIME_PROMPT_PATH_ENV = "GALLEY_RUNTIME_PROMPT_PATH"
+_GALLEY_PERSONA_PROMPT_PATH_ENV = "GALLEY_PERSONA_PROMPT_PATH"
+
+
+def _is_managed_runtime() -> bool:
+    return os.environ.get(_GALLEY_RUNTIME_KIND_ENV) == "managed"
+
+
+def _managed_model_config_from_env() -> dict[str, Any]:
+    """Build GA-style mykey entries from Galley's in-memory managed model config."""
+    raw = os.environ.get(_GALLEY_MANAGED_MODEL_CONFIG_ENV)
+    if not raw:
+        raise RuntimeError("Galley managed model config was not provided.")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Galley managed model config is invalid JSON: {e}") from e
+    models = data.get("models")
+    if not isinstance(models, list) or not models:
+        raise RuntimeError("Galley managed model config has no usable models.")
+
+    out: dict[str, Any] = {}
+    for idx, model in enumerate(models):
+        if not isinstance(model, dict):
+            continue
+        protocol = str(model.get("protocol") or "").strip().lower()
+        if protocol == "anthropic":
+            key = f"native_claude_config_{idx}"
+        elif protocol == "openai":
+            key = f"native_oai_config_{idx}"
+        else:
+            continue
+        cfg = {
+            "name": str(model.get("displayName") or model.get("model") or key),
+            "apikey": str(model.get("apiKey") or ""),
+            "apibase": str(model.get("apiBase") or "").rstrip("/"),
+            "model": str(model.get("model") or ""),
+        }
+        advanced = model.get("advancedOptions") or {}
+        if isinstance(advanced, dict):
+            cfg.update(advanced)
+        if not cfg["apikey"] or not cfg["apibase"] or not cfg["model"]:
+            continue
+        out[key] = cfg
+    if not out:
+        raise RuntimeError("Galley managed model config has no usable models.")
+    return out
+
 
 def _simplify_llm_name(raw: str, model: str | None = None) -> str:
     """Resolve GA's 'ClassName/backend.name' raw identifier into the
@@ -272,7 +324,27 @@ def _resolve_ga_commit(ga_path: str) -> tuple[str, str]:
     """
     import subprocess
 
+    if _is_managed_runtime():
+        try:
+            manifest_path = Path(ga_path).resolve().parent / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            upstream = manifest.get("upstream") or {}
+            return (
+                str(upstream.get("commit") or "unknown"),
+                str(upstream.get("auditedAt") or "unknown"),
+            )
+        except Exception:
+            return "unknown", "unknown"
+
     try:
+        root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=ga_path,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        if Path(root).resolve() != Path(ga_path).resolve():
+            return "unknown", "unknown"
         out = subprocess.check_output(
             ["git", "log", "-1", "--format=%H%n%cI"],
             cwd=ga_path,
@@ -493,8 +565,17 @@ class Bridge:
         frontends_dir = os.path.join(self.ga_path, "frontends")
         if frontends_dir not in sys.path:
             sys.path.insert(0, frontends_dir)
+        managed_state_root = os.environ.get(_GALLEY_MANAGED_STATE_ROOT_ENV)
+        if _is_managed_runtime():
+            if not managed_state_root:
+                raise RuntimeError("managed runtime missing GALLEY_GA_STATE_ROOT")
+            self._install_managed_mykey_loader()
+            for rel in ("memory", "sop", "skills", "temp", "temp/model_responses"):
+                os.makedirs(os.path.join(managed_state_root, rel), exist_ok=True)
         if self.cwd:
             os.chdir(self.cwd)
+        elif _is_managed_runtime() and managed_state_root:
+            os.chdir(managed_state_root)
         else:
             # Default to GA's own dir so agentmain finds its assets/.
             os.chdir(self.ga_path)
@@ -504,6 +585,8 @@ class Bridge:
         self.agentmain = agentmain
         self.agent = agentmain.GeneraticAgent()
         self.agent.next_llm(self.llm_no)
+        if _is_managed_runtime():
+            self._install_managed_prompt_profile()
         # verbose=True enables GA's per-token LLM streaming
         # (`yield from response_gen` in agent_loop.py). With it off,
         # agent_loop drains the LLM generator silently and yields the
@@ -550,6 +633,50 @@ class Bridge:
                 severity="warning",
                 context="setup_ga",
             )
+
+    def _install_managed_mykey_loader(self) -> None:
+        """Patch managed GA's llmcore to read Galley-owned model config.
+
+        External / attach mode never calls this. The real API key arrives via
+        the child process environment and is kept out of generated files.
+        """
+        import llmcore  # type: ignore[import-not-found]
+
+        marker = os.environ.get(_GALLEY_MANAGED_MODEL_CONFIG_PATH_ENV)
+        if not marker:
+            raise RuntimeError("managed runtime missing model config marker path")
+        marker_path = str(Path(marker).expanduser().resolve())
+
+        def _load_managed_mykeys() -> dict[str, Any]:
+            llmcore._mykey_path = marker_path
+            return _managed_model_config_from_env()
+
+        llmcore._load_mykeys = _load_managed_mykeys
+        llmcore._mykey_path = marker_path
+        llmcore._mykey_mtime = None
+
+    def _install_managed_prompt_profile(self) -> None:
+        prompts = []
+        for env_name in (
+            _GALLEY_RUNTIME_PROMPT_PATH_ENV,
+            _GALLEY_PERSONA_PROMPT_PATH_ENV,
+        ):
+            raw_path = os.environ.get(env_name)
+            if not raw_path:
+                raise RuntimeError(f"managed runtime missing {env_name}")
+            path = Path(raw_path).expanduser().resolve()
+            prompts.append(path.read_text(encoding="utf-8").strip())
+        extra_prompt = "\n\n".join(p for p in prompts if p)
+        if not extra_prompt:
+            raise RuntimeError("managed prompt profile is empty")
+
+        clients = list(getattr(self.agent, "llmclients", []) or [])
+        if not clients and getattr(self.agent, "llmclient", None) is not None:
+            clients = [self.agent.llmclient]
+        for client in clients:
+            backend = getattr(client, "backend", None)
+            if backend is not None:
+                setattr(backend, "extra_sys_prompt", "\n\n" + extra_prompt)
 
     def _install_handler_subclass(self) -> None:
         from runner.handlers import WorkbenchHandler
