@@ -32,6 +32,7 @@ export interface ManagedModelRecord {
   apiKeyRef: string;
   advancedOptions: Record<string, unknown>;
   isDefault: boolean;
+  sortOrder: number;
   credentialStatus: ManagedModelCredentialStatus;
   lastValidatedAt?: string | null;
   createdAt: string;
@@ -45,6 +46,10 @@ export interface SaveManagedModelInput {
   model: string;
   advancedOptions?: Record<string, unknown>;
   makeDefault?: boolean;
+}
+
+export interface ReorderManagedModelsInput {
+  modelIds: string[];
 }
 
 export interface ManagedModelProbeInput {

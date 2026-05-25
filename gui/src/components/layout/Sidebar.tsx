@@ -40,27 +40,11 @@ const PROJECT_REVIEW_EXIT_MS = 150;
 const PROJECT_ACTIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const PROJECT_REVIEW_FALLBACK_NOW_MS = Date.now();
 
-/**
- * Sidebar header runtime indicator. Two states for V0.1 — kept
- * deliberately binary because the underlying signal (does Galley
- * have a valid GA config to spawn bridges with?) is itself binary.
- * The previous {healthy|warning|error} ladder was a stub: nothing
- * actually drove it past the default "healthy", so the green dot
- * was decorative — see CLAUDE.md "Tauri Identifier" + the discussion
- * thread that prompted this refactor.
- *
- * - "ready":        gaConfig.gaPath + gaConfig.python both non-empty
- *                   (user has been through onboarding OR demo defaults
- *                   happen to point at a real install).
- * - "unconfigured": one or both paths empty. Onboarding never
- *                   completed, or user wiped a path in Settings.
- *
- * A future "warning" middle state (drifted GA baseline / recent
- * bridge spawn failures) is a candidate for V0.2 once we have real
- * dogfood signal about what users find confusing. For now we
- * intentionally don't fake a warning state we can't reliably detect.
- */
-export type RuntimeStatus = "ready" | "unconfigured";
+export type SidebarRuntimeIndicator =
+  | "hidden"
+  | "configure-models"
+  | "external-ready"
+  | "external-unconfigured";
 
 export interface SidebarProps {
   sessions: Session[];
@@ -79,7 +63,7 @@ export interface SidebarProps {
   /** Timestamp captured when Project Review opens. Passed from an
    * event handler so "recent within 7 days" stays React-render pure. */
   projectReviewNowMs?: number;
-  runtimeStatus?: RuntimeStatus;
+  runtimeIndicator?: SidebarRuntimeIndicator;
   onSelectSession?: (id: string) => void;
   onNewChat?: () => void;
   onSearch?: () => void;
@@ -133,11 +117,10 @@ export interface SidebarProps {
   /** Count of archived sessions — shown as a small numeral after the
    * footer label. Omit / 0 → just the label. */
   archivedCount?: number;
-  /** Click the "GA 未配置" sidebar header status when in unconfigured
-   * state → opens Settings → Runtime tab. The "ready" state is a
-   * passive info indicator and stays non-interactive. See
-   * SidebarHeader doc for the asymmetric-affordance rationale. */
+  /** Click the external runtime status → opens Settings → Runtime. */
   onOpenRuntimeSettings?: () => void;
+  /** Click "配置模型" → opens Settings → Models. */
+  onOpenModelsSettings?: () => void;
   /** Session that currently holds the Desktop Pet, or `null` when no
    * pet is running. Renders a small Cat badge on the matching session
    * row so users see "where the pet lives" at a glance — non-
@@ -166,7 +149,7 @@ export function Sidebar({
   projectViewOpen = false,
   expandedProjectIds = [],
   projectReviewNowMs = PROJECT_REVIEW_FALLBACK_NOW_MS,
-  runtimeStatus = "ready",
+  runtimeIndicator = "hidden",
   onSelectSession,
   onNewChat,
   onSearch,
@@ -185,6 +168,7 @@ export function Sidebar({
   onOpenArchived,
   archivedCount = 0,
   onOpenRuntimeSettings,
+  onOpenModelsSettings,
   petAttachedSessionId,
 }: SidebarProps) {
   // Project context belongs to the right-side empty composer. Sidebar
@@ -286,8 +270,9 @@ export function Sidebar({
   return (
     <div className="flex h-full flex-col bg-app text-[13px] text-ink">
       <SidebarHeader
-        runtimeStatus={runtimeStatus}
+        runtimeIndicator={runtimeIndicator}
         onOpenRuntimeSettings={onOpenRuntimeSettings}
+        onOpenModelsSettings={onOpenModelsSettings}
       />
       <SidebarQuickActions
         onNewChat={onNewChat}
@@ -371,11 +356,13 @@ export function Sidebar({
 // ---------- subcomponents ----------
 
 function SidebarHeader({
-  runtimeStatus,
+  runtimeIndicator,
   onOpenRuntimeSettings,
+  onOpenModelsSettings,
 }: {
-  runtimeStatus: RuntimeStatus;
+  runtimeIndicator: SidebarRuntimeIndicator;
   onOpenRuntimeSettings?: () => void;
+  onOpenModelsSettings?: () => void;
 }) {
   // Single-line header (refactored 2026-05-13): the "Galley" wordmark
   // is short (~50px at 16px serif), which left ~200px of dead space
@@ -387,14 +374,7 @@ function SidebarHeader({
   // the shell already covers it. The sidebar starts at y=44px (below
   // the TopBar's bottom border).
   //
-  // Status affordance: clickable ONLY when unconfigured (opens Settings
-  // → Runtime). The "ready" state is passive info — there's nothing to
-  // do when things work, and offering a click would be busywork ("click
-  // to re-verify it's still healthy" returns the same answer 99% of
-  // the time). Asymmetric interaction matches Workbench's "Badge only
-  // shows when count > 0" pattern: affordances appear when there's
-  // action available, not just for symmetry.
-  const isUnconfigured = runtimeStatus === "unconfigured";
+  const indicator = renderRuntimeIndicator(runtimeIndicator);
   return (
     <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
       {/* Wordmark: all-caps Newsreader semibold conveys "workbench" weight
@@ -405,46 +385,89 @@ function SidebarHeader({
       <div className="font-serif text-[16px] font-semibold uppercase tracking-[0.04em] text-ink">
         Galley
       </div>
-      {isUnconfigured ? (
+      {indicator?.action === "models" ? (
+        <button
+          type="button"
+          onClick={onOpenModelsSettings}
+          title={indicator.title}
+          aria-label={indicator.ariaLabel}
+          className="flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-[11.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
+        >
+          <RuntimeDot tone={indicator.tone} />
+          <span>{indicator.label}</span>
+        </button>
+      ) : indicator?.action === "runtime" ? (
         <button
           type="button"
           onClick={onOpenRuntimeSettings}
-          title="GA 路径或 Python 解释器未配置 · 点击去 Settings 配置"
-          aria-label="去 Settings 配置 GA"
+          title={indicator.title}
+          aria-label={indicator.ariaLabel}
           className="flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-[11.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
-          <RuntimeDot status={runtimeStatus} />
-          <span>{runtimeStatusLabel(runtimeStatus)}</span>
+          <RuntimeDot tone={indicator.tone} />
+          <span>{indicator.label}</span>
         </button>
-      ) : (
+      ) : indicator ? (
         <div
           className="flex items-center gap-1.5 text-[11.5px] text-ink-soft"
-          title="GA 配置已就绪，bridge 可以启动"
+          title={indicator.title}
         >
-          <RuntimeDot status={runtimeStatus} />
-          <span>{runtimeStatusLabel(runtimeStatus)}</span>
+          <RuntimeDot tone={indicator.tone} />
+          <span>{indicator.label}</span>
         </div>
+      ) : (
+        <span aria-hidden="true" />
       )}
     </div>
   );
 }
 
-function RuntimeDot({ status }: { status: RuntimeStatus }) {
-  // Two states only — see RuntimeStatus type doc for rationale.
-  //   ready        → green (success), brand-moment-mini "all set"
-  //   unconfigured → muted ink dot, no ring. Deliberately not amber:
-  //                  "未配置" isn't a *problem*, it's an expected state
-  //                  for a fresh install — muted gray reads as "you
-  //                  haven't done this yet" without nagging.
-  const map: Record<RuntimeStatus, string> = {
-    ready: "bg-success ring-2 ring-success/20",
-    unconfigured: "bg-ink-muted",
-  };
-  return <span className={cn("size-2 rounded-full", map[status])} />;
+type RuntimeIndicatorView = {
+  label: string;
+  title: string;
+  ariaLabel: string;
+  tone: "success" | "muted";
+  action?: "models" | "runtime";
+};
+
+function renderRuntimeIndicator(
+  indicator: SidebarRuntimeIndicator,
+): RuntimeIndicatorView | null {
+  switch (indicator) {
+    case "configure-models":
+      return {
+        label: "配置模型",
+        title: "内置 GA 还没有可用模型",
+        ariaLabel: "打开 Models 配置内置 GA 模型",
+        tone: "muted",
+        action: "models",
+      };
+    case "external-ready":
+      return {
+        label: "外部 GA",
+        title: "正在使用你接入的 GenericAgent",
+        ariaLabel: "正在使用外部 GA",
+        tone: "success",
+      };
+    case "external-unconfigured":
+      return {
+        label: "接入外部 GA",
+        title: "选择一个已有的 GenericAgent 目录",
+        ariaLabel: "打开 Runtime 接入外部 GA",
+        tone: "muted",
+        action: "runtime",
+      };
+    case "hidden":
+      return null;
+  }
 }
 
-function runtimeStatusLabel(status: RuntimeStatus): string {
-  return status === "ready" ? "GA 就绪" : "GA 未配置";
+function RuntimeDot({ tone }: { tone: RuntimeIndicatorView["tone"] }) {
+  const map: Record<RuntimeIndicatorView["tone"], string> = {
+    success: "bg-success ring-2 ring-success/20",
+    muted: "bg-ink-muted",
+  };
+  return <span className={cn("size-2 rounded-full", map[tone])} />;
 }
 
 function SidebarQuickActions({

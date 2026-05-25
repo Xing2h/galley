@@ -9,8 +9,9 @@
  * row-level edit affordances. For now the list is static.
  *
  * OS-conditional display: rows with a platform modifier (Mod/Alt)
- * resolve through formatShortcut so Mac sees ⌘K-style glyphs and
- * Win sees Ctrl+K word names. Rows without a modifier (Enter, Esc,
+ * resolve through formatShortcut so Mac sees glyphs and Win sees
+ * Ctrl+K word names. KbdCombo spaces dense Mac chords as
+ * "⌘ + K" inside this page. Rows without a modifier (Enter, Esc,
  * arrows, Tab) render the same on both OSes.
  */
 
@@ -83,7 +84,7 @@ export function SettingsShortcuts() {
     <div className="space-y-7">
       <SettingsPanelHeader
         title="Shortcuts"
-        subtitle="全部快捷键 · 当前 V0.1 不支持自定义，V0.2 会加重绑入口"
+        subtitle="快捷键设置"
       />
 
       {GROUPS.map((g) => (
@@ -114,24 +115,40 @@ export function SettingsShortcuts() {
 }
 
 /**
- * Splits a combo string like "⌘+Shift+K" into individual key chips.
- * Accepts `+` or space as separators; bare combos like "⌘K" stay as
- * a single chip (the modifier-and-letter idiom is treated as one
- * unit in macOS chrome — Notion / Linear / Slack render it that
- * way).
+ * Splits combo strings into readable key chips. Settings has more
+ * room than sidebar hints, so compact macOS chords like "⌘K" become
+ * "⌘ + K" here while global shortcut hints stay terse.
  */
 function KbdCombo({ combo }: { combo: string }) {
-  const parts = combo.includes("+") ? combo.split("+") : [combo];
+  const chords = combo.split(/\s+\/\s+/);
   return (
     <div className="flex shrink-0 items-center gap-1">
-      {parts.map((p, i) => (
-        <kbd
-          key={i}
-          className="inline-flex min-w-[28px] items-center justify-center rounded-sm border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] text-ink"
-        >
-          {p}
-        </kbd>
+      {chords.map((chord, chordIndex) => (
+        <span key={chordIndex} className="inline-flex items-center gap-1">
+          {chordIndex > 0 && (
+            <span className="px-0.5 text-[11px] text-ink-muted">/</span>
+          )}
+          {shortcutParts(chord).map((part, partIndex) => (
+            <span key={partIndex} className="inline-flex items-center gap-1">
+              {partIndex > 0 && (
+                <span className="text-[10.5px] text-ink-muted">+</span>
+              )}
+              <kbd className="inline-flex min-w-[28px] items-center justify-center rounded-sm border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] text-ink">
+                {part}
+              </kbd>
+            </span>
+          ))}
+        </span>
       ))}
     </div>
   );
+}
+
+function shortcutParts(chord: string): string[] {
+  if (chord.includes("+")) {
+    return chord.split("+").filter(Boolean);
+  }
+  const compactMacChord = chord.match(/^([⌘⌃⌥⇧]+)(.+)$/);
+  if (!compactMacChord) return [chord];
+  return [...compactMacChord[1], compactMacChord[2]];
 }

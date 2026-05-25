@@ -55,6 +55,8 @@ export interface SettingsProps {
   hasExternalRuntimeConfigured: boolean;
 
   defaultTab?: SettingsTab;
+  tab?: SettingsTab;
+  onTabChange?: (tab: SettingsTab) => void;
 
   /** v0.1.1+ Python mode (bundled vs external). Threaded into Runtime
    * tab so its Python panel can switch between the read-only bundled
@@ -114,8 +116,13 @@ export function Settings({
   onToggleExternalPython,
   onCommitGAPath,
   onChangeRuntimeKind,
+  tab: controlledTab,
+  onTabChange,
 }: SettingsProps) {
-  const [tab, setTab] = useState<SettingsTab>(defaultTab);
+  const [uncontrolledTab, setUncontrolledTab] =
+    useState<SettingsTab>(defaultTab);
+  const tab = controlledTab ?? uncontrolledTab;
+  const setTab = onTabChange ?? setUncontrolledTab;
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -158,9 +165,12 @@ export function Settings({
                   onReRunHealthCheck={onReRunHealthCheck}
                   onToggleExternalPython={onToggleExternalPython}
                   onCommitGAPath={onCommitGAPath}
+                  onOpenModels={() => setTab("models")}
                 />
               )}
-              {tab === "models" && <SettingsModels />}
+              {tab === "models" && (
+                <SettingsModels activeRuntimeKind={activeRuntimeKind} />
+              )}
               {tab === "approval" && (
                 <SettingsApproval
                   config={approval}

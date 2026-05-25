@@ -8,11 +8,18 @@ import {
 } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 
+import { ManagedModelProviderPicker } from "@/components/managed-models/ManagedModelProviderPicker";
 import { Button } from "@/components/ui/button";
 import {
   listManagedModelOptions,
   testManagedModelConnection,
 } from "@/lib/managed-models";
+import {
+  DEFAULT_MANAGED_MODEL_PROVIDER_PRESET_ID,
+  getManagedModelProviderPreset,
+  managedModelProviderPresetDraft,
+  type ManagedModelProviderPresetId,
+} from "@/lib/managed-model-presets";
 import { cn } from "@/lib/utils";
 import { useManagedModelsStore } from "@/stores/managed-models";
 import type { ManagedModelProtocol } from "@/types/managed-models";
@@ -34,18 +41,29 @@ export function StepModelConfig({
 }: StepModelConfigProps) {
   const saveProvider = useManagedModelsStore((s) => s.saveProvider);
   const saveModel = useManagedModelsStore((s) => s.saveModel);
-  const [protocol, setProtocol] =
-    useState<ManagedModelProtocol>("openai");
+  const initialPresetDraft = managedModelProviderPresetDraft(
+    DEFAULT_MANAGED_MODEL_PROVIDER_PRESET_ID,
+  );
+  const [providerPresetId, setProviderPresetId] =
+    useState<ManagedModelProviderPresetId>(initialPresetDraft.providerPresetId);
+  const [protocol, setProtocol] = useState<ManagedModelProtocol>(
+    initialPresetDraft.protocol,
+  );
   const [apiKey, setApiKey] = useState("");
-  const [apiBase, setApiBase] = useState("");
-  const [model, setModel] = useState("");
+  const [apiBase, setApiBase] = useState(initialPresetDraft.apiBase);
+  const [model, setModel] = useState(initialPresetDraft.model);
+  const [providerDisplayNameValue, setProviderDisplayNameValue] = useState(
+    initialPresetDraft.displayName,
+  );
+  const [advancedOptions, setAdvancedOptions] = useState<
+    Record<string, unknown> | undefined
+  >(initialPresetDraft.advancedOptions);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [state, setState] = useState<SetupState>({ kind: "idle" });
+  const selectedPreset = getManagedModelProviderPreset(providerPresetId);
 
   const canFetchModels =
-    apiKey.trim() !== "" &&
-    apiBase.trim() !== "" &&
-    state.kind !== "loading";
+    apiKey.trim() !== "" && apiBase.trim() !== "" && state.kind !== "loading";
   const canStart = useMemo(
     () =>
       apiKey.trim() !== "" &&
@@ -61,6 +79,20 @@ export function StepModelConfig({
     apiBase,
     model,
   });
+
+  const handleSelectProviderPreset = (
+    nextProviderPresetId: ManagedModelProviderPresetId,
+  ) => {
+    const draft = managedModelProviderPresetDraft(nextProviderPresetId);
+    setProviderPresetId(draft.providerPresetId);
+    setProtocol(draft.protocol);
+    setApiBase(draft.apiBase);
+    setModel(draft.model);
+    setProviderDisplayNameValue(draft.displayName);
+    setAdvancedOptions(draft.advancedOptions);
+    setModelOptions([]);
+    setState({ kind: "idle" });
+  };
 
   const handleFetchModels = async () => {
     if (!canFetchModels) return;
@@ -89,11 +121,12 @@ export function StepModelConfig({
         protocol,
         apiKey,
         apiBase,
-        displayName: providerDisplayName(apiBase),
+        displayName: providerDisplayNameValue || providerDisplayName(apiBase),
       });
       await saveModel({
         providerId: provider.id,
         model,
+        advancedOptions,
         makeDefault: true,
       });
       setState({ kind: "success", message: "配置完成" });
@@ -109,26 +142,20 @@ export function StepModelConfig({
         为 Galley 配置模型
       </h1>
       <p className="mb-7 mt-2.5 font-serif text-[15.5px] italic leading-[1.55] text-ink-soft">
-        填入你的模型 API Key 和 Base URL。
+        填入你的模型 API Key 和 API 地址。
       </p>
 
       <div className="space-y-4">
         <div>
           <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            模型服务
+            模型提供商
           </label>
-          <div className="inline-flex rounded-sm border border-line bg-elevated p-0.5">
-            <ProtocolButton
-              active={protocol === "openai"}
-              label="OpenAI-compatible"
-              onClick={() => setProtocol("openai")}
-            />
-            <ProtocolButton
-              active={protocol === "anthropic"}
-              label="Anthropic-compatible"
-              onClick={() => setProtocol("anthropic")}
-            />
-          </div>
+          <ManagedModelProviderPicker
+            value={providerPresetId}
+            protocol={protocol}
+            onChange={handleSelectProviderPreset}
+            className="bg-elevated"
+          />
         </div>
 
         <SetupInput
@@ -139,22 +166,21 @@ export function StepModelConfig({
           placeholder="sk-..."
         />
         <SetupInput
-          label="Base URL"
+          label="API 地址"
           value={apiBase}
           onChange={setApiBase}
           placeholder={
-            protocol === "openai"
+            selectedPreset.apiBase ||
+            (protocol === "openai"
               ? "https://api.openai.com/v1"
-              : "https://api.anthropic.com/v1"
+              : "https://api.anthropic.com")
           }
         />
         <SetupInput
           label="模型"
           value={model}
           onChange={setModel}
-          placeholder={
-            protocol === "openai" ? "gpt-4.1" : "claude-sonnet-4-6"
-          }
+          placeholder={selectedPreset.modelPlaceholder}
         />
 
         <div className="flex flex-wrap items-center gap-2">
@@ -229,29 +255,6 @@ export function StepModelConfig({
         </Button>
       </div>
     </div>
-  );
-}
-
-function ProtocolButton({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-[3px] px-2.5 py-1.5 text-[12px] transition-colors",
-        active ? "bg-surface text-ink shadow-sm" : "text-ink-muted hover:text-ink",
-      )}
-    >
-      {label}
-    </button>
   );
 }
 

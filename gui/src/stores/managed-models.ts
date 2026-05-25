@@ -8,6 +8,7 @@ import {
   listManagedModels,
   saveManagedModelProvider,
   saveManagedModel,
+  reorderManagedModels,
 } from "@/lib/managed-models";
 import { useRuntimeStore } from "@/stores/runtime";
 import type { ManagedRuntimeDiagnostics } from "@/types/inspector";
@@ -34,6 +35,7 @@ interface ManagedModelsActions {
   saveProvider: (input: SaveManagedProviderInput) => Promise<ManagedModelProviderRecord>;
   deleteProvider: (id: string) => Promise<void>;
   saveModel: (input: SaveManagedModelInput) => Promise<void>;
+  reorderModels: (modelIds: string[]) => Promise<void>;
   deleteModel: (id: string) => Promise<void>;
   clearError: () => void;
 }
@@ -99,6 +101,19 @@ export const useManagedModelsStore = create<ManagedModelsStore>((set) => ({
     set({ saving: true, error: null });
     try {
       await saveManagedModel(input);
+      const models = await listManagedModels();
+      set({ models, saving: false });
+      void refreshManagedRuntimeDiagnostics();
+    } catch (e) {
+      set({ saving: false, error: errorMessage(e) });
+      throw e;
+    }
+  },
+
+  reorderModels: async (modelIds) => {
+    set({ saving: true, error: null });
+    try {
+      await reorderManagedModels({ modelIds });
       const models = await listManagedModels();
       set({ models, saving: false });
       void refreshManagedRuntimeDiagnostics();

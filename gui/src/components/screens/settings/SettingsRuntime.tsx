@@ -7,11 +7,13 @@ import {
   CircleNotch,
   FolderOpen,
   Info,
+  Key,
   Package,
   Warning,
   X,
 } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   SettingsPanelHeader,
@@ -20,7 +22,6 @@ import {
 import type { PathValidation } from "@/components/screens/onboarding/StepAttach";
 import { SettingsUpdateControl } from "@/components/screens/settings/SettingsUpdateControl";
 import { Button } from "@/components/ui/button";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   BUNDLED_PYTHON_VERSION,
   validateGAPath,
@@ -54,6 +55,7 @@ interface SettingsRuntimeProps {
    */
   onToggleExternalPython?: (useExternal: boolean) => void;
   onChangeRuntimeKind?: (kind: RuntimeKind) => void;
+  onOpenModels?: () => void;
   /**
    * Commit a manually-typed GA path. Called on Enter / blur when the
    * draft differs from the saved value and validation hasn't returned
@@ -89,25 +91,42 @@ export function SettingsRuntime({
   onReRunHealthCheck,
   onToggleExternalPython,
   onChangeRuntimeKind,
+  onOpenModels,
   onCommitGAPath,
 }: SettingsRuntimeProps) {
-  return (
-    <div className="space-y-7">
-      <SettingsPanelHeader
-        title="Runtime"
-        subtitle="GenericAgent 的启动参数 · 改动后需要重启 Galley"
-      />
+  const [externalExpanded, setExternalExpanded] = useState(
+    activeRuntimeKind === "external",
+  );
+  const [highlightedRuntimeKind, setHighlightedRuntimeKind] =
+    useState<RuntimeKind | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
 
-      <RuntimeModeSection
-        value={activeRuntimeKind}
-        hasManagedRuntimeConfigured={hasManagedRuntimeConfigured}
-        hasExternalRuntimeConfigured={hasExternalRuntimeConfigured}
-        hasRunningSessions={hasRunningSessions}
-        onChange={onChangeRuntimeKind}
-      />
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current !== null) {
+        window.clearTimeout(highlightTimerRef.current);
+      }
+    };
+  }, []);
 
+  const activateRuntimeKind = (kind: RuntimeKind) => {
+    if (kind === activeRuntimeKind) return;
+    setExternalExpanded(kind === "external");
+    setHighlightedRuntimeKind(kind);
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedRuntimeKind(null);
+      highlightTimerRef.current = null;
+    }, 900);
+    onChangeRuntimeKind?.(kind);
+  };
+
+  const externalRuntimeDetails = (
+    <div className="space-y-7 border-t border-line pt-5">
       <PathField
-        label="GA Path"
+        label="外部 GA 路径"
         value={info.gaPath}
         onPick={onChangeGAPath}
         onCommit={onCommitGAPath}
@@ -127,24 +146,39 @@ export function SettingsRuntime({
         gaBaseline={info.gaBaseline}
       />
 
-      <ManagedRuntimeCard diagnostics={info.managedRuntime} />
+      <HealthCheckSection onReRunHealthCheck={onReRunHealthCheck} />
+    </div>
+  );
 
-      <div>
-        <SettingsSectionLabel>Health Check</SettingsSectionLabel>
-        <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">
-          不知道哪儿出问题了？跑一次完整体检 ——
-          重新探测 Python 解释器、检查 GA 路径和必要文件。
-        </p>
-        <Button
-          variant="accent-secondary"
-          size="md"
-          onClick={onReRunHealthCheck}
-          className="mt-3"
-          leadingIcon={<ArrowsClockwise size={13} weight="thin" />}
-        >
-          跑一次 Health Check
-        </Button>
-      </div>
+  return (
+    <div className="space-y-7">
+      <SettingsPanelHeader
+        title="Runtime"
+        subtitle="Galley 使用的 GenericAgent 运行环境"
+      />
+
+      <BuiltinRuntimeCard
+        value={activeRuntimeKind}
+        hasManagedRuntimeConfigured={hasManagedRuntimeConfigured}
+        hasRunningSessions={hasRunningSessions}
+        highlighted={highlightedRuntimeKind === "managed"}
+        onOpenModels={onOpenModels}
+        onActivate={() => activateRuntimeKind("managed")}
+      />
+
+      <AdvancedRuntimeSettings
+        expanded={externalExpanded}
+        value={activeRuntimeKind}
+        hasExternalRuntimeConfigured={hasExternalRuntimeConfigured}
+        hasRunningSessions={hasRunningSessions}
+        highlighted={highlightedRuntimeKind === "external"}
+        showManagedDiagnostics={activeRuntimeKind === "managed"}
+        managedDiagnostics={info.managedRuntime}
+        onToggleExpanded={() => setExternalExpanded((current) => !current)}
+        onActivate={() => activateRuntimeKind("external")}
+      >
+        {externalRuntimeDetails}
+      </AdvancedRuntimeSettings>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
         <div className="font-mono text-[11px] text-ink-muted">
@@ -158,63 +192,284 @@ export function SettingsRuntime({
   );
 }
 
-function RuntimeModeSection({
+function BuiltinRuntimeCard({
   value,
   hasManagedRuntimeConfigured,
-  hasExternalRuntimeConfigured,
   hasRunningSessions,
-  onChange,
+  highlighted,
+  onOpenModels,
+  onActivate,
 }: {
   value: RuntimeKind;
   hasManagedRuntimeConfigured: boolean;
-  hasExternalRuntimeConfigured: boolean;
   hasRunningSessions: boolean;
-  onChange?: (kind: RuntimeKind) => void;
+  highlighted: boolean;
+  onOpenModels?: () => void;
+  onActivate?: () => void;
 }) {
-  const lockSwitching = hasRunningSessions;
-  const managedDisabled =
-    value !== "managed" && (!hasManagedRuntimeConfigured || lockSwitching);
-  const externalDisabled =
-    value !== "external" && (!hasExternalRuntimeConfigured || lockSwitching);
-  const detail = lockSwitching
-    ? "有运行中的对话，结束后可切换"
-    : value === "managed"
-      ? hasManagedRuntimeConfigured
-        ? "Galley runtime"
-        : "模型未配置"
-      : hasExternalRuntimeConfigured
-        ? "Attached GenericAgent"
-        : "GA Path 未配置";
+  const active = value === "managed";
+  const canActivate =
+    !active && hasManagedRuntimeConfigured && !hasRunningSessions && !!onActivate;
+  const needsModel = !hasManagedRuntimeConfigured;
+  const detail = active
+    ? "正在使用内置 GA"
+    : needsModel
+      ? "需要先配置模型"
+      : "内置 GA 已可用";
 
   return (
     <div>
       <SettingsSectionLabel>Runtime Mode</SettingsSectionLabel>
-      <div className="mt-2 flex flex-wrap items-center gap-3">
-        <SegmentedControl<RuntimeKind>
-          value={value}
-          ariaLabel="选择 runtime mode"
-          onValueChange={onChange}
-          options={[
-            {
-              value: "managed",
-              label: "Galley",
-              disabled: managedDisabled,
-              title: !hasManagedRuntimeConfigured
-                ? "先在 Models 配置模型"
-                : undefined,
-            },
-            {
-              value: "external",
-              label: "Attached GA",
-              disabled: externalDisabled,
-              title: !hasExternalRuntimeConfigured
-                ? "先配置 GA Path"
-                : undefined,
-            },
-          ]}
-        />
-        <span className="text-[12px] text-ink-muted">{detail}</span>
+      <div
+        className={cn(
+          "mt-2 rounded-sm border border-line bg-surface px-3 py-3",
+          highlighted && "runtime-mode-highlight",
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <Package size={18} weight="thin" className="shrink-0 text-ink-soft" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[13px] font-medium text-ink">
+                  内置 GA
+                </span>
+                <span className="rounded-sm bg-brand-soft px-1.5 py-px text-[10.5px] font-medium text-brand-strong">
+                  推荐
+                </span>
+                {active && (
+                  <span className="rounded-sm bg-success/10 px-1.5 py-px text-[10.5px] text-success">
+                    正在使用
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 text-[12px] text-ink-muted">{detail}</div>
+            </div>
+          </div>
+          {needsModel ? (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!onOpenModels}
+              onClick={onOpenModels}
+              leadingIcon={<Key size={12} weight="thin" />}
+            >
+              配置模型
+            </Button>
+          ) : (
+            !active && (
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!canActivate}
+                onClick={onActivate}
+              >
+                切换到内置 GA
+              </Button>
+            )
+          )}
+        </div>
+        {hasRunningSessions && !active && (
+          <div className="mt-2 text-[11.5px] text-ink-muted">
+            有运行中的对话，结束后可切换运行时。
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function AdvancedRuntimeSettings({
+  expanded,
+  value,
+  hasExternalRuntimeConfigured,
+  hasRunningSessions,
+  highlighted,
+  showManagedDiagnostics,
+  managedDiagnostics,
+  onToggleExpanded,
+  onActivate,
+  children,
+}: {
+  expanded: boolean;
+  value: RuntimeKind;
+  hasExternalRuntimeConfigured: boolean;
+  hasRunningSessions: boolean;
+  highlighted: boolean;
+  showManagedDiagnostics: boolean;
+  managedDiagnostics?: ManagedRuntimeDiagnostics;
+  onToggleExpanded: () => void;
+  onActivate?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <SettingsSectionLabel>更多</SettingsSectionLabel>
+      <div className="mt-2 space-y-2">
+        <ExternalRuntimeAccess
+          expanded={expanded}
+          value={value}
+          hasExternalRuntimeConfigured={hasExternalRuntimeConfigured}
+          hasRunningSessions={hasRunningSessions}
+          highlighted={highlighted}
+          onToggleExpanded={onToggleExpanded}
+          onActivate={onActivate}
+        >
+          {children}
+        </ExternalRuntimeAccess>
+
+        {showManagedDiagnostics && (
+          <ManagedRuntimeCard diagnostics={managedDiagnostics} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExternalRuntimeAccess({
+  expanded,
+  value,
+  hasExternalRuntimeConfigured,
+  hasRunningSessions,
+  highlighted,
+  onToggleExpanded,
+  onActivate,
+  children,
+}: {
+  expanded: boolean;
+  value: RuntimeKind;
+  hasExternalRuntimeConfigured: boolean;
+  hasRunningSessions: boolean;
+  highlighted: boolean;
+  onToggleExpanded: () => void;
+  onActivate?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onToggleExpanded}
+        className="px-0 text-[11.5px] hover:bg-transparent hover:underline"
+        leadingIcon={
+          expanded ? (
+            <CaretDown size={12} weight="bold" />
+          ) : (
+            <CaretRight size={12} weight="bold" />
+          )
+        }
+      >
+        接入外部 GA
+      </Button>
+      {expanded && (
+        <div className="mt-2 space-y-5">
+          <ExternalRuntimeCard
+            value={value}
+            hasExternalRuntimeConfigured={hasExternalRuntimeConfigured}
+            hasRunningSessions={hasRunningSessions}
+            highlighted={highlighted}
+            onActivate={onActivate}
+          />
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExternalRuntimeCard({
+  value,
+  hasExternalRuntimeConfigured,
+  hasRunningSessions,
+  highlighted,
+  onActivate,
+}: {
+  value: RuntimeKind;
+  hasExternalRuntimeConfigured: boolean;
+  hasRunningSessions: boolean;
+  highlighted: boolean;
+  onActivate?: () => void;
+}) {
+  const active = value === "external";
+  const canActivate =
+    !active && hasExternalRuntimeConfigured && !hasRunningSessions && !!onActivate;
+  const detail = active
+    ? "正在使用外部 GA"
+    : hasExternalRuntimeConfigured
+      ? "外部 GA 已可用"
+      : "需要先选择 GA 路径";
+
+  return (
+    <div>
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-3 rounded-sm border border-line bg-surface px-3 py-2.5",
+          highlighted && "runtime-mode-highlight",
+        )}
+      >
+        <div className="flex min-w-[240px] flex-1 items-center gap-3">
+          <FolderOpen
+            size={16}
+            weight="thin"
+            className="shrink-0 text-ink-soft"
+          />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[12.5px] font-medium text-ink">
+                外部 GA
+              </span>
+              {active && (
+                <span className="rounded-sm bg-hover px-1.5 py-px text-[10.5px] text-ink-muted">
+                  正在使用
+                </span>
+              )}
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-ink-muted">{detail}</div>
+          </div>
+        </div>
+        {!active && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!canActivate}
+            onClick={onActivate}
+          >
+            切换到外部 GA
+          </Button>
+        )}
+      </div>
+      {hasRunningSessions && !active && (
+        <div className="mt-2 text-[11.5px] text-ink-muted">
+          有运行中的对话，结束后可切换运行时。
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HealthCheckSection({
+  onReRunHealthCheck,
+}: {
+  onReRunHealthCheck?: () => void;
+}) {
+  return (
+    <div>
+      <SettingsSectionLabel>Health Check</SettingsSectionLabel>
+      <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">
+        不知道哪儿出问题了？跑一次完整体检 ——
+        重新探测 Python 解释器、检查 GA 路径和必要文件。
+      </p>
+      <Button
+        variant="accent-secondary"
+        size="md"
+        disabled={!onReRunHealthCheck}
+        onClick={onReRunHealthCheck}
+        className="mt-3"
+        leadingIcon={<ArrowsClockwise size={13} weight="thin" />}
+      >
+        跑一次 Health Check
+      </Button>
     </div>
   );
 }
@@ -358,8 +613,8 @@ function ManagedRuntimeCard({
               label="当前模式"
               value={
                 activeRuntimeKind === "managed"
-                  ? "Galley"
-                  : "Attached GenericAgent"
+                  ? "内置 GA"
+                  : "外部 GA"
               }
             />
             <RuntimeDiagnosticRow label="内核版本" value={upstreamShort} />

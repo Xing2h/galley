@@ -74,7 +74,7 @@ export function SettingsApproval({
     <div className="space-y-7">
       <SettingsPanelHeader
         title="Approval"
-        subtitle="哪些工具需要审批 · 哪些已加白名单"
+        subtitle="配置 Agent 操作的审批规则"
       />
 
       <YoloSection enabled={yoloMode} onToggle={handleYoloToggle} />

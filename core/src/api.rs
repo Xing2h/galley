@@ -25,7 +25,7 @@ pub use message::{MessageBrief, MessageId, MessageRole};
 pub use model::{
     ManagedModelConnectionResult, ManagedModelCredentialStatus, ManagedModelListResult,
     ManagedModelProbeInput, ManagedModelProtocol, ManagedModelProviderRecord, ManagedModelRecord,
-    SaveManagedModelInput, SaveManagedProviderInput,
+    ReorderManagedModelsInput, SaveManagedModelInput, SaveManagedProviderInput,
 };
 pub use origin::{Origin, OriginVia};
 pub use project::{CreateProjectInput, ProjectBrief, ProjectId, ProjectPatch};

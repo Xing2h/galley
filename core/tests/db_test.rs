@@ -23,6 +23,7 @@ const MIG_007: &str = include_str!("../migrations/007_sessions_origin.sql");
 const MIG_008: &str = include_str!("../migrations/008_runtime_identity.sql");
 const MIG_009: &str = include_str!("../migrations/009_managed_models.sql");
 const MIG_010: &str = include_str!("../migrations/010_managed_model_providers.sql");
+const MIG_011: &str = include_str!("../migrations/011_managed_model_sort_order.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -30,6 +31,7 @@ async fn fresh_pool() -> SqlitePool {
         .expect("open in-memory sqlite");
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
+        MIG_011,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -72,6 +74,10 @@ async fn runtime_identity_migration_preserves_existing_attach_users() {
         .execute(&pool)
         .await
         .expect("run managed model providers migration");
+    sqlx::raw_sql(MIG_011)
+        .execute(&pool)
+        .await
+        .expect("run managed model order migration");
 
     let active: String =
         sqlx::query_scalar("SELECT value FROM prefs WHERE key = 'active_runtime_kind'")

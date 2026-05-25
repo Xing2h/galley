@@ -1,0 +1,178 @@
+import type {
+  ManagedModelProtocol,
+  ManagedModelProviderRecord,
+} from "@/types/managed-models";
+
+export type ManagedModelProviderPresetId =
+  | "deepseek"
+  | "zhipu-glm"
+  | "kimi-coding"
+  | "minimax"
+  | "openrouter"
+  | "custom-anthropic"
+  | "custom-openai";
+
+export interface ManagedModelProviderPreset {
+  id: ManagedModelProviderPresetId;
+  label: string;
+  protocol: ManagedModelProtocol;
+  apiBase: string;
+  model: string;
+  displayName: string;
+  modelPlaceholder: string;
+  advancedOptions?: Record<string, unknown>;
+}
+
+export interface ManagedModelProviderPresetDraft {
+  providerPresetId: ManagedModelProviderPresetId;
+  protocol: ManagedModelProtocol;
+  apiBase: string;
+  model: string;
+  displayName: string;
+  advancedOptions?: Record<string, unknown>;
+}
+
+export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
+  {
+    id: "custom-openai",
+    label: "OpenAI",
+    protocol: "openai",
+    apiBase: "https://api.openai.com/v1",
+    model: "",
+    displayName: "OpenAI",
+    modelPlaceholder: "gpt-5.5",
+  },
+  {
+    id: "custom-anthropic",
+    label: "Anthropic",
+    protocol: "anthropic",
+    apiBase: "https://api.anthropic.com",
+    model: "",
+    displayName: "Anthropic",
+    modelPlaceholder: "claude-sonnet-4-6",
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    protocol: "anthropic",
+    apiBase: "https://api.deepseek.com/anthropic",
+    model: "deepseek-v4-pro",
+    displayName: "DeepSeek",
+    modelPlaceholder: "deepseek-v4-pro",
+    advancedOptions: {
+      thinking_type: "enabled",
+      reasoning_effort: "high",
+      read_timeout: 180,
+      stream: true,
+    },
+  },
+  {
+    id: "zhipu-glm",
+    label: "Zhipu GLM",
+    protocol: "anthropic",
+    apiBase: "https://open.bigmodel.cn/api/anthropic",
+    model: "glm-5.1",
+    displayName: "Zhipu GLM",
+    modelPlaceholder: "glm-5.1",
+    advancedOptions: {
+      max_retries: 3,
+      read_timeout: 180,
+    },
+  },
+  {
+    id: "kimi-coding",
+    label: "Kimi for Coding",
+    protocol: "anthropic",
+    apiBase: "https://api.kimi.com/coding",
+    model: "kimi-for-coding",
+    displayName: "Kimi for Coding",
+    modelPlaceholder: "kimi-for-coding",
+    advancedOptions: {
+      fake_cc_system_prompt: true,
+      thinking_type: "adaptive",
+      read_timeout: 180,
+      stream: true,
+    },
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    protocol: "anthropic",
+    apiBase: "https://api.minimaxi.com/anthropic",
+    model: "MiniMax-M2.7",
+    displayName: "MiniMax",
+    modelPlaceholder: "MiniMax-M2.7",
+    advancedOptions: {
+      max_retries: 3,
+      read_timeout: 180,
+    },
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    protocol: "openai",
+    apiBase: "https://openrouter.ai/api/v1",
+    model: "",
+    displayName: "OpenRouter",
+    modelPlaceholder: "anthropic/claude-sonnet-4.5",
+    advancedOptions: {
+      api_mode: "chat_completions",
+      max_retries: 3,
+      read_timeout: 120,
+    },
+  },
+];
+
+export const DEFAULT_MANAGED_MODEL_PROVIDER_PRESET_ID: ManagedModelProviderPresetId =
+  "deepseek";
+
+export function getManagedModelProviderPreset(
+  providerPresetId: ManagedModelProviderPresetId,
+): ManagedModelProviderPreset {
+  return (
+    MANAGED_MODEL_PROVIDER_PRESETS.find(
+      (preset) => preset.id === providerPresetId,
+    ) ?? MANAGED_MODEL_PROVIDER_PRESETS[0]
+  );
+}
+
+export function managedModelProviderPresetDraft(
+  providerPresetId: ManagedModelProviderPresetId,
+): ManagedModelProviderPresetDraft {
+  const preset = getManagedModelProviderPreset(providerPresetId);
+  return {
+    providerPresetId,
+    protocol: preset.protocol,
+    apiBase: preset.apiBase,
+    model: preset.model,
+    displayName: preset.displayName,
+    ...(preset.advancedOptions
+      ? { advancedOptions: preset.advancedOptions }
+      : {}),
+  };
+}
+
+export function customManagedModelProviderPresetId(
+  protocol: ManagedModelProtocol,
+): ManagedModelProviderPresetId {
+  return protocol === "anthropic" ? "custom-anthropic" : "custom-openai";
+}
+
+export function advancedOptionsForManagedModelProvider(
+  provider: ManagedModelProviderRecord,
+): Record<string, unknown> | undefined {
+  const preset = MANAGED_MODEL_PROVIDER_PRESETS.find(
+    (item) =>
+      item.advancedOptions &&
+      item.protocol === provider.protocol &&
+      item.apiBase !== "" &&
+      item.apiBase === provider.apiBase,
+  );
+  return preset?.advancedOptions;
+}
+
+export function managedModelProtocolLabel(
+  protocol: ManagedModelProtocol,
+): string {
+  return protocol === "openai" ? "OpenAI-compatible" : "Anthropic-compatible";
+}

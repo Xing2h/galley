@@ -55,6 +55,7 @@ pub struct ManagedModelRecord {
     pub api_key_ref: String,
     pub advanced_options: serde_json::Value,
     pub is_default: bool,
+    pub sort_order: i64,
     pub credential_status: ManagedModelCredentialStatus,
     pub last_validated_at: Option<String>,
     pub created_at: String,
@@ -70,6 +71,12 @@ pub struct SaveManagedModelInput {
     pub model: String,
     pub advanced_options: Option<serde_json::Value>,
     pub make_default: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderManagedModelsInput {
+    pub model_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

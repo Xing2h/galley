@@ -485,7 +485,9 @@ impl SqliteGalley {
     }
 
     pub async fn list_managed_models(&self) -> Result<Vec<ManagedModelRecord>> {
-        let sql = managed_model_select_sql("ORDER BY m.is_default DESC, m.updated_at DESC");
+        let sql = managed_model_select_sql(
+            "ORDER BY m.sort_order ASC, m.is_default DESC, m.updated_at DESC",
+        );
         let rows = sqlx::query_as::<_, ManagedModelRow>(&sql)
             .fetch_all(&self.pool)
             .await
@@ -635,7 +637,25 @@ impl SqliteGalley {
             .fetch_one(&self.pool)
             .await
             .map_err(map_sqlx_err)?;
+        let existing_row: Option<(i64, i64)> =
+            sqlx::query_as("SELECT is_default, sort_order FROM managed_models WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(map_sqlx_err)?;
         let make_default = record.make_default || existing_count == 0;
+        let target_sort_order = if make_default {
+            0_i64
+        } else if let Some((_, sort_order)) = existing_row {
+            sort_order
+        } else {
+            let max_order: Option<i64> =
+                sqlx::query_scalar("SELECT MAX(sort_order) FROM managed_models")
+                    .fetch_one(&self.pool)
+                    .await
+                    .map_err(map_sqlx_err)?;
+            max_order.unwrap_or(-1) + 1
+        };
         let now = chrono_now_iso();
         let advanced_options = record.advanced_options.to_string();
 
@@ -645,18 +665,38 @@ impl SqliteGalley {
                 .execute(&mut *tx)
                 .await
                 .map_err(map_sqlx_err)?;
+            if let Some((was_default, old_order)) = existing_row {
+                if was_default == 0 {
+                    sqlx::query(
+                        "UPDATE managed_models
+                         SET sort_order = sort_order + 1
+                         WHERE id != ? AND sort_order < ?",
+                    )
+                    .bind(id)
+                    .bind(old_order)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx_err)?;
+                }
+            } else {
+                sqlx::query("UPDATE managed_models SET sort_order = sort_order + 1")
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx_err)?;
+            }
         }
         sqlx::query(
             "INSERT INTO managed_models (
                id, provider_id, display_name, model, advanced_options,
-               is_default, last_validated_at, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
+               is_default, sort_order, last_validated_at, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                provider_id = excluded.provider_id,
                display_name = excluded.display_name,
                model = excluded.model,
                advanced_options = excluded.advanced_options,
                is_default = excluded.is_default,
+               sort_order = excluded.sort_order,
                updated_at = excluded.updated_at",
         )
         .bind(id)
@@ -665,6 +705,7 @@ impl SqliteGalley {
         .bind(model)
         .bind(&advanced_options)
         .bind(if make_default { 1_i64 } else { 0_i64 })
+        .bind(target_sort_order)
         .bind(&now)
         .bind(&now)
         .execute(&mut *tx)
@@ -703,6 +744,65 @@ impl SqliteGalley {
         }
         tx.commit().await.map_err(map_sqlx_err)?;
         Ok(true)
+    }
+
+    pub async fn reorder_managed_models(&self, ordered_ids: Vec<String>) -> Result<()> {
+        if ordered_ids.is_empty() {
+            return Err(GalleyError::InvalidArgs {
+                message: "managed model order must not be empty".into(),
+            });
+        }
+        let mut seen = std::collections::HashSet::new();
+        let ordered_ids: Vec<String> = ordered_ids
+            .into_iter()
+            .map(|id| id.trim().to_string())
+            .collect();
+        for id in &ordered_ids {
+            if id.is_empty() {
+                return Err(GalleyError::InvalidArgs {
+                    message: "managed model id must not be empty".into(),
+                });
+            }
+            if !seen.insert(id.clone()) {
+                return Err(GalleyError::InvalidArgs {
+                    message: format!("duplicate managed model id in order: {id}"),
+                });
+            }
+        }
+
+        let existing_ids: Vec<String> =
+            sqlx::query_scalar("SELECT id FROM managed_models ORDER BY sort_order ASC")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx_err)?;
+        if existing_ids.len() != ordered_ids.len()
+            || !existing_ids.iter().all(|id| seen.contains(id))
+        {
+            return Err(GalleyError::InvalidArgs {
+                message: "managed model order must include every configured model".into(),
+            });
+        }
+
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
+        sqlx::query("UPDATE managed_models SET is_default = 0")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_err)?;
+        for (idx, id) in ordered_ids.iter().enumerate() {
+            sqlx::query("UPDATE managed_models SET sort_order = ? WHERE id = ?")
+                .bind(idx as i64)
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx_err)?;
+        }
+        sqlx::query("UPDATE managed_models SET is_default = 1 WHERE id = ?")
+            .bind(&ordered_ids[0])
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_err)?;
+        tx.commit().await.map_err(map_sqlx_err)?;
+        Ok(())
     }
 
     async fn managed_model_by_id(&self, id: &str) -> Result<ManagedModelRecord> {
@@ -954,6 +1054,7 @@ struct ManagedModelRow {
     api_key_ref: String,
     advanced_options: String,
     is_default: i64,
+    sort_order: i64,
     last_validated_at: Option<String>,
     created_at: String,
     updated_at: String,
@@ -976,6 +1077,7 @@ impl ManagedModelRow {
             api_key_ref: self.api_key_ref,
             advanced_options,
             is_default: self.is_default != 0,
+            sort_order: self.sort_order,
             credential_status: ManagedModelCredentialStatus::Unknown,
             last_validated_at: self.last_validated_at,
             created_at: self.created_at,
@@ -1075,6 +1177,7 @@ fn managed_model_select_sql(suffix: &str) -> String {
            p.api_key_ref, \
            m.advanced_options, \
            m.is_default, \
+           m.sort_order, \
            m.last_validated_at, \
            m.created_at, \
            m.updated_at \
@@ -1089,7 +1192,7 @@ async fn set_latest_model_default(tx: &mut Transaction<'_, Sqlite>) -> Result<()
         "UPDATE managed_models
          SET is_default = 1
          WHERE id = (
-           SELECT id FROM managed_models ORDER BY updated_at DESC LIMIT 1
+           SELECT id FROM managed_models ORDER BY sort_order ASC, updated_at DESC LIMIT 1
          )",
     )
     .execute(&mut **tx)

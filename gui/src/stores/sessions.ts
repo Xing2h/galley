@@ -179,7 +179,7 @@ function sessionFromBrief(b: SessionBriefWire): Session {
     runtimeKind: b.runtimeKind ?? gaRuntimeKind,
     runtimeLabel:
       b.runtimeLabel ??
-      (gaRuntimeKind === "managed" ? "Galley" : "Attached GenericAgent"),
+      (gaRuntimeKind === "managed" ? "内置 GA" : "外部 GA"),
     gaRuntimeKind,
     gaRuntimeId: b.gaRuntimeId,
     promptProfile: b.promptProfile,
@@ -524,8 +524,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       createdAt: now,
       updatedAt: now,
       runtimeKind: gaRuntimeKind,
-      runtimeLabel:
-        gaRuntimeKind === "managed" ? "Galley" : "Attached GenericAgent",
+      runtimeLabel: gaRuntimeKind === "managed" ? "内置 GA" : "外部 GA",
       gaRuntimeKind,
       promptProfile,
     };

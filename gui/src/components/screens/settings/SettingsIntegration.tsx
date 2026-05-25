@@ -77,6 +77,14 @@ export function SettingsIntegration() {
       ? "Windows 一键安装命令稍后支持。Agent SOP 不依赖它。"
       : "当前平台暂不支持一键安装。Agent SOP 不依赖它。";
   const pathInstallHint = isMac ? "macOS 会请求一次系统权限。" : null;
+  const discoveryPlatformLabel = isMac
+    ? "macOS"
+    : isWindows
+      ? "Windows"
+      : "Linux";
+  const discoveryFilePath = isWindows
+    ? "%APPDATA%\\galley\\cli-path"
+    : "~/.config/galley/cli-path";
 
   // Load command-shortcut install status when the tab mounts. Status check is
   // unprivileged (lstat + readlink), so this is safe to fire eagerly.
@@ -224,7 +232,7 @@ export function SettingsIntegration() {
     <div className="space-y-7">
       <SettingsPanelHeader
         title="Agent"
-        subtitle="把 Galley 接你的 Agent"
+        subtitle="让 Agent 接管和操作 Galley"
       />
 
       {/* Discovery file row. Informational, not interactive — the file
@@ -233,24 +241,19 @@ export function SettingsIntegration() {
           path here is a tooltip-substitute so the documented contract
           is visible from Settings.
 
-          Display format mirrors SettingsAbout's <dl> rhythm: 120px
-          label column + monospace value. PathHint groups the two
-          platform-specific paths because most users only need one,
-          but a dev moving between OSes might want both. */}
+          Display format mirrors SettingsAbout's <dl> rhythm, but only
+          shows the current OS path. Cross-platform details belong in
+          the API docs, not the action-oriented Settings screen. */}
       <section>
         <SettingsSectionLabel>Discovery file</SettingsSectionLabel>
         <p className="mt-2 text-[12.5px] leading-[1.6] text-ink-soft">
           Galley 启动时把 CLI 二进制的绝对路径写到这个文件。Supervisor SOP
           第一步读它来定位 <code className="font-mono text-ink">galley</code>。
         </p>
-        <dl className="mt-3 grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-[12.5px]">
-          <dt className="text-ink-muted">macOS / Linux</dt>
+        <dl className="mt-3 grid grid-cols-[150px_1fr] gap-x-3 text-[12.5px]">
+          <dt className="text-ink-muted">{discoveryPlatformLabel}</dt>
           <dd className="m-0 break-all font-mono text-ink">
-            ~/.config/galley/cli-path
-          </dd>
-          <dt className="text-ink-muted">Windows</dt>
-          <dd className="m-0 break-all font-mono text-ink">
-            %APPDATA%\galley\cli-path
+            {discoveryFilePath}
           </dd>
         </dl>
       </section>

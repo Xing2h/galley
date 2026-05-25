@@ -9,7 +9,10 @@ import { CommandPalette } from "@/components/overlay/CommandPalette";
 import { EmptyState } from "@/components/screens/EmptyState";
 import { MainView } from "@/components/screens/MainView";
 import { Onboarding } from "@/components/screens/onboarding/Onboarding";
-import { Settings } from "@/components/screens/settings/Settings";
+import {
+  Settings,
+  type SettingsTab,
+} from "@/components/screens/settings/Settings";
 import { YoloIntroDialog } from "@/components/screens/YoloIntroDialog";
 import { ArchivedDialog } from "@/components/screens/archived/ArchivedDialog";
 import { EarlierDialog } from "@/components/screens/earlier/EarlierDialog";
@@ -57,6 +60,7 @@ function App() {
 
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("runtime");
 
   // Sidebar live-status comes from `sessions` directly: messagesStore's
   // `fireSessionMirror` writes sidebar-visible fields (status,
@@ -198,25 +202,24 @@ function App() {
     activeRuntimeDisplayName ?? fallbackLLMDisplayName ?? "";
   const llmConfigHint =
     activeRuntimeKind === "managed"
-      ? "在 Settings -> Models 调整 Galley 模型"
+      ? "在 Models 调整内置 GA 模型"
       : "修改 mykey.py 后重启 Galley 生效";
   const hasConfiguredManagedModel = managedModels.some(
     (model) => model.credentialStatus !== "missing",
   );
-  // Sidebar runtime indicator. Two states for V0.1 — see Sidebar.tsx
-  // `RuntimeStatus` type for the rationale. The previous indicator
-  // was a stub: defaulted to "healthy" and never wired up to a real
-  // signal. Now reflects whether the user has configured GA paths
-  // (which onboarding gates on, so post-onboarding this should
-  // almost always be "ready").
-  const runtimeStatus: "ready" | "unconfigured" =
+  const sidebarRuntimeIndicator =
     activeRuntimeKind === "managed"
       ? hasConfiguredManagedModel
-        ? "ready"
-        : "unconfigured"
+        ? "hidden"
+        : "configure-models"
       : gaConfig.gaPath.trim() !== "" && gaConfig.python.trim() !== ""
-      ? "ready"
-      : "unconfigured";
+      ? "external-ready"
+      : "external-unconfigured";
+
+  const openSettings = (tab: SettingsTab = "runtime") => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  };
 
   const storeTurns = useMessagesStore((s) =>
     activeSessionId
@@ -822,8 +825,9 @@ function App() {
         }
         sidebar={
           <Sidebar
-            runtimeStatus={runtimeStatus}
-            onOpenRuntimeSettings={() => setSettingsOpen(true)}
+            runtimeIndicator={sidebarRuntimeIndicator}
+            onOpenRuntimeSettings={() => openSettings("runtime")}
+            onOpenModelsSettings={() => openSettings("models")}
             sessions={visibleSessions}
             activeId={effectiveActiveId}
             onNewChat={() => {
@@ -1139,6 +1143,8 @@ function App() {
       <Settings
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
+        tab={settingsTab}
+        onTabChange={setSettingsTab}
         runtimeInfo={runtimeInfo}
         approval={approvalConfig}
         projectCount={projects.length}
@@ -1182,6 +1188,22 @@ function App() {
             setActiveSession(undefined);
             setScreen("empty");
             await useSessionsStore.getState().hydrate();
+            pushToast(
+              makeAppError({
+                category: "business",
+                severity: "info",
+                title:
+                  kind === "managed"
+                    ? "已切换到内置 GA"
+                    : "已切换到外部 GA",
+                message: "原来的对话已保留，可切回查看。",
+                hint: null,
+                retryable: false,
+                context: "setActiveRuntimeKind",
+                traceback: null,
+                autoDismissMs: 4200,
+              }),
+            );
           })();
         }}
         // Bridge Python picker intentionally not wired — V0.1 relies

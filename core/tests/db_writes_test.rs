@@ -30,6 +30,7 @@ const MIG_007: &str = include_str!("../migrations/007_sessions_origin.sql");
 const MIG_008: &str = include_str!("../migrations/008_runtime_identity.sql");
 const MIG_009: &str = include_str!("../migrations/009_managed_models.sql");
 const MIG_010: &str = include_str!("../migrations/010_managed_model_providers.sql");
+const MIG_011: &str = include_str!("../migrations/011_managed_model_sort_order.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -44,6 +45,7 @@ async fn fresh_pool() -> SqlitePool {
         .expect("enable foreign keys");
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
+        MIG_011,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -137,6 +139,7 @@ async fn managed_model_metadata_never_requires_plaintext_key_in_db() {
         ManagedModelCredentialStatus::Unknown
     ));
     assert!(row.is_default);
+    assert_eq!(row.sort_order, 0);
 
     let raw_rows: Vec<(String,)> =
         sqlx::query_as("SELECT api_key_ref FROM managed_model_providers WHERE id = ?")
@@ -145,6 +148,78 @@ async fn managed_model_metadata_never_requires_plaintext_key_in_db() {
             .await
             .expect("read raw provider row");
     assert_eq!(raw_rows, vec![("managed-provider:mp_test".to_string(),)]);
+}
+
+#[tokio::test]
+async fn managed_model_order_drives_default_model() {
+    let pool = fresh_pool().await;
+    let galley = SqliteGalley::from_pool(pool);
+
+    galley
+        .upsert_managed_model_provider_metadata(UpsertManagedModelProviderMetadata {
+            id: "mp_test".into(),
+            display_name: "OpenAI".into(),
+            protocol: ManagedModelProtocol::Openai,
+            api_base: "https://api.openai.com".into(),
+            api_key_ref: "managed-provider:mp_test".into(),
+        })
+        .await
+        .expect("upsert managed provider metadata");
+    for (idx, id) in ["mm_a", "mm_b", "mm_c"].iter().enumerate() {
+        galley
+            .upsert_managed_model_metadata(UpsertManagedModelMetadata {
+                id: (*id).into(),
+                provider_id: "mp_test".into(),
+                display_name: format!("Model {idx}"),
+                model: format!("model-{idx}"),
+                advanced_options: serde_json::json!({}),
+                make_default: idx == 0,
+            })
+            .await
+            .expect("upsert managed model metadata");
+    }
+
+    galley
+        .reorder_managed_models(vec!["mm_c".into(), "mm_a".into(), "mm_b".into()])
+        .await
+        .expect("reorder managed models");
+    let models = galley
+        .list_managed_models()
+        .await
+        .expect("list managed models");
+    let ids = models
+        .iter()
+        .map(|model| model.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec!["mm_c", "mm_a", "mm_b"]);
+    assert!(models[0].is_default);
+    assert!(!models[1].is_default);
+    assert!(!models[2].is_default);
+    assert_eq!(models[0].sort_order, 0);
+    assert_eq!(models[1].sort_order, 1);
+    assert_eq!(models[2].sort_order, 2);
+
+    galley
+        .upsert_managed_model_metadata(UpsertManagedModelMetadata {
+            id: "mm_b".into(),
+            provider_id: "mp_test".into(),
+            display_name: "Model 2".into(),
+            model: "model-2".into(),
+            advanced_options: serde_json::json!({}),
+            make_default: true,
+        })
+        .await
+        .expect("set default managed model");
+    let models = galley
+        .list_managed_models()
+        .await
+        .expect("list managed models after default");
+    let ids = models
+        .iter()
+        .map(|model| model.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec!["mm_b", "mm_c", "mm_a"]);
+    assert!(models[0].is_default);
 }
 
 // ---------------- create_session ----------------

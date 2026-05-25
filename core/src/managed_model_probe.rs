@@ -40,7 +40,7 @@ pub async fn list_models(input: ManagedModelProbeInput) -> Result<ManagedModelLi
     if !status.is_success() {
         return Err(GalleyError::InvalidArgs {
             message: format!(
-                "model list request returned HTTP {}: {}",
+                "无法获取模型列表，可手动添加（HTTP {}: {}）",
                 status.as_u16(),
                 compact_body(&body)
             ),
@@ -64,22 +64,55 @@ pub async fn test_connection(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(ToOwned::to_owned);
+    if let Some(model) = target_model {
+        return test_model(input, model).await;
+    }
+
     let listed = list_models(input).await?;
-    let model_found = target_model
-        .as_deref()
-        .map(|target| listed.models.iter().any(|model| model == target));
-    let message = match (target_model.as_deref(), model_found) {
-        (Some(model), Some(true)) => format!("连接成功，已找到模型 {model}"),
-        (Some(model), Some(false)) => {
-            format!("连接成功，但模型列表中没有 {model}；仍可手动保存")
-        }
-        _ => "连接成功".into(),
-    };
     Ok(ManagedModelConnectionResult {
         ok: true,
         endpoint: listed.endpoint,
-        model_found,
-        message,
+        model_found: None,
+        message: "连接可用".into(),
+    })
+}
+
+async fn test_model(
+    input: ManagedModelProbeInput,
+    model: String,
+) -> Result<ManagedModelConnectionResult> {
+    let secret = resolve_secret(&input).await?;
+    let endpoint = inference_endpoint(&input.api_base, input.protocol)?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(PROBE_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| GalleyError::Internal {
+            message: format!("building HTTP client: {e}"),
+        })?;
+    let payload = probe_payload(input.protocol, &model);
+    let mut req = client.post(&endpoint).json(&payload);
+    req = apply_auth_headers(req, input.protocol, &secret);
+    let resp = req.send().await.map_err(|e| GalleyError::RunnerError {
+        message: format!("model test request failed: {e}"),
+    })?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(|e| GalleyError::RunnerError {
+        message: format!("reading model test response failed: {e}"),
+    })?;
+    if !status.is_success() {
+        return Err(GalleyError::InvalidArgs {
+            message: format!(
+                "模型测试失败（HTTP {}: {}）",
+                status.as_u16(),
+                compact_body(&body)
+            ),
+        });
+    }
+    Ok(ManagedModelConnectionResult {
+        ok: true,
+        endpoint,
+        model_found: Some(true),
+        message: "模型可用".into(),
     })
 }
 
@@ -123,27 +156,124 @@ fn apply_auth_headers(
 ) -> reqwest::RequestBuilder {
     match protocol {
         ManagedModelProtocol::Openai => req.bearer_auth(secret),
-        ManagedModelProtocol::Anthropic => req
-            .header("x-api-key", secret)
-            .header("anthropic-version", "2023-06-01"),
+        ManagedModelProtocol::Anthropic => {
+            let req = req
+                .header("anthropic-version", "2023-06-01")
+                .header(
+                    "anthropic-beta",
+                    "claude-code-20250219,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,prompt-caching-scope-2026-01-05",
+                )
+                .header("anthropic-dangerous-direct-browser-access", "true")
+                .header("user-agent", "claude-cli/2.1.113 (external, cli)")
+                .header("x-app", "cli");
+            if secret.starts_with("sk-ant-") {
+                req.header("x-api-key", secret)
+            } else {
+                req.bearer_auth(secret)
+            }
+        }
     }
 }
 
 fn models_endpoint(api_base: &str) -> Result<String> {
+    provider_endpoint(api_base, "models")
+}
+
+fn inference_endpoint(api_base: &str, protocol: ManagedModelProtocol) -> Result<String> {
+    match protocol {
+        ManagedModelProtocol::Anthropic => {
+            let endpoint = provider_endpoint(api_base, "messages")?;
+            Ok(with_beta_query(&endpoint))
+        }
+        ManagedModelProtocol::Openai => provider_endpoint(api_base, "chat/completions"),
+    }
+}
+
+fn provider_endpoint(api_base: &str, path: &str) -> Result<String> {
     let trimmed = api_base.trim().trim_end_matches('/');
     if trimmed.is_empty() {
         return Err(GalleyError::InvalidArgs {
             message: "Base URL is required".into(),
         });
     }
-    let without_chat = trimmed
+    if let Some(exact) = trimmed.strip_suffix('$') {
+        return Ok(exact.trim_end_matches('/').to_string());
+    }
+    let target_suffix = format!("/{path}");
+    if trimmed.ends_with(&target_suffix) {
+        return Ok(trimmed.to_string());
+    }
+    let base = trimmed
         .strip_suffix("/chat/completions")
         .or_else(|| trimmed.strip_suffix("/responses"))
-        .unwrap_or(trimmed);
-    if without_chat.ends_with("/models") {
-        Ok(without_chat.to_string())
+        .or_else(|| trimmed.strip_suffix("/messages"))
+        .or_else(|| trimmed.strip_suffix("/models"))
+        .unwrap_or(trimmed)
+        .trim_end_matches('/');
+    if has_version_segment(base) {
+        Ok(format!("{base}/{path}"))
     } else {
-        Ok(format!("{without_chat}/models"))
+        Ok(format!("{base}/v1/{path}"))
+    }
+}
+
+fn has_version_segment(api_base: &str) -> bool {
+    api_base.split('/').any(|segment| {
+        segment.len() > 1
+            && segment.starts_with('v')
+            && segment[1..].chars().all(|c| c.is_ascii_digit())
+    })
+}
+
+fn with_beta_query(endpoint: &str) -> String {
+    if endpoint.contains('?') {
+        format!("{endpoint}&beta=true")
+    } else {
+        format!("{endpoint}?beta=true")
+    }
+}
+
+fn probe_payload(protocol: ManagedModelProtocol, model: &str) -> Value {
+    match protocol {
+        ManagedModelProtocol::Anthropic => serde_json::json!({
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "ping"
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 1,
+            "stream": false
+        }),
+        ManagedModelProtocol::Openai => {
+            let lower_model = model.to_ascii_lowercase();
+            let token_key = if ["gpt-5", "o1", "o2", "o3", "o4"]
+                .iter()
+                .any(|prefix| lower_model.starts_with(prefix))
+            {
+                "max_completion_tokens"
+            } else {
+                "max_tokens"
+            };
+            let mut payload = serde_json::json!({
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "ping"
+                    }
+                ],
+                "stream": false
+            });
+            payload[token_key] = serde_json::json!(1);
+            payload
+        }
     }
 }
 
@@ -198,6 +328,48 @@ mod tests {
         assert_eq!(
             models_endpoint("https://api.anthropic.com/v1/models").unwrap(),
             "https://api.anthropic.com/v1/models"
+        );
+        assert_eq!(
+            models_endpoint("https://api.anthropic.com").unwrap(),
+            "https://api.anthropic.com/v1/models"
+        );
+        assert_eq!(
+            models_endpoint("https://api.deepseek.com/anthropic").unwrap(),
+            "https://api.deepseek.com/anthropic/v1/models"
+        );
+        assert_eq!(
+            models_endpoint("https://relay.example/v1/messages").unwrap(),
+            "https://relay.example/v1/models"
+        );
+    }
+
+    #[test]
+    fn inference_endpoint_matches_managed_runtime_url_rules() {
+        assert_eq!(
+            inference_endpoint("https://api.anthropic.com", ManagedModelProtocol::Anthropic)
+                .unwrap(),
+            "https://api.anthropic.com/v1/messages?beta=true"
+        );
+        assert_eq!(
+            inference_endpoint(
+                "https://api.deepseek.com/anthropic",
+                ManagedModelProtocol::Anthropic
+            )
+            .unwrap(),
+            "https://api.deepseek.com/anthropic/v1/messages?beta=true"
+        );
+        assert_eq!(
+            inference_endpoint(
+                "https://relay.example/v1/messages",
+                ManagedModelProtocol::Anthropic
+            )
+            .unwrap(),
+            "https://relay.example/v1/messages?beta=true"
+        );
+        assert_eq!(
+            inference_endpoint("https://openrouter.ai/api/v1", ManagedModelProtocol::Openai)
+                .unwrap(),
+            "https://openrouter.ai/api/v1/chat/completions"
         );
     }
 

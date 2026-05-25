@@ -6,6 +6,7 @@ import type {
   ManagedModelProbeInput,
   ManagedModelProviderRecord,
   ManagedModelRecord,
+  ReorderManagedModelsInput,
   SaveManagedModelInput,
   SaveManagedProviderInput,
 } from "@/types/managed-models";
@@ -40,6 +41,12 @@ export async function saveManagedModel(
 
 export async function deleteManagedModel(id: string): Promise<void> {
   await invoke("delete_managed_model", { id });
+}
+
+export async function reorderManagedModels(
+  input: ReorderManagedModelsInput,
+): Promise<void> {
+  await invoke("reorder_managed_models", { input });
 }
 
 export async function listManagedModelOptions(

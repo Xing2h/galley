@@ -36,7 +36,7 @@ export function SettingsAbout({
     <div className="space-y-7">
       <SettingsPanelHeader
         title="Galley"
-        subtitle="GenericAgent 的本地桌面工作台"
+        subtitle="基于 GenericAgent 的开源本地 Agent 工作台"
         wordmark
       />
 

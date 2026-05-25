@@ -17,8 +17,8 @@ pub mod sop_install;
 
 use api::{
     CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelProbeInput, Origin,
-    ProjectBrief, ProjectId, ProjectPatch, SaveManagedModelInput, SaveManagedProviderInput,
-    SessionBrief, SessionFilter, SessionId,
+    ProjectBrief, ProjectId, ProjectPatch, ReorderManagedModelsInput, SaveManagedModelInput,
+    SaveManagedProviderInput, SessionBrief, SessionFilter, SessionId,
 };
 use db::{
     MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
@@ -265,6 +265,20 @@ async fn delete_managed_model(
     }
     galley
         .delete_managed_model_metadata(id)
+        .await
+        .map_err(stringify_error)?;
+    sync_managed_model_config(&app, &galley).await?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn reorder_managed_models(
+    app: tauri::AppHandle,
+    input: ReorderManagedModelsInput,
+) -> std::result::Result<(), String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .reorder_managed_models(input.model_ids)
         .await
         .map_err(stringify_error)?;
     sync_managed_model_config(&app, &galley).await?;
@@ -794,6 +808,12 @@ pub fn run() {
             sql: include_str!("../migrations/010_managed_model_providers.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "add managed model display order",
+            sql: include_str!("../migrations/011_managed_model_sort_order.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —
@@ -832,6 +852,7 @@ pub fn run() {
             list_managed_models,
             save_managed_model,
             delete_managed_model,
+            reorder_managed_models,
             list_managed_model_options,
             test_managed_model_connection,
             list_sessions,
