@@ -35,6 +35,15 @@ The user goal for this session was not just cosmetic Chinese copy. It was to mak
 7. **Model configuration backup is deferred**
    The need is real for users with many models, but the first version will not add import/export. Galley keeps API keys in Keychain / Windows Credential Manager. A future model-config export should default to no keys, with any full key migration requiring explicit encrypted export.
 
+8. **Settings uses one stable larger frame**
+   Models has become a real configuration surface, so the old 720x560 Settings dialog was too cramped. The dialog now uses one larger 960x680 frame across all tabs instead of resizing only Models. This keeps Settings spatially stable while giving model-heavy screens room to breathe.
+
+9. **About is identity, version, and links only**
+   The local-first privacy/value-prop block was removed from About. That information is still true, but it belongs closer to API-key/model setup moments, not in the product identity page. About now focuses on Galley version, built-in GA version, source/feedback/upstream links, maker links, and license.
+
+10. **TopBar status pills should match visual weight**
+    YOLO and conversation-width pills can appear side by side, so their active text needs comparable contrast even though they use different semantic colors. The width pill now uses the stronger brand token when active. The YOLO popover's "在 Settings 中查看" action also opens Settings -> Approval directly.
+
 ## Rejected Alternatives
 
 - **Show "内置 GA 已就绪" in the Sidebar**: rejected because it makes the default state noisy and keeps exposing implementation detail.
@@ -42,6 +51,8 @@ The user goal for this session was not just cosmetic Chinese copy. It was to mak
 - **Keep drag reorder**: rejected after dogfood because the affordance and feedback were not trustworthy enough.
 - **Store or export API keys in ordinary SQLite/JSON for convenience**: rejected as the default path. It optimizes migration but weakens Galley's security posture.
 - **Hide Models entirely in external GA mode**: rejected because it caused more confusion. The current page stays visible but explains that these settings affect only built-in GA.
+- **Resize Settings only for Models**: rejected because tab changes would make the dialog feel unstable. A single larger frame is calmer and more predictable.
+- **Keep About as a value-prop page**: rejected because it mixed product promises with version/source identity. Privacy messaging should appear where it affects user trust decisions.
 
 ## Open Questions
 

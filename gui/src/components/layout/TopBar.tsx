@@ -39,6 +39,8 @@ export interface TopBarProps {
   yoloMode?: boolean;
   onDisableYolo?: () => void;
   onOpenSettings?: () => void;
+  /** YOLO popover link: opens Settings directly on the Approval tab. */
+  onOpenApprovalSettings?: () => void;
   /**
    * Conversation column width mode. "compact" = 760px (default), "wide"
    * = 1400px. Renders an icon button next to Settings that flips
@@ -134,6 +136,7 @@ export function TopBar({
   yoloMode = false,
   onDisableYolo,
   onOpenSettings,
+  onOpenApprovalSettings,
   conversationWidth = "compact",
   onToggleConversationWidth,
   onReinjectTools,
@@ -223,7 +226,7 @@ export function TopBar({
         {yoloMode && (
           <YoloIndicator
             onDisable={onDisableYolo}
-            onOpenSettings={onOpenSettings}
+            onOpenSettings={onOpenApprovalSettings ?? onOpenSettings}
           />
         )}
         <div className="flex items-center gap-1">
@@ -607,7 +610,7 @@ function WidthToggleButton({
       className={cn(
         "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors",
         isWide
-          ? "border border-brand/30 bg-brand/10 text-brand hover:bg-brand/20"
+          ? "border border-brand/30 bg-brand/10 text-brand-strong hover:bg-brand/20"
           : "border border-transparent text-ink-soft hover:bg-hover hover:text-ink",
       )}
     >

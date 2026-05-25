@@ -821,6 +821,7 @@ function App() {
               renameSession(activeSessionId, newTitle);
             }}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenApprovalSettings={() => openSettings("approval")}
           />
         }
         sidebar={

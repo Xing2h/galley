@@ -5,10 +5,12 @@ import {
   SettingsSectionLabel,
 } from "@/components/screens/settings/settings-ui";
 import { SettingsUpdateControl } from "@/components/screens/settings/SettingsUpdateControl";
+import type { ManagedRuntimeDiagnostics } from "@/types/inspector";
 
 interface SettingsAboutProps {
   workbenchVersion: string;
   gaBaseline: string;
+  managedRuntime?: ManagedRuntimeDiagnostics;
   hasRunningSessions: boolean;
 }
 
@@ -17,21 +19,25 @@ interface SettingsAboutProps {
  *
  * Structure:
  *   1. Title + tagline
- *   2. Version table (Workbench + GA verified-commit; label aligned
- *      with Settings → Runtime's "已验证版本" terminology)
- *   3. Privacy stance — local-first / no telemetry / direct LLM calls.
- *      Surfaced as a real USP for a desktop dev tool audience.
- *   4. Links — Workbench source + GenericAgent upstream (explicit
- *      credit; Workbench is a shell around lsdefine/GenericAgent) +
- *      Issues for feedback.
- *   5. Footer with MIT license + warmer "欢迎 PR" line so the project
- *      reads as "ours" rather than "mine".
+ *   2. Version table (Galley + bundled GenericAgent kernel)
+ *   3. Links — Galley source/issues, GenericAgent upstream credit,
+ *      plus a quiet maker link group.
+ *   4. Footer with author + license.
  */
 export function SettingsAbout({
   workbenchVersion,
   gaBaseline,
+  managedRuntime,
   hasRunningSessions,
 }: SettingsAboutProps) {
+  const managedKernelCommit =
+    managedRuntime?.upstreamCommit || gaBaseline || "unknown";
+  const managedKernelShort =
+    managedKernelCommit === "unknown"
+      ? "unknown"
+      : managedKernelCommit.slice(0, 7);
+  const managedKernelDate = managedRuntime?.upstreamAuditedAt;
+
   return (
     <div className="space-y-7">
       <SettingsPanelHeader
@@ -62,78 +68,51 @@ export function SettingsAbout({
           </div>
         </dd>
 
-        <dt className="text-ink-muted">已验证 GA 版本</dt>
-        <dd className="m-0 font-mono text-ink">{gaBaseline.slice(0, 7)}</dd>
+        <dt className="text-ink-muted">内置 GA 版本</dt>
+        <dd className="m-0 font-mono text-ink">
+          {managedKernelShort}
+          {managedKernelDate && (
+            <span className="text-ink-muted"> · {managedKernelDate}</span>
+          )}
+        </dd>
       </dl>
 
-      {/* Privacy stance — structured as a bulleted list under a
-          「本地优先」 SettingsSectionLabel so it reads as a proper section
-          parallel to Links below, rather than orphaning at the
-          tail of the version table. Three discrete claims (data
-          storage / telemetry / LLM calls) deserve three discrete
-          bullets — easier to scan and each can be mentally checked
-          off independently. Middle-dot bullet (·) matches the
-          rest of the app's separator vocabulary rather than the
-          web-default disc. mt-10 mirrors the Links section's
-          deliberate 40px section break above. */}
-      <div className="mt-10">
-        <SettingsSectionLabel>本地优先</SettingsSectionLabel>
-        <ul className="mt-3 space-y-1.5 text-[12.5px] text-ink-soft">
-          <li className="before:mr-2 before:text-ink-muted before:content-['·']">
-            数据本地存储
-          </li>
-          <li className="before:mr-2 before:text-ink-muted before:content-['·']">
-            不收集使用数据
-          </li>
-          <li className="before:mr-2 before:text-ink-muted before:content-['·']">
-            LLM 调用直达你配置的 API
-          </li>
-        </ul>
-      </div>
-
-      {/* Links section gets explicit `mt-10` instead of relying on
-          the parent's `space-y-7`. The dl above is visually dense
-          (12.5px rows + small gaps), and the Link section's
-          uppercase SettingsSectionLabel is similar weight — the default 28px
-          gap reads as "still part of the same block". 40px breaks
-          that visual coupling cleanly. */}
       <div className="mt-10">
         <SettingsSectionLabel>Links</SettingsSectionLabel>
-        <div className="mt-3 space-y-1.5">
-          <ExternalLink href="https://github.com/wangjc683/galley">
-            Galley · github.com/wangjc683/galley
-          </ExternalLink>
-          <ExternalLink href="https://github.com/lsdefine/GenericAgent">
-            GenericAgent · github.com/lsdefine/GenericAgent
-          </ExternalLink>
-          <ExternalLink href="https://github.com/wangjc683/galley/issues">
-            反馈建议 · GitHub Issues
-          </ExternalLink>
-        </div>
-      </div>
-
-      {/* "Also by" section — indie / single-maker convention: tells
-          users this is a real person who builds things, builds trust
-          for an open-source project. Mt-10 mirrors the Links section's
-          spacing so the page reads as a uniform rhythm of breaks.
-          SubSage listed first (adjacent domain, more likely useful to
-          Workbench's AI-builder audience); 15perf70mm second
-          (off-topic but adds personality — signals the maker has
-          interests beyond AI). */}
-      <div className="mt-10">
-        <SettingsSectionLabel>Also by wangjc683</SettingsSectionLabel>
-        <div className="mt-3 space-y-1.5">
-          <ExternalLink href="https://subsage.top">
-            SubSage · AI Agent 原生订阅管家 · subsage.top
-          </ExternalLink>
-          <ExternalLink href="https://15perf70mm.com">
-            15perf70mm · IMAX 胶片电影资料库 · 15perf70mm.com
-          </ExternalLink>
+        <div className="mt-3 space-y-1">
+          <ExternalLink
+            href="https://github.com/wangjc683/galley"
+            label="Galley"
+            detail="github.com/wangjc683/galley"
+          />
+          <ExternalLink
+            href="https://github.com/wangjc683/galley/issues"
+            label="反馈建议"
+            detail="GitHub Issues"
+          />
+          <ExternalLink
+            href="https://github.com/lsdefine/GenericAgent"
+            label="GenericAgent"
+            detail="github.com/lsdefine/GenericAgent"
+          />
+          <div className="pt-3 text-[11.5px] text-ink-muted">
+            Also by wangjc683
+          </div>
+          <ExternalLink
+            href="https://subsage.top"
+            label="SubSage"
+            detail="AI Agent 原生订阅管家 · subsage.top"
+          />
+          <ExternalLink
+            href="https://15perf70mm.com"
+            label="15perf70mm"
+            detail="IMAX 胶片电影资料库 · 15perf70mm.com"
+          />
         </div>
       </div>
 
       <div className="border-t border-line pt-4 text-[12px] text-ink-muted">
-        Made by wangjc683 · MIT licensed · 欢迎 PR
+        Made by wangjc683 · MIT licensed
       </div>
     </div>
   );
@@ -141,20 +120,29 @@ export function SettingsAbout({
 
 function ExternalLink({
   href,
-  children,
+  label,
+  detail,
 }: {
   href: string;
-  children: React.ReactNode;
+  label: string;
+  detail: string;
 }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-1.5 text-[13px] text-ink-soft transition-colors hover:text-brand-strong"
+      className="group grid min-w-0 grid-cols-[120px_1fr_18px] items-baseline gap-3 rounded-sm px-1 py-1 text-[13px] transition-colors hover:bg-hover"
     >
-      <span>{children}</span>
-      <ArrowSquareOut size={11} weight="thin" />
+      <span className="font-medium text-ink">{label}</span>
+      <span className="min-w-0 text-ink-muted group-hover:text-ink-soft">
+        {detail}
+      </span>
+      <ArrowSquareOut
+        size={11}
+        weight="thin"
+        className="shrink-0 translate-y-px text-ink-muted transition-colors group-hover:text-brand-strong"
+      />
     </a>
   );
 }

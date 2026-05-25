@@ -85,9 +85,9 @@ export interface SettingsProps {
  * to a real window the React API stays exactly the same.
  *
  * Layout:
- *   - 720x560, centered (uses portal + backdrop scrim)
+ *   - 960x680, centered (uses portal + backdrop scrim)
  *   - left tab list 180px
- *   - right content area 540px
+ *   - right content area 780px
  *   - close button top-right (Esc also works via Radix Dialog)
  *
  * Changes are immediate (DESIGN.md §9 "no sticky save button"); each
@@ -131,7 +131,7 @@ export function Settings({
         <Dialog.Content
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 flex h-[560px] w-[720px] -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-50 flex h-[680px] w-[960px] -translate-x-1/2 -translate-y-1/2",
             "overflow-hidden rounded-[14px] border border-line bg-elevated shadow-elevated",
             "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)]",
           )}
@@ -187,6 +187,7 @@ export function Settings({
                 <SettingsAbout
                   workbenchVersion={runtimeInfo.workbenchVersion}
                   gaBaseline={runtimeInfo.gaBaseline}
+                  managedRuntime={runtimeInfo.managedRuntime}
                   hasRunningSessions={hasRunningSessions}
                 />
               )}
