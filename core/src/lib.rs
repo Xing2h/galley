@@ -25,6 +25,7 @@ use db::{
     SqliteGalley, ToolEventRow, UpsertManagedModelMetadata, UpsertManagedModelProviderMetadata,
 };
 use serde::Deserialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 /// SQLite filename. Resolved by tauri-plugin-sql relative to the
@@ -35,6 +36,84 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 /// Schema lives in core/migrations/001_init.sql; tauri-plugin-sql
 /// runs Up migrations in version order on first connect.
 const DB_URL: &str = "sqlite:workbench.db";
+const MAIN_WINDOW_LABEL: &str = "main";
+const TRAY_SHOW_GALLEY_LABEL: &str = "Open Galley";
+const TRAY_HIDE_GALLEY_LABEL: &str = "Hide Galley";
+
+static QUIT_REQUEST_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+static ALLOW_APP_EXIT: AtomicBool = AtomicBool::new(false);
+
+fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn cleanup_and_exit<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        use std::time::Duration;
+        use tauri::Manager;
+        let manager = app.state::<std::sync::Arc<runner_manager::RunnerManager>>();
+        manager.shutdown_all(Duration::from_secs(5)).await;
+        ALLOW_APP_EXIT.store(true, Ordering::SeqCst);
+        app.exit(0);
+    });
+}
+
+fn request_true_quit<R: tauri::Runtime>(app: tauri::AppHandle<R>, confirm_if_busy: bool) {
+    if QUIT_REQUEST_IN_FLIGHT
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+
+    tauri::async_runtime::spawn(async move {
+        use tauri::Manager;
+        let manager = app.state::<std::sync::Arc<runner_manager::RunnerManager>>();
+        let busy = confirm_if_busy && manager.any_agent_running().await;
+
+        if busy {
+            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+            let dialog_app = app.clone();
+            let exit_app = app.clone();
+            dialog_app
+                .dialog()
+                .message(
+                    "Galley has a task still running. Quit Galley will stop the app and interrupt any active Agent work.",
+                )
+                .title("Quit Galley?")
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "Quit Galley".to_string(),
+                    "Cancel".to_string(),
+                ))
+                .show(move |confirmed| {
+                    if confirmed {
+                        cleanup_and_exit(exit_app);
+                    } else {
+                        QUIT_REQUEST_IN_FLIGHT.store(false, Ordering::SeqCst);
+                    }
+                });
+        } else {
+            cleanup_and_exit(app);
+        }
+    });
+}
+
+fn tray_icon_image() -> tauri::Result<tauri::image::Image<'static>> {
+    #[cfg(target_os = "macos")]
+    const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-template.png");
+    #[cfg(target_os = "windows")]
+    const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-windows.png");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/32x32.png");
+
+    tauri::image::Image::from_bytes(TRAY_ICON_BYTES).map(|image| image.to_owned())
+}
 
 /// Plain `Path::exists` check that bypasses `tauri-plugin-fs`'s
 /// `fs:scope` glob allow-list.
@@ -832,10 +911,9 @@ pub fn run() {
         // RunnerManager is the single Rust authority for Python runner
         // subprocesses (B2 M1). Held as Tauri app state inside an `Arc`
         // so the `spawn_runner` / `send_to_runner` / etc. commands AND
-        // the socket_listener task all reach the same instance. Window
-        // close + app quit must call `shutdown_all_runners` from JS —
-        // there isn't a clean hook here to await async cleanup before
-        // Tauri tears the runtime down.
+        // the socket_listener task all reach the same instance. Background
+        // Mode keeps window close from tearing down the process; true app
+        // quit runs `shutdown_all` from Rust before allowing exit.
         .manage(std::sync::Arc::new(runner_manager::RunnerManager::new()))
         .invoke_handler(tauri::generate_handler![
             path_exists,
@@ -1040,24 +1118,163 @@ pub fn run() {
                 set_shadows(_app, true);
             }
 
+            // Background Mode. macOS shows the Galley status item in
+            // the right-side menu bar; Windows shows the same menu in
+            // the system tray. Closing the window hides it instead of
+            // tearing down Galley Core, so CLI / Supervisor / IM
+            // actions keep reaching the local socket.
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            {
+                use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+                use tauri::tray::TrayIconBuilder;
+                use tauri::{Emitter, Manager, WindowEvent};
+
+                let tray_toggle = MenuItem::with_id(
+                    _app,
+                    "tray_toggle_window",
+                    TRAY_HIDE_GALLEY_LABEL,
+                    true,
+                    None::<&str>,
+                )?;
+                let tray_new_chat =
+                    MenuItem::with_id(_app, "tray_new_chat", "New Chat", true, None::<&str>)?;
+                let tray_settings =
+                    MenuItem::with_id(_app, "tray_settings", "Settings...", true, None::<&str>)?;
+                let tray_check_updates = MenuItem::with_id(
+                    _app,
+                    "tray_check_updates",
+                    "Check for Updates…",
+                    true,
+                    None::<&str>,
+                )?;
+                let tray_quit =
+                    MenuItem::with_id(_app, "tray_quit", "Quit Galley", true, None::<&str>)?;
+                let tray_separator = PredefinedMenuItem::separator(_app)?;
+                let tray_menu = Menu::with_items(
+                    _app,
+                    &[
+                        &tray_toggle,
+                        &tray_new_chat,
+                        &tray_settings,
+                        &tray_check_updates,
+                        &tray_separator,
+                        &tray_quit,
+                    ],
+                )?;
+
+                let tray_icon = match tray_icon_image() {
+                    Ok(image) => image,
+                    Err(e) => {
+                        eprintln!("[tray] custom tray icon load failed: {e}; using app icon");
+                        _app.default_window_icon()
+                            .expect("default window icon must exist")
+                            .clone()
+                    }
+                };
+                let mut tray_builder = TrayIconBuilder::new()
+                    .icon(tray_icon)
+                    .menu(&tray_menu)
+                    .tooltip("Galley")
+                    .show_menu_on_left_click(true);
+                #[cfg(target_os = "macos")]
+                {
+                    tray_builder = tray_builder.icon_as_template(true);
+                }
+                let _tray = tray_builder.build(_app)?;
+
+                let window = _app
+                    .get_webview_window(MAIN_WINDOW_LABEL)
+                    .expect("main webview window must exist at setup time");
+                let window_for_close = window.clone();
+                let tray_toggle_for_close = tray_toggle.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        if ALLOW_APP_EXIT.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        api.prevent_close();
+                        let _ = window_for_close.hide();
+                        let _ = tray_toggle_for_close.set_text(TRAY_SHOW_GALLEY_LABEL);
+                    }
+                });
+
+                let tray_toggle_for_menu = tray_toggle.clone();
+                _app.on_menu_event(move |app, event| {
+                    use tauri_plugin_opener::OpenerExt;
+                    match event.id.0.as_str() {
+                        "settings" | "tray_settings" => {
+                            show_main_window(app);
+                            let _ = tray_toggle_for_menu.set_text(TRAY_HIDE_GALLEY_LABEL);
+                            let _ = app.emit("menu:settings", ());
+                        }
+                        "check_updates" | "tray_check_updates" => {
+                            show_main_window(app);
+                            let _ = tray_toggle_for_menu.set_text(TRAY_HIDE_GALLEY_LABEL);
+                            let _ = app.emit("menu:check_updates", ());
+                        }
+                        "new_chat" | "tray_new_chat" => {
+                            show_main_window(app);
+                            let _ = tray_toggle_for_menu.set_text(TRAY_HIDE_GALLEY_LABEL);
+                            let _ = app.emit("menu:new_chat", ());
+                        }
+                        "width_compact" => {
+                            let _ = app.emit("menu:width_compact", ());
+                        }
+                        "width_wide" => {
+                            let _ = app.emit("menu:width_wide", ());
+                        }
+                        "tray_toggle_window" => {
+                            if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                                let visible = window.is_visible().unwrap_or(false);
+                                if visible {
+                                    let _ = window.hide();
+                                    let _ =
+                                        tray_toggle_for_menu.set_text(TRAY_SHOW_GALLEY_LABEL);
+                                } else {
+                                    show_main_window(app);
+                                    let _ =
+                                        tray_toggle_for_menu.set_text(TRAY_HIDE_GALLEY_LABEL);
+                                }
+                            }
+                        }
+                        "quit_galley" | "tray_quit" => {
+                            request_true_quit(app.clone(), true);
+                        }
+                        "github" => {
+                            let _ = app.opener().open_url(
+                                "https://github.com/wangjc683/galley",
+                                None::<&str>,
+                            );
+                        }
+                        "issues" => {
+                            let _ = app.opener().open_url(
+                                "https://github.com/wangjc683/galley/issues",
+                                None::<&str>,
+                            );
+                        }
+                        _ => {}
+                    }
+                });
+            }
+
             // macOS-only top menu bar. On macOS apps that don't install
             // a menu look "half-native" — the menu bar shows generic
             // Tauri default entries. We install a Galley-specific menu
             // that mirrors the in-app actions (Settings / New Chat /
-            // Conversation Width) plus standard system items
-            // (Hide / Quit / Cut / Copy / Paste / Minimize / Zoom).
+            // Check for Updates / Conversation Width) plus standard
+            // system items (Hide / Quit / Cut / Copy / Paste /
+            // Minimize / Zoom).
             //
             // Custom menu items emit `menu:<id>` events; App.tsx
-            // listens and routes them to the same store actions the
-            // keyboard shortcuts already trigger. Predefined items
-            // (Quit / Hide / Copy / etc.) are handled by the OS
-            // directly and need no JS wiring.
+            // listens and routes them to the matching frontend actions.
+            // Predefined items (Hide / Copy / etc.) are handled by the
+            // OS directly and need no JS wiring. Quit is custom so it can
+            // clean up runners first.
             //
             // Win/Linux don't get a menu — Win uses our custom chrome
             // (decorations off, no native menu bar surface) and Linux
-            // isn't a v0.2 target. Users on those platforms reach the
-            // same actions through TopBar buttons / keyboard / Command
-            // Palette.
+            // isn't a v0.2 target. Windows users reach the same lifecycle
+            // actions through the tray menu and custom chrome.
             #[cfg(target_os = "macos")]
             {
                 use tauri::menu::{
@@ -1079,6 +1296,11 @@ pub fn run() {
                         Some("About Galley"),
                         Some(about_metadata),
                     )?)
+                    .item(
+                        &MenuItemBuilder::new("Check for Updates…")
+                            .id("check_updates")
+                            .build(_app)?,
+                    )
                     .separator()
                     .item(
                         &MenuItemBuilder::new("Settings…")
@@ -1091,7 +1313,12 @@ pub fn run() {
                     .item(&PredefinedMenuItem::hide_others(_app, None)?)
                     .item(&PredefinedMenuItem::show_all(_app, None)?)
                     .separator()
-                    .item(&PredefinedMenuItem::quit(_app, None)?)
+                    .item(
+                        &MenuItemBuilder::new("Quit Galley")
+                            .id("quit_galley")
+                            .accelerator("Cmd+Q")
+                            .build(_app)?,
+                    )
                     .build()?;
 
                 let file_submenu = SubmenuBuilder::new(_app, "File")
@@ -1184,52 +1411,21 @@ pub fn run() {
 
                 _app.set_menu(menu)?;
 
-                _app.on_menu_event(|app, event| {
-                    use tauri::Emitter;
-                    use tauri_plugin_opener::OpenerExt;
-                    match event.id.0.as_str() {
-                        // Custom in-app actions — emit; App.tsx routes
-                        // to the same store action the keyboard
-                        // shortcut would trigger.
-                        "settings" => {
-                            let _ = app.emit("menu:settings", ());
-                        }
-                        "new_chat" => {
-                            let _ = app.emit("menu:new_chat", ());
-                        }
-                        "width_compact" => {
-                            let _ = app.emit("menu:width_compact", ());
-                        }
-                        "width_wide" => {
-                            let _ = app.emit("menu:width_wide", ());
-                        }
-                        // External links — open in system browser
-                        // server-side so we don't round-trip through
-                        // JS. tauri-plugin-opener is already loaded.
-                        "github" => {
-                            let _ = app.opener().open_url(
-                                "https://github.com/wangjc683/galley",
-                                None::<&str>,
-                            );
-                        }
-                        "issues" => {
-                            let _ = app.opener().open_url(
-                                "https://github.com/wangjc683/galley/issues",
-                                None::<&str>,
-                            );
-                        }
-                        // "find" and "toggle_sidebar" are disabled in
-                        // v0.1; click never fires. Predefined items
-                        // (quit / hide / copy / paste / undo / redo /
-                        // minimize / maximize / etc.) are handled by
-                        // AppKit directly and never reach this match.
-                        _ => {}
-                    }
-                });
             }
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+                if ALLOW_APP_EXIT.load(Ordering::SeqCst)
+                    || code == Some(tauri::RESTART_EXIT_CODE)
+                {
+                    return;
+                }
+                api.prevent_exit();
+                request_true_quit(app.clone(), true);
+            }
+        });
 }

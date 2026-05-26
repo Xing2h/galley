@@ -158,6 +158,23 @@ impl RunnerManager {
         }
     }
 
+    /// Whether any alive runner is mid-turn. Used by desktop quit
+    /// confirmation so Cmd+Q / tray Quit cannot silently interrupt a
+    /// long-running task.
+    pub async fn any_agent_running(&self) -> bool {
+        let processes = {
+            let map = self.processes.read().await;
+            map.values().cloned().collect::<Vec<_>>()
+        };
+        for proc in processes {
+            let p = proc.lock().await;
+            if p.agent_running() {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Subscribe to a session's runner event stream. Each call returns a
     /// fresh receiver; events broadcast before subscribe are NOT delivered.
     ///

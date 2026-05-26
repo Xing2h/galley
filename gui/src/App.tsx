@@ -29,6 +29,7 @@ import {
   managedModelsToLLMs,
 } from "@/lib/managed-model-options";
 import { bucketSession } from "@/lib/sessions";
+import { useAppUpdateStore } from "@/stores/app-update";
 import {
   EMPTY_APPROVALS,
   EMPTY_DECISIONS,
@@ -173,6 +174,7 @@ function App() {
   const toasts = useUiStore((s) => s.toasts);
   const pushToast = useUiStore((s) => s.pushToast);
   const dismissToast = useUiStore((s) => s.dismissToast);
+  const checkForAppUpdate = useAppUpdateStore((s) => s.check);
   const [emptyComposerFocusTick, setEmptyComposerFocusTick] = useState(0);
 
   const bridgeStatus = useRuntimeStore((s) =>
@@ -326,7 +328,7 @@ function App() {
 
   // macOS menubar bridge: core/src/lib.rs installs a native menu
   // on Mac that emits `menu:<id>` events. We subscribe and route each
-  // to the same store action the keyboard shortcut would trigger.
+  // to the same store action the matching in-app control would trigger.
   //
   // On Win/Linux there's no menu installed → these events never fire,
   // the subscription sits idle (cheap, no overhead). Keeping it
@@ -344,6 +346,14 @@ function App() {
 
     const handlers: Array<[string, () => void]> = [
       ["menu:settings", () => setSettingsOpen(true)],
+      [
+        "menu:check_updates",
+        () => {
+          setSettingsTab("about");
+          setSettingsOpen(true);
+          void checkForAppUpdate({ silent: false });
+        },
+      ],
       [
         "menu:new_chat",
         () => {
@@ -387,6 +397,8 @@ function App() {
     setActiveSession,
     setScreen,
     setConversationWidth,
+    setSettingsTab,
+    checkForAppUpdate,
   ]);
 
   // `user-message-persisted` listener: Rust core's socket_listener emits

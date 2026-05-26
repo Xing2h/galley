@@ -80,6 +80,40 @@ Galley may remember that an update is available, but it will not download,
 install, or relaunch for that update until the session is idle. This avoids
 turning a background maintenance action into a lost-task event.
 
+## Background Mode
+
+Galley runs in Background Mode by default on macOS and Windows. Closing the
+main window hides the window; it does not quit the app or shut down Galley Core.
+This keeps local socket access alive for the CLI, Supervisor automation, and
+external IM / agent frontends while the desktop window is out of the way.
+
+Platform behavior:
+
+- macOS: window close and `Cmd+W` hide the main window. The Dock icon remains,
+  and a right-side menu bar status item can reopen or hide Galley.
+- Windows: the window close button and `Alt+F4` hide Galley to the system tray.
+  The tray menu can reopen or hide Galley.
+
+True application exit is explicit:
+
+- The tray / status item exposes `Quit Galley`.
+- macOS also exposes `Quit Galley` from the app menu with `Cmd+Q`.
+- If any Agent task is running, true quit asks for confirmation before shutting
+  down the app and interrupting active work.
+
+The tray / status item provides the small set of actions useful while Galley is
+running in the background:
+
+- `Open Galley` / `Hide Galley`: mirror the current simple window state.
+- `New Chat`: reopen Galley and start a new conversation.
+- `Settings`: reopen Galley and open Settings.
+- `Check for Updates...`: reopen Galley to Settings -> About and check the
+  update channel.
+- `Quit Galley`: explicitly exit the app.
+
+The first version intentionally has no running / approval badge; task state
+remains inside the main UI.
+
 Tauri updater signing is separate from macOS codesigning / Windows Authenticode.
 The private updater key must stay in release secrets; only the public key is
 safe to embed in app builds.
