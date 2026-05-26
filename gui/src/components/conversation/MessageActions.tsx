@@ -3,6 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { useEffect, useRef, useState } from "react";
 
+import { IconButton } from "@/components/ui/button";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -142,12 +143,12 @@ function ActionButton({
   const label = active ? activeLabel : idleLabel;
   return (
     <IconTooltip text={label}>
-      <button
-        type="button"
+      <IconButton
+        ariaLabel={label}
         onClick={onClick}
-        aria-label={label}
+        size="xs"
         className={cn(
-          "inline-flex size-6 items-center justify-center rounded-sm transition-colors",
+          "size-6",
           active
             ? "text-success"
             : "text-ink-muted hover:bg-hover hover:text-ink-soft",
@@ -157,7 +158,7 @@ function ActionButton({
         <span className="sr-only" aria-live="polite">
           {label}
         </span>
-      </button>
+      </IconButton>
     </IconTooltip>
   );
 }

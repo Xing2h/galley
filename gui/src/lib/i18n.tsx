@@ -507,6 +507,7 @@ const zhCopy = {
     denied: "已拒绝",
     step: (index: number) => `第 ${index} 步`,
     thinking: "思考中...",
+    stillRunning: "仍在运行",
     seconds: (sec: number) => `${sec} 秒`,
     minutesSeconds: (minutes: number, sec: number) =>
       `已 ${minutes} 分 ${sec} 秒`,
@@ -1231,6 +1232,7 @@ const enCopy: AppCopy = {
     denied: "Denied",
     step: (index) => `Step ${index}`,
     thinking: "Thinking...",
+    stillRunning: "Still running",
     seconds: (sec) => `${sec}s`,
     minutesSeconds: (minutes, sec) => `${minutes}m ${sec}s`,
     justNow: "Just now",

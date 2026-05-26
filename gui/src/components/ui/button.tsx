@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
  *   primary — Main CTA. Charcoal foreground (`bg-ink`), elevated text.
  *             Used for "确认 / 保存 / 创建 / 继续". One per dialog
  *             or screen; the eye should know where to land. It has
- *             a subtle physical press response; secondary actions stay flat.
+ *             the strongest physical press response.
  *
  *   secondary — Border-only, neutral bg. Used for "取消 / Back / 次要
  *               操作". Pairs with a primary on the same row.
@@ -66,7 +66,10 @@ import { cn } from "@/lib/utils";
  *   - Disabled handling is universal: `opacity-40 + cursor-not-allowed`.
  *     We don't `disabled:hover:*` override — opacity already kills the
  *     hover visual cleanly.
- *   - All variants use `rounded-sm` and `transition-colors`. Override
+ *   - Button-like controls should feel pressable: hover is a tiny lift,
+ *     active is a quicker downward press. Ghost/text-adjacent actions
+ *     keep the same timing but avoid heavy shadows.
+ *   - All variants use `rounded-sm` and shared motion timing. Override
  *     via `className` only when you have a specific reason (the
  *     ModeCard / Composer submit-pill remain hand-rolled outliers).
  *   - Icons (leadingIcon / trailingIcon) inherit the gap defined by
@@ -118,42 +121,61 @@ export interface DialogActionRowProps
   align?: "start" | "end" | "between";
 }
 
+const RAISED_BUTTON_SURFACE = cn(
+  "shadow-[0_1px_0_rgba(31,27,23,0.12),0_1px_2px_rgba(31,27,23,0.05),inset_0_1px_0_rgba(255,255,255,0.34)]",
+  "hover:-translate-y-[0.5px] hover:shadow-[0_2px_0_rgba(31,27,23,0.12),0_6px_14px_rgba(31,27,23,0.10),inset_0_1px_0_rgba(255,255,255,0.42)]",
+  "active:translate-y-[0.5px] active:shadow-[inset_0_1px_3px_rgba(31,27,23,0.14)]",
+  "disabled:translate-y-0 disabled:shadow-none",
+);
+
+const QUIET_BUTTON_PRESS = cn(
+  "active:translate-y-[0.5px]",
+  "disabled:translate-y-0 disabled:shadow-none",
+);
+
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: cn(
     "border border-ink bg-ink font-medium text-elevated",
-    "shadow-[0_1px_0_rgba(31,27,23,0.22),0_2px_6px_rgba(31,27,23,0.10)]",
-    "hover:-translate-y-px hover:bg-ink/95 hover:shadow-[0_2px_0_rgba(31,27,23,0.22),0_8px_18px_rgba(31,27,23,0.16)]",
-    "active:translate-y-0 active:bg-ink active:shadow-[0_1px_0_rgba(31,27,23,0.18),0_2px_5px_rgba(31,27,23,0.12)]",
+    "shadow-[0_1px_0_rgba(31,27,23,0.24),0_2px_6px_rgba(31,27,23,0.10),inset_0_1px_0_rgba(255,255,255,0.10)]",
+    "hover:-translate-y-[0.5px] hover:bg-ink/95 hover:shadow-[0_2px_0_rgba(31,27,23,0.22),0_8px_18px_rgba(31,27,23,0.16),inset_0_1px_0_rgba(255,255,255,0.14)]",
+    "active:translate-y-[0.5px] active:bg-ink active:shadow-[inset_0_2px_5px_rgba(0,0,0,0.20)]",
     "disabled:translate-y-0 disabled:shadow-none",
   ),
   secondary: cn(
     "border border-line bg-elevated text-ink",
     "hover:bg-hover",
+    RAISED_BUTTON_SURFACE,
   ),
   ghost: cn(
     "border border-transparent text-ink-soft",
-    "hover:bg-hover hover:text-ink",
+    "hover:bg-hover hover:text-ink active:bg-selected/70",
+    QUIET_BUTTON_PRESS,
   ),
   "brand-soft": cn(
     "border border-line bg-elevated font-medium text-brand-strong",
     "hover:border-brand hover:bg-brand-soft hover:text-ink",
+    RAISED_BUTTON_SURFACE,
   ),
   "accent-secondary": cn(
     "border border-line bg-elevated font-medium text-ink",
     "hover:border-brand/40 hover:bg-brand-soft",
     "[&>svg]:text-brand-strong",
+    RAISED_BUTTON_SURFACE,
   ),
   warning: cn(
     "border border-warning bg-warning font-medium text-elevated",
     "hover:bg-warning/90",
+    RAISED_BUTTON_SURFACE,
   ),
   destructive: cn(
     "border border-error bg-error font-medium text-elevated",
     "hover:bg-error/90",
+    RAISED_BUTTON_SURFACE,
   ),
   "destructive-soft": cn(
     "border border-error/30 bg-error/[0.06] font-medium text-error",
     "hover:bg-error/[0.12]",
+    RAISED_BUTTON_SURFACE,
   ),
 };
 
@@ -166,23 +188,28 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
 const ICON_VARIANT_CLASSES: Record<IconButtonVariant, string> = {
   ghost: cn(
     "border border-transparent text-ink-soft",
-    "hover:bg-hover hover:text-ink",
+    "hover:bg-hover hover:text-ink active:bg-selected/70",
+    QUIET_BUTTON_PRESS,
   ),
   secondary: cn(
     "border border-line bg-elevated text-ink-soft",
     "hover:bg-hover hover:text-ink",
+    RAISED_BUTTON_SURFACE,
   ),
   brand: cn(
     "border border-brand/30 bg-brand/10 text-brand-strong",
     "hover:bg-brand-soft hover:text-ink",
+    RAISED_BUTTON_SURFACE,
   ),
   warning: cn(
     "border border-warning/30 bg-warning/10 text-warning",
     "hover:bg-warning/20",
+    RAISED_BUTTON_SURFACE,
   ),
   danger: cn(
     "border border-transparent text-ink-soft",
-    "hover:bg-error/10 hover:text-error",
+    "hover:bg-error/10 hover:text-error active:bg-error/15",
+    QUIET_BUTTON_PRESS,
   ),
 };
 
@@ -229,6 +256,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         type={type}
         className={cn(
           "inline-flex select-none items-center justify-center rounded-sm transition-[background-color,border-color,color,box-shadow,transform]",
+          "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[45ms]",
           "disabled:cursor-not-allowed disabled:opacity-40",
           VARIANT_CLASSES[variant],
           SIZE_CLASSES[size],
@@ -266,7 +294,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         aria-label={ariaLabel}
         title={title ?? ariaLabel}
         className={cn(
-          "inline-flex select-none items-center justify-center rounded-sm transition-colors",
+          "inline-flex select-none items-center justify-center rounded-sm transition-[background-color,border-color,color,box-shadow,transform]",
+          "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[45ms]",
           "disabled:cursor-not-allowed disabled:opacity-40",
           ICON_VARIANT_CLASSES[variant],
           ICON_SIZE_CLASSES[size],

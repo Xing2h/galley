@@ -74,6 +74,28 @@ const PASTE_FOLD_THRESHOLD_LINES = 10;
  */
 const PASTE_PLACEHOLDER_RE = /\[Pasted text #(\d+) \+\d+ lines\]/g;
 
+const COMPOSER_ACTION_BUTTON = cn(
+  "flex size-8 items-center justify-center rounded-full border transition-[background-color,border-color,color,box-shadow,transform]",
+  "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[45ms]",
+  "hover:-translate-y-[0.5px] active:translate-y-[0.5px]",
+  "disabled:translate-y-0 disabled:shadow-none",
+);
+
+const COMPOSER_SEND_BUTTON = cn(
+  COMPOSER_ACTION_BUTTON,
+  "border-brand-strong/40 bg-brand text-ink",
+  "shadow-[0_1px_0_rgba(198,135,98,0.30),0_2px_7px_rgba(198,135,98,0.16),inset_0_1px_0_rgba(255,255,255,0.18)]",
+  "hover:bg-brand-strong hover:text-elevated hover:shadow-[0_2px_0_rgba(198,135,98,0.28),0_8px_16px_rgba(198,135,98,0.20),inset_0_1px_0_rgba(255,255,255,0.18)]",
+  "active:bg-brand-strong active:text-elevated active:shadow-[inset_0_2px_5px_rgba(31,27,23,0.18)]",
+);
+
+const COMPOSER_STOP_BUTTON = cn(
+  COMPOSER_ACTION_BUTTON,
+  "border-warning/70 bg-warning text-elevated",
+  "hover:bg-warning/90",
+  "active:shadow-[inset_0_2px_5px_rgba(31,27,23,0.18)]",
+);
+
 export interface ComposerProps {
   /** Display name of the currently active LLM (e.g., "Claude Sonnet 4.5"). */
   llmDisplayName: string;
@@ -377,7 +399,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 onClick={onStop}
                 title={copy.composer.stop}
                 aria-label={copy.composer.stop}
-                className="composer-stop-breath flex size-8 items-center justify-center rounded-full bg-warning text-elevated transition-colors hover:bg-warning/90"
+                className={cn("composer-stop-breath", COMPOSER_STOP_BUTTON)}
               >
                 <Stop size={14} weight="fill" />
               </button>
@@ -389,9 +411,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 title={copy.composer.sendWithEnter}
                 aria-label={copy.composer.send}
                 className={cn(
-                  "flex size-8 items-center justify-center rounded-full bg-brand text-ink transition-colors hover:bg-brand-strong hover:text-elevated",
+                  COMPOSER_SEND_BUTTON,
                   (disabled || !text?.trim()) &&
-                    "cursor-not-allowed opacity-50 hover:bg-brand hover:text-ink",
+                    "cursor-not-allowed opacity-50 hover:translate-y-0 hover:bg-brand hover:text-ink hover:shadow-none",
                 )}
               >
                 <ArrowUp size={16} weight="bold" />
@@ -445,7 +467,9 @@ function LLMPill({
     : copy.composer.switchCurrent(llmDisplayName);
 
   const pillClasses = cn(
-    "flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-[12.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink",
+    "flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-[12.5px] text-ink-soft",
+    "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
+    "hover:bg-hover hover:text-ink",
     disabled && "cursor-not-allowed opacity-60",
   );
 

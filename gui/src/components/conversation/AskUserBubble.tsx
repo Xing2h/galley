@@ -1,6 +1,7 @@
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { PauseCircle } from "@phosphor-icons/react";
 
+import { Button } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { PendingAskUser } from "@/types/conversation";
@@ -90,19 +91,20 @@ function CandidateChip({
       ? text.slice(0, CHIP_MAX_CHARS - 1) + "…"
       : text;
   const button = (
-    <button
-      type="button"
+    <Button
+      variant="secondary"
+      size="sm"
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "rounded-sm border border-line bg-surface px-2.5 py-1 text-[12.5px] text-ink-soft transition-colors",
+        "bg-surface px-2.5 py-1 text-[12.5px] text-ink-soft",
         "hover:border-warning hover:bg-warning/10 hover:text-ink",
         disabled &&
           "cursor-not-allowed opacity-50 hover:bg-surface hover:text-ink-soft",
       )}
     >
       {truncated}
-    </button>
+    </Button>
   );
   // Skip the Tooltip wrapper when not truncated — keeps the DOM
   // lean for the common short-candidate case.

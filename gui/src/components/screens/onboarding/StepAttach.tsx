@@ -9,6 +9,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 
+import { Button } from "@/components/ui/button";
 import type { TutorialId } from "@/lib/onboarding-tutorials";
 import { useCopy } from "@/lib/i18n";
 import { EXAMPLE_GA_PATH } from "@/lib/platform";
@@ -94,14 +95,14 @@ export function StepAttach({
           spellCheck={false}
           className="min-w-0 flex-1 rounded-sm border border-line bg-elevated px-3 py-2 font-mono text-[13px] text-ink outline-none transition-colors focus:border-brand focus:ring-[3px] focus:ring-brand/20"
         />
-        <button
-          type="button"
+        <Button
+          variant="accent-secondary"
           onClick={onPickFolder}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-line bg-elevated px-3 py-2 text-[12.5px] text-ink-soft transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink"
+          className="shrink-0 px-3 py-2 text-[12.5px]"
+          leadingIcon={<FolderOpen size={13} weight="thin" />}
         >
-          <FolderOpen size={13} weight="thin" />
           {copy.common.choose}
-        </button>
+        </Button>
       </div>
 
       <div className="min-h-[20px]">
@@ -109,37 +110,35 @@ export function StepAttach({
       </div>
 
       {tutorialForFailure && tutorialLabel && onShowTutorial && (
-        <button
-          type="button"
+        <Button
+          variant="brand-soft"
+          size="sm"
           onClick={() => onShowTutorial(tutorialForFailure)}
-          className="mt-1 inline-flex items-center gap-1.5 rounded-sm border border-line px-2.5 py-1 text-[12px] font-medium text-brand-strong transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink"
+          className="mt-1"
+          leadingIcon={<BookOpen size={11} weight="thin" />}
         >
-          <BookOpen size={11} weight="thin" />
           {tutorialLabel}
-        </button>
+        </Button>
       )}
 
       <div className="mt-9 flex items-center gap-2">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-[13px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
+          className="text-[13px]"
+          leadingIcon={<ArrowLeft size={13} weight="thin" />}
         >
-          <ArrowLeft size={13} weight="thin" />
           {copy.common.back}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           onClick={onContinue}
           disabled={!ready}
-          className={cn(
-            "ml-auto inline-flex items-center gap-2 rounded-sm border border-ink bg-ink px-5 py-2 text-[13.5px] font-medium text-elevated transition-colors hover:bg-ink/90",
-            "disabled:cursor-not-allowed disabled:opacity-40",
-          )}
+          size="lg"
+          className="ml-auto"
+          trailingIcon={<ArrowRight size={13} weight="bold" />}
         >
           {copy.common.continue}
-          <ArrowRight size={13} weight="bold" />
-        </button>
+        </Button>
       </div>
     </div>
   );

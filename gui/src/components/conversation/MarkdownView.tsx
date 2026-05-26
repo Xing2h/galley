@@ -64,7 +64,7 @@ export function MarkdownView({
         ? PROSE_NARRATION
         : PROSE_THINKING;
   return (
-    <div className={cn(proseClass, className)}>
+    <div className={cn("select-text", proseClass, className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
         {source}
       </ReactMarkdown>
@@ -320,7 +320,8 @@ function CodeCopyButton({ code }: { code: string }) {
       type="button"
       onClick={onCopy}
       className={cn(
-        "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10.5px] uppercase tracking-[0.08em] transition-opacity",
+        "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10.5px] uppercase tracking-[0.08em]",
+        "transition-[background-color,color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
         // Hidden until hover, but stays put once you've clicked
         // (focus-visible) so keyboard users can still see feedback.
         "opacity-0 group-hover/codeblock:opacity-100 focus-visible:opacity-100",

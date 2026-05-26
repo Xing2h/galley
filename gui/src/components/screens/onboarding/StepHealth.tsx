@@ -6,8 +6,8 @@ import {
 } from "@phosphor-icons/react";
 
 import { HealthCheckCard } from "@/components/health-check/HealthCheckCard";
+import { Button } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 import type { HealthCheckItem } from "@/types/inspector";
 
 interface StepHealthProps {
@@ -95,36 +95,33 @@ export function StepHealth({
       </div>
 
       <div className="mt-7 flex items-center gap-2">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-[13px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
+          className="text-[13px]"
+          leadingIcon={<ArrowLeft size={13} weight="thin" />}
         >
-          <ArrowLeft size={13} weight="thin" />
           {resolvedBackLabel}
-        </button>
+        </Button>
         {onRetry && settled && !allPassed && (
-          <button
-            type="button"
+          <Button
+            variant="brand-soft"
             onClick={onRetry}
-            className="inline-flex items-center gap-1.5 rounded-sm border border-line px-3 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink"
+            className="text-[12.5px]"
+            leadingIcon={<ArrowClockwise size={12} weight="thin" />}
           >
-            <ArrowClockwise size={12} weight="thin" />
             {onboardingCopy.rerunChecks}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        <Button
           onClick={onContinue}
           disabled={!allPassed}
-          className={cn(
-            "ml-auto inline-flex items-center gap-2 rounded-sm border border-ink bg-ink px-5 py-2 text-[13.5px] font-medium text-elevated transition-colors hover:bg-ink/90",
-            "disabled:cursor-not-allowed disabled:opacity-40",
-          )}
+          size="lg"
+          className="ml-auto"
+          trailingIcon={<ArrowRight size={13} weight="bold" />}
         >
           {resolvedContinueLabel}
-          <ArrowRight size={13} weight="bold" />
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -17,7 +17,7 @@ import {
 } from "react";
 
 import { ManagedModelProviderPicker } from "@/components/managed-models/ManagedModelProviderPicker";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import {
   listManagedModelOptions,
   managedModelProbeErrorMessage,
@@ -309,19 +309,19 @@ export function StepModelConfig({
           reserveTrailing
           trailing={
             apiKey.length > 0 ? (
-              <button
-                type="button"
-                aria-label={apiKeyRevealLabel}
+              <IconButton
+                ariaLabel={apiKeyRevealLabel}
                 title={apiKeyRevealLabel}
                 onClick={() => setApiKeyVisible((visible) => !visible)}
-                className="inline-flex size-6 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-hover hover:text-ink-soft"
+                size="xs"
+                className="size-6 text-ink-muted hover:text-ink-soft"
               >
                 {apiKeyVisible ? (
                   <EyeSlash size={13} weight="thin" />
                 ) : (
                   <Eye size={13} weight="thin" />
                 )}
-              </button>
+              </IconButton>
             ) : null
           }
         />

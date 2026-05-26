@@ -212,7 +212,7 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
         data-role="user-msg"
         className={cn(
           "relative rounded-r-[6px] border-l-[3px] border-brand-strong bg-brand-soft px-4 py-2.5 pr-12 text-[15px] font-medium leading-[1.65] text-ink",
-          "whitespace-pre-wrap break-words",
+          "select-text whitespace-pre-wrap break-words",
           isLong && collapsed && "overflow-hidden",
         )}
         style={
@@ -228,7 +228,8 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
             aria-label={copyLabel}
             tabIndex={copyVisible ? 0 : -1}
             className={cn(
-              "absolute right-1.5 top-1.5 z-10 inline-flex size-6 items-center justify-center rounded-sm transition-[color,background-color,opacity]",
+              "absolute right-1.5 top-1.5 z-10 inline-flex size-6 items-center justify-center rounded-sm",
+              "transition-[color,background-color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
               copyVisible ? "opacity-100" : "pointer-events-none opacity-0",
               copied
                 ? "text-success"
@@ -262,7 +263,7 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
             type="button"
             onClick={() => setCollapsed((c) => !c)}
             aria-expanded={!collapsed}
-            className="inline-flex h-6 items-center gap-1 rounded-sm px-1 text-[11.5px] text-ink-muted underline-offset-2 transition-colors hover:bg-hover hover:text-ink hover:underline"
+            className="inline-flex h-6 items-center gap-1 rounded-sm px-1 text-[11.5px] text-ink-muted underline-offset-2 transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover hover:text-ink hover:underline active:translate-y-[0.5px] active:duration-[45ms]"
           >
             {collapsed ? (
               <>

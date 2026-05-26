@@ -1,5 +1,6 @@
 import { ArrowRight, Pause } from "@phosphor-icons/react";
 
+import { Button } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
 import type { PendingApproval } from "@/types/conversation";
 
@@ -56,15 +57,16 @@ export function ApprovalDock({ pending, onAdvance }: ApprovalDockProps) {
         )}
       </span>
 
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={() => onAdvance?.(next)}
         aria-label={copy.approval.goHandleApprovalAria(next.toolName)}
-        className="ml-auto inline-flex items-center gap-1.5 rounded-sm border border-transparent px-3 py-1 text-[12.5px] font-medium text-ink transition-colors hover:bg-hover"
+        className="ml-auto text-[12.5px] font-medium text-ink"
+        trailingIcon={<ArrowRight size={12} weight="thin" />}
       >
         {copy.approval.goHandleApproval}
-        <ArrowRight size={12} weight="thin" />
-      </button>
+      </Button>
     </div>
   );
 }

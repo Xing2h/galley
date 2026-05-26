@@ -240,9 +240,9 @@ export function TurnMarker({
    * "· 思考中..." in place of the summary so the user gets a live
    * signal during LLM TTFT / tool dispatch gaps. The whole status
    * line renders as a single sequential opacity wave. An
-   * elapsed-seconds counter joins after 3s so long waits (thinking
-   * models, large generations) read as "system still running" not
-   * "system frozen" — see useElapsedSeconds for details.
+   * elapsed-seconds counter joins after 30s so ordinary model latency
+   * stays quiet, while truly long waits read as "system still running"
+   * rather than "system frozen" — see useElapsedSeconds for details.
    *
    * Caller is expected to pass `key={index}` when the marker can
    * outlive multiple steps' worth of placeholder transitions, so
@@ -265,7 +265,9 @@ export function TurnMarker({
   const copy = useCopy();
   const elapsedSec = useElapsedSeconds(thinking);
   const elapsedLabel =
-    thinking && elapsedSec >= 3 ? formatElapsedSeconds(elapsedSec, copy) : null;
+    thinking && elapsedSec >= 30
+      ? formatElapsedSeconds(elapsedSec, copy)
+      : null;
   const hasStepNumber = index != null;
   const hasDetail = !thinking && Boolean(thinkingContent || preamble);
   const [open, setOpen] = useState(false);
@@ -275,7 +277,7 @@ export function TurnMarker({
       <div
         onClick={hasDetail ? () => setOpen((v) => !v) : undefined}
         className={cn(
-          "mb-2 mt-7 select-none font-serif text-[12px] italic text-ink-muted",
+          "mb-2 mt-7 select-text font-serif text-[12px] italic text-ink-muted",
           hasDetail && "cursor-pointer transition-colors hover:text-ink-soft",
         )}
       >
@@ -323,7 +325,9 @@ function ThinkingWaveText({
   const WAVE_REST_MS = 240;
   const WAVE_MIN_DURATION_MS = 1300;
   const statusText = `${index != null ? `${copy.conversation.step(index)} · ` : ""}${copy.conversation.thinking}`;
-  const elapsedText = elapsedLabel ? ` · ${elapsedLabel}` : "";
+  const elapsedText = elapsedLabel
+    ? ` · ${elapsedLabel} · ${copy.conversation.stillRunning}`
+    : "";
   const text = `${statusText}${elapsedText}`;
   const statusTokens = toThinkingWaveTokens(statusText, 0);
   const elapsedTokens = toThinkingWaveTokens(
@@ -472,7 +476,7 @@ function useElapsedSeconds(active: boolean): number {
 /**
  * Elapsed-time formatter for the thinking placeholder.
  *
- *   5-59s  → "23 秒"             (neutral info — "this is how long")
+ *   30-59s → "32 秒"             (neutral info — "this is how long")
  *   60s+   → "已 1 分 23 秒"     ("已" prefix softens the longer wait,
  *                                  acknowledging the duration without
  *                                  alarming the user)

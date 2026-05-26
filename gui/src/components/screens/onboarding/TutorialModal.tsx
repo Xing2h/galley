@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowSquareOut, X as XIcon } from "@phosphor-icons/react";
 
 import { MarkdownView } from "@/components/conversation/MarkdownView";
+import { IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Tutorial } from "@/lib/onboarding-tutorials";
@@ -48,11 +49,10 @@ export function TutorialModal({ tutorial, onClose }: TutorialModalProps) {
             <Dialog.Title className="font-serif text-[17px] font-medium text-ink">
               {tutorial?.title ?? ""}
             </Dialog.Title>
-            <Dialog.Close
-              aria-label={copy.common.close}
-              className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
-            >
-              <XIcon size={14} weight="thin" />
+            <Dialog.Close asChild>
+              <IconButton ariaLabel={copy.common.close}>
+                <XIcon size={14} weight="thin" />
+              </IconButton>
             </Dialog.Close>
           </div>
 

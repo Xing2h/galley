@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { ApprovalRenderer } from "@/components/conversation/approval-renderers";
+import { Button, type ButtonVariant } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
@@ -216,32 +217,25 @@ function DecisionButton({
   disabled,
   title,
 }: DecisionButtonProps) {
-  const cls = VARIANT_CLASS[variant];
+  const buttonVariant = VARIANT_CLASS[variant];
   return (
-    <button
-      type="button"
+    <Button
+      variant={buttonVariant}
       title={title}
       onClick={onClick}
       disabled={disabled}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-sm border px-3.5 py-1.5 text-[13px] font-medium transition-colors",
-        "disabled:cursor-not-allowed disabled:opacity-40",
-        cls,
-      )}
+      className="text-[13px]"
+      leadingIcon={icon}
     >
-      {icon}
       {children}
-    </button>
+    </Button>
   );
 }
 
-const VARIANT_CLASS: Record<DecisionButtonProps["variant"], string> = {
-  primary:
-    "border-ink bg-ink text-elevated hover:bg-ink/90 disabled:hover:bg-ink",
-  "danger-ghost":
-    "border-transparent text-error hover:bg-error/[0.06] disabled:hover:bg-transparent",
-  "brand-ghost":
-    "border-line text-brand-strong hover:border-brand hover:bg-brand-soft disabled:hover:border-line disabled:hover:bg-transparent",
+const VARIANT_CLASS: Record<DecisionButtonProps["variant"], ButtonVariant> = {
+  primary: "primary",
+  "danger-ghost": "destructive-soft",
+  "brand-ghost": "brand-soft",
 };
 
 function DecisionPill({ decision }: { decision: ApprovalDecision }) {
