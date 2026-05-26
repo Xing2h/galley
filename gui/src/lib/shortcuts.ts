@@ -5,6 +5,7 @@ import { isMac } from "@/lib/platform";
  *
  *   formatShortcut("Mod+K")        // Mac: "⌘K"     · Win: "Ctrl+K"
  *   formatShortcut("Mod+Shift+P")  // Mac: "⌘⇧P"    · Win: "Ctrl+Shift+P"
+ *   formatShortcutReadable("Mod+K") // Mac: "⌘ + K" · Win: "Ctrl + K"
  *   formatShortcut("Alt+↑")        // Mac: "⌥↑"     · Win: "Alt+↑"
  *   formatShortcut("Enter")        // both:  "Enter"
  *
@@ -56,4 +57,10 @@ export function formatShortcut(combo: string): string {
     return parts.map((p) => MAC_GLYPHS[p] ?? p).join("");
   }
   return parts.map((p) => WIN_NAMES[p] ?? p).join("+");
+}
+
+export function formatShortcutReadable(combo: string): string {
+  const parts = combo.split("+");
+  const names = isMac ? MAC_GLYPHS : WIN_NAMES;
+  return parts.map((p) => names[p] ?? p).join(" + ");
 }

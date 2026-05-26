@@ -492,7 +492,7 @@ function actionableInvokeError(tag: string): string | null {
     case "managed_runtime_invalid":
       return "Galley 内置运行时不完整。请重新安装或更新 Galley。";
     case "ga_path_invalid":
-      return "接入的 GenericAgent 路径不可用。请在 Settings -> Runtime 重新选择 GA 目录。";
+      return "接入的 GenericAgent 路径不可用。请到设置的 Runtime 页面重新选择 GA 目录。";
     default:
       return null;
   }

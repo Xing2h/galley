@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowSquareOut, X as XIcon } from "@phosphor-icons/react";
 
 import { MarkdownView } from "@/components/conversation/MarkdownView";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Tutorial } from "@/lib/onboarding-tutorials";
 
@@ -25,6 +26,7 @@ interface TutorialModalProps {
  * inventing a new "tutorial body" style.
  */
 export function TutorialModal({ tutorial, onClose }: TutorialModalProps) {
+  const copy = useCopy();
   return (
     <Dialog.Root
       open={tutorial !== null}
@@ -47,7 +49,7 @@ export function TutorialModal({ tutorial, onClose }: TutorialModalProps) {
               {tutorial?.title ?? ""}
             </Dialog.Title>
             <Dialog.Close
-              aria-label="关闭"
+              aria-label={copy.common.close}
               className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
             >
               <XIcon size={14} weight="thin" />
@@ -68,7 +70,7 @@ export function TutorialModal({ tutorial, onClose }: TutorialModalProps) {
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-[12.5px] text-brand-strong transition-colors hover:text-brand-strong/80"
               >
-                {tutorial.upstreamLabel ?? "查看完整教程"}
+                {tutorial.upstreamLabel ?? copy.onboarding.openFullGuide}
                 <ArrowSquareOut size={12} weight="thin" />
               </a>
             </div>

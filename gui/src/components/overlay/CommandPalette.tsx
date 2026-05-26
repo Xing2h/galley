@@ -15,7 +15,8 @@ import {
 import { useEffect, useState } from "react";
 
 import { searchMessages, type MessageSearchHit } from "@/lib/db";
-import { formatShortcut } from "@/lib/shortcuts";
+import { useCopy } from "@/lib/i18n";
+import { formatShortcut, formatShortcutReadable } from "@/lib/shortcuts";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
 import type { Session } from "@/types/session";
@@ -74,6 +75,7 @@ export interface CommandPaletteProps {
  * DESIGN.md §8 "故意排除".
  */
 export function CommandPalette(props: CommandPaletteProps) {
+  const copy = useCopy();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState<"root" | "switch-llm">("root");
   const [messageHits, setMessageHits] = useState<MessageSearchHit[]>([]);
@@ -125,7 +127,7 @@ export function CommandPalette(props: CommandPaletteProps) {
     <Command.Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
-      label="Command palette"
+      label={copy.command.label}
       shouldFilter={page === "root"}
     >
       <div className="relative shrink-0">
@@ -138,7 +140,7 @@ export function CommandPalette(props: CommandPaletteProps) {
           value={search}
           onValueChange={setSearch}
           placeholder={
-            page === "switch-llm" ? "搜索 LLM…" : "搜索对话或输入命令…"
+            page === "switch-llm" ? copy.command.searchLLM : copy.command.search
           }
           autoFocus
         />
@@ -231,6 +233,7 @@ function RootPage({
   onAttachGAFolder: () => void;
   onSubmitFreeText: (text: string) => void;
 }) {
+  const copy = useCopy();
   // Show only the most recent 8 sessions when there's no search; cmdk
   // handles fuzzy filtering when the user starts typing.
   const recentSessions = sessions.slice(0, 8);
@@ -242,14 +245,21 @@ function RootPage({
       </Command.Empty>
 
       {/* Always-first: New chat. Plain Item, no group header. */}
-      <Command.Item value="new-chat new chat 新对话 新建对话" onSelect={onNewChat}>
-        <PaletteRow Icon={Plus} label="新对话" shortcut={formatShortcut("Mod+N")} />
+      <Command.Item
+        value="new-chat new chat 新对话 新建对话"
+        onSelect={onNewChat}
+      >
+        <PaletteRow
+          Icon={Plus}
+          label={copy.command.newConversation}
+          shortcut={formatShortcut("Mod+N")}
+        />
       </Command.Item>
       <Command.Item
         value="new-project new project 新建项目"
         onSelect={onNewProject}
       >
-        <PaletteRow Icon={FolderOpen} label="新建项目" />
+        <PaletteRow Icon={FolderOpen} label={copy.command.newProject} />
       </Command.Item>
 
       {/* Sessions */}
@@ -274,7 +284,7 @@ function RootPage({
       {messageHits.length > 0 && (
         <>
           <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            在对话内容中
+            {copy.command.inConversationContent}
           </div>
           {messageHits.map((h) => (
             <Command.Item
@@ -297,25 +307,32 @@ function RootPage({
       >
         <PaletteRow
           Icon={Cube}
-          label="切换 LLM"
-          sub={currentLLM ? `当前：${currentLLM}` : undefined}
+          label={copy.command.switchLLM}
+          sub={currentLLM ? copy.command.current(currentLLM) : undefined}
           shortcut="→"
         />
       </Command.Item>
       <Command.Item
-        value="rerun health check 体检"
+        value="rerun health check 体检 健康检查"
         onSelect={onReRunHealthCheck}
       >
-        <PaletteRow Icon={ArrowsClockwise} label="重新运行健康检查" />
+        <PaletteRow
+          Icon={ArrowsClockwise}
+          label={copy.command.runHealthCheck}
+        />
       </Command.Item>
       <Command.Item value="open settings 设置" onSelect={onOpenSettings}>
-        <PaletteRow Icon={Gear} label="打开设置" shortcut={formatShortcut("Mod+,")} />
+        <PaletteRow
+          Icon={Gear}
+          label={copy.command.openSettings}
+          shortcut={formatShortcutReadable("Mod+,")}
+        />
       </Command.Item>
       <Command.Item
         value="attach ga folder 切换 GA 路径"
         onSelect={onAttachGAFolder}
       >
-        <PaletteRow Icon={FolderOpen} label="切换 GA 路径" />
+        <PaletteRow Icon={FolderOpen} label={copy.command.changeGAFolder} />
       </Command.Item>
     </>
   );
@@ -328,22 +345,25 @@ function EmptyHint({
   search: string;
   onSubmit: () => void;
 }) {
+  const copy = useCopy();
   if (search.trim() === "") {
     return (
       <div className="px-4 py-6 text-center text-[12.5px] italic text-ink-muted">
-        没有匹配项。
+        {copy.command.noMatch}
       </div>
     );
   }
   return (
     <div className="flex flex-col items-center gap-1.5 px-4 py-6 text-center">
-      <div className="text-[12.5px] italic text-ink-muted">没找到。</div>
+      <div className="text-[12.5px] italic text-ink-muted">
+        {copy.command.notFound}
+      </div>
       <button
         type="button"
         onClick={onSubmit}
         className="inline-flex items-center gap-1.5 text-[13px] font-medium text-brand-strong transition-colors hover:text-ink"
       >
-        Enter 直接发问？
+        {copy.command.askDirectly}
         <span className="rounded-sm border border-line bg-app px-1.5 py-px font-mono text-[10px] text-ink-muted">
           ↵
         </span>
@@ -363,10 +383,15 @@ function SwitchLLMPage({
   onPick: (index: number) => void;
   onBack: () => void;
 }) {
+  const copy = useCopy();
   return (
     <>
       <Command.Item value="back" onSelect={onBack}>
-        <PaletteRow Icon={ArrowLeft} label="Back" sub="主菜单" />
+        <PaletteRow
+          Icon={ArrowLeft}
+          label={copy.command.back}
+          sub={copy.command.mainMenu}
+        />
       </Command.Item>
       {llms.map((llm) => (
         <Command.Item
@@ -385,7 +410,7 @@ function SwitchLLMPage({
       {llms.length === 0 && (
         <Command.Empty>
           <div className="px-4 py-6 text-center text-[12.5px] italic text-ink-muted">
-            没有可用的 LLM 配置。
+            {copy.command.noLLMs}
           </div>
         </Command.Empty>
       )}
@@ -396,11 +421,16 @@ function SwitchLLMPage({
 // ---------------- Message hit row ----------------
 
 function MessageHitRow({ hit }: { hit: MessageSearchHit }) {
+  const copy = useCopy();
   return (
     <div className="flex w-full items-start gap-2.5">
       <span
         className="inline-flex shrink-0 pt-0.5 text-ink-soft"
-        title={hit.role === "user" ? "你的提问" : "Agent 回复"}
+        title={
+          hit.role === "user"
+            ? copy.command.yourMessage
+            : copy.command.agentReply
+        }
       >
         {hit.role === "user" ? (
           <User size={14} weight="thin" />
@@ -432,10 +462,7 @@ function HighlightedSnippet({ raw }: { raw: string }) {
     <>
       {parts.map((p, i) =>
         i % 2 === 1 ? (
-          <mark
-            key={i}
-            className="rounded-sm bg-brand/20 px-0.5 text-ink"
-          >
+          <mark key={i} className="rounded-sm bg-brand/20 px-0.5 text-ink">
             {p}
           </mark>
         ) : (
@@ -475,11 +502,7 @@ function PaletteRow({
         <span className="shrink-0 text-[11.5px] text-ink-muted">{sub}</span>
       )}
       {checked && (
-        <Check
-          size={12}
-          weight="bold"
-          className="shrink-0 text-brand-strong"
-        />
+        <Check size={12} weight="bold" className="shrink-0 text-brand-strong" />
       )}
       {shortcut && (
         <span

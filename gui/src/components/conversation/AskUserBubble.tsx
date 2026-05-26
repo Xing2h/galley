@@ -1,6 +1,7 @@
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { PauseCircle } from "@phosphor-icons/react";
 
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { PendingAskUser } from "@/types/conversation";
 
@@ -44,6 +45,7 @@ export function AskUserBubble({
   onPickCandidate,
   disabled = false,
 }: AskUserBubbleProps) {
+  const copy = useCopy();
   return (
     <div
       data-role="ask-user-bubble"
@@ -51,7 +53,7 @@ export function AskUserBubble({
     >
       <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-warning">
         <PauseCircle size={12} weight="bold" />
-        等你回复
+        {copy.conversation.waitingForYou}
       </div>
       <div className="mb-3 whitespace-pre-wrap text-[15px] leading-[1.65] text-ink">
         {pending.question}
@@ -84,7 +86,9 @@ function CandidateChip({
   disabled: boolean;
 }) {
   const truncated =
-    text.length > CHIP_MAX_CHARS ? text.slice(0, CHIP_MAX_CHARS - 1) + "…" : text;
+    text.length > CHIP_MAX_CHARS
+      ? text.slice(0, CHIP_MAX_CHARS - 1) + "…"
+      : text;
   const button = (
     <button
       type="button"
@@ -93,7 +97,8 @@ function CandidateChip({
       className={cn(
         "rounded-sm border border-line bg-surface px-2.5 py-1 text-[12.5px] text-ink-soft transition-colors",
         "hover:border-warning hover:bg-warning/10 hover:text-ink",
-        disabled && "cursor-not-allowed opacity-50 hover:bg-surface hover:text-ink-soft",
+        disabled &&
+          "cursor-not-allowed opacity-50 hover:bg-surface hover:text-ink-soft",
       )}
     >
       {truncated}

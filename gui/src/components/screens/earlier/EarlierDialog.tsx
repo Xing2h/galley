@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 
+import { useCopy } from "@/lib/i18n";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
 import type { Session } from "@/types/session";
@@ -253,18 +254,19 @@ function Header({
   onCancelSelectMode: () => void;
   onClose: () => void;
 }) {
+  const copy = useCopy();
   // Right-side summary mirrors filter + select state so the user can
   // see at a glance whether they're viewing all, a subset, or
   // operating on a selection.
   const summary = selectMode
-    ? `已选 ${selectedCount}`
+    ? copy.projects.selected(selectedCount)
     : filtered
       ? shown === 0
-        ? "无匹配"
-        : `${shown} / ${total} 命中`
+        ? copy.projects.noMatches
+        : copy.projects.hits(shown, total)
       : total > 0
-        ? `${total} 个 7 天前的对话`
-        : "暂无早期对话";
+        ? copy.projects.earlierCount(total)
+        : copy.projects.noEarlier;
 
   return (
     <div className="flex items-center gap-3 border-b border-line bg-elevated px-5 py-3.5">
@@ -283,7 +285,7 @@ function Header({
               "transition-colors hover:bg-hover hover:text-ink",
             )}
           >
-            取消
+            {copy.common.cancel}
           </button>
         ) : (
           <button
@@ -296,11 +298,11 @@ function Header({
               "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-elevated disabled:hover:text-ink-soft",
             )}
           >
-            多选
+            {copy.projects.select}
           </button>
         )}
         <Dialog.Close
-          aria-label="关闭"
+          aria-label={copy.common.close}
           onClick={onClose}
           className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
@@ -318,6 +320,7 @@ function SearchBar({
   query: string;
   onChange: (q: string) => void;
 }) {
+  const copy = useCopy();
   return (
     <div className="relative shrink-0 border-b border-line bg-elevated px-4 py-2.5">
       <MagnifyingGlass
@@ -329,7 +332,7 @@ function SearchBar({
         type="text"
         value={query}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="按标题或摘要过滤…"
+        placeholder={copy.projects.filterArchive}
         autoFocus
         className={cn(
           "h-7 w-full rounded-sm border border-line bg-app pl-7 pr-3 text-[12.5px] text-ink",
@@ -439,6 +442,7 @@ function EarlierRow({
   onArchive: () => void;
   onTogglePin: () => void;
 }) {
+  const copy = useCopy();
   const handleClick = selectMode ? onToggleSelect : onSelect;
 
   const row = (
@@ -446,13 +450,19 @@ function EarlierRow({
       onClick={handleClick}
       className={cn(
         "group flex cursor-pointer items-start gap-3 px-5 py-3 transition-colors",
-        selectMode && isSelected ? "bg-selected hover:bg-selected" : "hover:bg-hover",
+        selectMode && isSelected
+          ? "bg-selected hover:bg-selected"
+          : "hover:bg-hover",
       )}
     >
       {selectMode ? (
         <span className="pt-0.5 text-ink-soft">
           {isSelected ? (
-            <CheckSquare size={14} weight="fill" className="text-brand-strong" />
+            <CheckSquare
+              size={14}
+              weight="fill"
+              className="text-brand-strong"
+            />
           ) : (
             <Square size={14} weight="thin" />
           )}
@@ -474,10 +484,12 @@ function EarlierRow({
         <div className="mt-1 text-[10.5px] text-ink-muted">
           {formatDate(session.lastActivityAt)}
           {session.turnCount !== undefined && session.turnCount > 0 && (
-            <> · {session.turnCount} 步</>
+            <> · {copy.projects.turns(session.turnCount)}</>
           )}
           {session.pinned && (
-            <span className="ml-1.5 text-brand-strong">· pinned</span>
+            <span className="ml-1.5 text-brand-strong">
+              · {copy.projects.pinned}
+            </span>
           )}
         </div>
       </div>
@@ -509,12 +521,12 @@ function EarlierRow({
             {session.pinned ? (
               <>
                 <PushPinSlash size={13} weight="thin" />
-                Unpin
+                {copy.sidebar.unpin}
               </>
             ) : (
               <>
                 <PushPin size={13} weight="thin" />
-                Pin
+                {copy.sidebar.pin}
               </>
             )}
           </ContextMenu.Item>
@@ -526,7 +538,7 @@ function EarlierRow({
             )}
           >
             <Archive size={13} weight="thin" />
-            Archive
+            {copy.sidebar.archive}
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
@@ -545,6 +557,7 @@ function SelectActionBar({
   onToggleSelectAllVisible: () => void;
   onArchive: () => void;
 }) {
+  const copy = useCopy();
   const disabled = selectedCount === 0;
   return (
     <div
@@ -565,7 +578,9 @@ function SelectActionBar({
         ) : (
           <Square size={13} weight="thin" />
         )}
-        {allVisibleSelected ? "取消全选" : "全选"}
+        {allVisibleSelected
+          ? copy.projects.clearSelection
+          : copy.projects.selectAll}
       </button>
 
       <button
@@ -579,7 +594,7 @@ function SelectActionBar({
         )}
       >
         <Archive size={12} weight="thin" />
-        Archive
+        {copy.projects.archiveSelected}
         {selectedCount > 0 && (
           <span className="text-ink-muted">· {selectedCount}</span>
         )}
@@ -589,10 +604,13 @@ function SelectActionBar({
 }
 
 function EmptyState({ filtered }: { filtered: boolean }) {
+  const copy = useCopy();
   return (
     <div className="flex h-full items-center justify-center">
       <p className="font-serif text-[13.5px] italic text-ink-muted">
-        {filtered ? "没有匹配的对话。" : "7 天前还没有对话。"}
+        {filtered
+          ? copy.projects.noMatchingConversations
+          : copy.projects.noEarlierEmpty}
       </p>
     </div>
   );
@@ -613,7 +631,9 @@ const MONTHS = [
   "December",
 ];
 
-function groupByMonth(rows: Session[]): { label: string; sessions: Session[] }[] {
+function groupByMonth(
+  rows: Session[],
+): { label: string; sessions: Session[] }[] {
   const out: { label: string; sessions: Session[] }[] = [];
   let lastKey = "";
   for (const s of rows) {

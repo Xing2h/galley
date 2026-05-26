@@ -17,6 +17,42 @@ import type { PathValidation } from "@/components/screens/onboarding/StepAttach"
 import { probePython, type ProbeResult } from "@/lib/python-probe";
 import type { HealthCheckItem } from "@/types/inspector";
 
+interface HealthCheckLabels {
+  gaPathExists: string;
+  agentmainVisible: string;
+  mykeyExists: string;
+  memoryVisible: string;
+  assetsVisible: string;
+  pythonInterpreter: string;
+  bundledPython: string;
+  loadablePython: string;
+  entryModule: string;
+  llmConfigFile: string;
+  memoryStore: string;
+  resourcesDir: string;
+  bundledPythonDetail: (version: string) => string;
+  noLoadablePython: string;
+}
+
+const DEFAULT_HEALTH_CHECK_LABELS: HealthCheckLabels = {
+  gaPathExists: "GA 路径存在",
+  agentmainVisible: "agentmain.py 可见",
+  mykeyExists: "mykey.py 存在",
+  memoryVisible: "memory/ 目录可见",
+  assetsVisible: "assets/ 目录可见",
+  pythonInterpreter: "Python 解释器",
+  bundledPython: "Galley 内置 Python",
+  loadablePython: "查找能加载 GA 的 Python",
+  entryModule: "GA 入口模块",
+  llmConfigFile: "LLM 配置文件",
+  memoryStore: "L1-L4 记忆存储",
+  resourcesDir: "GA 资源目录",
+  bundledPythonDetail: (version: string) =>
+    `CPython ${version} · 已附带 GA 依赖`,
+  noLoadablePython:
+    "在常见路径未找到能加载 GA 的 Python · 请先在 GA 目录把依赖装到一个 .venv 里",
+};
+
 // Trimmed paths only — leading/trailing whitespace from the input is
 // stripped before validation. Tauri's `exists()` is async; calls are
 // debounced upstream so we don't query on every keystroke.
@@ -107,23 +143,25 @@ export async function runHealthChecks(
   options?: {
     useExternalPython?: boolean;
     onPythonProbed?: (alias: string | null, result: ProbeResult) => void;
+    labels?: HealthCheckLabels;
   },
 ): Promise<HealthCheckItem[]> {
   const resolved = await resolvePath(path.trim());
+  const labels = options?.labels ?? DEFAULT_HEALTH_CHECK_LABELS;
   const probes: HealthProbe[] = [
     {
-      name: "GA 路径存在",
+      name: labels.gaPathExists,
       detail: path,
       check: () => fsExists(resolved),
     },
     {
-      name: "agentmain.py 可见",
-      detail: "GA 入口模块",
+      name: labels.agentmainVisible,
+      detail: labels.entryModule,
       check: async () => fsExists(await joinPath(resolved, "agentmain.py")),
     },
     {
-      name: "mykey.py 存在",
-      detail: "LLM 配置文件",
+      name: labels.mykeyExists,
+      detail: labels.llmConfigFile,
       check: async () => fsExists(await joinPath(resolved, "mykey.py")),
       // mykey.py is user-supplied + .gitignored; a missing file is a
       // warning rather than an error — the user can still attach and
@@ -131,14 +169,14 @@ export async function runHealthChecks(
       warnOnMissing: true,
     },
     {
-      name: "memory/ 目录可见",
-      detail: "L1-L4 记忆存储",
+      name: labels.memoryVisible,
+      detail: labels.memoryStore,
       check: async () => fsExists(await joinPath(resolved, "memory")),
       warnOnMissing: true,
     },
     {
-      name: "assets/ 目录可见",
-      detail: "GA 资源目录",
+      name: labels.assetsVisible,
+      detail: labels.resourcesDir,
       check: async () => fsExists(await joinPath(resolved, "assets")),
       warnOnMissing: true,
     },
@@ -151,13 +189,13 @@ export async function runHealthChecks(
   // failure path so no actions are needed.
   const pythonRow: HealthCheckItem = useExternalPython
     ? {
-        name: "Python 解释器",
-        detail: "查找能加载 GA 的 Python",
+        name: labels.pythonInterpreter,
+        detail: labels.loadablePython,
         state: "pending",
       }
     : {
-        name: "Galley 内置 Python",
-        detail: `CPython ${BUNDLED_PYTHON_VERSION} · 已附带 GA 依赖`,
+        name: labels.bundledPython,
+        detail: labels.bundledPythonDetail(BUNDLED_PYTHON_VERSION),
         state: "pending",
       };
   let items: HealthCheckItem[] = [
@@ -174,9 +212,7 @@ export async function runHealthChecks(
     if (signal.aborted) return items;
     // Flip current row to running so the user sees the spinner walk
     // down the list.
-    items = items.map((c, idx) =>
-      idx === i ? { ...c, state: "running" } : c,
-    );
+    items = items.map((c, idx) => (idx === i ? { ...c, state: "running" } : c));
     onUpdate(items);
 
     // Brief paced delay so the animation reads as deliberate work
@@ -250,8 +286,7 @@ export async function runHealthChecks(
         ? {
             ...c,
             state: "failed",
-            detail:
-              "在常见路径未找到能加载 GA 的 Python · 请先在 GA 目录把依赖装到一个 .venv 里",
+            detail: labels.noLoadablePython,
           }
         : c,
     );
@@ -311,20 +346,14 @@ async function resolvePath(path: string): Promise<string> {
       const home = await homeDir();
       p = home + p.slice(1);
     } catch (e) {
-      console.warn(
-        "[onboarding] homeDir lookup failed; using raw path.",
-        e,
-      );
+      console.warn("[onboarding] homeDir lookup failed; using raw path.", e);
     }
   }
   try {
     const { normalize } = await import("@tauri-apps/api/path");
     p = await normalize(p);
   } catch (e) {
-    console.warn(
-      "[onboarding] path normalize failed; using raw path.",
-      e,
-    );
+    console.warn("[onboarding] path normalize failed; using raw path.", e);
   }
   return p;
 }

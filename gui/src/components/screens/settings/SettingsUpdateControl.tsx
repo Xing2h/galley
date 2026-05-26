@@ -8,11 +8,9 @@ import {
 } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
+import { useCopy, type AppCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import {
-  useAppUpdateStore,
-  type AppUpdateStatus,
-} from "@/stores/app-update";
+import { useAppUpdateStore, type AppUpdateStatus } from "@/stores/app-update";
 
 interface SettingsUpdateControlProps {
   hasRunningSessions: boolean;
@@ -23,13 +21,17 @@ export function SettingsUpdateControl({
   hasRunningSessions,
   className,
 }: SettingsUpdateControlProps) {
+  const copy = useCopy();
   const updateStatus = useAppUpdateStore((s) => s.status);
   const checkUpdate = useAppUpdateStore((s) => s.check);
   const downloadAndInstall = useAppUpdateStore((s) => s.downloadAndInstall);
   const restart = useAppUpdateStore((s) => s.restart);
 
   const handleUpdateAction = async () => {
-    if (updateStatus.kind === "checking" || updateStatus.kind === "downloading") {
+    if (
+      updateStatus.kind === "checking" ||
+      updateStatus.kind === "downloading"
+    ) {
       return;
     }
     if (updateStatus.kind === "available") {
@@ -49,11 +51,13 @@ export function SettingsUpdateControl({
       <UpdateActionButton
         status={updateStatus}
         hasRunningSessions={hasRunningSessions}
+        copy={copy}
         onClick={handleUpdateAction}
       />
       <UpdateStatusLine
         status={updateStatus}
         hasRunningSessions={hasRunningSessions}
+        copy={copy}
       />
     </div>
   );
@@ -62,13 +66,15 @@ export function SettingsUpdateControl({
 function UpdateActionButton({
   status,
   hasRunningSessions,
+  copy,
   onClick,
 }: {
   status: AppUpdateStatus;
   hasRunningSessions: boolean;
+  copy: AppCopy;
   onClick: () => void;
 }) {
-  const view = updateButtonView(status, hasRunningSessions);
+  const view = updateButtonView(status, hasRunningSessions, copy);
   const Icon = view.Icon;
   return (
     <Button
@@ -89,11 +95,13 @@ function UpdateActionButton({
 function UpdateStatusLine({
   status,
   hasRunningSessions,
+  copy,
 }: {
   status: AppUpdateStatus;
   hasRunningSessions: boolean;
+  copy: AppCopy;
 }) {
-  const view = updateStatusView(status, hasRunningSessions);
+  const view = updateStatusView(status, hasRunningSessions, copy);
   if (!view) return null;
   const Icon = view.Icon;
   return (
@@ -117,6 +125,7 @@ function UpdateStatusLine({
 function updateButtonView(
   status: AppUpdateStatus,
   hasRunningSessions: boolean,
+  copy: AppCopy,
 ): {
   label: string;
   Icon: typeof ArrowClockwise;
@@ -126,42 +135,57 @@ function updateButtonView(
   switch (status.kind) {
     case "checking":
       return {
-        label: "检查中",
+        label: copy.updates.checkingShort,
         Icon: ArrowClockwise,
         disabled: true,
         spin: true,
       };
     case "available":
       return {
-        label: hasRunningSessions ? "等待任务" : "下载更新",
+        label: hasRunningSessions
+          ? copy.updates.waitForTasks
+          : copy.updates.download,
         Icon: DownloadSimple,
         disabled: hasRunningSessions,
       };
     case "downloading":
       return {
-        label: "准备中",
+        label: copy.updates.preparingShort,
         Icon: ArrowClockwise,
         disabled: true,
         spin: true,
       };
     case "ready":
       return {
-        label: "重启更新",
+        label: copy.updates.restart,
         Icon: CheckCircle,
         disabled: hasRunningSessions,
       };
     case "upToDate":
-      return { label: "再次检查", Icon: ArrowClockwise, disabled: false };
+      return {
+        label: copy.updates.checkAgain,
+        Icon: ArrowClockwise,
+        disabled: false,
+      };
     case "error":
-      return { label: "重试", Icon: ArrowClockwise, disabled: false };
+      return {
+        label: copy.updates.retry,
+        Icon: ArrowClockwise,
+        disabled: false,
+      };
     default:
-      return { label: "检查更新", Icon: ArrowClockwise, disabled: false };
+      return {
+        label: copy.updates.check,
+        Icon: ArrowClockwise,
+        disabled: false,
+      };
   }
 }
 
 function updateStatusView(
   status: AppUpdateStatus,
   hasRunningSessions: boolean,
+  copy: AppCopy,
 ): {
   message: string;
   Icon: typeof ArrowClockwise;
@@ -170,14 +194,14 @@ function updateStatusView(
 } | null {
   if (status.kind === "ready" && hasRunningSessions) {
     return {
-      message: `v${status.version} 已准备好；当前任务结束后再重启。`,
+      message: copy.updates.readyAfterTasks(status.version),
       Icon: Warning,
       className: "text-warning",
     };
   }
   if (status.kind === "available" && hasRunningSessions) {
     return {
-      message: `发现 v${status.version}；当前任务结束后再后台准备更新。`,
+      message: copy.updates.foundAfterTasks(status.version),
       Icon: Warning,
       className: "text-warning",
     };
@@ -186,39 +210,39 @@ function updateStatusView(
   switch (status.kind) {
     case "checking":
       return {
-        message: "正在检查更新...",
+        message: copy.updates.checking,
         Icon: CircleNotch,
         className: "text-ink-muted",
         spin: true,
       };
     case "unconfigured":
       return {
-        message: "此构建未连接更新通道；Dev 模式下这是预期状态。",
+        message: copy.updates.devNoChannel,
         Icon: Info,
         className: "text-ink-muted",
       };
     case "upToDate":
       return {
-        message: "已是最新版本。",
+        message: copy.updates.upToDate,
         Icon: CheckCircle,
         className: "text-success",
       };
     case "available":
       return {
-        message: `发现 v${status.version}，可后台下载并准备更新。`,
+        message: copy.updates.found(status.version),
         Icon: DownloadSimple,
         className: "text-brand-strong",
       };
     case "downloading":
       return {
-        message: "正在后台下载并准备更新...",
+        message: copy.updates.downloading,
         Icon: CircleNotch,
         className: "text-brand-strong",
         spin: true,
       };
     case "ready":
       return {
-        message: `v${status.version} 已准备好，重启后生效。`,
+        message: copy.updates.ready(status.version),
         Icon: CheckCircle,
         className: "text-success",
       };

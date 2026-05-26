@@ -16,8 +16,9 @@ import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { Button, IconButton } from "@/components/ui/button";
+import { useCopy } from "@/lib/i18n";
 import { isMac, isWindowActionTarget } from "@/lib/platform";
-import { formatShortcut } from "@/lib/shortcuts";
+import { formatShortcutReadable } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 import { WindowControls } from "./WindowControls";
@@ -145,6 +146,7 @@ export function TopBar({
   onRenameSession,
   trafficLightPadding = isMac ? 70 : 12,
 }: TopBarProps) {
+  const copy = useCopy();
   return (
     <div
       data-tauri-drag-region
@@ -213,7 +215,7 @@ export function TopBar({
             data-tauri-drag-region
             className="truncate font-serif italic text-ink-muted"
           >
-            新对话
+            {copy.topbar.newConversation}
           </span>
         )}
       </div>
@@ -239,9 +241,11 @@ export function TopBar({
             onToggle={onToggleConversationWidth}
           />
           <IconButton
-            title={`Settings · ${formatShortcut("Mod+,")}`}
+            title={copy.topbar.settingsShortcut(
+              formatShortcutReadable("Mod+,"),
+            )}
             onClick={onOpenSettings}
-            ariaLabel="Open settings"
+            ariaLabel={copy.topbar.openSettings}
           >
             <Gear size={16} weight="thin" />
           </IconButton>
@@ -275,12 +279,13 @@ function YoloIndicator({
   onDisable?: () => void;
   onOpenSettings?: () => void;
 }) {
+  const copy = useCopy();
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
         <button
           type="button"
-          aria-label="YOLO 模式已开启 · 点击查看"
+          aria-label={copy.topbar.yoloView}
           className={cn(
             "inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1",
             "text-[12px] font-medium uppercase text-warning",
@@ -302,11 +307,11 @@ function YoloIndicator({
           <div className="flex items-center gap-2">
             <Lightning size={16} weight="thin" className="text-warning" />
             <div className="text-[13px] font-medium text-ink">
-              YOLO 模式已开启
+              {copy.topbar.yoloOn}
             </div>
           </div>
           <p className="mt-1.5 text-[12px] text-ink-muted">
-            所有 tool 调用跳过审批直接执行
+            {copy.topbar.yoloDetail}
           </p>
           <Button
             variant="warning"
@@ -315,7 +320,7 @@ function YoloIndicator({
             className="mt-3 w-full"
             leadingIcon={<Lightning size={14} weight="thin" />}
           >
-            立即关闭
+            {copy.topbar.turnOffNow}
           </Button>
           {onOpenSettings && (
             <Popover.Close asChild>
@@ -326,7 +331,7 @@ function YoloIndicator({
                 className="mt-2 w-full"
                 trailingIcon={<ArrowRight size={12} weight="thin" />}
               >
-                在 Settings 中查看
+                {copy.topbar.viewInSettings}
               </Button>
             </Popover.Close>
           )}
@@ -371,6 +376,7 @@ function SessionTitleMenu({
   currentSessionHasPet?: boolean;
   onRename?: (newTitle: string) => void;
 }) {
+  const copy = useCopy();
   const petHere = !!currentSessionHasPet;
   const [editing, setEditing] = useState(false);
 
@@ -399,7 +405,7 @@ function SessionTitleMenu({
       <DropdownMenu.Trigger asChild>
         <button
           type="button"
-          aria-label={`${title} · 更多对话操作`}
+          aria-label={copy.topbar.moreConversationActions(title)}
           className={cn(
             "group inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1",
             "transition-colors hover:bg-hover data-[state=open]:bg-hover",
@@ -454,7 +460,7 @@ function SessionTitleMenu({
                   weight="thin"
                   className="text-ink-soft"
                 />
-                <span>重命名</span>
+                <span>{copy.topbar.rename}</span>
               </DropdownMenu.Item>
               <DropdownMenu.Separator className="my-1 h-px bg-line" />
             </>
@@ -471,7 +477,7 @@ function SessionTitleMenu({
               weight="thin"
               className="text-ink-soft"
             />
-            <span>重新注入工具</span>
+            <span>{copy.topbar.reinjectTools}</span>
           </DropdownMenu.Item>
           <DropdownMenu.Item
             onSelect={() => onTogglePet?.()}
@@ -486,7 +492,7 @@ function SessionTitleMenu({
               className={petHere ? "text-brand" : "text-ink-soft"}
             />
             <span className="text-ink">
-              {petHere ? "关闭桌面宠物" : "桌面宠物"}
+              {petHere ? copy.topbar.closeDesktopPet : copy.topbar.desktopPet}
             </span>
           </DropdownMenu.Item>
         </DropdownMenu.Content>
@@ -598,15 +604,16 @@ function WidthToggleButton({
   mode: "compact" | "wide";
   onToggle?: () => void;
 }) {
+  const copy = useCopy();
   const isWide = mode === "wide";
   return (
     <button
       type="button"
       onClick={onToggle}
       title={
-        isWide ? "切到紧凑（760px 阅读宽度）" : "切到宽松（1200px 阅读宽度）"
+        isWide ? copy.topbar.compactWidthTitle : copy.topbar.wideWidthTitle
       }
-      aria-label={isWide ? "切到紧凑阅读宽度" : "切到宽松阅读宽度"}
+      aria-label={isWide ? copy.topbar.compactWidth : copy.topbar.wideWidth}
       className={cn(
         "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors",
         isWide
@@ -619,7 +626,7 @@ function WidthToggleButton({
       ) : (
         <ArrowsOutLineHorizontal size={14} weight="thin" />
       )}
-      {isWide ? "宽松" : "紧凑"}
+      {isWide ? copy.topbar.wideLabel : copy.topbar.compactLabel}
     </button>
   );
 }

@@ -19,11 +19,8 @@ import {
   X as XIcon,
 } from "@phosphor-icons/react";
 
-import {
-  BUCKET_LABEL,
-  groupSessions,
-  SIDEBAR_BUCKET_ORDER,
-} from "@/lib/sessions";
+import { groupSessions, SIDEBAR_BUCKET_ORDER } from "@/lib/sessions";
+import { useCopy, type AppCopy } from "@/lib/i18n";
 import {
   effectiveProjectActivityAt,
   sortProjectsForNavigation,
@@ -171,6 +168,7 @@ export function Sidebar({
   onOpenModelsSettings,
   petAttachedSessionId,
 }: SidebarProps) {
+  const copy = useCopy();
   // Project context belongs to the right-side empty composer. Sidebar
   // Project Review is a separate monitoring mode, so users can inspect
   // multiple projects without hijacking the main conversation.
@@ -320,7 +318,7 @@ export function Sidebar({
           <SidebarTimelinePresence phase={globalTimelinePhase}>
             {globalEmpty ? (
               <div className="px-5 py-6 font-serif text-[12.5px] italic text-ink-muted">
-                这里会出现你的 sessions。
+                {copy.sidebar.emptySessions}
               </div>
             ) : (
               <SidebarTimelineBuckets
@@ -364,6 +362,7 @@ function SidebarHeader({
   onOpenRuntimeSettings?: () => void;
   onOpenModelsSettings?: () => void;
 }) {
+  const copy = useCopy();
   // Single-line header (refactored 2026-05-13): the "Galley" wordmark
   // is short (~50px at 16px serif), which left ~200px of dead space
   // to the right at the typical 20% sidebar width. Status indicator
@@ -374,7 +373,7 @@ function SidebarHeader({
   // the shell already covers it. The sidebar starts at y=44px (below
   // the TopBar's bottom border).
   //
-  const indicator = renderRuntimeIndicator(runtimeIndicator);
+  const indicator = renderRuntimeIndicator(runtimeIndicator, copy.sidebar);
   return (
     <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
       {/* Wordmark: all-caps Newsreader semibold conveys "workbench" weight
@@ -432,28 +431,29 @@ type RuntimeIndicatorView = {
 
 function renderRuntimeIndicator(
   indicator: SidebarRuntimeIndicator,
+  copy: AppCopy["sidebar"],
 ): RuntimeIndicatorView | null {
   switch (indicator) {
     case "configure-models":
       return {
-        label: "配置模型",
-        title: "内置 GA 还没有可用模型",
-        ariaLabel: "打开 Models 配置内置 GA 模型",
+        label: copy.configureModels,
+        title: copy.bundledNeedsModel,
+        ariaLabel: copy.openModelsForBundled,
         tone: "muted",
         action: "models",
       };
     case "external-ready":
       return {
-        label: "外部 GA",
-        title: "正在使用你接入的 GenericAgent",
-        ariaLabel: "正在使用外部 GA",
+        label: copy.externalGA,
+        title: copy.usingExternalGA,
+        ariaLabel: copy.usingExternalGAAria,
         tone: "success",
       };
     case "external-unconfigured":
       return {
-        label: "接入外部 GA",
-        title: "选择一个已有的 GenericAgent 目录",
-        ariaLabel: "打开 Runtime 接入外部 GA",
+        label: copy.connectExternalGA,
+        title: copy.chooseExistingGAFolder,
+        ariaLabel: copy.openRuntimeForExternal,
         tone: "muted",
         action: "runtime",
       };
@@ -489,9 +489,10 @@ function SidebarQuickActions({
    * invisibly so. */
   activeProjectName?: string;
 }) {
+  const copy = useCopy();
   const newChatLabel = activeProjectName
-    ? `新对话 · ${activeProjectName}`
-    : "新对话";
+    ? copy.sidebar.newConversationInProject(activeProjectName)
+    : copy.sidebar.newConversation;
   return (
     <div className="border-b border-line py-1.5">
       <QuickAction
@@ -502,7 +503,7 @@ function SidebarQuickActions({
       />
       <QuickAction
         icon={<MagnifyingGlass size={14} weight="thin" />}
-        label="搜索"
+        label={copy.sidebar.search}
         hint={formatShortcut("Mod+K")}
         onClick={onSearch}
       />
@@ -524,8 +525,11 @@ function ProjectQuickAction({
   onClick?: () => void;
   onNewProject?: () => void;
 }) {
+  const copy = useCopy();
   const ProjectIcon = active ? FolderOpen : Folder;
-  const projectActionLabel = active ? "退出项目视图" : "进入项目视图";
+  const projectActionLabel = active
+    ? copy.sidebar.exitProjects
+    : copy.sidebar.showProjects;
   return (
     <div
       className={cn(
@@ -552,7 +556,9 @@ function ProjectQuickAction({
             active ? "text-brand-strong" : "text-ink-soft",
           )}
         />
-        <span className="min-w-0 flex-1 truncate text-[13px]">项目</span>
+        <span className="min-w-0 flex-1 truncate text-[13px]">
+          {copy.sidebar.projects}
+        </span>
       </button>
       <button
         type="button"
@@ -560,8 +566,8 @@ function ProjectQuickAction({
           e.stopPropagation();
           onNewProject?.();
         }}
-        aria-label="新建项目"
-        title="新建项目"
+        aria-label={copy.sidebar.newProject}
+        title={copy.sidebar.newProject}
         className={cn(
           "mr-0.5 inline-flex size-[32px] shrink-0 items-center justify-center rounded-sm",
           "text-ink-muted transition-[background-color,color] duration-75",
@@ -714,9 +720,16 @@ function SidebarBucket({
   /** Inline input cancels (Esc). */
   onCancelRename: () => void;
 }) {
+  const copy = useCopy();
+  const bucketLabel: Record<SessionBucket, string> = {
+    pinned: copy.sidebar.bucketPinned,
+    today: copy.sidebar.bucketToday,
+    week: copy.sidebar.bucketWeek,
+    earlier: copy.sidebar.bucketEarlier,
+  };
   return (
     <>
-      <SidebarSectionLabel>{BUCKET_LABEL[bucket]}</SidebarSectionLabel>
+      <SidebarSectionLabel>{bucketLabel[bucket]}</SidebarSectionLabel>
       {sessions.map((s) => (
         <SidebarSessionRow
           key={s.id}
@@ -799,6 +812,7 @@ function SidebarSessionRow({
   /** Inline input cancels (Esc). */
   onCancelRename?: () => void;
 }) {
+  const copy = useCopy();
   // Four-state sidebar display (Stage 3 round 7+10, V0.2 ask_user):
   //   1. running                  — bold brand spinner + italic "正在工作 · 第 N 步" subline
   //   2. pending ask_user         — warning PauseCircle + "⏸ 等你回复" subline (V0.2)
@@ -853,13 +867,13 @@ function SidebarSessionRow({
     ? stripLegacyStepPrefix(session.summary)
     : null;
   const sublineText = hasPendingAsk
-    ? "⏸ 等你回复"
+    ? copy.sidebar.pendingAskPrefix
     : isRunning
       ? session.lastStepIndex != null && cleanSummary
-        ? `第 ${session.lastStepIndex} 步 · ${cleanSummary}`
-        : "思考中…"
+        ? copy.sidebar.stepSummary(session.lastStepIndex, cleanSummary)
+        : copy.sidebar.thinking
       : cleanSummary
-        ? `已完成 · ${cleanSummary}`
+        ? copy.sidebar.completedSummary(cleanSummary)
         : null;
   const row = (
     <div
@@ -898,8 +912,8 @@ function SidebarSessionRow({
           )}
           {petAttached && (
             <span
-              aria-label="桌面宠物附着中"
-              title="桌面宠物附着中 · 进入此对话可关闭"
+              aria-label={copy.sidebar.desktopPetAttached}
+              title={copy.sidebar.desktopPetAttachedTitle}
               className="inline-flex shrink-0 text-ink-soft"
             >
               <Cat size={12} weight="thin" />
@@ -907,14 +921,14 @@ function SidebarSessionRow({
           )}
           {hasPendingAsk ? (
             <span
-              aria-label="等你回复"
-              title="GA 在等你回复"
+              aria-label={copy.sidebar.waitingForYou}
+              title={copy.sidebar.gaWaitingForReply}
               className="size-2 shrink-0 rounded-full bg-warning"
             />
           ) : showUnread ? (
             <span
-              aria-label="未读"
-              title="有新回复"
+              aria-label={copy.sidebar.unread}
+              title={copy.sidebar.newReplyTitle}
               className="size-2 shrink-0 rounded-full bg-brand"
             />
           ) : null}
@@ -938,13 +952,15 @@ function SidebarSessionRow({
             {session.pendingApprovalCount > 0 && (
               <Badge tone="warning">
                 <PauseCircle size={10} weight="bold" />
-                {session.pendingApprovalCount} 待审批
+                {copy.sidebar.pendingApprovalBadge(
+                  session.pendingApprovalCount,
+                )}
               </Badge>
             )}
             {session.errorCount > 0 && (
               <Badge tone="error">
                 <WarningCircle size={10} weight="bold" />
-                {session.errorCount} 错误
+                {copy.sidebar.errorBadge(session.errorCount)}
               </Badge>
             )}
           </div>
@@ -974,7 +990,7 @@ function SidebarSessionRow({
           {onRequestRename && (
             <ContextMenu.Item onSelect={onRequestRename} className={itemClass}>
               <Pencil size={13} weight="thin" />
-              重命名
+              {copy.sidebar.rename}
             </ContextMenu.Item>
           )}
           {onTogglePin && (
@@ -982,12 +998,12 @@ function SidebarSessionRow({
               {session.pinned ? (
                 <>
                   <PushPinSlash size={13} weight="thin" />
-                  取消置顶
+                  {copy.sidebar.unpin}
                 </>
               ) : (
                 <>
                   <PushPin size={13} weight="thin" />
-                  置顶
+                  {copy.sidebar.pin}
                 </>
               )}
             </ContextMenu.Item>
@@ -1001,7 +1017,7 @@ function SidebarSessionRow({
                 )}
               >
                 <Folder size={13} weight="thin" />
-                加入项目
+                {copy.sidebar.addToProject}
                 <CaretRight
                   size={10}
                   weight="thin"
@@ -1017,7 +1033,7 @@ function SidebarSessionRow({
                 >
                   {sortedProjects.length === 0 ? (
                     <div className="px-2.5 py-1.5 text-[12px] italic text-ink-muted">
-                      还没有项目
+                      {copy.sidebar.noProjects}
                     </div>
                   ) : (
                     sortedProjects.map((p) => {
@@ -1055,7 +1071,7 @@ function SidebarSessionRow({
                         className={itemClass}
                       >
                         <XIcon size={13} weight="thin" />
-                        从项目移除
+                        {copy.sidebar.removeFromProject}
                       </ContextMenu.Item>
                     </>
                   )}
@@ -1066,7 +1082,7 @@ function SidebarSessionRow({
           {onArchive && (
             <ContextMenu.Item onSelect={onArchive} className={itemClass}>
               <Archive size={13} weight="thin" />
-              归档
+              {copy.sidebar.archive}
             </ContextMenu.Item>
           )}
         </ContextMenu.Content>
@@ -1250,6 +1266,7 @@ function SidebarProjectReview({
   onEditProject?: (id: string) => void;
   onDeleteProject?: (id: string) => void;
 }) {
+  const copy = useCopy();
   const [olderProjectsOpen, setOlderProjectsOpen] = useState(false);
   const activeProjects: Project[] = [];
   const olderProjects: Project[] = [];
@@ -1286,9 +1303,7 @@ function SidebarProjectReview({
               ? () => onTogglePinProject(project.id)
               : undefined
           }
-          onEdit={
-            onEditProject ? () => onEditProject(project.id) : undefined
-          }
+          onEdit={onEditProject ? () => onEditProject(project.id) : undefined}
           onDelete={
             onDeleteProject ? () => onDeleteProject(project.id) : undefined
           }
@@ -1322,20 +1337,22 @@ function SidebarProjectReview({
     <section className="pb-2 pt-1">
       {projects.length === 0 ? (
         <div className="px-5 py-5 font-serif text-[12px] italic text-ink-muted">
-          还没有项目。
+          {copy.sidebar.noProjects}
         </div>
       ) : (
         <>
           {activeProjects.length > 0 && (
             <>
-              <SidebarSectionLabel>ACTIVE PROJECTS</SidebarSectionLabel>
+              <SidebarSectionLabel>
+                {copy.sidebar.activeProjects}
+              </SidebarSectionLabel>
               {activeProjects.map(renderProject)}
             </>
           )}
           {olderProjects.length > 0 && (
             <>
               <SidebarProjectGroupToggle
-                label="OLDER PROJECTS"
+                label={copy.sidebar.olderProjects}
                 count={olderProjects.length}
                 open={olderProjectsOpen}
                 onToggle={() => setOlderProjectsOpen((open) => !open)}
@@ -1401,7 +1418,11 @@ function SidebarProjectRow({
    * opens it. */
   onDelete?: () => void;
 }) {
+  const copy = useCopy();
   const ProjectIcon = expanded ? FolderOpen : Folder;
+  const newConversationTitle = copy.sidebar.newConversationInProjectTitle(
+    project.name,
+  );
   const row = (
     <div
       role="button"
@@ -1444,8 +1465,8 @@ function SidebarProjectRow({
             e.stopPropagation();
             onStartConversation();
           }}
-          aria-label={`在 ${project.name} 里新建对话`}
-          title={`在 ${project.name} 里新建对话`}
+          aria-label={newConversationTitle}
+          title={newConversationTitle}
           className={cn(
             "-mr-2 inline-flex size-[32px] shrink-0 items-center justify-center rounded-sm",
             "pointer-events-none text-ink-muted opacity-0 transition-[background-color,color,opacity] duration-75",
@@ -1486,12 +1507,12 @@ function SidebarProjectRow({
               {project.pinned ? (
                 <>
                   <PushPinSlash size={13} weight="thin" />
-                  取消置顶
+                  {copy.sidebar.unpin}
                 </>
               ) : (
                 <>
                   <PushPin size={13} weight="thin" />
-                  置顶
+                  {copy.sidebar.pin}
                 </>
               )}
             </ContextMenu.Item>
@@ -1499,7 +1520,7 @@ function SidebarProjectRow({
           {onEdit && (
             <ContextMenu.Item onSelect={onEdit} className={itemClass}>
               <FolderOpen size={13} weight="thin" />
-              编辑项目
+              {copy.sidebar.editProject}
             </ContextMenu.Item>
           )}
           {onDelete && (
@@ -1510,7 +1531,7 @@ function SidebarProjectRow({
                 className={destructiveItemClass}
               >
                 <Trash size={13} weight="thin" />
-                删除项目
+                {copy.sidebar.deleteProject}
               </ContextMenu.Item>
             </>
           )}
@@ -1634,7 +1655,11 @@ function SidebarProjectEmptyHint({
   project: Project;
   onStartProjectConversation?: () => void;
 }) {
-  const label = "新建项目对话";
+  const copy = useCopy();
+  const label = copy.sidebar.newProjectConversation;
+  const newConversationTitle = copy.sidebar.newConversationInProjectTitle(
+    project.name,
+  );
   if (!onStartProjectConversation) {
     return (
       <div className="mx-1.5 mt-3 flex w-[calc(100%-12px)] items-center gap-2 rounded-sm border border-line/70 bg-elevated/55 px-3 py-2 text-[12px] font-medium text-ink-muted">
@@ -1648,8 +1673,8 @@ function SidebarProjectEmptyHint({
     <button
       type="button"
       onClick={onStartProjectConversation}
-      aria-label={`在 ${project.name} 里新建对话`}
-      title={`在 ${project.name} 里新建对话`}
+      aria-label={newConversationTitle}
+      title={newConversationTitle}
       className={cn(
         "mx-1.5 mt-3 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2 rounded-sm border border-line/70 bg-elevated/55 px-3 py-2 text-left",
         "text-[12px] font-medium text-ink-soft transition-[background-color,border-color,color]",
@@ -1670,13 +1695,14 @@ function SidebarEarlierEntry({
   count: number;
   onClick?: () => void;
 }) {
+  const copy = useCopy();
   // Single collapsed row in place of the (unbounded) `earlier` bucket.
   // Visual register sits between a section label and a session row:
   // muted text + small clock icon (this is "old time") + count chip +
   // chevron hinting "opens elsewhere".
   return (
     <>
-      <SidebarSectionLabel>{BUCKET_LABEL.earlier}</SidebarSectionLabel>
+      <SidebarSectionLabel>{copy.sidebar.bucketEarlier}</SidebarSectionLabel>
       <button
         type="button"
         onClick={onClick}
@@ -1686,7 +1712,7 @@ function SidebarEarlierEntry({
         )}
       >
         <Clock size={14} weight="thin" className="text-ink-muted" />
-        <span>查看全部</span>
+        <span>{copy.sidebar.showAll}</span>
         <span className="ml-auto flex items-center gap-1 text-[11px] text-ink-muted">
           {count}
           <CaretRight size={10} weight="thin" />
@@ -1703,6 +1729,7 @@ function SidebarFooter({
   count: number;
   onOpenArchived?: () => void;
 }) {
+  const copy = useCopy();
   // "Archived" not "Trash": our archive flow keeps data forever
   // (status="archived", row preserved). Trash semantics would imply
   // a holding area that's eventually purged — not what we do. The
@@ -1715,7 +1742,7 @@ function SidebarFooter({
       className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11.5px] text-ink-muted transition-colors hover:bg-hover hover:text-ink"
     >
       <Archive size={12} weight="thin" />
-      <span>Archived</span>
+      <span>{copy.sidebar.archived}</span>
       {count > 0 && <span className="ml-auto text-ink-soft">{count}</span>}
     </button>
   );

@@ -14,6 +14,7 @@ import {
   SettingsSectionLabel,
 } from "@/components/screens/settings/settings-ui";
 import { Button } from "@/components/ui/button";
+import { useCopy } from "@/lib/i18n";
 import { isMac, isWindows } from "@/lib/platform";
 
 type SopCopyState =
@@ -65,6 +66,8 @@ type PathUninstallOutcome =
  *    GitHub. Plain external link; no install step.
  */
 export function SettingsIntegration() {
+  const copy = useCopy();
+  const agentCopy = copy.settings.agent;
   const [sopState, setSopState] = useState<SopCopyState>({ kind: "idle" });
   const [sopBody, setSopBody] = useState<string | null>(null);
   const [pathStatus, setPathStatus] = useState<PathInstallStatus | null>(null);
@@ -74,9 +77,9 @@ export function SettingsIntegration() {
   const pathInstallUnsupportedCopy = isMac
     ? null
     : isWindows
-      ? "Windows 一键安装命令稍后支持。Agent SOP 不依赖它。"
-      : "当前平台暂不支持一键安装。Agent SOP 不依赖它。";
-  const pathInstallHint = isMac ? "macOS 会请求一次系统权限。" : null;
+      ? agentCopy.pathUnsupportedWindows
+      : agentCopy.pathUnsupportedGeneric;
+  const pathInstallHint = isMac ? agentCopy.pathInstallHintMac : null;
   const discoveryPlatformLabel = isMac
     ? "macOS"
     : isWindows
@@ -165,9 +168,7 @@ export function SettingsIntegration() {
         case "user_cancelled":
           break; // expected outcomes; refresh status to reflect reality
         case "cli_binary_not_found":
-          setPathError(
-            `没找到 galley 二进制（${result.searched}）。dev 模式可重启 pnpm tauri dev，或运行 cd core && cargo build -p galley-cli。`,
-          );
+          setPathError(agentCopy.cliBinaryNotFound(result.searched));
           break;
         case "failed":
           setPathError(`${result.reason}: ${result.details.slice(0, 200)}`);
@@ -213,7 +214,7 @@ export function SettingsIntegration() {
 
   const copySop = async () => {
     if (!sopBody) {
-      setSopState({ kind: "error", reason: "SOP 还在加载，请稍后再试" });
+      setSopState({ kind: "error", reason: agentCopy.sopStillLoading });
       return;
     }
     setSopState({ kind: "pending" });
@@ -231,8 +232,8 @@ export function SettingsIntegration() {
   return (
     <div className="space-y-7">
       <SettingsPanelHeader
-        title="Agent"
-        subtitle="让 Agent 接管和操作 Galley"
+        title={copy.settings.tabs.agent.label}
+        subtitle={agentCopy.subtitle}
       />
 
       {/* Discovery file row. Informational, not interactive — the file
@@ -245,10 +246,9 @@ export function SettingsIntegration() {
           shows the current OS path. Cross-platform details belong in
           the API docs, not the action-oriented Settings screen. */}
       <section>
-        <SettingsSectionLabel>Discovery file</SettingsSectionLabel>
+        <SettingsSectionLabel>{agentCopy.discoveryFile}</SettingsSectionLabel>
         <p className="mt-2 text-[12.5px] leading-[1.6] text-ink-soft">
-          Galley 启动时把 CLI 二进制的绝对路径写到这个文件。Supervisor SOP
-          第一步读它来定位 <code className="font-mono text-ink">galley</code>。
+          {agentCopy.discoveryDescription}
         </p>
         <dl className="mt-3 grid grid-cols-[150px_1fr] gap-x-3 text-[12.5px]">
           <dt className="text-ink-muted">{discoveryPlatformLabel}</dt>
@@ -262,10 +262,9 @@ export function SettingsIntegration() {
           memory; the user copies this document and gives it to the
           supervisor agent they want to empower. */}
       <section>
-        <SettingsSectionLabel>Agent SOP</SettingsSectionLabel>
+        <SettingsSectionLabel>{agentCopy.agentSop}</SettingsSectionLabel>
         <p className="mt-2 text-[12.5px] leading-[1.6] text-ink-soft">
-          复制这份 SOP，发给你信任的 Agent。它就能帮你查看、创建和管理 Galley
-          会话。
+          {agentCopy.sopDescription}
         </p>
         <div className="mt-3 flex items-center gap-3">
           <Button
@@ -281,12 +280,12 @@ export function SettingsIntegration() {
               <Copy size={14} weight="thin" />
             )}
             {sopState.kind === "pending"
-              ? "复制中…"
+              ? agentCopy.sopCopying
               : sopState.kind === "copied"
-                ? "已复制"
+                ? agentCopy.sopCopied
                 : sopBody
-                  ? "复制 SOP"
-                  : "加载中…"}
+                  ? agentCopy.sopCopy
+                  : agentCopy.sopLoading}
           </Button>
           <SopStatus state={sopState} />
         </div>
@@ -298,11 +297,9 @@ export function SettingsIntegration() {
           Windows is intentionally presented as unsupported until the
           user-level PATH writer exists. */}
       <section>
-        <SettingsSectionLabel>命令行快捷入口</SettingsSectionLabel>
+        <SettingsSectionLabel>{agentCopy.cliShortcut}</SettingsSectionLabel>
         <p className="mt-2 text-[12.5px] leading-[1.6] text-ink-soft">
-          可选。安装后，你和脚本都可以直接在终端使用{" "}
-          <code className="font-mono text-ink">galley</code>。Agent SOP
-          不依赖它。
+          {agentCopy.cliDescription}
         </p>
         {pathInstallHint && (
           <p className="mt-2 text-[11.5px] text-ink-muted">{pathInstallHint}</p>
@@ -329,11 +326,9 @@ export function SettingsIntegration() {
           users wiring their own scripts / Skills / agents, while the
           SOP covers the normal copy-paste path. */}
       <section>
-        <SettingsSectionLabel>API 文档</SettingsSectionLabel>
+        <SettingsSectionLabel>{agentCopy.apiDocs}</SettingsSectionLabel>
         <p className="mt-2 text-[12.5px] leading-[1.6] text-ink-soft">
-          自己写脚本、Skill 或接入别的 Agent 时看这里。包括{" "}
-          <code className="font-mono text-ink">galley</code> 命令、Socket
-          协议、返回格式和退出码。
+          {agentCopy.apiDescription}
         </p>
         <div className="mt-3">
           <Button
@@ -347,7 +342,7 @@ export function SettingsIntegration() {
             }
           >
             <BookOpen size={14} weight="thin" />
-            查看 Agent API 文档
+            {agentCopy.openApiDocs}
             <ArrowSquareOut size={11} weight="thin" />
           </Button>
           {docOpenError && (
@@ -355,7 +350,7 @@ export function SettingsIntegration() {
               className="mt-2 break-all text-[11px] text-error"
               title={docOpenError}
             >
-              打开失败：{docOpenError.slice(0, 100)}
+              {agentCopy.openFailed(docOpenError.slice(0, 100))}
               {docOpenError.length > 100 && "…"}
             </p>
           )}
@@ -391,10 +386,11 @@ function PathInstallRow({
   onInstall: () => void;
   onUninstall: () => void;
 }) {
+  const copy = useCopy().settings.agent;
   if (unsupportedCopy || status?.status === "unsupported") {
     return (
       <p className="mt-3 text-[12px] text-ink-muted">
-        {unsupportedCopy ?? "当前平台暂不支持一键安装。Agent SOP 不依赖它。"}
+        {unsupportedCopy ?? copy.pathUnsupportedGeneric}
       </p>
     );
   }
@@ -407,7 +403,7 @@ function PathInstallRow({
           className="break-all text-[12px] text-ink-soft"
           title={status.target}
         >
-          已安装：
+          {copy.pathInstalled}
           <code className="font-mono text-ink">{status.symlink}</code>
         </p>
         <Button
@@ -418,7 +414,7 @@ function PathInstallRow({
           onClick={onUninstall}
         >
           <Terminal size={14} weight="thin" />
-          {busy ? "处理中…" : "移除命令"}
+          {busy ? copy.pathBusy : copy.pathRemove}
         </Button>
       </div>
     );
@@ -433,7 +429,7 @@ function PathInstallRow({
           title={status.actual}
         >
           <code className="font-mono text-ink">{status.symlink}</code>{" "}
-          已被占用，当前指向：
+          {copy.pathOccupied}
           <code className="font-mono">{status.actual.slice(0, 60)}</code>
           {status.actual.length > 60 && "…"}
         </p>
@@ -446,7 +442,7 @@ function PathInstallRow({
             onClick={onInstall}
           >
             <Terminal size={14} weight="thin" />
-            {busy ? "处理中…" : "替换命令"}
+            {busy ? copy.pathBusy : copy.pathReplace}
           </Button>
           <Button
             type="button"
@@ -455,7 +451,7 @@ function PathInstallRow({
             disabled={busy}
             onClick={onUninstall}
           >
-            {busy ? "处理中…" : "移除命令"}
+            {busy ? copy.pathBusy : copy.pathRemove}
           </Button>
         </div>
       </div>
@@ -473,7 +469,7 @@ function PathInstallRow({
         onClick={onInstall}
       >
         <Terminal size={14} weight="thin" />
-        {busy ? "等鉴权…" : "安装 galley 命令"}
+        {busy ? copy.pathAuth : copy.pathInstall}
       </Button>
     </div>
   );
@@ -485,19 +481,22 @@ function PathInstallRow({
  * install button is the visual anchor.
  */
 function SopStatus({ state }: { state: SopCopyState }) {
+  const copy = useCopy().settings.agent;
   switch (state.kind) {
     case "idle":
       return null;
     case "pending":
-      return <span className="text-[11px] text-ink-muted">读取中…</span>;
+      return (
+        <span className="text-[11px] text-ink-muted">{copy.sopPending}</span>
+      );
     case "copied":
       return (
-        <span className="text-[11px] text-ink-soft">可以发给 Agent 了</span>
+        <span className="text-[11px] text-ink-soft">{copy.readyForAgent}</span>
       );
     case "error":
       return (
         <span className="break-all text-[11px] text-error" title={state.reason}>
-          复制失败：{state.reason.slice(0, 80)}
+          {copy.sopFailed(state.reason.slice(0, 80))}
           {state.reason.length > 80 && "…"}
         </span>
       );

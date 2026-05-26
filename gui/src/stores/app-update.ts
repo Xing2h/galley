@@ -6,7 +6,10 @@ import {
   relaunchApp,
   type AppUpdateCheckResult,
 } from "@/lib/app-update";
+import { copyForLanguage } from "@/lib/i18n";
+import { resolveLanguagePreference } from "@/lib/language";
 import { useMessagesStore } from "@/stores/messages";
+import { usePrefsStore } from "@/stores/prefs";
 
 export type AppUpdateStatus =
   | { kind: "idle" }
@@ -154,9 +157,7 @@ function hasRunningSessions(): boolean {
 function hasRunningSessionsInState(
   state: ReturnType<typeof useMessagesStore.getState>,
 ): boolean {
-  return Object.values(state.byId).some(
-    (messages) => messages.agentRunning,
-  );
+  return Object.values(state.byId).some((messages) => messages.agentRunning);
 }
 
 let autoPrepareOnIdleWatcherStarted = false;
@@ -175,6 +176,9 @@ function ensureAutoPrepareOnIdleWatcher(): void {
 }
 
 function readableUpdateError(error: unknown): string {
+  const copy = copyForLanguage(
+    resolveLanguagePreference(usePrefsStore.getState().languagePreference),
+  );
   const raw =
     typeof error === "string"
       ? error
@@ -182,15 +186,16 @@ function readableUpdateError(error: unknown): string {
         ? error.message
         : (JSON.stringify(error) ?? String(error ?? ""));
 
-  if (raw.includes("no_update_available")) return "没有可安装的新版本。";
+  if (raw.includes("no_update_available"))
+    return copy.updates.noUpdateAvailable;
   if (raw.includes("invalid_updater_endpoint")) {
-    return "更新通道配置有误，请检查 GALLEY_UPDATER_ENDPOINT。";
+    return copy.updates.invalidEndpoint;
   }
   if (raw.includes("EmptyEndpoints")) {
-    return "此构建未连接更新通道；Dev 模式下这是预期状态。";
+    return copy.updates.devNoChannel;
   }
   if (raw.includes("Network") || raw.includes("network")) {
-    return "暂时无法连接更新通道，请稍后重试。";
+    return copy.updates.networkUnavailable;
   }
-  return raw || "更新检查失败。";
+  return raw || copy.updates.checkFailed;
 }

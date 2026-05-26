@@ -18,6 +18,7 @@ import {
 import { useState, type ReactNode } from "react";
 
 import { ApprovalForm } from "@/components/conversation/ApprovalForm";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
   ConversationToolEvent,
@@ -68,7 +69,9 @@ interface ToolCalloutProps {
  * violating visual consistency. Dropped: settled state is always
  * pill, full content lives one click away.
  */
-function pickToolTier(tool: ConversationToolEvent): "hidden" | "inline" | "block" {
+function pickToolTier(
+  tool: ConversationToolEvent,
+): "hidden" | "inline" | "block" {
   if (tool.name === "no_tool") return "hidden";
   const isSettledSuccess =
     tool.status === "success-current" || tool.status === "success-historical";
@@ -287,7 +290,15 @@ function StatusBit({ status }: { status: ToolEventStatus }) {
 }
 
 function StatusPill({ status }: { status: ToolEventStatus }) {
-  const text = STATUS_PILL_TEXT[status];
+  const copy = useCopy();
+  const text = {
+    running: copy.conversation.running,
+    "success-current": copy.conversation.completed,
+    "success-historical": copy.conversation.completed,
+    waiting_approval: copy.conversation.waitingApproval,
+    failed: copy.conversation.failed,
+    denied: copy.conversation.denied,
+  } satisfies Record<ToolEventStatus, string>;
   return (
     <span
       className={cn(
@@ -295,19 +306,10 @@ function StatusPill({ status }: { status: ToolEventStatus }) {
         STATUS_PILL_CLASS[status],
       )}
     >
-      {text}
+      {text[status]}
     </span>
   );
 }
-
-const STATUS_PILL_TEXT: Record<ToolEventStatus, string> = {
-  running: "运行中",
-  "success-current": "已完成",
-  "success-historical": "已完成",
-  waiting_approval: "等待审批",
-  failed: "失败",
-  denied: "已拒绝",
-};
 
 const STATUS_PILL_CLASS: Record<ToolEventStatus, string> = {
   running: "bg-brand/[0.18] text-brand-strong",
@@ -345,10 +347,11 @@ function stringifyValue(v: unknown): ReactNode {
 }
 
 function ResultBlock({ content }: { content: string }) {
+  const copy = useCopy();
   return (
     <div className="mt-2.5">
       <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-        结果
+        {copy.conversation.result}
       </div>
       <pre className="overflow-x-auto whitespace-pre-wrap rounded-[8px] border border-line bg-app px-3 py-2.5 font-mono text-[12.5px] leading-[1.6] text-ink-soft">
         {content}
@@ -415,9 +418,12 @@ const TOOL_META: Record<string, { icon: Icon; zh: string }> = {
  * bit carries real signal.
  */
 function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
+  const copy = useCopy();
   const [open, setOpen] = useState(false);
   const meta = TOOL_META[tool.name];
   const ToolIcon = meta?.icon;
+  const toolLabel =
+    (copy.tools as Record<string, string>)[tool.name] ?? meta?.zh;
   const preview = previewArgs(tool.name, tool.args);
 
   return (
@@ -440,7 +446,7 @@ function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
             />
           )}
           <span className="truncate font-serif text-[13px]">
-            {meta?.zh ?? (
+            {toolLabel ?? (
               // Unknown tool: surface the GA name itself as the
               // primary label (mono) so the pill still has a usable
               // identity — better than a blank chip.

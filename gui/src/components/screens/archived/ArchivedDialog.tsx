@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Session } from "@/types/session";
 
@@ -249,11 +250,12 @@ function Header({
   onClose: () => void;
   onEmptyAll: () => void;
 }) {
+  const copy = useCopy();
   const summary = selectMode
-    ? `已选 ${selectedCount}`
+    ? copy.projects.selected(selectedCount)
     : count > 0
-      ? `${count} 个已归档`
-      : "暂无归档";
+      ? copy.projects.archivedCountLabel(count)
+      : copy.projects.noArchived;
 
   return (
     <div className="flex items-center gap-3 border-b border-line bg-elevated px-5 py-3.5">
@@ -264,22 +266,14 @@ function Header({
 
       <div className="ml-auto flex items-center gap-2">
         {selectMode ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onCancelSelectMode}
-          >
-            取消
+          <Button variant="secondary" size="sm" onClick={onCancelSelectMode}>
+            {copy.common.cancel}
           </Button>
         ) : (
           <>
             {count > 0 && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={onEnterSelectMode}
-              >
-                多选
+              <Button variant="secondary" size="sm" onClick={onEnterSelectMode}>
+                {copy.projects.select}
               </Button>
             )}
             {count > 0 && (
@@ -287,19 +281,16 @@ function Header({
                 variant="destructive-soft"
                 size="sm"
                 onClick={onEmptyAll}
-                title="永久删除所有归档"
+                title={copy.projects.deleteAllArchived}
                 leadingIcon={<WarningCircle size={12} weight="bold" />}
               >
-                清空全部
+                {copy.projects.emptyAll}
               </Button>
             )}
           </>
         )}
-        <Dialog.Close
-          asChild
-          onClick={onClose}
-        >
-          <IconButton ariaLabel="关闭">
+        <Dialog.Close asChild onClick={onClose}>
+          <IconButton ariaLabel={copy.common.close}>
             <XIcon size={14} weight="thin" />
           </IconButton>
         </Dialog.Close>
@@ -325,6 +316,7 @@ function ArchivedRow({
   onRestore: () => void;
   onDelete: () => void;
 }) {
+  const copy = useCopy();
   if (selectMode) {
     return (
       <li
@@ -336,7 +328,11 @@ function ArchivedRow({
       >
         <span className="pt-0.5 text-ink-soft">
           {isSelected ? (
-            <CheckSquare size={14} weight="fill" className="text-brand-strong" />
+            <CheckSquare
+              size={14}
+              weight="fill"
+              className="text-brand-strong"
+            />
           ) : (
             <Square size={14} weight="thin" />
           )}
@@ -353,7 +349,7 @@ function ArchivedRow({
           <div className="mt-1 text-[10.5px] text-ink-muted">
             {formatDate(session.updatedAt)}
             {session.turnCount !== undefined && session.turnCount > 0 && (
-              <> · {session.turnCount} 步</>
+              <> · {copy.projects.turns(session.turnCount)}</>
             )}
           </div>
         </div>
@@ -375,7 +371,7 @@ function ArchivedRow({
         <div className="mt-1 text-[10.5px] text-ink-muted">
           {formatDate(session.updatedAt)}
           {session.turnCount !== undefined && session.turnCount > 0 && (
-            <> · {session.turnCount} 步</>
+            <> · {copy.projects.turns(session.turnCount)}</>
           )}
         </div>
       </div>
@@ -383,16 +379,16 @@ function ArchivedRow({
       <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <IconButton
           onClick={onRestore}
-          title="恢复"
-          ariaLabel="恢复"
+          title={copy.common.restore}
+          ariaLabel={copy.common.restore}
           className="hover:bg-elevated"
         >
           <ArrowUUpLeft size={14} weight="thin" />
         </IconButton>
         <IconButton
           onClick={onDelete}
-          title="永久删除"
-          ariaLabel="永久删除"
+          title={copy.common.deletePermanently}
+          ariaLabel={copy.common.deletePermanently}
           variant="danger"
         >
           <Trash size={14} weight="thin" />
@@ -417,6 +413,7 @@ function SelectActionBar({
   onRestore: () => void;
   onDelete: () => void;
 }) {
+  const copy = useCopy();
   const disabled = selectedCount === 0;
   return (
     <div className="flex shrink-0 items-center gap-2 border-t border-line bg-elevated px-4 py-2.5">
@@ -426,13 +423,19 @@ function SelectActionBar({
         onClick={onToggleSelectAllVisible}
         leadingIcon={
           allVisibleSelected ? (
-            <CheckSquare size={13} weight="fill" className="text-brand-strong" />
+            <CheckSquare
+              size={13}
+              weight="fill"
+              className="text-brand-strong"
+            />
           ) : (
             <Square size={13} weight="thin" />
           )
         }
       >
-        {allVisibleSelected ? "取消全选" : "全选"}
+        {allVisibleSelected
+          ? copy.projects.clearSelection
+          : copy.projects.selectAll}
       </Button>
 
       <div className="ml-auto flex items-center gap-1.5">
@@ -443,7 +446,7 @@ function SelectActionBar({
           disabled={disabled}
           leadingIcon={<ArrowUUpLeft size={12} weight="thin" />}
         >
-          恢复
+          {copy.common.restore}
           {selectedCount > 0 && (
             <span className="text-ink-muted">· {selectedCount}</span>
           )}
@@ -455,7 +458,7 @@ function SelectActionBar({
           disabled={disabled}
           leadingIcon={<Trash size={12} weight="thin" />}
         >
-          永久删除
+          {copy.common.deletePermanently}
           {selectedCount > 0 && (
             <span className="text-error/70">· {selectedCount}</span>
           )}
@@ -468,10 +471,11 @@ function SelectActionBar({
 // ---------------- Empty ----------------
 
 function EmptyState() {
+  const copy = useCopy();
   return (
     <div className="flex h-full items-center justify-center">
       <p className="font-serif text-[13.5px] italic text-ink-muted">
-        没有已归档的对话。
+        {copy.projects.noArchivedConversations}
       </p>
     </div>
   );
@@ -493,6 +497,7 @@ function ConfirmDeleteOneDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const copy = useCopy();
   return (
     <Dialog.Root
       open={!!session}
@@ -515,19 +520,21 @@ function ConfirmDeleteOneDialog({
           )}
         >
           <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
-            永久删除这个对话？
+            {copy.projects.permanentlyDeleteConversation}
           </Dialog.Title>
           <p
             id="confirm-delete-one-desc"
             className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft"
           >
-            「{session?.title ?? ""}」连同它的所有对话记录将被永久删除。
-            <span className="text-ink">此操作无法撤销。</span>
+            {copy.projects.permanentlyDeleteConversationBody(
+              session?.title ?? "",
+            )}{" "}
+            <span className="text-ink">{copy.projects.cannotUndo}</span>
           </p>
 
           <DialogActionRow>
             <Button variant="secondary" onClick={onCancel} autoFocus>
-              取消
+              {copy.common.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -535,7 +542,7 @@ function ConfirmDeleteOneDialog({
                 void onConfirm();
               }}
             >
-              永久删除
+              {copy.common.deletePermanently}
             </Button>
           </DialogActionRow>
         </Dialog.Content>
@@ -560,6 +567,7 @@ function ConfirmDeleteManyDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const copy = useCopy();
   return (
     <Dialog.Root
       open={open}
@@ -579,19 +587,19 @@ function ConfirmDeleteManyDialog({
           )}
         >
           <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
-            永久删除选中的 {count} 个对话？
+            {copy.projects.permanentlyDeleteSelectedTitle(count)}
           </Dialog.Title>
           <p
             id="confirm-delete-many-desc"
             className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft"
           >
-            这些对话连同它们的所有消息和工具调用记录将被永久删除。
-            <span className="text-ink">此操作无法撤销。</span>
+            {copy.projects.permanentlyDeleteSelectedBody}{" "}
+            <span className="text-ink">{copy.projects.cannotUndo}</span>
           </p>
 
           <DialogActionRow>
             <Button variant="secondary" onClick={onCancel} autoFocus>
-              取消
+              {copy.common.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -599,7 +607,7 @@ function ConfirmDeleteManyDialog({
                 void onConfirm();
               }}
             >
-              永久删除 {count} 个
+              {copy.projects.permanentlyDeleteCount(count)}
             </Button>
           </DialogActionRow>
         </Dialog.Content>
@@ -628,6 +636,7 @@ function ConfirmEmptyAllDialog({
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const copy = useCopy();
   const [acknowledged, setAcknowledged] = useState(false);
 
   return (
@@ -654,16 +663,15 @@ function ConfirmEmptyAllDialog({
           <div className="flex items-center gap-2">
             <WarningCircle size={18} weight="bold" className="text-error" />
             <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
-              清空所有归档？
+              {copy.projects.emptyAllTitle}
             </Dialog.Title>
           </div>
           <p
             id="confirm-empty-all-desc"
             className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft"
           >
-            将永久删除 <span className="font-medium text-ink">{count}</span>{" "}
-            个已归档对话，包括它们的所有消息和工具调用记录。
-            <span className="text-ink">此操作无法撤销。</span>
+            {copy.projects.emptyAllBody(count)}{" "}
+            <span className="text-ink">{copy.projects.cannotUndo}</span>
           </p>
 
           <Checkbox
@@ -671,7 +679,7 @@ function ConfirmEmptyAllDialog({
             onCheckedChange={setAcknowledged}
             className="mt-4 flex cursor-pointer select-none items-start gap-2 rounded-sm border border-line bg-app px-3 py-2.5 text-[12.5px] text-ink transition-colors hover:border-line-strong"
           >
-            <span>我了解此操作无法撤销</span>
+            <span>{copy.projects.acknowledgeCannotUndo}</span>
           </Checkbox>
 
           <DialogActionRow>
@@ -683,7 +691,7 @@ function ConfirmEmptyAllDialog({
               }}
               autoFocus
             >
-              取消
+              {copy.common.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -692,7 +700,7 @@ function ConfirmEmptyAllDialog({
                 void onConfirm().then(() => setAcknowledged(false));
               }}
             >
-              清空全部
+              {copy.projects.emptyAll}
             </Button>
           </DialogActionRow>
         </Dialog.Content>

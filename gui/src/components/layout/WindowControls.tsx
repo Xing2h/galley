@@ -2,6 +2,7 @@ import { CopySimple, Minus, Square, X } from "@phosphor-icons/react";
 import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -32,6 +33,7 @@ import { cn } from "@/lib/utils";
  * rendering on `!isMac`.
  */
 export function WindowControls() {
+  const copy = useCopy();
   const [maximized, setMaximized] = useState(false);
   const [focused, setFocused] = useState(true);
   const [appWindow, setAppWindow] = useState<Window | null>(null);
@@ -86,13 +88,13 @@ export function WindowControls() {
       )}
     >
       <ControlButton
-        ariaLabel="最小化"
+        ariaLabel={copy.app.minimize}
         onClick={() => void appWindow?.minimize()}
       >
         <Minus size={12} weight="thin" />
       </ControlButton>
       <ControlButton
-        ariaLabel={maximized ? "向下还原" : "最大化"}
+        ariaLabel={maximized ? copy.app.restoreWindow : copy.app.maximize}
         onClick={() => void appWindow?.toggleMaximize()}
       >
         {maximized ? (
@@ -102,7 +104,7 @@ export function WindowControls() {
         )}
       </ControlButton>
       <ControlButton
-        ariaLabel="关闭"
+        ariaLabel={copy.common.close}
         variant="close"
         onClick={() => void appWindow?.close()}
       >

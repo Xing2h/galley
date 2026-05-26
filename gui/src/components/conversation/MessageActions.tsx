@@ -4,6 +4,7 @@ import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { useEffect, useRef, useState } from "react";
 
 import { IconTooltip } from "@/components/ui/tooltip";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -42,6 +43,7 @@ interface MessageActionsProps {
 }
 
 export function MessageActions({ source }: MessageActionsProps) {
+  const copy = useCopy();
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const copyTimer = useRef<number | null>(null);
@@ -100,17 +102,17 @@ export function MessageActions({ source }: MessageActionsProps) {
       <ActionButton
         active={copied}
         idleIcon={<Copy size={14} weight="thin" />}
-        idleLabel="复制"
+        idleLabel={copy.conversation.copy}
         activeIcon={<Check size={14} weight="bold" />}
-        activeLabel="已复制"
+        activeLabel={copy.conversation.copied}
         onClick={onCopy}
       />
       <ActionButton
         active={saved}
         idleIcon={<FloppyDisk size={14} weight="thin" />}
-        idleLabel="保存"
+        idleLabel={copy.conversation.save}
         activeIcon={<Check size={14} weight="bold" />}
-        activeLabel="已保存"
+        activeLabel={copy.conversation.saved}
         onClick={onSave}
       />
     </div>

@@ -29,6 +29,7 @@ import {
   listManagedModelOptions,
   testManagedModelConnection,
 } from "@/lib/managed-models";
+import { useCopy } from "@/lib/i18n";
 import {
   advancedOptionsForManagedModelProvider,
   customManagedModelProviderPresetId,
@@ -107,6 +108,8 @@ export function SettingsModels({
 }: {
   activeRuntimeKind?: RuntimeKind;
 }) {
+  const copy = useCopy();
+  const modelCopy = copy.settings.models;
   const providers = useManagedModelsStore((s) => s.providers);
   const models = useManagedModelsStore((s) => s.models);
   const loading = useManagedModelsStore((s) => s.loading);
@@ -281,10 +284,13 @@ export function SettingsModels({
       });
       setProviderFormProbeState({
         kind: "success",
-        message: connectionSuccessMessage(result, "setup-model"),
+        message: connectionSuccessMessage(result, "setup-model", modelCopy),
       });
     } catch (e) {
-      setProviderFormProbeState({ kind: "error", message: errorMessage(e) });
+      setProviderFormProbeState({
+        kind: "error",
+        message: errorMessage(e, modelCopy),
+      });
     }
   };
 
@@ -313,11 +319,14 @@ export function SettingsModels({
         kind: "success",
         message:
           result.models.length > 0
-            ? `找到 ${result.models.length} 个模型`
-            : "连接成功，但没有返回模型列表",
+            ? modelCopy.foundModels(result.models.length)
+            : modelCopy.connectedNoModels,
       });
     } catch (e) {
-      setProviderFormProbeState({ kind: "error", message: errorMessage(e) });
+      setProviderFormProbeState({
+        kind: "error",
+        message: errorMessage(e, modelCopy),
+      });
     }
   };
 
@@ -367,13 +376,13 @@ export function SettingsModels({
         id: provider.id,
         state: {
           kind: "success",
-          message: connectionSuccessMessage(result, "provider"),
+          message: connectionSuccessMessage(result, "provider", modelCopy),
         },
       });
     } catch (e) {
       setProviderProbeState({
         id: provider.id,
-        state: { kind: "error", message: errorMessage(e) },
+        state: { kind: "error", message: errorMessage(e, modelCopy) },
       });
     }
   };
@@ -408,14 +417,14 @@ export function SettingsModels({
           kind: "success",
           message:
             result.models.length > 0
-              ? `找到 ${result.models.length} 个模型`
-              : "连接成功，但没有返回模型列表",
+              ? modelCopy.foundModels(result.models.length)
+              : modelCopy.connectedNoModels,
         },
       });
     } catch (e) {
       setModelProbeState({
         id: provider.id,
-        state: { kind: "error", message: errorMessage(e) },
+        state: { kind: "error", message: errorMessage(e, modelCopy) },
       });
     }
   };
@@ -442,13 +451,13 @@ export function SettingsModels({
         id: provider.id,
         state: {
           kind: "success",
-          message: connectionSuccessMessage(result, "setup-model"),
+          message: connectionSuccessMessage(result, "setup-model", modelCopy),
         },
       });
     } catch (e) {
       setModelProbeState({
         id: provider.id,
-        state: { kind: "error", message: errorMessage(e) },
+        state: { kind: "error", message: errorMessage(e, modelCopy) },
       });
     }
   };
@@ -560,13 +569,13 @@ export function SettingsModels({
         id: model.id,
         state: {
           kind: "success",
-          message: connectionSuccessMessage(result, "saved-model"),
+          message: connectionSuccessMessage(result, "saved-model", modelCopy),
         },
       });
     } catch (e) {
       setSavedModelProbeState({
         id: model.id,
-        state: { kind: "error", message: errorMessage(e) },
+        state: { kind: "error", message: errorMessage(e, modelCopy) },
       });
     }
   };
@@ -575,15 +584,23 @@ export function SettingsModels({
     const providerModels = modelsByProvider[provider.id] ?? [];
     const suffix =
       providerModels.length > 0
-        ? `，并移除 ${providerModels.length} 个已启用模型`
+        ? modelCopy.deleteProviderSuffix(providerModels.length)
         : "";
-    if (window.confirm(`删除 ${provider.displayName}${suffix}？`)) {
+    if (
+      window.confirm(
+        modelCopy.confirmDeleteProvider(provider.displayName, suffix),
+      )
+    ) {
       void deleteProvider(provider.id);
     }
   };
 
   const handleDeleteModel = (model: ManagedModelRecord) => {
-    if (window.confirm(`移除 ${modelDisplayParts(model).title}？`)) {
+    if (
+      window.confirm(
+        modelCopy.confirmRemoveModel(modelDisplayParts(model).title),
+      )
+    ) {
       void deleteModel(model.id);
     }
   };
@@ -632,8 +649,8 @@ export function SettingsModels({
   return (
     <div className="space-y-6">
       <SettingsPanelHeader
-        title="Models"
-        subtitle="为 Galley 配置模型提供商和模型"
+        title={copy.settings.tabs.models.label}
+        subtitle={modelCopy.subtitle}
       />
 
       {activeRuntimeKind === "external" && <ExternalRuntimeNotice />}
@@ -673,11 +690,13 @@ export function SettingsModels({
       {error && <ErrorLine message={error} />}
 
       <div>
-        <SettingsSectionLabel>已接入的模型提供商</SettingsSectionLabel>
+        <SettingsSectionLabel>
+          {modelCopy.connectedProviders}
+        </SettingsSectionLabel>
         <div className="mt-3 divide-y divide-line rounded-sm border border-line bg-surface">
           {loading && <LoadingRow />}
           {!loading && providers.length === 0 && (
-            <EmptyRow text="还没有模型提供商。" />
+            <EmptyRow text={modelCopy.noProviders} />
           )}
           {!loading &&
             providers.map((provider) => (
@@ -795,15 +814,19 @@ function ConfiguredModelsPanel({
   onMoveModel: (modelId: string, direction: ModelMoveDirection) => void;
   onAddProvider: () => void;
 }) {
+  const appCopy = useCopy();
+  const copy = appCopy.settings.models;
   return (
     <div className="rounded-sm border border-line bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            当前配置模型
+            {copy.configuredModels}
           </div>
           <div className="mt-1 text-[12.5px] text-ink-muted">
-            {models.length > 0 ? `${models.length} 个模型` : "还没有启用模型"}
+            {models.length > 0
+              ? copy.enabledModelsCount(models.length)
+              : copy.noEnabledModels}
           </div>
         </div>
         <Button
@@ -812,7 +835,7 @@ function ConfiguredModelsPanel({
           onClick={onAddProvider}
           leadingIcon={<Plus size={12} weight="bold" />}
         >
-          添加模型提供商
+          {copy.addProvider}
         </Button>
       </div>
       {models.length > 0 && (
@@ -852,7 +875,10 @@ function ConfiguredModelRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
 }) {
+  const appCopy = useCopy();
+  const copy = appCopy.settings.models;
   const swapClass = modelSwapAnimationClass(model.id, moveFeedback);
+  const modelTitle = modelDisplayParts(model).title;
 
   return (
     <div
@@ -864,7 +890,7 @@ function ConfiguredModelRow({
       <ConfiguredModelRowContent model={model} isDefault={isDefault} />
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
         <IconButton
-          ariaLabel={`上移 ${modelDisplayParts(model).title}`}
+          ariaLabel={copy.moveUp(modelTitle)}
           size="xs"
           disabled={!canMoveUp}
           onClick={onMoveUp}
@@ -873,7 +899,7 @@ function ConfiguredModelRow({
           <ArrowUp size={11} weight="bold" />
         </IconButton>
         <IconButton
-          ariaLabel={`下移 ${modelDisplayParts(model).title}`}
+          ariaLabel={copy.moveDown(modelTitle)}
           size="xs"
           disabled={!canMoveDown}
           onClick={onMoveDown}
@@ -895,6 +921,7 @@ function ConfiguredModelRowContent({
   isDefault: boolean;
   className?: string;
 }) {
+  const copy = useCopy().settings.models;
   const display = modelDisplayParts(model);
 
   return (
@@ -906,7 +933,7 @@ function ConfiguredModelRowContent({
         {isDefault && (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-brand-soft px-1.5 py-px text-[10.5px] text-brand-strong">
             <Star size={10} weight="fill" />
-            默认
+            {copy.defaultModel}
           </span>
         )}
         <span className="inline-flex shrink-0 rounded-sm border border-line bg-elevated px-1.5 py-px text-[10.5px] text-ink-muted">
@@ -923,6 +950,7 @@ function ConfiguredModelRowContent({
 }
 
 function ExternalRuntimeNotice() {
+  const copy = useCopy().settings.models;
   return (
     <div className="flex gap-2 rounded-sm border border-brand/25 bg-brand-soft px-3 py-2.5 text-[12.5px] leading-[1.5] text-ink">
       <Info
@@ -930,9 +958,7 @@ function ExternalRuntimeNotice() {
         weight="bold"
         className="mt-0.5 shrink-0 text-brand-strong"
       />
-      <div>
-        当前使用外部 GA。这里配置的模型只会在内置 GA 中使用，不会修改外部 GA。
-      </div>
+      <div>{copy.externalNotice}</div>
     </div>
   );
 }
@@ -972,6 +998,7 @@ function ProviderEditor({
   onSave: () => void;
   onCancel: () => void;
 }) {
+  const copy = useCopy().settings.models;
   const isCreatingProvider = !form.id;
   const selectedPreset = getManagedModelProviderPreset(form.providerPresetId);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -981,17 +1008,17 @@ function ProviderEditor({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-[13px] font-medium text-ink">
-            {isCreatingProvider ? "添加模型提供商" : "编辑模型提供商"}
+            {isCreatingProvider ? copy.addProvider : copy.editProvider}
           </div>
           {form.id && providerHasSavedKey && (
             <div className="mt-0.5 text-[12px] text-ink-muted">
-              密钥留空会继续使用已保存的 Key
+              {copy.leaveKeyBlank}
             </div>
           )}
         </div>
         {canCancel && (
           <IconButton
-            ariaLabel="关闭模型提供商编辑"
+            ariaLabel={copy.closeProviderEditor}
             size="sm"
             onClick={onCancel}
           >
@@ -1003,7 +1030,7 @@ function ProviderEditor({
       <div className="space-y-4">
         <div>
           <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            模型提供商
+            {copy.provider}
           </label>
           <ManagedModelProviderPicker
             value={form.providerPresetId}
@@ -1013,14 +1040,14 @@ function ProviderEditor({
         </div>
 
         <SettingsInput
-          label="模型密钥"
+          label={copy.apiKey}
           value={form.apiKey}
           onChange={(apiKey) => onChange({ apiKey })}
           type="password"
-          placeholder={form.id ? "留空表示不修改现有 Key" : "sk-..."}
+          placeholder={form.id ? copy.leaveExistingKey : "sk-..."}
         />
         <SettingsInput
-          label="API 地址"
+          label={copy.apiUrl}
           value={form.apiBase}
           onChange={(apiBase) => onChange({ apiBase })}
           placeholder={
@@ -1035,7 +1062,7 @@ function ProviderEditor({
             <div className="flex flex-wrap items-end gap-2">
               <div className="min-w-[240px] flex-1">
                 <SettingsInput
-                  label="模型"
+                  label={copy.model}
                   value={form.model}
                   onChange={(model) => onChange({ model })}
                   placeholder={selectedPreset.modelPlaceholder}
@@ -1057,7 +1084,7 @@ function ProviderEditor({
                   )
                 }
               >
-                获取列表
+                {copy.fetchList}
               </Button>
             </div>
             {modelOptions.length > 0 && (
@@ -1066,7 +1093,7 @@ function ProviderEditor({
                 onChange={(e) => onChange({ model: e.target.value })}
                 className="w-full rounded-sm border border-line bg-elevated px-3 py-2 font-mono text-[12.5px] text-ink outline-none transition-colors focus:border-brand focus:ring-[3px] focus:ring-brand/20"
               >
-                <option value="">选择检测到的模型</option>
+                <option value="">{copy.chooseDetectedModel}</option>
                 {modelOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -1087,15 +1114,15 @@ function ProviderEditor({
             ) : (
               <CaretRight size={11} weight="bold" />
             )}
-            更多
+            {copy.moreOptions}
           </button>
           {moreOpen && (
             <div className="mt-2">
               <SettingsInput
-                label="提供商名称"
+                label={copy.providerName}
                 value={form.displayName}
                 onChange={(displayName) => onChange({ displayName })}
-                placeholder="可选；默认使用模型提供商或 API 地址"
+                placeholder={copy.providerNamePlaceholder}
               />
             </div>
           )}
@@ -1118,7 +1145,7 @@ function ProviderEditor({
               )
             }
           >
-            测试连接
+            {copy.testConnection}
           </Button>
           <Button
             variant="primary"
@@ -1135,7 +1162,7 @@ function ProviderEditor({
               )
             }
           >
-            {form.id ? "保存服务" : "保存并启用模型"}
+            {form.id ? copy.saveService : copy.saveAndEnableModel}
           </Button>
         </div>
         <StatusLine state={probeState} />
@@ -1201,6 +1228,7 @@ function ProviderCard({
   modelProbeStateFor: (modelId: string) => ProbeState;
   onDeleteModel: (model: ManagedModelRecord) => void;
 }) {
+  const copy = useCopy().settings.models;
   const keyMissing = provider.credentialStatus === "missing";
   const canUseProvider =
     !keyMissing && providerProbeState.kind !== "loading" && !saving;
@@ -1240,7 +1268,7 @@ function ProviderCard({
               </span>
               <CredentialBadge status={provider.credentialStatus} />
               <span className="inline-flex shrink-0 rounded-sm border border-line bg-elevated px-1.5 py-px text-[10.5px] text-ink-muted">
-                {models.length} 个模型
+                {copy.enabledModelsCount(models.length)}
               </span>
             </span>
             <span
@@ -1268,17 +1296,17 @@ function ProviderCard({
               )
             }
           >
-            检查
+            {copy.check}
           </Button>
           <IconButton
-            ariaLabel="编辑模型提供商"
+            ariaLabel={copy.editProviderAria}
             size="sm"
             onClick={onEditProvider}
           >
             <PencilSimple size={13} weight="thin" />
           </IconButton>
           <IconButton
-            ariaLabel="删除模型提供商"
+            ariaLabel={copy.deleteProviderAria}
             variant="danger"
             size="sm"
             disabled={saving}
@@ -1292,7 +1320,7 @@ function ProviderCard({
       {expanded && (
         <div className="border-t border-line bg-elevated/40 px-3 py-3">
           <div className="space-y-3">
-            {keyMissing && <ErrorLine message="这个服务的密钥需要重新保存。" />}
+            {keyMissing && <ErrorLine message={copy.keyNeedsResave} />}
             <StatusLine state={providerProbeState} />
 
             {models.length > 0 ? (
@@ -1314,7 +1342,7 @@ function ProviderCard({
               </div>
             ) : (
               <div className="border-y border-line py-3 text-[12.5px] text-ink-muted">
-                还没有启用模型。
+                {copy.noEnabledModels}
               </div>
             )}
 
@@ -1335,7 +1363,7 @@ function ProviderCard({
                   )
                 }
               >
-                获取模型列表
+                {copy.fetchModelList}
               </Button>
               <Button
                 variant="secondary"
@@ -1344,7 +1372,7 @@ function ProviderCard({
                 onClick={() => onStartModelDraft()}
                 leadingIcon={<Plus size={12} weight="bold" />}
               >
-                手动添加
+                {copy.addManually}
               </Button>
             </div>
 
@@ -1354,7 +1382,7 @@ function ProviderCard({
               <div className="space-y-2 border-t border-line pt-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-[12.5px] font-medium text-ink">
-                    可添加模型
+                    {copy.availableModels}
                   </div>
                   <div className="relative w-full max-w-[260px]">
                     <MagnifyingGlass
@@ -1365,7 +1393,7 @@ function ProviderCard({
                     <input
                       value={modelFilter}
                       onChange={(e) => onSetModelFilter(e.target.value)}
-                      placeholder="筛选模型"
+                      placeholder={copy.filterModels}
                       spellCheck={false}
                       className="w-full rounded-sm border border-line bg-surface py-1.5 pl-7 pr-2.5 text-[12px] text-ink outline-none transition-colors placeholder:text-ink-muted/70 focus:border-brand focus:ring-[3px] focus:ring-brand/20"
                     />
@@ -1373,7 +1401,7 @@ function ProviderCard({
                 </div>
                 <div className="max-h-[260px] divide-y divide-line overflow-auto rounded-sm border border-line bg-surface">
                   {visibleOptions.length === 0 && (
-                    <EmptyRow text="没有匹配的模型。" />
+                    <EmptyRow text={copy.noMatchingModels} />
                   )}
                   {visibleOptions.map((option) => (
                     <DetectedModelRow
@@ -1387,7 +1415,7 @@ function ProviderCard({
                 </div>
                 {filteredOptions.length > visibleOptions.length && (
                   <div className="text-[11.5px] text-ink-muted">
-                    已显示前 {visibleOptions.length} 个，继续输入可缩小范围。
+                    {copy.visibleOptionsHint(visibleOptions.length)}
                   </div>
                 )}
               </div>
@@ -1434,6 +1462,7 @@ function EnabledModelRow({
   onTest: () => void;
   onDelete: () => void;
 }) {
+  const copy = useCopy().settings.models;
   const display = modelDisplayParts(model);
   const testing =
     probeState.kind === "loading" && probeState.action === "model-test";
@@ -1449,7 +1478,7 @@ function EnabledModelRow({
             {isDefault && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-brand-soft px-1.5 py-px text-[10.5px] text-brand-strong">
                 <Star size={10} weight="fill" />
-                默认
+                {copy.defaultModel}
               </span>
             )}
           </div>
@@ -1475,7 +1504,7 @@ function EnabledModelRow({
               )
             }
           >
-            测试
+            {copy.test}
           </Button>
           <Button
             variant={isDefault ? "ghost" : "secondary"}
@@ -1486,13 +1515,13 @@ function EnabledModelRow({
               <Star size={12} weight={isDefault ? "fill" : "thin"} />
             }
           >
-            设为默认
+            {copy.setDefault}
           </Button>
-          <IconButton ariaLabel="编辑模型" size="sm" onClick={onEdit}>
+          <IconButton ariaLabel={copy.editModel} size="sm" onClick={onEdit}>
             <PencilSimple size={13} weight="thin" />
           </IconButton>
           <IconButton
-            ariaLabel="移除模型"
+            ariaLabel={copy.removeModel}
             variant="danger"
             size="sm"
             disabled={saving}
@@ -1522,6 +1551,7 @@ function DetectedModelRow({
   saving: boolean;
   onEnable: () => void;
 }) {
+  const copy = useCopy().settings.models;
   return (
     <div className="flex min-w-0 items-center gap-3 px-3 py-2">
       <div className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink">
@@ -1530,7 +1560,7 @@ function DetectedModelRow({
       {enabled ? (
         <span className="inline-flex shrink-0 items-center gap-1 text-[11.5px] text-success">
           <CheckCircle size={11} weight="fill" />
-          已启用
+          {copy.enabled}
         </span>
       ) : (
         <Button
@@ -1540,7 +1570,7 @@ function DetectedModelRow({
           onClick={onEnable}
           leadingIcon={<Plus size={12} weight="bold" />}
         >
-          启用
+          {copy.enable}
         </Button>
       )}
     </div>
@@ -1568,6 +1598,8 @@ function ModelDraftEditor({
   onTest: () => void;
   onSave: () => void;
 }) {
+  const appCopy = useCopy();
+  const copy = appCopy.settings.models;
   const canTest =
     !keyMissing &&
     draft.model.trim() !== "" &&
@@ -1579,29 +1611,29 @@ function ModelDraftEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-[12.5px] font-medium text-ink">
-            {draft.id ? "编辑模型" : "手动添加模型"}
+            {draft.id ? copy.editModel : copy.manualAddModel}
           </div>
           {!draft.id && allModelCount === 0 && (
             <div className="mt-0.5 text-[12px] text-ink-muted">
-              保存后会自动作为默认模型
+              {copy.autoDefaultHint}
             </div>
           )}
         </div>
         <Button variant="ghost" size="sm" onClick={onCancel}>
-          取消
+          {appCopy.common.cancel}
         </Button>
       </div>
       <SettingsInput
-        label="模型名"
+        label={copy.modelName}
         value={draft.model}
         onChange={(model) => onChange({ model })}
-        placeholder="例如 anthropic/claude-sonnet-4.5"
+        placeholder={copy.modelNamePlaceholder}
       />
       <SettingsInput
-        label="显示名称"
+        label={copy.displayName}
         value={draft.displayName}
         onChange={(displayName) => onChange({ displayName })}
-        placeholder="可选；默认使用模型名"
+        placeholder={copy.displayNamePlaceholder}
       />
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -1620,7 +1652,7 @@ function ModelDraftEditor({
             )
           }
         >
-          测试模型
+          {copy.testModel}
         </Button>
         <Button
           variant="primary"
@@ -1637,7 +1669,7 @@ function ModelDraftEditor({
             )
           }
         >
-          {draft.id ? "保存模型" : "启用模型"}
+          {draft.id ? copy.saveModel : copy.enableModel}
         </Button>
       </div>
     </div>
@@ -1704,12 +1736,13 @@ function ErrorLine({ message }: { message: string }) {
 }
 
 function LoadingRow() {
+  const copy = useCopy().settings.models;
   return (
     <div className="flex items-center gap-2 px-3 py-3 text-[12.5px] text-ink-muted">
       <span className="spin">
         <CircleNotch size={13} weight="thin" />
       </span>
-      加载中...
+      {copy.loading}
     </div>
   );
 }
@@ -1723,11 +1756,12 @@ function CredentialBadge({
 }: {
   status: "present" | "missing" | "unknown";
 }) {
+  const copy = useCopy().settings.models;
   if (status === "present") {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-success/10 px-1.5 py-px text-[10.5px] text-success">
         <CheckCircle size={10} weight="fill" />
-        Key 已验证
+        {copy.keyVerified}
       </span>
     );
   }
@@ -1735,14 +1769,14 @@ function CredentialBadge({
     return (
       <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-ink-muted/10 px-1.5 py-px text-[10.5px] text-ink-muted">
         <Key size={10} weight="fill" />
-        Key 已保存
+        {copy.keySaved}
       </span>
     );
   }
   return (
     <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-warning/10 px-1.5 py-px text-[10.5px] text-warning">
       <WarningCircle size={10} weight="fill" />
-      需要重新保存 Key
+      {copy.keyNeedsResaveShort}
     </span>
   );
 }
@@ -1807,17 +1841,23 @@ function protocolLabel(protocol: ManagedModelProtocol): string {
 function connectionSuccessMessage(
   result: ManagedModelConnectionResult,
   context: "provider" | "setup-model" | "saved-model",
+  copy: ReturnType<typeof useCopy>["settings"]["models"],
 ): string {
   if (context === "provider") {
-    return "连接可用";
+    return copy.connectionUsable;
   }
   if (context === "saved-model") {
-    return "模型可用";
+    return copy.modelUsable;
   }
-  return result.modelFound === false ? "连接可用，可以继续保存" : "模型可用";
+  return result.modelFound === false
+    ? copy.connectionUsableCanSave
+    : copy.modelUsable;
 }
 
-function errorMessage(e: unknown): string {
+function errorMessage(
+  e: unknown,
+  copy: ReturnType<typeof useCopy>["settings"]["models"],
+): string {
   if (typeof e === "string") {
     try {
       const parsed = JSON.parse(e) as { message?: string };
@@ -1827,5 +1867,5 @@ function errorMessage(e: unknown): string {
     }
   }
   if (e instanceof Error) return e.message;
-  return "操作失败";
+  return copy.actionFailed;
 }

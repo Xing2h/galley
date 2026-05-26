@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { copyForLanguage } from "@/lib/i18n";
+import { resolveLanguagePreference } from "@/lib/language";
 import { fromIPCError, makeAppError } from "@/types/app-error";
 import type {
   AgentTurn,
@@ -31,6 +33,12 @@ type HistoryReplaySendResult = "sent" | "skipped" | "failed";
 const HISTORY_REPLAY_TIMEOUT_MS = 8_000;
 const _historyReplayPending = new Map<string, HistoryReplayState>();
 const _historyReplayReady = new Set<string>();
+
+function currentCopy() {
+  return copyForLanguage(
+    resolveLanguagePreference(usePrefsStore.getState().languagePreference),
+  );
+}
 
 /**
  * Routes an IPC event from the bridge into store actions.
@@ -99,12 +107,10 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       // it's queued in the bridge's command pipeline and processed
       // before any subsequent user message can trigger a tool call.
       if (usePrefsStore.getState().yoloMode) {
-        void useRuntimeStore
-          .getState()
-          .sendIPCCommand(event.sessionId, {
-            kind: "set_yolo_mode",
-            enabled: true,
-          });
+        void useRuntimeStore.getState().sendIPCCommand(event.sessionId, {
+          kind: "set_yolo_mode",
+          enabled: true,
+        });
       }
       // Session Restore (Stage 3 Task 3). If this session has prior
       // turn history on disk, replay it into GA `backend.history` via
@@ -138,8 +144,7 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       // had set_llm'd before switching sessions), in which case
       // the active-session projection would otherwise be the wrong list.
       const rtStore = useRuntimeStore.getState();
-      const rtLLMs =
-        rtStore.byId[event.sessionId]?.llms ?? rtStore.cachedLLMs;
+      const rtLLMs = rtStore.byId[event.sessionId]?.llms ?? rtStore.cachedLLMs;
       rtStore.replaceLLMs(
         event.sessionId,
         rtLLMs.map((l) => ({
@@ -175,8 +180,7 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       // `msg_${sessionId}_${turnIndex}_assistant` would collide
       // across user messages otherwise. See messages.ts
       // appendUserTurn for the `turnIndexOffset` rationale.
-      const offset =
-        messages.byId[event.sessionId]?.turnIndexOffset ?? 0;
+      const offset = messages.byId[event.sessionId]?.turnIndexOffset ?? 0;
       const absoluteTurnIndex = event.turnIndex + offset;
       console.info("[ipc] turn_end", {
         gaTurnIndex: event.turnIndex,
@@ -214,8 +218,7 @@ export function dispatchIPCEvent(event: IPCEvent): void {
     }
 
     case "tool_call_pending": {
-      const offset =
-        messages.byId[event.sessionId]?.turnIndexOffset ?? 0;
+      const offset = messages.byId[event.sessionId]?.turnIndexOffset ?? 0;
       const target = pickTarget(event.args);
       const pending: PendingApproval = {
         approvalId: event.approvalId,
@@ -296,6 +299,7 @@ export function dispatchIPCEvent(event: IPCEvent): void {
     }
 
     case "tools_reinjected": {
+      const copy = currentCopy();
       console.info("[ipc] tools_reinjected", {
         sessionId: event.sessionId,
         blocksAdded: event.blocksAdded,
@@ -304,8 +308,8 @@ export function dispatchIPCEvent(event: IPCEvent): void {
         makeAppError({
           category: "business",
           severity: "info",
-          title: "工具已重新注入",
-          message: `已为本 session 注入 ${event.blocksAdded} 条工具定义。`,
+          title: copy.toasts.toolsReinjected,
+          message: copy.toasts.toolsReinjectedMessage(event.blocksAdded),
           hint: null,
           retryable: false,
           context: "reinject_tools",
@@ -316,6 +320,7 @@ export function dispatchIPCEvent(event: IPCEvent): void {
     }
 
     case "pet_attached": {
+      const copy = currentCopy();
       console.info("[ipc] pet_attached", {
         sessionId: event.sessionId,
         port: event.port,
@@ -328,8 +333,8 @@ export function dispatchIPCEvent(event: IPCEvent): void {
         makeAppError({
           category: "business",
           severity: "info",
-          title: "桌面宠物已启动",
-          message: "宠物会实时显示本对话的进展。",
+          title: copy.toasts.petStarted,
+          message: copy.toasts.petStartedMessage,
           hint: null,
           retryable: false,
           context: "attach_pet",
@@ -340,15 +345,14 @@ export function dispatchIPCEvent(event: IPCEvent): void {
     }
 
     case "pet_detached": {
+      const copy = currentCopy();
       console.info("[ipc] pet_detached", {
         sessionId: event.sessionId,
       });
       // Only clear top-level if it was attached to this session —
       // defensive against out-of-order events. In practice the bridge
       // only emits pet_detached for the session it was attached to.
-      if (
-        useRuntimeStore.getState().petAttachedSessionId === event.sessionId
-      ) {
+      if (useRuntimeStore.getState().petAttachedSessionId === event.sessionId) {
         useRuntimeStore.getState().setPetAttachedSession(null);
       }
       // Implicit-migration relay: the user clicked "桌面宠物" in a
@@ -369,7 +373,7 @@ export function dispatchIPCEvent(event: IPCEvent): void {
         makeAppError({
           category: "business",
           severity: "info",
-          title: "桌面宠物已关闭",
+          title: copy.toasts.petClosed,
           message: "",
           hint: null,
           retryable: false,
@@ -446,9 +450,7 @@ function turnFromTurnEnd(event: {
   return {
     role: "agent",
     thinking: extractThinking(event.responseContent),
-    preamble: isFinalTurn
-      ? undefined
-      : extractPreamble(event.responseContent),
+    preamble: isFinalTurn ? undefined : extractPreamble(event.responseContent),
     tools,
     finalAnswer: cleanedAnswer.trim() ? cleanedAnswer : null,
     turnIndex: event.turnIndex,
@@ -541,8 +543,7 @@ const LLM_RUNNING_MARKER =
  * The variation selector after the hammer (`️`) is optional —
  * some renderers and terminal pipes drop it.
  */
-const TOOL_DISPATCH_MARKER_LINE =
-  /^🛠️?\s+\w+\(.*\)[ \t]*$/gm;
+const TOOL_DISPATCH_MARKER_LINE = /^🛠️?\s+\w+\(.*\)[ \t]*$/gm;
 
 /**
  * Mid-stream partial of the dispatch marker — chunk boundary fell
@@ -639,8 +640,7 @@ const TOOL_ACTION_LINE = /^\[Action\] [^\n]*$/gm;
  * (a tight "思考中" beats verbose "当前阶段：还在走 Google 搜索"
  * filler).
  */
-const PHASE_PREAMBLE =
-  /^\*{0,2}当前阶段\*{0,2}\s*[：:][\s\S]*?(?=\n\n|$)/gm;
+const PHASE_PREAMBLE = /^\*{0,2}当前阶段\*{0,2}\s*[：:][\s\S]*?(?=\n\n|$)/gm;
 
 /**
  * Mirror of bridge's `_clean_response_for_display`. Strips GA's
@@ -834,10 +834,7 @@ export function extractPreamble(text: string): string | undefined {
   segment = segment.replace(/<thinking>[\s\S]*?<\/thinking>/g, "");
   segment = segment.replace(/<summary>[\s\S]*?<\/summary>/g, "");
   segment = segment.replace(/<tool_use>[\s\S]*?<\/tool_use>/g, "");
-  segment = segment.replace(
-    /<file_content[^>]*>[\s\S]*?<\/file_content>/g,
-    "",
-  );
+  segment = segment.replace(/<file_content[^>]*>[\s\S]*?<\/file_content>/g, "");
   // Frontend / dispatch markers that occasionally leak into raw
   // response content (see cleanPartialContent for the full set; we
   // care about the ones that produce text noise).
@@ -1038,9 +1035,8 @@ async function replayHistoryToBridge(
     const rows = await loadMessagesBySession(sessionId);
     if (rows.length === 0) return "skipped";
     const completedTurnCount =
-      useSessionsStore
-        .getState()
-        .sessions.find((x) => x.id === sessionId)?.turnCount ?? 0;
+      useSessionsStore.getState().sessions.find((x) => x.id === sessionId)
+        ?.turnCount ?? 0;
     const messages = rowsToConversationMessages(rows, completedTurnCount);
     if (messages.length === 0) return "skipped";
     await useRuntimeStore.getState().sendIPCCommand(sessionId, {

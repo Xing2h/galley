@@ -6,6 +6,7 @@ import {
   type ComposerHandle,
   type ComposerLLMOption,
 } from "@/components/conversation/Composer";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface QuickPrompt {
@@ -29,13 +30,6 @@ interface QuickPrompt {
  * Labels ARE the prompt — what the line says is what the agent
  * receives, no surprise.
  */
-const DEFAULT_QUICK_PROMPTS: QuickPrompt[] = [
-  { label: "这两天有什么有趣的新闻？" },
-  { label: "列出 Downloads 里面最大的 10 个文件" },
-  { label: "查电影《奥德赛》的最新资讯" },
-  { label: "聊聊维特根斯坦与 LLM" },
-];
-
 export interface EmptyStateProps {
   llmDisplayName: string;
   onSubmit?: (text: string) => void;
@@ -95,7 +89,7 @@ export function EmptyState({
   llmDisplayName,
   onSubmit,
   onQuickPrompt,
-  prompts = DEFAULT_QUICK_PROMPTS,
+  prompts,
   llms,
   onSelectLLM,
   llmConfigHint,
@@ -105,12 +99,19 @@ export function EmptyState({
   showPromptSuggestions = true,
   focusTick = 0,
 }: EmptyStateProps) {
+  const copy = useCopy();
   const composerRef = useRef<ComposerHandle>(null);
+  const visiblePrompts = prompts ?? [
+    { label: copy.empty.promptNews },
+    { label: copy.empty.promptDownloads },
+    { label: copy.empty.promptMovie },
+    { label: copy.empty.promptPhilosophy },
+  ];
   const composerPlaceholder = projectName
-    ? `在 ${projectName} 里交代什么？`
-    : "今天交代什么？";
+    ? copy.empty.projectPlaceholder(projectName)
+    : copy.empty.globalPlaceholder;
   const shouldShowPromptSuggestions =
-    showPromptSuggestions && prompts.length > 0;
+    showPromptSuggestions && visiblePrompts.length > 0;
 
   useEffect(() => {
     if (focusTick > 0) composerRef.current?.focus();
@@ -144,10 +145,7 @@ export function EmptyState({
               className="shrink-0 text-ink-muted"
             />
             <span className="min-w-0 truncate">
-              将创建到{" "}
-              <span className="font-medium text-ink-soft">
-                {projectName}
-              </span>
+              {copy.composer.willCreateIn(projectName)}
             </span>
           </div>
         )}
@@ -159,7 +157,7 @@ export function EmptyState({
               projectName ? "mt-5" : "mt-6",
             )}
           >
-            {prompts.map((p) => (
+            {visiblePrompts.map((p) => (
               <li key={p.label}>
                 <button
                   type="button"

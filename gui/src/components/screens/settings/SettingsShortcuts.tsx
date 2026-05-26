@@ -21,6 +21,7 @@ import {
   SettingsPanelHeader,
   SettingsSectionLabel,
 } from "@/components/screens/settings/settings-ui";
+import { useCopy } from "@/lib/i18n";
 
 interface ShortcutRow {
   /** Canonical key combo, rendered as kbd-style chips. */
@@ -36,58 +37,63 @@ interface ShortcutGroup {
   rows: ShortcutRow[];
 }
 
-const GROUPS: ShortcutGroup[] = [
-  {
-    title: "Navigation",
-    rows: [
-      { combo: formatShortcut("Mod+K"), action: "打开命令面板（Command Palette）" },
-      { combo: formatShortcut("Mod+N"), action: "新建对话" },
-      { combo: formatShortcut("Mod+\\"), action: "折叠 / 展开 Sidebar", note: "V0.1 已规划，wiring 待补" },
-      { combo: formatShortcut("Mod+,"), action: "打开 Settings" },
-    ],
-  },
-  {
-    title: "Composer",
-    rows: [
-      { combo: "Enter", action: "发送消息" },
-      { combo: "Shift+Enter", action: "换行（不发送）" },
-    ],
-  },
-  {
-    title: "Conversation",
-    rows: [
-      {
-        combo: `${formatShortcut("Alt+↑")} / ${formatShortcut("Alt+↓")}`,
-        action: "跳到上 / 下一条提问",
-        // Mac users had the original "macOS 文本编辑原生快捷键保留"
-        // phrasing — preserved verbatim so Mac UX is byte-identical
-        // through the A4 migration. Win gets a parallel sentence that
-        // doesn't reference macOS.
-        note: isMac
-          ? "焦点在 Composer 时不生效（macOS 文本编辑原生快捷键保留）"
-          : "焦点在 Composer 时不生效（保留原生文本编辑快捷键）",
-      },
-    ],
-  },
-  {
-    title: "Overlays",
-    rows: [
-      { combo: "Esc", action: "关闭当前 overlay 或退出 inline edit" },
-      { combo: "↑ / ↓", action: "在 Command Palette / 列表中上下选择" },
-      { combo: "Tab", action: "在 Command Palette 中进入二级菜单" },
-    ],
-  },
-];
+function buildGroups(copy: ReturnType<typeof useCopy>): ShortcutGroup[] {
+  const shortcuts = copy.settings.shortcuts;
+  return [
+    {
+      title: shortcuts.navigation,
+      rows: [
+        {
+          combo: formatShortcut("Mod+K"),
+          action: shortcuts.openCommandPalette,
+        },
+        { combo: formatShortcut("Mod+N"), action: shortcuts.newConversation },
+        { combo: formatShortcut("Mod+,"), action: shortcuts.openSettings },
+      ],
+    },
+    {
+      title: shortcuts.composer,
+      rows: [
+        { combo: "Enter", action: shortcuts.sendMessage },
+        { combo: "Shift+Enter", action: shortcuts.newline },
+      ],
+    },
+    {
+      title: shortcuts.conversation,
+      rows: [
+        {
+          combo: `${formatShortcut("Alt+↑")} / ${formatShortcut("Alt+↓")}`,
+          action: shortcuts.jumpQuestion,
+          // Mac users had the original "macOS 文本编辑原生快捷键保留"
+          // phrasing — preserved verbatim so Mac UX is byte-identical
+          // through the A4 migration. Win gets a parallel sentence that
+          // doesn't reference macOS.
+          note: isMac ? shortcuts.nativeEditingMac : shortcuts.nativeEditing,
+        },
+      ],
+    },
+    {
+      title: shortcuts.overlays,
+      rows: [
+        { combo: "Esc", action: shortcuts.closeOverlay },
+        { combo: "↑ / ↓", action: shortcuts.moveList },
+        { combo: "Tab", action: shortcuts.enterSubmenu },
+      ],
+    },
+  ];
+}
 
 export function SettingsShortcuts() {
+  const copy = useCopy();
+  const groups = buildGroups(copy);
   return (
     <div className="space-y-7">
       <SettingsPanelHeader
-        title="Shortcuts"
-        subtitle="快捷键设置"
+        title={copy.settings.tabs.shortcuts.label}
+        subtitle={copy.settings.shortcuts.subtitle}
       />
 
-      {GROUPS.map((g) => (
+      {groups.map((g) => (
         <section key={g.title}>
           <SettingsSectionLabel>{g.title}</SettingsSectionLabel>
           <ul className="mt-2 m-0 list-none space-y-0.5 p-0">

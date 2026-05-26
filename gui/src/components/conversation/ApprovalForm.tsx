@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { ApprovalRenderer } from "@/components/conversation/approval-renderers";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
   ConversationToolEvent,
@@ -53,8 +54,9 @@ export function ApprovalForm({
   approvalDecision,
   projectName,
 }: ApprovalFormProps) {
+  const copy = useCopy();
   const decided = approvalDecision !== undefined && approvalDecision !== null;
-  const reason = APPROVAL_REASON[tool.name] ?? GENERIC_REASON;
+  const reason = approvalReason(tool.name, copy);
   const globalDisabled = HIGH_SENSITIVITY_TOOLS.has(tool.name);
 
   return (
@@ -62,7 +64,7 @@ export function ApprovalForm({
       <div className="mb-3 flex flex-wrap items-center gap-2.5">
         {tool.riskLevel && <RiskPill level={tool.riskLevel} />}
         <span className="text-[13px] text-ink-soft">
-          {actionSentence(tool)}
+          {actionSentence(tool, copy)}
         </span>
       </div>
 
@@ -102,14 +104,14 @@ export function ApprovalForm({
             icon={<Check size={13} weight="bold" />}
             onClick={() => onApprove?.("allow_once")}
           >
-            允许
+            {copy.approval.allow}
           </DecisionButton>
           <DecisionButton
             variant="danger-ghost"
             icon={<X size={13} weight="bold" />}
             onClick={() => onApprove?.("deny")}
           >
-            拒绝
+            {copy.approval.deny}
           </DecisionButton>
           {projectName && (
             <DecisionButton
@@ -117,7 +119,7 @@ export function ApprovalForm({
               icon={<FolderSimple size={13} weight="thin" />}
               onClick={() => onApprove?.("always_allow_project")}
             >
-              加入「{projectName}」白名单
+              {copy.approval.allowProject(projectName)}
             </DecisionButton>
           )}
           <DecisionButton
@@ -125,9 +127,9 @@ export function ApprovalForm({
             icon={<Globe size={13} weight="thin" />}
             onClick={() => onApprove?.("always_allow_global")}
             disabled={globalDisabled}
-            title={globalDisabled ? "高敏感工具不允许全局自动通过" : undefined}
+            title={globalDisabled ? copy.approval.highRiskNoGlobal : undefined}
           >
-            加入全局白名单
+            {copy.approval.allowGlobal}
           </DecisionButton>
         </div>
       ) : (
@@ -144,29 +146,31 @@ export function ApprovalForm({
 // site for the layout rationale). Keep these factual and brief;
 // the long-form "审批后 GA 才会执行" boilerplate is implied by
 // the dialog's presence and the Allow / Deny buttons.
-const APPROVAL_REASON: Record<string, string> = {
-  file_patch: "修改现有文件的内容",
-  file_write: "写入或覆盖文件",
-  code_run: "执行代码或 shell 命令",
-  start_long_term_update: "更新 GA 的长期记忆（持久化）",
-};
-
-const GENERIC_REASON = "默认审批列表里的工具，需要你确认后才能执行";
-
 const HIGH_SENSITIVITY_TOOLS = new Set(["start_long_term_update"]);
 
-function actionSentence(tool: ConversationToolEvent): string {
+function approvalReason(
+  toolName: string,
+  copy: ReturnType<typeof useCopy>,
+): string {
+  const descriptions = copy.approval.descriptions as Record<string, string>;
+  return descriptions[toolName] ?? copy.approval.genericReason;
+}
+
+function actionSentence(
+  tool: ConversationToolEvent,
+  copy: ReturnType<typeof useCopy>,
+): string {
   // Prefer a short summary if the caller provided one.
   if (tool.summary) return tool.summary;
   switch (tool.name) {
     case "file_patch":
-      return `将修改文件：${pathFromArgs(tool.args)}`;
+      return copy.approval.actionFilePatch(pathFromArgs(tool.args));
     case "file_write":
-      return `将写入文件：${pathFromArgs(tool.args)}`;
+      return copy.approval.actionFileWrite(pathFromArgs(tool.args));
     case "code_run":
-      return "将运行代码或命令";
+      return copy.approval.actionCodeRun;
     default:
-      return `将执行 ${tool.name}`;
+      return copy.approval.actionTool(tool.name);
   }
 }
 
@@ -176,11 +180,8 @@ function pathFromArgs(args?: Record<string, unknown>): string {
 }
 
 function RiskPill({ level }: { level: RiskLevel }) {
-  const text: Record<RiskLevel, string> = {
-    low: "低风险",
-    medium: "中风险",
-    high: "高风险",
-  };
+  const copy = useCopy();
+  const text = copy.approval.risk;
   const cls: Record<RiskLevel, string> = {
     low: "bg-info/10 text-info",
     medium: "bg-warning/[0.12] text-warning",
@@ -244,14 +245,10 @@ const VARIANT_CLASS: Record<DecisionButtonProps["variant"], string> = {
 };
 
 function DecisionPill({ decision }: { decision: ApprovalDecision }) {
+  const copy = useCopy();
   const isDeny = decision === "deny";
   const Icon = isDeny ? Prohibit : CheckCircle;
-  const label: Record<ApprovalDecision, string> = {
-    allow_once: "已通过 · 本次执行",
-    deny: "已拒绝 · 已通知 AI",
-    always_allow_project: "已加入此项目白名单",
-    always_allow_global: "已加入全局白名单",
-  };
+  const label = copy.approval.decisions;
   return (
     <div
       className={cn(

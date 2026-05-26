@@ -2,6 +2,7 @@ import { CaretDown, CaretUp, Check, Copy, Robot } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { IconTooltip } from "@/components/ui/tooltip";
+import { useCopy, type AppCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Origin } from "@/types/conversation";
 
@@ -60,8 +61,11 @@ const COPY_FEEDBACK_MS = 1500;
  * declared supervisor id and reason here: the icon is a lightweight
  * provenance marker, not a full audit panel.
  */
-function formatSupervisorTooltip(createdAt: string | undefined): string {
-  const relative = formatRelativeTime(createdAt);
+function formatSupervisorTooltip(
+  createdAt: string | undefined,
+  copy: AppCopy,
+): string {
+  const relative = formatRelativeTime(createdAt, copy);
   return relative ? `Supervisor · ${relative}` : "Supervisor";
 }
 
@@ -72,18 +76,21 @@ function formatSupervisorTooltip(createdAt: string | undefined): string {
  * Inlined here (rather than a /lib helper) because this is the only
  * caller; if a second site needs relative time, extract it.
  */
-function formatRelativeTime(iso: string | undefined): string | undefined {
+function formatRelativeTime(
+  iso: string | undefined,
+  copy: AppCopy,
+): string | undefined {
   if (!iso) return undefined;
   const ts = Date.parse(iso);
   if (Number.isNaN(ts)) return undefined;
   const delta = Math.max(0, Date.now() - ts);
   const minutes = Math.floor(delta / 60_000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 1) return copy.conversation.justNow;
+  if (minutes < 60) return copy.conversation.minutesAgo(minutes);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
+  if (hours < 24) return copy.conversation.hoursAgo(hours);
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days} 天前`;
+  if (days < 7) return copy.conversation.daysAgo(days);
   // Older: show absolute date so audit reads cleanly.
   const d = new Date(ts);
   const y = d.getFullYear();
@@ -111,14 +118,15 @@ export interface MessageUserProps {
 }
 
 export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
+  const copy = useCopy();
   const lineCount = useMemo(() => content.split("\n").length, [content]);
   const isLong =
     lineCount > COLLAPSE_LINE_THRESHOLD ||
     content.length > COLLAPSE_CHAR_THRESHOLD;
   const expandLabel =
     lineCount > COLLAPSE_LINE_THRESHOLD
-      ? `展开（共 ${lineCount} 行）`
-      : "展开全文";
+      ? copy.conversation.expandLines(lineCount)
+      : copy.conversation.expandFull;
   const [collapsed, setCollapsed] = useState(true);
   const [actionsVisible, setActionsVisible] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -126,7 +134,9 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
   const copyTimer = useRef<number | null>(null);
 
   const supervisorTooltip =
-    origin?.via === "supervisor" ? formatSupervisorTooltip(createdAt) : null;
+    origin?.via === "supervisor"
+      ? formatSupervisorTooltip(createdAt, copy)
+      : null;
 
   useEffect(() => {
     return () => {
@@ -166,7 +176,7 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
     }
   };
 
-  const copyLabel = copied ? "已复制" : "复制";
+  const copyLabel = copied ? copy.conversation.copied : copy.conversation.copy;
   const copyVisible = actionsVisible || copied;
 
   return (
@@ -187,7 +197,7 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
             <span
               role="img"
               tabIndex={0}
-              aria-label="Supervisor 添加的消息"
+              aria-label={copy.conversation.supervisorMessage}
               className={cn(
                 "inline-flex size-5 items-center justify-center rounded-sm transition-colors",
                 "text-ink-muted hover:bg-hover hover:text-ink-soft focus-visible:bg-hover focus-visible:text-ink-soft focus-visible:outline-none",
@@ -261,7 +271,7 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
               </>
             ) : (
               <>
-                收起
+                {copy.conversation.collapse}
                 <CaretUp size={10} weight="thin" />
               </>
             )}

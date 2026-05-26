@@ -11,6 +11,7 @@ import {
 import { useState } from "react";
 
 import { Button, IconButton } from "@/components/ui/button";
+import { useCopy, type AppCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
   AppError,
@@ -63,10 +64,11 @@ export function ErrorCard({
   onOpenGADocs,
   onViewProject,
 }: ErrorCardProps) {
+  const copy = useCopy();
   const [open, setOpen] = useState(false);
   const isInline = variant === "inline";
   const sev = SEVERITY_CONFIG[error.severity];
-  const hintCfg = error.hint ? HINT_CONFIG[error.hint] : null;
+  const hintCfg = error.hint ? hintConfig(copy)[error.hint] : null;
 
   // Title resolution order:
   //   1. error.title — explicit override (positive-feedback toasts
@@ -74,9 +76,9 @@ export function ErrorCard({
   //   2. hintCfg.title — tailored copy for known error hints
   //      (check_llm_config / network / quota_exceeded).
   //   3. defaultTitle(error) — category-flavored fallback.
-  const title = error.title ?? hintCfg?.title ?? defaultTitle(error);
+  const title = error.title ?? hintCfg?.title ?? defaultTitle(error, copy);
   const brief = hintCfg?.brief ?? error.message;
-  const actions = hintCfg?.actions ?? defaultActions(error);
+  const actions = hintCfg?.actions ?? defaultActions(error, copy);
 
   return (
     <div
@@ -96,7 +98,7 @@ export function ErrorCard({
         {!isInline && onDismiss && (
           <IconButton
             onClick={onDismiss}
-            ariaLabel="Dismiss"
+            ariaLabel={copy.common.close}
             className="-m-1 size-6"
           >
             <XIcon size={12} weight="thin" />
@@ -193,76 +195,78 @@ interface HintConfig {
   actions: ActionDef[];
 }
 
-const HINT_CONFIG: Record<AppErrorHint, HintConfig> = {
+function hintConfig(copy: AppCopy): Record<AppErrorHint, HintConfig> {
+  return {
   check_llm_config: {
-    title: "LLM 配置可能有问题",
-    brief: "首次发送失败，通常是 API key 或配置问题。",
+    title: copy.errors.llmConfig.title,
+    brief: copy.errors.llmConfig.brief,
     actions: [
       {
         id: "open-mykey",
-        label: "检查 mykey.py",
+        label: copy.errors.llmConfig.checkMyKey,
         kind: "primary",
         handler: "onOpenMyKey",
       },
       {
         id: "open-docs",
-        label: "查看 GA 文档",
+        label: copy.errors.llmConfig.docs,
         kind: "ghost",
         handler: "onOpenGADocs",
       },
       {
         id: "details",
-        label: "查看技术详情",
+        label: copy.errors.details,
         kind: "ghost",
         handler: "toggleDetails",
       },
     ],
   },
   network: {
-    title: "网络无法连接",
-    brief: "请求未能到达 LLM provider，可能是超时或 DNS 问题。",
+    title: copy.errors.network.title,
+    brief: copy.errors.network.brief,
     actions: [
-      { id: "retry", label: "重试", kind: "primary", handler: "onRetry" },
+      { id: "retry", label: copy.common.retry, kind: "primary", handler: "onRetry" },
       {
         id: "details",
-        label: "查看技术详情",
+        label: copy.errors.details,
         kind: "ghost",
         handler: "toggleDetails",
       },
     ],
   },
   quota_exceeded: {
-    title: "API 配额耗尽",
-    brief: "可切换其他 LLM 继续。",
+    title: copy.errors.quota.title,
+    brief: copy.errors.quota.brief,
     actions: [
       {
         id: "switch-llm",
-        label: "切换 LLM",
+        label: copy.errors.switchLLM,
         kind: "primary",
         handler: "onSwitchLLM",
       },
       {
         id: "details",
-        label: "查看技术详情",
+        label: copy.errors.details,
         kind: "ghost",
         handler: "toggleDetails",
       },
     ],
   },
-};
+  };
+}
 
-function defaultTitle(error: AppError): string {
+function defaultTitle(error: AppError, copy: AppCopy): string {
   switch (error.category) {
     case "runtime":
-      return "工具执行失败";
+      return copy.errors.runtimeTitle;
     case "bridge":
-      return "Galley 错误";
+      return copy.errors.bridgeTitle;
     case "business":
-      return "操作未能完成";
+      return copy.errors.businessTitle;
   }
 }
 
-function defaultActions(error: AppError): ActionDef[] {
+function defaultActions(error: AppError, copy: AppCopy): ActionDef[] {
   const actions: ActionDef[] = [];
   if (error.action?.kind === "view_project") {
     actions.push({
@@ -275,7 +279,7 @@ function defaultActions(error: AppError): ActionDef[] {
   if (error.retryable) {
     actions.push({
       id: "retry",
-      label: "重试",
+      label: copy.common.retry,
       kind: "primary",
       handler: "onRetry",
     });
@@ -283,7 +287,7 @@ function defaultActions(error: AppError): ActionDef[] {
   if (error.traceback || error.context) {
     actions.push({
       id: "details",
-      label: "查看详情",
+      label: copy.errors.details,
       kind: "ghost",
       handler: "toggleDetails",
     });

@@ -3,6 +3,7 @@ import { X as XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export interface CreateProjectDialogProps {
@@ -30,6 +31,7 @@ export function CreateProjectDialog({
   onOpenChange,
   onCreate,
 }: CreateProjectDialogProps) {
+  const copy = useCopy();
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -85,10 +87,10 @@ export function CreateProjectDialog({
         >
           <div className="flex items-center justify-between">
             <Dialog.Title className="font-serif text-[16px] font-medium text-ink">
-              新建项目
+              {copy.projects.newProject}
             </Dialog.Title>
             <Dialog.Close asChild>
-              <IconButton ariaLabel="关闭">
+              <IconButton ariaLabel={copy.common.close}>
                 <XIcon size={14} weight="thin" />
               </IconButton>
             </Dialog.Close>
@@ -101,13 +103,13 @@ export function CreateProjectDialog({
             }}
             className="mt-5 space-y-4"
           >
-            <Field label="名称" required>
+            <Field label={copy.projects.name} required>
               <input
                 ref={nameInputRef}
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="项目名"
+                placeholder={copy.projects.projectName}
                 className={cn(
                   "h-9 w-full rounded-sm border border-line bg-app px-3 text-[13px] text-ink",
                   "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
@@ -117,10 +119,10 @@ export function CreateProjectDialog({
 
             <DialogActionRow className="mt-0 pt-1">
               <Button variant="secondary" onClick={() => onOpenChange(false)}>
-                取消
+                {copy.common.cancel}
               </Button>
               <Button type="submit" disabled={!canSubmit}>
-                创建
+                {copy.projects.create}
               </Button>
             </DialogActionRow>
           </form>
@@ -148,9 +150,7 @@ function Field({
         {required && <span className="ml-0.5 text-error">*</span>}
       </label>
       <div className="mt-1.5">{children}</div>
-      {hint && (
-        <div className="mt-1 text-[11.5px] text-ink-muted">{hint}</div>
-      )}
+      {hint && <div className="mt-1 text-[11.5px] text-ink-muted">{hint}</div>}
     </div>
   );
 }

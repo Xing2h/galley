@@ -1,5 +1,6 @@
 import { ArrowRight, Pause } from "@phosphor-icons/react";
 
+import { useCopy } from "@/lib/i18n";
 import type { PendingApproval } from "@/types/conversation";
 
 export interface ApprovalDockProps {
@@ -25,6 +26,7 @@ export interface ApprovalDockProps {
  * worry about an empty wrapper.
  */
 export function ApprovalDock({ pending, onAdvance }: ApprovalDockProps) {
+  const copy = useCopy();
   if (pending.length === 0) return null;
   const next = pending[0];
 
@@ -36,11 +38,11 @@ export function ApprovalDock({ pending, onAdvance }: ApprovalDockProps) {
           weight="thin"
           className="approval-attention-breath text-warning"
         />
-        {pending.length} 项等待审批
+        {copy.approval.pendingCount(pending.length)}
       </span>
 
       <span className="text-[12.5px] text-ink-soft">
-        下一个：{" "}
+        {copy.approval.nextApproval}{" "}
         <span className="rounded-[4px] bg-hover px-1.5 py-px font-mono text-[12px] text-ink-soft">
           {next.toolName}
         </span>
@@ -57,10 +59,10 @@ export function ApprovalDock({ pending, onAdvance }: ApprovalDockProps) {
       <button
         type="button"
         onClick={() => onAdvance?.(next)}
-        aria-label={`前往处理 ${next.toolName} 审批`}
+        aria-label={copy.approval.goHandleApprovalAria(next.toolName)}
         className="ml-auto inline-flex items-center gap-1.5 rounded-sm border border-transparent px-3 py-1 text-[12.5px] font-medium text-ink transition-colors hover:bg-hover"
       >
-        前往处理
+        {copy.approval.goHandleApproval}
         <ArrowRight size={12} weight="thin" />
       </button>
     </div>

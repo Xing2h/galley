@@ -22,6 +22,7 @@ import {
 import type { PathValidation } from "@/components/screens/onboarding/StepAttach";
 import { SettingsUpdateControl } from "@/components/screens/settings/SettingsUpdateControl";
 import { Button } from "@/components/ui/button";
+import { useCopy } from "@/lib/i18n";
 import {
   BUNDLED_PYTHON_VERSION,
   validateGAPath,
@@ -94,6 +95,8 @@ export function SettingsRuntime({
   onOpenModels,
   onCommitGAPath,
 }: SettingsRuntimeProps) {
+  const copy = useCopy();
+  const runtimeCopy = copy.settings.runtime;
   const [externalExpanded, setExternalExpanded] = useState(
     activeRuntimeKind === "external",
   );
@@ -126,11 +129,11 @@ export function SettingsRuntime({
   const externalRuntimeDetails = (
     <div className="space-y-7 border-t border-line pt-5">
       <PathField
-        label="外部 GA 路径"
+        label={runtimeCopy.externalPath}
         value={info.gaPath}
         onPick={onChangeGAPath}
         onCommit={onCommitGAPath}
-        hint="点「选择」走文件夹选取，或直接在框里输入 / 粘贴路径 · 回车提交"
+        hint={runtimeCopy.pathHint}
       />
 
       <PythonPanel
@@ -153,8 +156,8 @@ export function SettingsRuntime({
   return (
     <div className="space-y-7">
       <SettingsPanelHeader
-        title="Runtime"
-        subtitle="Galley 使用的 GenericAgent 运行环境"
+        title={copy.settings.tabs.runtime.label}
+        subtitle={runtimeCopy.subtitle}
       />
 
       <BuiltinRuntimeCard
@@ -184,9 +187,7 @@ export function SettingsRuntime({
         <div className="font-mono text-[11px] text-ink-muted">
           Galley v{info.workbenchVersion}
         </div>
-        <SettingsUpdateControl
-          hasRunningSessions={hasRunningSessions}
-        />
+        <SettingsUpdateControl hasRunningSessions={hasRunningSessions} />
       </div>
     </div>
   );
@@ -207,19 +208,24 @@ function BuiltinRuntimeCard({
   onOpenModels?: () => void;
   onActivate?: () => void;
 }) {
+  const appCopy = useCopy();
+  const copy = appCopy.settings.runtime;
   const active = value === "managed";
   const canActivate =
-    !active && hasManagedRuntimeConfigured && !hasRunningSessions && !!onActivate;
+    !active &&
+    hasManagedRuntimeConfigured &&
+    !hasRunningSessions &&
+    !!onActivate;
   const needsModel = !hasManagedRuntimeConfigured;
   const detail = active
-    ? "正在使用内置 GA"
+    ? copy.usingBundledGA
     : needsModel
-      ? "需要先配置模型"
-      : "内置 GA 已可用";
+      ? copy.needsModel
+      : copy.bundledReady;
 
   return (
     <div>
-      <SettingsSectionLabel>Runtime Mode</SettingsSectionLabel>
+      <SettingsSectionLabel>{copy.runtimeMode}</SettingsSectionLabel>
       <div
         className={cn(
           "mt-2 rounded-sm border border-line bg-surface px-3 py-3",
@@ -228,18 +234,22 @@ function BuiltinRuntimeCard({
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <Package size={18} weight="thin" className="shrink-0 text-ink-soft" />
+            <Package
+              size={18}
+              weight="thin"
+              className="shrink-0 text-ink-soft"
+            />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[13px] font-medium text-ink">
-                  内置 GA
+                  {copy.bundledGA}
                 </span>
                 <span className="rounded-sm bg-brand-soft px-1.5 py-px text-[10.5px] font-medium text-brand-strong">
-                  推荐
+                  {copy.recommended}
                 </span>
                 {active && (
                   <span className="rounded-sm bg-success/10 px-1.5 py-px text-[10.5px] text-success">
-                    正在使用
+                    {copy.active}
                   </span>
                 )}
               </div>
@@ -254,7 +264,7 @@ function BuiltinRuntimeCard({
               onClick={onOpenModels}
               leadingIcon={<Key size={12} weight="thin" />}
             >
-              配置模型
+              {appCopy.sidebar.configureModels}
             </Button>
           ) : (
             !active && (
@@ -264,14 +274,14 @@ function BuiltinRuntimeCard({
                 disabled={!canActivate}
                 onClick={onActivate}
               >
-                切换到内置 GA
+                {copy.switchToBundledGA}
               </Button>
             )
           )}
         </div>
         {hasRunningSessions && !active && (
           <div className="mt-2 text-[11.5px] text-ink-muted">
-            有运行中的对话，结束后可切换运行时。
+            {copy.runningSessionsBlock}
           </div>
         )}
       </div>
@@ -302,9 +312,10 @@ function AdvancedRuntimeSettings({
   onActivate?: () => void;
   children: ReactNode;
 }) {
+  const copy = useCopy().settings.runtime;
   return (
     <div>
-      <SettingsSectionLabel>更多</SettingsSectionLabel>
+      <SettingsSectionLabel>{copy.more}</SettingsSectionLabel>
       <div className="mt-2 space-y-2">
         <ExternalRuntimeAccess
           expanded={expanded}
@@ -345,6 +356,7 @@ function ExternalRuntimeAccess({
   onActivate?: () => void;
   children: ReactNode;
 }) {
+  const copy = useCopy().settings.runtime;
   return (
     <div>
       <Button
@@ -360,7 +372,7 @@ function ExternalRuntimeAccess({
           )
         }
       >
-        接入外部 GA
+        {copy.connectExternalGA}
       </Button>
       {expanded && (
         <div className="mt-2 space-y-5">
@@ -391,14 +403,18 @@ function ExternalRuntimeCard({
   highlighted: boolean;
   onActivate?: () => void;
 }) {
+  const copy = useCopy().settings.runtime;
   const active = value === "external";
   const canActivate =
-    !active && hasExternalRuntimeConfigured && !hasRunningSessions && !!onActivate;
+    !active &&
+    hasExternalRuntimeConfigured &&
+    !hasRunningSessions &&
+    !!onActivate;
   const detail = active
-    ? "正在使用外部 GA"
+    ? copy.usingExternalGA
     : hasExternalRuntimeConfigured
-      ? "外部 GA 已可用"
-      : "需要先选择 GA 路径";
+      ? copy.externalReady
+      : copy.needsGAPath;
 
   return (
     <div>
@@ -417,11 +433,11 @@ function ExternalRuntimeCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[12.5px] font-medium text-ink">
-                外部 GA
+                {copy.externalGA}
               </span>
               {active && (
                 <span className="rounded-sm bg-hover px-1.5 py-px text-[10.5px] text-ink-muted">
-                  正在使用
+                  {copy.active}
                 </span>
               )}
             </div>
@@ -435,13 +451,13 @@ function ExternalRuntimeCard({
             disabled={!canActivate}
             onClick={onActivate}
           >
-            切换到外部 GA
+            {copy.switchToExternalGA}
           </Button>
         )}
       </div>
       {hasRunningSessions && !active && (
         <div className="mt-2 text-[11.5px] text-ink-muted">
-          有运行中的对话，结束后可切换运行时。
+          {copy.runningSessionsBlock}
         </div>
       )}
     </div>
@@ -453,12 +469,12 @@ function HealthCheckSection({
 }: {
   onReRunHealthCheck?: () => void;
 }) {
+  const copy = useCopy().settings.runtime;
   return (
     <div>
       <SettingsSectionLabel>Health Check</SettingsSectionLabel>
       <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">
-        不知道哪儿出问题了？跑一次完整体检 ——
-        重新探测 Python 解释器、检查 GA 路径和必要文件。
+        {copy.healthDescription}
       </p>
       <Button
         variant="accent-secondary"
@@ -468,7 +484,7 @@ function HealthCheckSection({
         className="mt-3"
         leadingIcon={<ArrowsClockwise size={13} weight="thin" />}
       >
-        跑一次 Health Check
+        {copy.runHealthCheck}
       </Button>
     </div>
   );
@@ -507,22 +523,19 @@ function PythonPanel({
   onChangeExternalPath?: () => void;
   onToggle?: (useExternal: boolean) => void;
 }) {
+  const copy = useCopy().settings.runtime;
   if (!useExternal) {
     return (
       <div>
         <SettingsSectionLabel>Python</SettingsSectionLabel>
         <div className="mt-2 flex items-center gap-3 rounded-sm border border-line bg-surface px-3 py-2.5">
-          <Package
-            size={18}
-            weight="thin"
-            className="shrink-0 text-ink-soft"
-          />
+          <Package size={18} weight="thin" className="shrink-0 text-ink-soft" />
           <div className="min-w-0">
             <div className="font-mono text-[12.5px] text-ink">
               CPython {BUNDLED_PYTHON_VERSION}
             </div>
             <div className="mt-0.5 text-[11.5px] text-ink-muted">
-              Galley 内置 · 已附带 GA 依赖，零配置可用
+              {copy.bundledPythonDetail}
             </div>
           </div>
         </div>
@@ -533,7 +546,7 @@ function PythonPanel({
             onClick={() => onToggle(true)}
             className="mt-2 px-0 text-[11.5px] hover:bg-transparent hover:underline"
           >
-            使用外部 Python…
+            {copy.useExternalPython}
           </Button>
         )}
       </div>
@@ -550,7 +563,7 @@ function PythonPanel({
         // parent) re-probes when needed.
         onPick={onChangeExternalPath}
         readOnly
-        hint="外部 Python · 改变后用下方 Re-run 重新探测"
+        hint={copy.externalPythonHint}
       />
       {onToggle && (
         <Button
@@ -559,7 +572,7 @@ function PythonPanel({
           onClick={() => onToggle(false)}
           className="mt-2 px-0 text-[11.5px] hover:bg-transparent hover:underline"
         >
-          改回 Galley 内置 Python
+          {copy.useBundledPython}
         </Button>
       )}
     </div>
@@ -573,20 +586,23 @@ function ManagedRuntimeCard({
 }: {
   diagnostics?: ManagedRuntimeDiagnostics;
 }) {
+  const copy = useCopy().settings.runtime;
   const [expanded, setExpanded] = useState(false);
   const activeRuntimeKind = usePrefsStore((s) => s.activeRuntimeKind);
   const models = useManagedModelsStore((s) => s.models);
-  const upstreamShort = diagnostics?.upstreamCommit.slice(0, 7) ?? "未加载";
+  const upstreamShort =
+    diagnostics?.upstreamCommit.slice(0, 7) ?? copy.notLoaded;
   const defaultModel = models.find((m) => m.isDefault) ?? models[0];
   const promptStatus = diagnostics
-    ? diagnostics.code.runtimePromptExists && diagnostics.code.personaPromptExists
-      ? "完整"
-      : "缺失"
-    : "未加载";
+    ? diagnostics.code.runtimePromptExists &&
+      diagnostics.code.personaPromptExists
+      ? copy.complete
+      : copy.missing
+    : copy.notLoaded;
   const modelStatus =
     models.length === 0
-      ? "未配置"
-      : `${models.length} 个模型 · 密钥按需读取${
+      ? copy.notConfigured
+      : `${models.length} ${copy.models} · ${copy.keysOnDemand}${
           defaultModel ? ` · ${defaultModel.displayName}` : ""
         }`;
   return (
@@ -604,26 +620,29 @@ function ManagedRuntimeCard({
           )
         }
       >
-        高级诊断
+        {copy.advancedDiagnostics}
       </Button>
       {expanded && (
         <>
           <div className="mt-2 rounded-sm border border-line bg-surface px-3 py-2.5">
             <RuntimeDiagnosticRow
-              label="当前模式"
+              label={copy.currentMode}
               value={
                 activeRuntimeKind === "managed"
-                  ? "内置 GA"
-                  : "外部 GA"
+                  ? copy.bundledGA
+                  : copy.externalGA
               }
             />
-            <RuntimeDiagnosticRow label="内核版本" value={upstreamShort} />
+            <RuntimeDiagnosticRow
+              label={copy.kernelVersion}
+              value={upstreamShort}
+            />
             <RuntimeDiagnosticRow
               label="Patch stack"
               value={
                 diagnostics
                   ? `${diagnostics.patchStackId} · ${diagnostics.patchCount} patches`
-                  : "未加载"
+                  : copy.notLoaded
               }
             />
             <RuntimeDiagnosticRow
@@ -632,8 +651,8 @@ function ManagedRuntimeCard({
                 diagnostics
                   ? diagnostics.code.agentmainExists
                     ? diagnostics.paths.codeRoot
-                    : `${diagnostics.paths.codeRoot} · 待打包`
-                  : "未加载"
+                    : `${diagnostics.paths.codeRoot} · ${copy.pendingPackage}`
+                  : copy.notLoaded
               }
             />
             <RuntimeDiagnosticRow label="Prompts" value={promptStatus} />
@@ -643,24 +662,24 @@ function ManagedRuntimeCard({
                 diagnostics
                   ? diagnostics.state.initialized
                     ? diagnostics.paths.stateRoot
-                    : `${diagnostics.paths.stateRoot} · 未初始化`
-                  : "未加载"
+                    : `${diagnostics.paths.stateRoot} · ${copy.uninitialized}`
+                  : copy.notLoaded
               }
             />
-            <RuntimeDiagnosticRow label="模型" value={modelStatus} />
+            <RuntimeDiagnosticRow label={copy.models} value={modelStatus} />
             <RuntimeDiagnosticRow
               label="Config file"
               value={
                 diagnostics
                   ? diagnostics.state.modelConfigExists
                     ? diagnostics.paths.modelConfigPath
-                    : `${diagnostics.paths.modelConfigPath} · 未生成`
-                  : "未加载"
+                    : `${diagnostics.paths.modelConfigPath} · ${copy.notGenerated}`
+                  : copy.notLoaded
               }
             />
           </div>
           <p className="mt-2 text-[11.5px] leading-[1.55] text-ink-muted">
-            诊断只显示路径、版本和凭据是否存在。API Key 不会显示在这里。
+            {copy.diagnosticsNote}
           </p>
         </>
       )}
@@ -713,6 +732,7 @@ function GAVersionCard({
   gaCommitDate: string;
   gaBaseline: string;
 }) {
+  const copy = useCopy().settings.runtime;
   const isUnknown = gaCommit === "unknown" || gaCommit === "";
   const isMatched = !isUnknown && gaCommit === gaBaseline;
   const currentShort = isUnknown ? "unknown" : gaCommit.slice(0, 7);
@@ -721,10 +741,10 @@ function GAVersionCard({
 
   return (
     <div>
-      <SettingsSectionLabel>GenericAgent 版本</SettingsSectionLabel>
+      <SettingsSectionLabel>{copy.genericAgentVersion}</SettingsSectionLabel>
       <div className="mt-2 rounded-sm border border-line bg-surface px-3 py-2.5">
         <div className="flex items-center gap-2 font-mono text-[12.5px] text-ink">
-          <span className="text-ink-muted">当前版本</span>
+          <span className="text-ink-muted">{copy.currentVersion}</span>
           <span>{currentShort}</span>
           {currentDate && (
             <span className="text-ink-muted">· {currentDate}</span>
@@ -732,7 +752,7 @@ function GAVersionCard({
         </div>
         {!isUnknown && (
           <div className="mt-1 flex items-center gap-2 font-mono text-[12px] text-ink-soft">
-            <span className="text-ink-muted">已验证版本</span>
+            <span className="text-ink-muted">{copy.verifiedVersion}</span>
             <span>{baselineShort}</span>
             <span
               className={cn(
@@ -745,12 +765,12 @@ function GAVersionCard({
               {isMatched ? (
                 <>
                   <CheckCircle size={11} weight="fill" />
-                  已对齐
+                  {copy.aligned}
                 </>
               ) : (
                 <>
                   <Info size={11} weight="bold" />
-                  你已自行升级
+                  {copy.selfUpdated}
                 </>
               )}
             </span>
@@ -758,7 +778,7 @@ function GAVersionCard({
         )}
       </div>
       <p className="mt-2 text-[11.5px] leading-[1.55] text-ink-muted">
-        新 commit 可能引入兼容问题，下次启动时会自动检查并报告。
+        {copy.commitCompatibilityNote}
       </p>
     </div>
   );
@@ -811,6 +831,7 @@ function PathField({
    * used for Bridge Python (see capabilities constraint comment above). */
   readOnly?: boolean;
 }) {
+  const copy = useCopy().settings.runtime;
   const editable = !!onCommit;
   const [draft, setDraft] = useState(value);
   const [validation, setValidation] = useState<PathValidation>(null);
@@ -924,7 +945,7 @@ function PathField({
             className="shrink-0 px-3 py-2 text-[12.5px]"
             leadingIcon={<FolderOpen size={13} weight="thin" />}
           >
-            选择
+            {copy.choose}
           </Button>
         )}
       </div>
@@ -935,6 +956,7 @@ function PathField({
 }
 
 function ValidationLine({ validation }: { validation: PathValidation }) {
+  const copy = useCopy().settings.runtime;
   if (!validation) return null;
   const cls = "mt-2 flex items-center gap-1.5 text-[12.5px]";
   switch (validation.kind) {
@@ -942,9 +964,9 @@ function ValidationLine({ validation }: { validation: PathValidation }) {
       return (
         <div className={cn(cls, "text-success")}>
           <Check size={12} weight="thin" />
-          路径有效
+          {copy.validPath}
           {validation.foundAgentmain && (
-            <span className="text-ink-muted">· agentmain.py 可见</span>
+            <span className="text-ink-muted">· {copy.agentmainVisible}</span>
           )}
         </div>
       );
@@ -952,14 +974,14 @@ function ValidationLine({ validation }: { validation: PathValidation }) {
       return (
         <div className={cn(cls, "text-warning")}>
           <Warning size={12} weight="thin" />
-          路径存在但未找到 agentmain.py — 仍会保存，但确认这是 GA 目录？
+          {copy.pathMissingAgentmain}
         </div>
       );
     case "not-found":
       return (
         <div className={cn(cls, "text-error")}>
           <X size={12} weight="thin" />
-          路径不存在 · 不会保存
+          {copy.pathNotFound}
         </div>
       );
     case "checking":
@@ -968,7 +990,7 @@ function ValidationLine({ validation }: { validation: PathValidation }) {
           <span className="spin">
             <CircleNotch size={12} weight="thin" />
           </span>
-          检查中…
+          {copy.checking}
         </div>
       );
   }

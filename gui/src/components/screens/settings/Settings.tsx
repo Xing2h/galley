@@ -1,11 +1,15 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
+  CaretDown,
+  Check,
   Cpu,
   Info,
   Keyboard,
   Key,
   PlugsConnected,
   ShieldCheck,
+  Translate,
   X as XIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
@@ -17,6 +21,12 @@ import { SettingsModels } from "@/components/screens/settings/SettingsModels";
 import { SettingsRuntime } from "@/components/screens/settings/SettingsRuntime";
 import { SettingsShortcuts } from "@/components/screens/settings/SettingsShortcuts";
 import { IconButton } from "@/components/ui/button";
+import { useCopy } from "@/lib/i18n";
+import {
+  isChineseLanguage,
+  type LanguagePreference,
+  type ResolvedLanguage,
+} from "@/lib/language";
 import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
 import type { RuntimeKind } from "@/types/session";
@@ -72,6 +82,9 @@ export interface SettingsProps {
   onToggleExternalPython?: (useExternal: boolean) => void;
   onCommitGAPath?: (path: string) => Promise<void>;
   onChangeRuntimeKind?: (kind: RuntimeKind) => void;
+  languagePreference: LanguagePreference;
+  resolvedLanguage: ResolvedLanguage;
+  onChangeLanguagePreference: (preference: LanguagePreference) => void;
 }
 
 /**
@@ -116,9 +129,13 @@ export function Settings({
   onToggleExternalPython,
   onCommitGAPath,
   onChangeRuntimeKind,
+  languagePreference,
+  resolvedLanguage,
+  onChangeLanguagePreference,
   tab: controlledTab,
   onTabChange,
 }: SettingsProps) {
+  const copy = useCopy();
   const [uncontrolledTab, setUncontrolledTab] =
     useState<SettingsTab>(defaultTab);
   const tab = controlledTab ?? uncontrolledTab;
@@ -136,14 +153,20 @@ export function Settings({
             "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)]",
           )}
         >
-          <Dialog.Title className="sr-only">设置</Dialog.Title>
+          <Dialog.Title className="sr-only">{copy.settings.title}</Dialog.Title>
 
-          <SettingsTabList tab={tab} onChange={setTab} />
+          <SettingsTabList
+            tab={tab}
+            onChange={setTab}
+            languagePreference={languagePreference}
+            resolvedLanguage={resolvedLanguage}
+            onChangeLanguagePreference={onChangeLanguagePreference}
+          />
 
           <div className="relative min-w-0 flex-1 overflow-y-auto bg-app">
             <Dialog.Close asChild>
               <IconButton
-                ariaLabel="关闭"
+                ariaLabel={copy.settings.close}
                 className="absolute right-3 top-3 z-10"
               >
                 <XIcon size={14} weight="thin" />
@@ -204,48 +227,72 @@ export function Settings({
 function SettingsTabList({
   tab,
   onChange,
+  languagePreference,
+  resolvedLanguage,
+  onChangeLanguagePreference,
 }: {
   tab: SettingsTab;
   onChange: (tab: SettingsTab) => void;
+  languagePreference: LanguagePreference;
+  resolvedLanguage: ResolvedLanguage;
+  onChangeLanguagePreference: (preference: LanguagePreference) => void;
 }) {
+  const copy = useCopy();
+  const showChineseHelpers = isChineseLanguage(resolvedLanguage);
+  const tabCopy = copy.settings.tabs;
   return (
     <nav className="flex w-[180px] shrink-0 flex-col border-r border-line bg-app py-3">
-      <SettingsTabButton
-        active={tab === "runtime"}
-        Icon={Cpu}
-        label="Runtime"
-        onClick={() => onChange("runtime")}
-      />
-      <SettingsTabButton
-        active={tab === "models"}
-        Icon={Key}
-        label="Models"
-        onClick={() => onChange("models")}
-      />
-      <SettingsTabButton
-        active={tab === "approval"}
-        Icon={ShieldCheck}
-        label="Approval"
-        onClick={() => onChange("approval")}
-      />
-      <SettingsTabButton
-        active={tab === "integration"}
-        Icon={PlugsConnected}
-        label="Agent"
-        onClick={() => onChange("integration")}
-      />
-      <SettingsTabButton
-        active={tab === "shortcuts"}
-        Icon={Keyboard}
-        label="Shortcuts"
-        onClick={() => onChange("shortcuts")}
-      />
-      <SettingsTabButton
-        active={tab === "about"}
-        Icon={Info}
-        label="About"
-        onClick={() => onChange("about")}
-      />
+      <div>
+        <SettingsTabButton
+          active={tab === "runtime"}
+          Icon={Cpu}
+          label={tabCopy.runtime.label}
+          subLabel={showChineseHelpers ? tabCopy.runtime.helper : undefined}
+          onClick={() => onChange("runtime")}
+        />
+        <SettingsTabButton
+          active={tab === "models"}
+          Icon={Key}
+          label={tabCopy.models.label}
+          subLabel={showChineseHelpers ? tabCopy.models.helper : undefined}
+          onClick={() => onChange("models")}
+        />
+        <SettingsTabButton
+          active={tab === "approval"}
+          Icon={ShieldCheck}
+          label={tabCopy.approval.label}
+          subLabel={showChineseHelpers ? tabCopy.approval.helper : undefined}
+          onClick={() => onChange("approval")}
+        />
+        <SettingsTabButton
+          active={tab === "integration"}
+          Icon={PlugsConnected}
+          label={tabCopy.agent.label}
+          subLabel={showChineseHelpers ? tabCopy.agent.helper : undefined}
+          onClick={() => onChange("integration")}
+        />
+        <SettingsTabButton
+          active={tab === "shortcuts"}
+          Icon={Keyboard}
+          label={tabCopy.shortcuts.label}
+          subLabel={showChineseHelpers ? tabCopy.shortcuts.helper : undefined}
+          onClick={() => onChange("shortcuts")}
+        />
+        <SettingsTabButton
+          active={tab === "about"}
+          Icon={Info}
+          label={tabCopy.about.label}
+          subLabel={showChineseHelpers ? tabCopy.about.helper : undefined}
+          onClick={() => onChange("about")}
+        />
+      </div>
+      <div className="mt-auto border-t border-line/70 px-2 pt-2">
+        <LanguagePreferenceMenu
+          preference={languagePreference}
+          resolvedLanguage={resolvedLanguage}
+          onChange={onChangeLanguagePreference}
+        />
+      </div>
     </nav>
   );
 }
@@ -254,11 +301,13 @@ function SettingsTabButton({
   active,
   Icon,
   label,
+  subLabel,
   onClick,
 }: {
   active: boolean;
   Icon: typeof Cpu;
   label: string;
+  subLabel?: string;
   onClick: () => void;
 }) {
   return (
@@ -266,8 +315,9 @@ function SettingsTabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative flex h-8 items-center gap-2.5 px-4 text-left text-[13px] transition-colors",
-        active ? "bg-hover text-ink" : "text-ink-soft hover:text-ink",
+        "group relative flex w-full items-center gap-3 px-4 text-left transition-colors",
+        subLabel ? "h-[50px]" : "h-8 text-[13px]",
+        active ? "bg-hover" : "hover:bg-hover",
       )}
     >
       {active && (
@@ -276,8 +326,138 @@ function SettingsTabButton({
           aria-hidden
         />
       )}
-      <Icon size={16} weight="thin" className="shrink-0" />
-      {label}
+      <Icon
+        size={16}
+        weight="thin"
+        className={cn(
+          "shrink-0",
+          active ? "text-ink" : "text-ink-soft group-hover:text-ink",
+        )}
+      />
+      <span className="flex min-w-0 flex-col justify-center">
+        <span
+          className={cn(
+            "block truncate text-[14px] font-medium leading-[18px]",
+            active ? "text-ink" : "text-ink-soft group-hover:text-ink",
+          )}
+        >
+          {label}
+        </span>
+        {subLabel && (
+          <span
+            className={cn(
+              "mt-1 block truncate text-[10.5px] font-normal leading-[11px]",
+              active ? "text-ink-muted" : "text-ink-muted/75",
+            )}
+          >
+            {subLabel}
+          </span>
+        )}
+      </span>
     </button>
+  );
+}
+
+function LanguagePreferenceMenu({
+  preference,
+  resolvedLanguage,
+  onChange,
+}: {
+  preference: LanguagePreference;
+  resolvedLanguage: ResolvedLanguage;
+  onChange: (preference: LanguagePreference) => void;
+}) {
+  const copy = useCopy();
+  const isChinese = isChineseLanguage(resolvedLanguage);
+  const options: Array<{
+    value: LanguagePreference;
+    label: string;
+    subLabel?: string;
+  }> = isChinese
+    ? [
+        {
+          value: "system",
+          label: copy.language.system,
+          subLabel: copy.language.systemHelper,
+        },
+        { value: "zh-CN", label: copy.language.zh },
+        { value: "en-US", label: copy.language.en },
+      ]
+    : [
+        {
+          value: "system",
+          label: copy.language.system,
+          subLabel: copy.language.systemHelper,
+        },
+        { value: "zh-CN", label: copy.language.zh },
+        { value: "en-US", label: copy.language.en },
+      ];
+  const current = options.find((option) => option.value === preference);
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left transition-colors",
+            "text-ink-soft outline-none hover:bg-hover hover:text-ink",
+            "data-[state=open]:bg-hover data-[state=open]:text-ink",
+          )}
+          aria-label={copy.language.aria}
+        >
+          <Translate size={15} weight="thin" className="shrink-0" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[12.5px] leading-4">
+              {copy.language.button}
+            </span>
+            <span className="block truncate text-[11px] leading-3 text-ink-muted">
+              {current?.label ?? "Auto"}
+            </span>
+          </span>
+          <CaretDown size={11} weight="bold" className="shrink-0" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="start"
+          side="right"
+          sideOffset={8}
+          className={cn(
+            "z-[70] min-w-[160px] rounded-md border border-line bg-elevated p-1",
+            "text-[13px] text-ink shadow-elevated",
+          )}
+        >
+          {options.map((option) => (
+            <DropdownMenu.Item
+              key={option.value}
+              onSelect={() => onChange(option.value)}
+              className={cn(
+                "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none",
+                "data-[highlighted]:bg-hover",
+              )}
+            >
+              <span className="flex size-3.5 shrink-0 items-center justify-center">
+                {option.value === preference && (
+                  <Check
+                    size={12}
+                    weight="bold"
+                    className="text-brand-strong"
+                  />
+                )}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate">{option.label}</span>
+                {option.subLabel && (
+                  <span className="block truncate text-[11px] text-ink-muted">
+                    {option.subLabel}
+                  </span>
+                )}
+              </span>
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }

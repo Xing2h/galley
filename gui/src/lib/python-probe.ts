@@ -85,12 +85,12 @@ const RAW_CANDIDATES: ReadonlyArray<{
   {
     alias: "python-ga-venv",
     rawPath: `${HOME_PLACEHOLDER}/Documents/GenericAgent/.venv/bin/python`,
-    label: "GA 项目 venv (.venv)",
+    label: "GA project venv (.venv)",
   },
   {
     alias: "python-ga-venv-alt",
     rawPath: `${HOME_PLACEHOLDER}/Documents/GenericAgent/venv/bin/python`,
-    label: "GA 项目 venv (venv)",
+    label: "GA project venv (venv)",
   },
   {
     alias: "python-brew-arm",
@@ -104,37 +104,33 @@ const RAW_CANDIDATES: ReadonlyArray<{
   },
   {
     alias: "python-framework-3-14",
-    rawPath:
-      "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+    rawPath: "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
     label: "Python.org 3.14",
   },
   {
     alias: "python-framework-3-13",
-    rawPath:
-      "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+    rawPath: "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
     label: "Python.org 3.13",
   },
   {
     alias: "python-framework-3-12",
-    rawPath:
-      "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+    rawPath: "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
     label: "Python.org 3.12",
   },
   {
     alias: "python-framework-3-11",
-    rawPath:
-      "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
+    rawPath: "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
     label: "Python.org 3.11",
   },
   {
     alias: "python3",
     rawPath: "python3 (PATH)",
-    label: "系统 PATH 上的 python3",
+    label: "python3 on PATH",
   },
   {
     alias: "python",
     rawPath: "python (PATH)",
-    label: "系统 PATH 上的 python",
+    label: "python on PATH",
   },
 ];
 
@@ -271,10 +267,7 @@ async function runSingleProbe(
   let stderrLine = "";
 
   try {
-    const command = Command.create(candidate.alias, [
-      "-c",
-      validationScript,
-    ]);
+    const command = Command.create(candidate.alias, ["-c", validationScript]);
     command.stdout.on("data", (line) => {
       const trimmed = line.trim();
       if (trimmed) stdoutLine = trimmed;

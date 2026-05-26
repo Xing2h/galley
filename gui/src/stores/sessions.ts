@@ -10,6 +10,8 @@ import {
   currentLLMDisplayName,
   managedModelsToLLMs,
 } from "@/lib/managed-model-options";
+import { copyForLanguage } from "@/lib/i18n";
+import { resolveLanguagePreference } from "@/lib/language";
 import { useManagedModelsStore } from "@/stores/managed-models";
 import { useMessagesStore } from "@/stores/messages";
 import { usePrefsStore } from "@/stores/prefs";
@@ -99,6 +101,12 @@ interface ProjectBriefWire {
 const GUI_ORIGIN = { via: "gui" } as const;
 const MANAGED_PROMPT_PROFILE = "galley-persona-v1";
 
+function currentCopy() {
+  return copyForLanguage(
+    resolveLanguagePreference(usePrefsStore.getState().languagePreference),
+  );
+}
+
 // Mirror of Rust `CreateSessionInput`.
 interface CreateSessionInputWire {
   id: string;
@@ -178,8 +186,7 @@ function sessionFromBrief(b: SessionBriefWire): Session {
     selectedLlmDisplayName: b.selectedLlmDisplayName,
     runtimeKind: b.runtimeKind ?? gaRuntimeKind,
     runtimeLabel:
-      b.runtimeLabel ??
-      (gaRuntimeKind === "managed" ? "内置 GA" : "外部 GA"),
+      b.runtimeLabel ?? (gaRuntimeKind === "managed" ? "内置 GA" : "外部 GA"),
     gaRuntimeKind,
     gaRuntimeId: b.gaRuntimeId,
     promptProfile: b.promptProfile,
@@ -285,7 +292,10 @@ interface SessionsActions {
   ) => Promise<void>;
 
   // ---- projects ----
-  createProject: (input: { name: string; rootPath?: string }) => Promise<Project>;
+  createProject: (input: {
+    name: string;
+    rootPath?: string;
+  }) => Promise<Project>;
   updateProject: (
     id: string,
     partial: Partial<Pick<Project, "name" | "rootPath" | "pinned">>,
@@ -308,7 +318,9 @@ interface SessionsActions {
    */
   applyDerivedFromRuntime: (
     sessionId: string,
-    patch: Partial<Pick<Session, "status" | "pendingApprovalCount" | "hasPendingAskUser">>,
+    patch: Partial<
+      Pick<Session, "status" | "pendingApprovalCount" | "hasPendingAskUser">
+    >,
   ) => void;
   /**
    * Used by messagesStore.appendUserTurn / appendUserTurnExternal on
@@ -475,8 +487,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       const isFreshSession =
         (session?.turnCount ?? 0) === 0 &&
         (!msgsNow || msgsNow.turns.length === 0);
-      const consumePending =
-        isFreshSession && pendingLLMIndex !== undefined;
+      const consumePending = isFreshSession && pendingLLMIndex !== undefined;
       if (pendingLLMIndex !== undefined) {
         useRuntimeStore.setState({ pendingLLMIndex: undefined });
       }
@@ -572,11 +583,12 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     );
     // UX feedback: archiving makes the row vanish from the sidebar —
     // a short info toast confirms the action.
+    const copy = currentCopy();
     useUiStore.getState().pushToast(
       makeAppError({
         category: "business",
         severity: "info",
-        title: "已 Archive",
+        title: copy.toasts.archived,
         message: archivedTitle,
         hint: null,
         retryable: false,
@@ -602,8 +614,11 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       return changed ? { sessions } : {};
     });
     if (!changedAny) return;
-    void invoke("unarchive_session", { id: sessionId, origin: GUI_ORIGIN }).catch(
-      (e) => console.debug("[sessions] unarchive_session invoke failed.", e),
+    void invoke("unarchive_session", {
+      id: sessionId,
+      origin: GUI_ORIGIN,
+    }).catch((e) =>
+      console.debug("[sessions] unarchive_session invoke failed.", e),
     );
   },
 
@@ -629,7 +644,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       id: sessionId,
       title: finalTitle,
       origin: GUI_ORIGIN,
-    }).catch((e) => console.debug("[sessions] rename_session invoke failed.", e));
+    }).catch((e) =>
+      console.debug("[sessions] rename_session invoke failed.", e),
+    );
   },
 
   togglePinSession: (sessionId) => {
@@ -711,11 +728,12 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     }).catch((e) =>
       console.debug("[sessions] bulk_archive_sessions invoke failed.", e),
     );
+    const copy = currentCopy();
     useUiStore.getState().pushToast(
       makeAppError({
         category: "business",
         severity: "info",
-        title: `已归档 ${archivedCount} 个对话`,
+        title: copy.toasts.archivedCount(archivedCount),
         message: "",
         hint: null,
         retryable: false,
@@ -777,10 +795,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
         origin: GUI_ORIGIN,
       });
     } catch (e) {
-      console.warn(
-        "[sessions] bulk_delete_sessions invoke failed.",
-        e,
-      );
+      console.warn("[sessions] bulk_delete_sessions invoke failed.", e);
     }
   },
 
@@ -806,9 +821,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
           // invoke counterpart; both must agree or the in-memory and
           // persisted values diverge.
           const nextSummary =
-            summary && summary.trim()
-              ? truncateSummary(summary)
-              : s.summary;
+            summary && summary.trim() ? truncateSummary(summary) : s.summary;
           return {
             ...s,
             turnCount,
@@ -1074,7 +1087,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       if (briefRuntimeKind(brief) !== activeRuntimeKind) {
         const sessions = state.sessions.filter((s) => s.id !== brief.id);
         const activeSessionId =
-          state.activeSessionId === brief.id ? undefined : state.activeSessionId;
+          state.activeSessionId === brief.id
+            ? undefined
+            : state.activeSessionId;
         return sessions.length === state.sessions.length &&
           activeSessionId === state.activeSessionId
           ? {}
@@ -1101,7 +1116,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       if (briefRuntimeKind(brief) !== activeRuntimeKind) {
         const sessions = state.sessions.filter((s) => s.id !== brief.id);
         const activeSessionId =
-          state.activeSessionId === brief.id ? undefined : state.activeSessionId;
+          state.activeSessionId === brief.id
+            ? undefined
+            : state.activeSessionId;
         return sessions.length === state.sessions.length &&
           activeSessionId === state.activeSessionId
           ? {}

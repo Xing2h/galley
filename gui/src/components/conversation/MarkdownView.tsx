@@ -12,6 +12,7 @@ import remarkGfm from "remark-gfm";
 import { createHighlighterCore, type HighlighterCore } from "shiki/core";
 import { createOnigurumaEngine } from "shiki/engine/oniguruma";
 
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -293,6 +294,7 @@ function CodeBlock({ code, language }: CodeBlockProps) {
  * scoping so nested code blocks don't trigger each other.
  */
 function CodeCopyButton({ code }: { code: string }) {
+  const copy = useCopy();
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | null>(null);
 
@@ -332,7 +334,7 @@ function CodeCopyButton({ code }: { code: string }) {
       ) : (
         <Copy size={11} weight="thin" />
       )}
-      <span>{copied ? "已复制" : "复制"}</span>
+      <span>{copied ? copy.conversation.copied : copy.conversation.copy}</span>
     </button>
   );
 }

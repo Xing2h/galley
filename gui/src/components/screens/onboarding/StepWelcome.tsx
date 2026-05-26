@@ -1,5 +1,6 @@
 import { ArrowRight, Prohibit } from "@phosphor-icons/react";
 
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface StepWelcomeProps {
@@ -27,24 +28,25 @@ interface StepWelcomeProps {
  * — softer first-meeting tone. Conscious dual-mode, not inconsistency.
  */
 export function StepWelcome({ onStart }: StepWelcomeProps) {
+  const copy = useCopy();
   return (
     <div className="max-w-[580px]">
       <h1 className="m-0 font-serif text-[36px] font-medium leading-[1.1] tracking-[0.005em] text-ink">
         Galley
       </h1>
       <p className="mb-9 mt-3 font-serif text-[18px] italic leading-[1.55] text-ink-soft">
-        GenericAgent 的本地 agent team 编排器
+        {copy.onboarding.welcomeTagline}
       </p>
 
       <div className="space-y-3">
         <ModeCard
-          title="帮我安装 GenericAgent"
-          body="敬请期待"
+          title={copy.onboarding.installGenericAgent}
+          body={copy.onboarding.comingLater}
           disabled
         />
         <ModeCard
-          title="接入已经安装的 GenericAgent"
-          body="Galley 不会修改你的 GenericAgent。删除 Galley 后 GenericAgent 仍可独立运行。"
+          title={copy.onboarding.connectExisting}
+          body={copy.onboarding.attachTrust}
           onClick={onStart}
         />
       </div>

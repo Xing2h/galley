@@ -5,6 +5,7 @@ import {
   SettingsSectionLabel,
 } from "@/components/screens/settings/settings-ui";
 import { SettingsUpdateControl } from "@/components/screens/settings/SettingsUpdateControl";
+import { useCopy } from "@/lib/i18n";
 import type { ManagedRuntimeDiagnostics } from "@/types/inspector";
 
 interface SettingsAboutProps {
@@ -30,6 +31,7 @@ export function SettingsAbout({
   managedRuntime,
   hasRunningSessions,
 }: SettingsAboutProps) {
+  const copy = useCopy();
   const managedKernelCommit =
     managedRuntime?.upstreamCommit || gaBaseline || "unknown";
   const managedKernelShort =
@@ -42,7 +44,7 @@ export function SettingsAbout({
     <div className="space-y-7">
       <SettingsPanelHeader
         title="Galley"
-        subtitle="基于 GenericAgent 的开源本地 Agent 工作台"
+        subtitle={copy.settings.about.subtitle}
         wordmark
       />
 
@@ -52,23 +54,21 @@ export function SettingsAbout({
           brand on the welcome screen. The GA capitalization is a
           quiet bow, not a billboard. */}
       <div className="rounded-md border border-line bg-elevated px-4 py-3 font-serif text-[13.5px] italic leading-[1.65] text-ink-soft">
-        Galley started as a workbench for{" "}
-        <span className="not-italic">GenericAgent</span>. The first two
-        letters of our name are a quiet bow to where we came from.
+        {copy.settings.about.origin}
       </div>
 
       <dl className="m-0 grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
-        <dt className="text-ink-muted">Galley 版本</dt>
+        <dt className="text-ink-muted">{copy.settings.about.galleyVersion}</dt>
         <dd className="m-0 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-ink">v{workbenchVersion}</span>
-            <SettingsUpdateControl
-              hasRunningSessions={hasRunningSessions}
-            />
+            <SettingsUpdateControl hasRunningSessions={hasRunningSessions} />
           </div>
         </dd>
 
-        <dt className="text-ink-muted">内置 GA 版本</dt>
+        <dt className="text-ink-muted">
+          {copy.settings.about.bundledGAVersion}
+        </dt>
         <dd className="m-0 font-mono text-ink">
           {managedKernelShort}
           {managedKernelDate && (
@@ -78,7 +78,7 @@ export function SettingsAbout({
       </dl>
 
       <div className="mt-10">
-        <SettingsSectionLabel>Links</SettingsSectionLabel>
+        <SettingsSectionLabel>{copy.settings.about.links}</SettingsSectionLabel>
         <div className="mt-3 space-y-1">
           <ExternalLink
             href="https://github.com/wangjc683/galley"
@@ -87,7 +87,7 @@ export function SettingsAbout({
           />
           <ExternalLink
             href="https://github.com/wangjc683/galley/issues"
-            label="反馈建议"
+            label={copy.settings.about.feedback}
             detail="GitHub Issues"
           />
           <ExternalLink
@@ -96,23 +96,23 @@ export function SettingsAbout({
             detail="github.com/lsdefine/GenericAgent"
           />
           <div className="pt-3 text-[11.5px] text-ink-muted">
-            Also by wangjc683
+            {copy.settings.about.alsoBy}
           </div>
           <ExternalLink
             href="https://subsage.top"
             label="SubSage"
-            detail="AI Agent 原生订阅管家 · subsage.top"
+            detail={copy.settings.about.subsageDetail}
           />
           <ExternalLink
             href="https://15perf70mm.com"
             label="15perf70mm"
-            detail="IMAX 胶片电影资料库 · 15perf70mm.com"
+            detail={copy.settings.about.filmDetail}
           />
         </div>
       </div>
 
       <div className="border-t border-line pt-4 text-[12px] text-ink-muted">
-        Made by wangjc683 · MIT licensed
+        {copy.settings.about.madeBy}
       </div>
     </div>
   );

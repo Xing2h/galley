@@ -1,6 +1,7 @@
 import { ChatCircleDots, Info } from "@phosphor-icons/react";
 
 import { MarkdownView } from "@/components/conversation/MarkdownView";
+import { useCopy } from "@/lib/i18n";
 
 /**
  * Standalone, non-agent-loop message — currently used for `/btw`
@@ -32,6 +33,7 @@ export function SystemMessageBubble({
   content,
   variant,
 }: SystemMessageBubbleProps) {
+  const copy = useCopy();
   if (variant === "side_question") {
     return (
       <div
@@ -40,7 +42,7 @@ export function SystemMessageBubble({
       >
         <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-warning">
           <ChatCircleDots size={12} weight="bold" />
-          侧问
+          {copy.conversation.sideQuestion}
         </div>
         <MarkdownView source={content} variant="agent" />
       </div>
@@ -53,7 +55,7 @@ export function SystemMessageBubble({
     >
       <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-muted">
         <Info size={12} weight="bold" />
-        系统
+        {copy.conversation.system}
       </div>
       <MarkdownView source={content} variant="agent" />
     </div>

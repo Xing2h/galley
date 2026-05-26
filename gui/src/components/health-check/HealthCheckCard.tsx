@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { HealthCheckItem, HealthCheckState } from "@/types/inspector";
 
@@ -79,8 +80,10 @@ export function HealthCheckCard({
   itemActions = {},
   showFooter,
 }: HealthCheckCardProps) {
+  const copy = useCopy();
   const summary = summarize(items);
   const renderFooter = showFooter ?? variant === "standalone";
+  const resolvedTitle = title === "Health Check" ? copy.health.title : title;
 
   if (variant === "embedded") {
     return (
@@ -101,7 +104,7 @@ export function HealthCheckCard({
     <div className="rounded-md border border-line bg-elevated p-5 shadow-card">
       <div className="mb-1 flex items-center gap-2.5 border-b border-line pb-3">
         <ShieldCheck size={18} weight="thin" className="text-ink" />
-        <div className="text-[14px] font-medium text-ink">{title}</div>
+        <div className="text-[14px] font-medium text-ink">{resolvedTitle}</div>
         <SummaryPill summary={summary} className="ml-auto" />
       </div>
 
@@ -121,10 +124,10 @@ export function HealthCheckCard({
       {renderFooter && (
         <div className="mt-3 border-t border-line pt-3 text-[12.5px] text-ink-soft">
           {summary.failed > 0
-            ? `修复 ${summary.failed} 个问题后继续`
+            ? copy.health.fixIssues(summary.failed)
             : summary.running > 0
-              ? "正在检查最后一项…"
-              : "全部检查通过"}
+              ? copy.health.checkingLast
+              : copy.health.allPassed}
         </div>
       )}
     </div>
@@ -151,8 +154,7 @@ function HealthRow({
   // Failures and warnings share the same action treatment; success /
   // running / pending rows have nothing to fix so we skip.
   const showActions =
-    (item.state === "failed" || item.state === "warning") &&
-    actions.length > 0;
+    (item.state === "failed" || item.state === "warning") && actions.length > 0;
 
   return (
     <div className="border-b border-line py-2.5 last:border-b-0">
@@ -254,6 +256,7 @@ function SummaryPill({
   summary: Summary;
   className?: string;
 }) {
+  const copy = useCopy();
   const isAllPassed = summary.passed === summary.total && summary.total > 0;
   const hasFailures = summary.failed > 0;
   const inProgress = summary.running > 0 || summary.pending > 0;
@@ -266,7 +269,7 @@ function SummaryPill({
           className,
         )}
       >
-        all passed
+        {copy.health.passedPill}
       </span>
     );
   }
@@ -278,7 +281,7 @@ function SummaryPill({
           className,
         )}
       >
-        {summary.failed} failed
+        {copy.health.failedPill(summary.failed)}
       </span>
     );
   }
@@ -290,7 +293,7 @@ function SummaryPill({
           className,
         )}
       >
-        {summary.passed} / {summary.total} passed
+        {copy.health.passedRatio(summary.passed, summary.total)}
       </span>
     );
   }

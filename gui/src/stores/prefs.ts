@@ -2,6 +2,11 @@ import { create } from "zustand";
 
 import type { ApprovalConfig } from "@/components/screens/settings/Settings";
 import { getPref, setPref } from "@/lib/db";
+import { copyForLanguage } from "@/lib/i18n";
+import {
+  resolveLanguagePreference,
+  type LanguagePreference,
+} from "@/lib/language";
 import { findCandidateByAlias } from "@/lib/python-probe";
 import { DEFAULT_APPROVAL_CONFIG, DEFAULT_GA_CONFIG } from "@/stores/defaults";
 import { useRuntimeStore } from "@/stores/runtime";
@@ -21,6 +26,7 @@ import type { RuntimeKind } from "@/types/session";
  *   - yoloMode            (pref: yolo_mode)
  *   - yoloIntroSeen       (pref: yolo_intro_seen)
  *   - conversationWidth   (pref: conversation_width)
+ *   - languagePreference  (pref: language_preference)
  *
  * setGAConfig fans out to runtimeStore (patchRuntimeInfo / resetWarmup
  * / warmupLLMList) + uiStore (pushToast) so a Settings → Runtime path
@@ -115,6 +121,12 @@ interface PrefsState {
    * to prefs `conversation_width`.
    */
   conversationWidth: "compact" | "wide";
+
+  /**
+   * UI language preference. `system` is the default and resolves from
+   * OS / WebView language preference at render time.
+   */
+  languagePreference: LanguagePreference;
 }
 
 interface PrefsActions {
@@ -136,6 +148,9 @@ interface PrefsActions {
 
   // ---- Conversation width ----
   setConversationWidth: (mode: "compact" | "wide") => Promise<void>;
+
+  // ---- Language ----
+  setLanguagePreference: (preference: LanguagePreference) => Promise<void>;
 
   // ---- GA config ----
   /**
@@ -172,6 +187,7 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
   yoloMode: true,
   yoloIntroSeen: true,
   conversationWidth: "compact",
+  languagePreference: "system",
 
   // ---- Approval ----
   setApprovalRequiredTools: (tools) =>
@@ -232,10 +248,7 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
     try {
       await setPref("yolo_intro_seen", true);
     } catch (e) {
-      console.warn(
-        "[prefs] acknowledgeYoloIntro: pref persistence failed.",
-        e,
-      );
+      console.warn("[prefs] acknowledgeYoloIntro: pref persistence failed.", e);
     }
   },
 
@@ -245,8 +258,18 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
     try {
       await setPref("conversation_width", mode);
     } catch (e) {
+      console.warn("[prefs] setConversationWidth: pref persistence failed.", e);
+    }
+  },
+
+  // ---- Language ----
+  setLanguagePreference: async (preference) => {
+    set({ languagePreference: preference });
+    try {
+      await setPref("language_preference", preference);
+    } catch (e) {
       console.warn(
-        "[prefs] setConversationWidth: pref persistence failed.",
+        "[prefs] setLanguagePreference: pref persistence failed.",
         e,
       );
     }
@@ -283,12 +306,15 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
       ([, v]) => v !== undefined && v !== "",
     );
     if (changedField) {
+      const copy = copyForLanguage(
+        resolveLanguagePreference(get().languagePreference),
+      );
       useUiStore.getState().pushToast(
         makeAppError({
           category: "business",
           severity: "info",
-          title: "已保存路径配置",
-          message: "重启 Galley 才能让现有对话生效",
+          title: copy.toasts.savedPath,
+          message: copy.toasts.restartForExisting,
           hint: null,
           retryable: false,
           context: "setGAConfig",
@@ -352,6 +378,23 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
         e,
       );
     }
+    try {
+      const languagePreference = await getPref<LanguagePreference>(
+        "language_preference",
+      );
+      if (
+        languagePreference === "system" ||
+        languagePreference === "zh-CN" ||
+        languagePreference === "en-US"
+      ) {
+        set({ languagePreference });
+      }
+    } catch (e) {
+      console.warn(
+        "[prefs] hydratePrefs: language_preference pref load failed.",
+        e,
+      );
+    }
     // GA spawn config. When `ga_config` pref is absent the user is
     // fresh-from-install: the orchestrator routes them to Onboarding
     // so they can pick a GA path + run health checks.
@@ -388,10 +431,7 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
       const activeRuntimeKind = await getPref<RuntimeKind>(
         "active_runtime_kind",
       );
-      if (
-        activeRuntimeKind === "managed" ||
-        activeRuntimeKind === "external"
-      ) {
+      if (activeRuntimeKind === "managed" || activeRuntimeKind === "external") {
         set({ activeRuntimeKind });
       } else {
         set({ activeRuntimeKind: hasGAConfig ? "external" : "managed" });

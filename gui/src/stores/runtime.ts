@@ -10,6 +10,8 @@ import {
   type BridgeHandlers,
 } from "@/lib/bridge";
 import { setPref } from "@/lib/db";
+import { copyForLanguage } from "@/lib/i18n";
+import { resolveLanguagePreference } from "@/lib/language";
 import {
   DEFAULT_LLM_DISPLAY_NAME,
   DEFAULT_LLMS,
@@ -236,6 +238,12 @@ const LRU_CAP = 20;
 const BRIDGE_CLIENT_WAIT_MS = 15_000;
 const CONNECTED_CLIENT_WAIT_MS = 1_000;
 
+function currentCopy() {
+  return copyForLanguage(
+    resolveLanguagePreference(usePrefsStore.getState().languagePreference),
+  );
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -328,13 +336,12 @@ function buildSeedRuntime(seed: RuntimeSeedHints): PerSessionRuntime {
   const hasPersistedIndex =
     seed.persistedIndex !== undefined &&
     cached.some((l) => l.index === seed.persistedIndex);
-  const llms =
-    hasPersistedIndex
-      ? cached.map((l) => ({
-          ...l,
-          isCurrent: l.index === seed.persistedIndex,
-        }))
-      : cached;
+  const llms = hasPersistedIndex
+    ? cached.map((l) => ({
+        ...l,
+        isCurrent: l.index === seed.persistedIndex,
+      }))
+    : cached;
   const llmDisplayName =
     seed.persistedDisplayName ??
     llms.find((l) => l.isCurrent)?.displayName ??
@@ -359,6 +366,7 @@ function selectLLMInList(
 }
 
 function makeBridgeHandlers(sessionId: string): BridgeHandlers {
+  const copy = currentCopy();
   return {
     onEvent: (event) => dispatchIPCEvent(event),
     onStderr: (line) => {
@@ -379,7 +387,7 @@ function makeBridgeHandlers(sessionId: string): BridgeHandlers {
           makeAppError({
             category: "bridge",
             severity: "error",
-            title: "Bridge 进程崩溃",
+            title: copy.errors.bridgeCrashed,
             message,
             hint: null,
             retryable: false,
@@ -417,7 +425,7 @@ function makeBridgeHandlers(sessionId: string): BridgeHandlers {
         makeAppError({
           category: "bridge",
           severity: "error",
-          title: "Bridge 启动失败",
+          title: copy.errors.bridgeFailed,
           message: msg,
           hint: null,
           retryable: false,

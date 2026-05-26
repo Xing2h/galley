@@ -17,6 +17,7 @@
  */
 
 import { EXAMPLE_GA_PATH } from "@/lib/platform";
+import type { ResolvedLanguage } from "@/lib/language";
 
 export type TutorialId =
   | "download-ga"
@@ -195,3 +196,149 @@ pip install -e .
     // more to read.
   },
 };
+
+const TUTORIALS_EN: Record<TutorialId, Tutorial> = {
+  "download-ga": {
+    id: "download-ga",
+    title: "Download GenericAgent",
+    body: `It looks like GA has not been downloaded to this machine yet. Pick either route:
+
+**Option 1: Download ZIP**
+
+1. Open the [GA repository](https://github.com/lsdefine/GenericAgent)
+2. Click **Code** -> **Download ZIP**
+3. Unzip it somewhere you can find again, for example \`${EXAMPLE_GA_PATH}\`
+
+**Option 2: Git clone**
+
+\`\`\`bash
+git clone https://github.com/lsdefine/GenericAgent.git
+\`\`\`
+
+After that, come back to Galley and choose the GA repository root.`,
+    upstreamUrl: HELLO_GA_BASE,
+    upstreamLabel: "Open §1.2 Download project (Datawhale Hello GA)",
+  },
+
+  "wrong-directory": {
+    id: "wrong-directory",
+    title: "Choose the GA folder",
+    body: `This path exists, but Galley cannot find \`agentmain.py\` inside it. That usually means this is not the GA repository root.
+
+The GA root should include files and folders like:
+
+- \`agentmain.py\` · entry module
+- \`ga.py\` · tool implementation
+- \`mykey_template.py\` · config template
+- \`assets/\` · static resources
+- \`frontends/\` · upstream frontends
+
+Common mistakes:
+
+- Choosing the \`frontends/\` subfolder instead of the root
+- Choosing the parent folder of a downloaded ZIP instead of the unzipped GA folder
+- Choosing another folder with a similar name
+
+Go back to Galley and choose the folder that directly contains \`agentmain.py\`.`,
+    upstreamUrl: HELLO_GA_BASE,
+    upstreamLabel: "Open §1.2 Download project (Datawhale Hello GA)",
+  },
+
+  "mykey-setup": {
+    id: "mykey-setup",
+    title: "Configure API key (mykey.py)",
+    body: `GA needs a \`mykey.py\` file that tells it which model provider to use. You create this file yourself; Galley does not write it into your GA checkout.
+
+**Step 1: Copy the template**
+
+In the GA folder, copy \`mykey_template.py\` and rename the copy to \`mykey.py\`.
+
+**Step 2: Fill in API settings**
+
+Open \`mykey.py\` in any text editor. Find the config block for the provider you want, for example:
+
+- \`native_claude_config0\` · Claude
+- \`native_oai_config\` · OpenAI
+- \`oai_config_deepseek\` · DeepSeek
+- \`oai_config_kimi\` · Moonshot Kimi
+
+Set \`apikey\` and \`apibase\` to your own values. Remove the leading \`#\` comments from the whole block; commented lines do not take effect.
+
+**Step 3: Save and come back**
+
+Return to Galley and run the Health Check again.`,
+    upstreamUrl: HELLO_GA_BASE,
+    upstreamLabel: "Open §1.4 Configure API key (Datawhale Hello GA)",
+  },
+
+  "assets-missing": {
+    id: "assets-missing",
+    title: "GA install is incomplete",
+    body: `The GA folder is missing \`assets/\`. GA may still start, but some features can fail because this folder contains static resources such as icons, SOP content, and tool history assets.
+
+This usually means the download or unzip step was incomplete.
+
+**If you downloaded a ZIP:**
+
+1. Remove the current GA folder
+2. Download the ZIP again from the [GA repository](https://github.com/lsdefine/GenericAgent)
+3. Unzip it and confirm \`assets/\` is inside the root
+
+**If you used git clone:**
+
+\`\`\`bash
+cd /path/to/GenericAgent
+git status
+git pull
+\`\`\`
+
+After fixing it, come back to Galley and run the Health Check again.`,
+    upstreamUrl: HELLO_GA_BASE,
+    upstreamLabel: "Open §1.2 Download project (Datawhale Hello GA)",
+  },
+
+  "python-missing-anthropic": {
+    id: "python-missing-anthropic",
+    title: "Python cannot load GA",
+    body: `Galley could not find a Python interpreter that can \`import agentmain\`. Usually the GA dependencies, such as \`requests\`, \`beautifulsoup4\`, or \`bottle\`, are not installed into the interpreter Galley can see.
+
+**Recommended: create a venv inside the GA folder**
+
+\`\`\`bash
+cd ${EXAMPLE_GA_PATH}
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+\`\`\`
+
+\`pip install -e .\` installs GA's core dependencies from \`pyproject.toml\`. After it finishes, come back to Galley and run the Health Check again.
+
+**Why not just use terminal \`python3\`?**
+
+When the packaged Galley app starts from Finder, its PATH is not the same as your terminal PATH. It may not see Python managed by pyenv, uv, conda, or asdf.`,
+  },
+
+  "memory-info": {
+    id: "memory-info",
+    title: "memory/ will be created automatically",
+    body: `You can ignore this warning for a fresh GA install. GA creates the \`memory/\` folder on first run and uses it for L1-L4 memory storage.
+
+If every other check passes, you can continue into Galley. The folder will appear after GA runs once.
+
+You can also create it manually:
+
+\`\`\`bash
+# macOS / Linux
+cd /path/to/GenericAgent && mkdir memory
+
+# Windows
+cd C:\\path\\to\\GenericAgent && md memory
+\`\`\``,
+  },
+};
+
+export function tutorialsForLanguage(
+  language: ResolvedLanguage,
+): Record<TutorialId, Tutorial> {
+  return language === "en-US" ? TUTORIALS_EN : TUTORIALS;
+}

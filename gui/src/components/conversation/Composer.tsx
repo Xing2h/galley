@@ -1,11 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import {
-  ArrowUp,
-  CaretUp,
-  Check,
-  Cube,
-  Stop,
-} from "@phosphor-icons/react";
+import { ArrowUp, CaretUp, Check, Cube, Stop } from "@phosphor-icons/react";
 import {
   forwardRef,
   useEffect,
@@ -14,6 +8,7 @@ import {
   useState,
 } from "react";
 
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export interface ComposerLLMOption {
@@ -140,7 +135,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       onStop,
       submitAckTick = 0,
       disabled = false,
-      placeholder = "问点什么…",
+      placeholder,
       autoFocus = false,
       llms,
       onSelectLLM,
@@ -149,6 +144,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     },
     ref,
   ) {
+    const copy = useCopy();
+    const resolvedPlaceholder = placeholder ?? copy.composer.askAnything;
     // Hybrid controlled / uncontrolled. When `value` prop is provided
     // we render it directly; otherwise we maintain an internal copy.
     // Avoid syncing prop -> internal in an effect (React 19 / Compiler
@@ -336,7 +333,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={placeholder}
+          placeholder={resolvedPlaceholder}
           style={{ maxHeight: COMPOSER_MAX_HEIGHT_PX }}
           // `resize-none` keeps the corner grab handle hidden — the
           // height auto-grows via the effect above, so manual resize
@@ -367,8 +364,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               <button
                 type="button"
                 onClick={onStop}
-                title="Stop"
-                aria-label="Stop"
+                title={copy.composer.stop}
+                aria-label={copy.composer.stop}
                 className="composer-stop-breath flex size-8 items-center justify-center rounded-full bg-warning text-elevated transition-colors hover:bg-warning/90"
               >
                 <Stop size={14} weight="fill" />
@@ -378,8 +375,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 type="button"
                 onClick={handleSubmit}
                 disabled={disabled || !text?.trim()}
-                title="Send · Enter"
-                aria-label="Send"
+                title={copy.composer.sendWithEnter}
+                aria-label={copy.composer.send}
                 className={cn(
                   "flex size-8 items-center justify-center rounded-full bg-brand text-ink transition-colors hover:bg-brand-strong hover:text-elevated",
                   (disabled || !text?.trim()) &&
@@ -415,7 +412,7 @@ function LLMPill({
   llmDisplayName,
   llms,
   onSelectLLM,
-  llmConfigHint = "修改 mykey.py 后重启 Galley 生效",
+  llmConfigHint,
   onOpenLLMSwitcher,
   disabled,
   stopMode,
@@ -428,9 +425,11 @@ function LLMPill({
   disabled: boolean;
   stopMode: boolean;
 }) {
+  const copy = useCopy();
+  const footerHint = llmConfigHint ?? copy.app.externalModelHint;
   const title = stopMode
-    ? "运行中无法切换 LLM"
-    : `切换 LLM · 当前 ${llmDisplayName}`;
+    ? copy.composer.cannotSwitchRunning
+    : copy.composer.switchCurrent(llmDisplayName);
 
   const pillClasses = cn(
     "flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-[12.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink",
@@ -505,7 +504,7 @@ function LLMPill({
               question right where it surfaces. Visually quiet on
               purpose — supplementary metadata, not a CTA. */}
           <div className="mt-1 border-t border-line/60 px-2.5 pb-1 pt-1.5 text-[10.5px] leading-[1.45] text-ink-muted/70">
-            {llmConfigHint}
+            {footerHint}
           </div>
         </Popover.Content>
       </Popover.Portal>

@@ -1,10 +1,5 @@
 import { CaretDown } from "@phosphor-icons/react";
-import {
-  Fragment,
-  useEffect,
-  useState,
-  type CSSProperties,
-} from "react";
+import { Fragment, useEffect, useState, type CSSProperties } from "react";
 
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import {
@@ -14,6 +9,7 @@ import {
 import { MessageUser } from "@/components/conversation/MessageUser";
 import { SystemMessageBubble } from "@/components/conversation/SystemMessageBubble";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { AgentTurn, Turn } from "@/types/conversation";
 import type { ApprovalDecision } from "@/types/ipc";
@@ -159,16 +155,15 @@ function AgentTurnView({
         />
       ))}
 
-      {answerText && (
-        isFinalTurn ? (
+      {answerText &&
+        (isFinalTurn ? (
           <>
             <StrongHr />
             <MessageAgent>{answerText}</MessageAgent>
           </>
         ) : (
           <MessageAgentNarration>{answerText}</MessageAgentNarration>
-        )
-      )}
+        ))}
     </div>
   );
 }
@@ -267,9 +262,10 @@ export function TurnMarker({
    */
   preamble?: string;
 }) {
+  const copy = useCopy();
   const elapsedSec = useElapsedSeconds(thinking);
   const elapsedLabel =
-    thinking && elapsedSec >= 3 ? formatElapsedSeconds(elapsedSec) : null;
+    thinking && elapsedSec >= 3 ? formatElapsedSeconds(elapsedSec, copy) : null;
   const hasStepNumber = index != null;
   const hasDetail = !thinking && Boolean(thinkingContent || preamble);
   const [open, setOpen] = useState(false);
@@ -290,12 +286,12 @@ export function TurnMarker({
           />
         ) : summary ? (
           <>
-            {hasStepNumber && <>第 {index} 步</>}
+            {hasStepNumber && <>{copy.conversation.step(index)}</>}
             {" · "}
             <span className="text-ink-soft">{summary}</span>
           </>
         ) : (
-          hasStepNumber && <>第 {index} 步</>
+          hasStepNumber && <>{copy.conversation.step(index)}</>
         )}
         {hasDetail && (
           <CaretDown
@@ -322,10 +318,11 @@ function ThinkingWaveText({
   index?: number;
   elapsedLabel: string | null;
 }) {
+  const copy = useCopy();
   const WAVE_STEP_MS = 160;
   const WAVE_REST_MS = 240;
   const WAVE_MIN_DURATION_MS = 1300;
-  const statusText = `${index != null ? `第 ${index} 步 · ` : ""}思考中...`;
+  const statusText = `${index != null ? `${copy.conversation.step(index)} · ` : ""}${copy.conversation.thinking}`;
   const elapsedText = elapsedLabel ? ` · ${elapsedLabel}` : "";
   const text = `${statusText}${elapsedText}`;
   const statusTokens = toThinkingWaveTokens(statusText, 0);
@@ -484,11 +481,14 @@ function useElapsedSeconds(active: boolean): number {
  * "已 1 分 0 秒") so the display ticks continuously each second
  * rather than briefly flashing a shorter form on the round-minute.
  */
-function formatElapsedSeconds(sec: number): string {
-  if (sec < 60) return `${sec} 秒`;
+function formatElapsedSeconds(
+  sec: number,
+  copy: ReturnType<typeof useCopy>,
+): string {
+  if (sec < 60) return copy.conversation.seconds(sec);
   const minutes = Math.floor(sec / 60);
   const remainder = sec % 60;
-  return `已 ${minutes} 分 ${remainder} 秒`;
+  return copy.conversation.minutesSeconds(minutes, remainder);
 }
 
 function StrongHr() {

@@ -8,15 +8,14 @@ import {
 import { StepHealth } from "@/components/screens/onboarding/StepHealth";
 import { StepModelConfig } from "@/components/screens/onboarding/StepModelConfig";
 import { TutorialModal } from "@/components/screens/onboarding/TutorialModal";
+import { runHealthChecks, validateGAPath } from "@/lib/onboarding-validation";
 import {
-  runHealthChecks,
-  validateGAPath,
-} from "@/lib/onboarding-validation";
-import {
-  TUTORIALS,
+  tutorialsForLanguage,
   type Tutorial,
   type TutorialId,
 } from "@/lib/onboarding-tutorials";
+import { useCopy } from "@/lib/i18n";
+import { resolveLanguagePreference } from "@/lib/language";
 import { EXAMPLE_GA_PATH } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { usePrefsStore } from "@/stores/prefs";
@@ -42,7 +41,7 @@ export interface OnboardingProps {
    * Attach → Health → Main view. `"revisit"` is the Settings → "Re-run
    * Health Check" path: jumps straight to Health step (uses the
    * already-saved GA path), relabels Back → "取消" and "进入 Galley"
-   * → "返回 Settings", and requires an `onCancel` callback for the
+   * → "返回设置", and requires an `onCancel` callback for the
    * Back button (since there's no Attach step to step back to).
    */
   mode?: "fresh" | "revisit";
@@ -60,17 +59,6 @@ export interface OnboardingProps {
    */
   initialPath?: string;
 }
-
-const MANAGED_STEP_LABELS: { key: OnboardingStep | "done"; label: string }[] = [
-  { key: "model", label: "模型" },
-  { key: "done", label: "完成" },
-];
-
-const ATTACH_STEP_LABELS: { key: OnboardingStep | "done"; label: string }[] = [
-  { key: "attach", label: "接入 GA" },
-  { key: "health", label: "Health Check" },
-  { key: "done", label: "完成" },
-];
 
 /**
  * Top-level Onboarding controller — manages step state, mocked path
@@ -92,6 +80,12 @@ export function Onboarding({
   onCancel,
   initialPath,
 }: OnboardingProps) {
+  const copy = useCopy();
+  const languagePreference = usePrefsStore((s) => s.languagePreference);
+  const tutorials = useMemo(
+    () => tutorialsForLanguage(resolveLanguagePreference(languagePreference)),
+    [languagePreference],
+  );
   const isRevisit = mode === "revisit";
   // Revisit jumps straight to Health (Settings already has a saved GA
   // path; user just wants to re-validate). Welcome/Attach are unreachable
@@ -105,9 +99,7 @@ export function Onboarding({
   // Active tutorial modal id; null = closed. Set by StepAttach
   // tutorial buttons and StepHealth row-action clicks. Surfaces the
   // matching hand-written snippet from `lib/onboarding-tutorials`.
-  const [activeTutorial, setActiveTutorial] = useState<TutorialId | null>(
-    null,
-  );
+  const [activeTutorial, setActiveTutorial] = useState<TutorialId | null>(null);
   // Bumped by the "重新检查" button to re-trigger the runHealthChecks
   // effect without going Back → Continue. Same dep array; an integer
   // change forces the effect to re-fire and cancels any in-flight run.
@@ -176,9 +168,7 @@ export function Onboarding({
   // probe + populates probedPython. We still subscribe to the toggle
   // value so a user flipping the Settings switch mid-revisit triggers
   // a re-run with the new mode.
-  const useExternalPython = usePrefsStore(
-    (s) => s.gaConfig.useExternalPython,
-  );
+  const useExternalPython = usePrefsStore((s) => s.gaConfig.useExternalPython);
 
   useEffect(() => {
     if (step !== "health") return;
@@ -186,46 +176,44 @@ export function Onboarding({
     void runHealthChecks(path, setHealthChecks, controller.signal, {
       useExternalPython,
       onPythonProbed: (alias) => setProbedPython(alias),
+      labels: copy.health,
     });
     return () => controller.abort();
-  }, [step, path, healthRunNonce, useExternalPython]);
+  }, [copy.health, step, path, healthRunNonce, useExternalPython]);
 
   // Tutorial mapping: each named health check (and StepAttach failure)
   // maps to one fix-it snippet. The action id we hand to
   // HealthCheckCard is the same string as the tutorial id, so the
   // onItemAction handler can look it up directly without a separate
   // dispatch table.
-  const itemActions = useMemo<
-    Record<string, { id: string; label: string }[]>
-  >(
+  const itemActions = useMemo<Record<string, { id: string; label: string }[]>>(
     () => ({
-      "GA 路径存在": [{ id: "download-ga", label: "查看教程：下载 GA" }],
-      "agentmain.py 可见": [
-        { id: "wrong-directory", label: "查看教程：选对目录" },
+      [copy.health.gaPathExists]: [
+        { id: "download-ga", label: copy.onboarding.tutorialDownloadGA },
       ],
-      "mykey.py 存在": [
-        { id: "mykey-setup", label: "查看教程：配置 API 密钥" },
+      [copy.health.agentmainVisible]: [
+        { id: "wrong-directory", label: copy.onboarding.tutorialChooseFolder },
       ],
-      "memory/ 目录可见": [
-        { id: "memory-info", label: "查看：为什么是警告" },
+      [copy.health.mykeyExists]: [
+        { id: "mykey-setup", label: copy.onboarding.tutorialMyKey },
       ],
-      "assets/ 目录可见": [
-        { id: "assets-missing", label: "查看教程：重装 GA" },
+      [copy.health.memoryVisible]: [
+        { id: "memory-info", label: copy.onboarding.tutorialMemory },
       ],
-      "Python 解释器": [
+      [copy.health.assetsVisible]: [
+        { id: "assets-missing", label: copy.onboarding.tutorialAssets },
+      ],
+      [copy.health.pythonInterpreter]: [
         {
           id: "python-missing-anthropic",
-          label: "查看教程：在 GA 目录创建 venv",
+          label: copy.onboarding.tutorialPython,
         },
       ],
     }),
-    [],
+    [copy],
   );
 
-  const handleItemAction = (
-    _item: HealthCheckItem,
-    actionId: string,
-  ) => {
+  const handleItemAction = (_item: HealthCheckItem, actionId: string) => {
     if (isTutorialId(actionId)) setActiveTutorial(actionId);
   };
 
@@ -234,7 +222,7 @@ export function Onboarding({
   };
 
   const activeTutorialEntry: Tutorial | null = activeTutorial
-    ? TUTORIALS[activeTutorial]
+    ? tutorials[activeTutorial]
     : null;
 
   const handleContinueAttach = () => {
@@ -279,7 +267,7 @@ export function Onboarding({
               validation={validation}
               onPathChange={setPath}
               onPickFolder={() => {
-                void pickFolder().then((picked) => {
+                void pickFolder(copy.app.chooseGAFolderTitle).then((picked) => {
                   if (picked) setPath(picked);
                 });
               }}
@@ -291,13 +279,19 @@ export function Onboarding({
           {step === "health" && (
             <StepHealth
               items={healthChecks}
-              onBack={isRevisit ? (onCancel ?? handleFinish) : () => setStep("attach")}
+              onBack={
+                isRevisit ? (onCancel ?? handleFinish) : () => setStep("attach")
+              }
               onContinue={handleFinish}
               onRetry={() => setHealthRunNonce((n) => n + 1)}
               onItemAction={handleItemAction}
               itemActions={itemActions}
-              backLabel={isRevisit ? "取消" : "Back"}
-              continueLabel={isRevisit ? "返回 Settings" : "进入 Galley"}
+              backLabel={isRevisit ? copy.common.cancel : copy.common.back}
+              continueLabel={
+                isRevisit
+                  ? copy.onboarding.backToSettings
+                  : copy.onboarding.enterGalley
+              }
             />
           )}
         </div>
@@ -325,7 +319,17 @@ function isTutorialId(s: string): s is TutorialId {
 // ---------------- Progress dots ----------------
 
 function StepProgress({ step }: { step: OnboardingStep }) {
-  const labels = step === "model" ? MANAGED_STEP_LABELS : ATTACH_STEP_LABELS;
+  const copy = useCopy();
+  const managedStepLabels: { key: OnboardingStep | "done"; label: string }[] = [
+    { key: "model", label: copy.settings.models.model },
+    { key: "done", label: copy.common.done },
+  ];
+  const attachStepLabels: { key: OnboardingStep | "done"; label: string }[] = [
+    { key: "attach", label: "GA" },
+    { key: "health", label: copy.health.title },
+    { key: "done", label: copy.common.done },
+  ];
+  const labels = step === "model" ? managedStepLabels : attachStepLabels;
   const stepIndex: Record<OnboardingStep | "done", number> = {
     model: 0,
     attach: 0,
@@ -379,13 +383,13 @@ function StepProgress({ step }: { step: OnboardingStep }) {
  * choking on the plugin shim. Returns the picked path or null on
  * cancel / error.
  */
-async function pickFolder(): Promise<string | null> {
+async function pickFolder(title: string): Promise<string | null> {
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "选择 GenericAgent 仓库目录",
+      title,
     });
     return typeof selected === "string" && selected.length > 0
       ? selected

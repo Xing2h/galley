@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { HealthCheckCard } from "@/components/health-check/HealthCheckCard";
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { HealthCheckItem } from "@/types/inspector";
 
@@ -27,12 +28,12 @@ interface StepHealthProps {
    */
   onItemAction?: (item: HealthCheckItem, action: string) => void;
   itemActions?: Record<string, { id: string; label: string }[]>;
-  /** Override "Back" button label. Used by the Settings revisit flow
+  /** Override "返回" button label. Used by the Settings revisit flow
    * to relabel as "取消" (since there's no Attach step to go back to —
-   * Back is really cancellation). Default: "Back". */
+   * this is really cancellation). Default: "返回". */
   backLabel?: string;
   /** Override "进入 Galley" button label. Used by Settings revisit
-   * flow to relabel as "返回 Settings". Default: "进入 Galley". */
+   * flow to relabel as "返回设置". Default: "进入 Galley". */
   continueLabel?: string;
 }
 
@@ -55,9 +56,13 @@ export function StepHealth({
   onRetry,
   onItemAction,
   itemActions,
-  backLabel = "Back",
-  continueLabel = "进入 Galley",
+  backLabel,
+  continueLabel,
 }: StepHealthProps) {
+  const copy = useCopy();
+  const onboardingCopy = copy.onboarding;
+  const resolvedBackLabel = backLabel ?? copy.common.back;
+  const resolvedContinueLabel = continueLabel ?? onboardingCopy.enterGalley;
   const allPassed =
     items.length > 0 && items.every((c) => c.state === "success");
   const settled =
@@ -67,10 +72,10 @@ export function StepHealth({
   return (
     <div className="max-w-[580px]">
       <h1 className="m-0 font-serif text-[32px] font-medium leading-tight tracking-[0.005em] text-ink">
-        检查 GA 运行环境
+        {onboardingCopy.healthTitle}
       </h1>
       <p className="mb-7 mt-2.5 font-serif text-[15.5px] italic leading-[1.55] text-ink-soft">
-        全部通过后才能进入主界面 · Galley 不会修改你的 GA。
+        {onboardingCopy.healthSubtitle}
       </p>
 
       <HealthCheckCard
@@ -86,10 +91,7 @@ export function StepHealth({
           weight="thin"
           className="mt-0.5 shrink-0 text-ink-muted"
         />
-        <div>
-          跳过了 LLM 连接测试以节省费用。第一次发送消息时如有问题
-          会提示具体错误并给出修复路径。
-        </div>
+        <div>{onboardingCopy.skipLLMTest}</div>
       </div>
 
       <div className="mt-7 flex items-center gap-2">
@@ -99,7 +101,7 @@ export function StepHealth({
           className="inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-[13px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
           <ArrowLeft size={13} weight="thin" />
-          {backLabel}
+          {resolvedBackLabel}
         </button>
         {onRetry && settled && !allPassed && (
           <button
@@ -108,7 +110,7 @@ export function StepHealth({
             className="inline-flex items-center gap-1.5 rounded-sm border border-line px-3 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink"
           >
             <ArrowClockwise size={12} weight="thin" />
-            重新检查
+            {onboardingCopy.rerunChecks}
           </button>
         )}
         <button
@@ -120,7 +122,7 @@ export function StepHealth({
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
         >
-          {continueLabel}
+          {resolvedContinueLabel}
           <ArrowRight size={13} weight="bold" />
         </button>
       </div>

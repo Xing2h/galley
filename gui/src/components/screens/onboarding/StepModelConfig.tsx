@@ -14,6 +14,7 @@ import {
   listManagedModelOptions,
   testManagedModelConnection,
 } from "@/lib/managed-models";
+import { useCopy } from "@/lib/i18n";
 import {
   DEFAULT_MANAGED_MODEL_PROVIDER_PRESET_ID,
   getManagedModelProviderPreset,
@@ -39,6 +40,9 @@ export function StepModelConfig({
   onComplete,
   onAttachExisting,
 }: StepModelConfigProps) {
+  const copy = useCopy();
+  const modelCopy = copy.settings.models;
+  const onboardingCopy = copy.onboarding;
   const saveProvider = useManagedModelsStore((s) => s.saveProvider);
   const saveModel = useManagedModelsStore((s) => s.saveModel);
   const initialPresetDraft = managedModelProviderPresetDraft(
@@ -104,11 +108,11 @@ export function StepModelConfig({
         kind: "success",
         message:
           result.models.length > 0
-            ? `找到 ${result.models.length} 个模型`
-            : "连接成功，但没有返回模型列表",
+            ? modelCopy.foundModels(result.models.length)
+            : modelCopy.connectedNoModels,
       });
     } catch (e) {
-      setState({ kind: "error", message: errorMessage(e) });
+      setState({ kind: "error", message: errorMessage(e, modelCopy) });
     }
   };
 
@@ -129,26 +133,26 @@ export function StepModelConfig({
         advancedOptions,
         makeDefault: true,
       });
-      setState({ kind: "success", message: "配置完成" });
+      setState({ kind: "success", message: modelCopy.setupComplete });
       onComplete();
     } catch (e) {
-      setState({ kind: "error", message: errorMessage(e) });
+      setState({ kind: "error", message: errorMessage(e, modelCopy) });
     }
   };
 
   return (
     <div className="max-w-[580px]">
       <h1 className="m-0 font-serif text-[34px] font-medium leading-tight tracking-[0.005em] text-ink">
-        为 Galley 配置模型
+        {onboardingCopy.modelTitle}
       </h1>
       <p className="mb-7 mt-2.5 font-serif text-[15.5px] italic leading-[1.55] text-ink-soft">
-        填入你的模型 API Key 和 API 地址。
+        {onboardingCopy.modelSubtitle}
       </p>
 
       <div className="space-y-4">
         <div>
           <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            模型提供商
+            {modelCopy.provider}
           </label>
           <ManagedModelProviderPicker
             value={providerPresetId}
@@ -159,14 +163,14 @@ export function StepModelConfig({
         </div>
 
         <SetupInput
-          label="模型密钥"
+          label={modelCopy.apiKey}
           type="password"
           value={apiKey}
           onChange={setApiKey}
           placeholder="sk-..."
         />
         <SetupInput
-          label="API 地址"
+          label={modelCopy.apiUrl}
           value={apiBase}
           onChange={setApiBase}
           placeholder={
@@ -177,7 +181,7 @@ export function StepModelConfig({
           }
         />
         <SetupInput
-          label="模型"
+          label={modelCopy.model}
           value={model}
           onChange={setModel}
           placeholder={selectedPreset.modelPlaceholder}
@@ -199,7 +203,7 @@ export function StepModelConfig({
               )
             }
           >
-            自动获取模型列表
+            {modelCopy.fetchModelList}
           </Button>
         </div>
 
@@ -209,7 +213,7 @@ export function StepModelConfig({
             onChange={(e) => setModel(e.target.value)}
             className="w-full rounded-sm border border-line bg-elevated px-3 py-2 font-mono text-[13px] text-ink outline-none transition-colors focus:border-brand focus:ring-[3px] focus:ring-brand/20"
           >
-            <option value="">选择检测到的模型</option>
+            <option value="">{modelCopy.chooseDetectedModel}</option>
             {modelOptions.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -232,7 +236,7 @@ export function StepModelConfig({
           onClick={onAttachExisting}
           className="inline-flex items-center gap-1 text-[12px] text-ink-muted transition-colors hover:text-brand-strong"
         >
-          接入已有的 GenericAgent
+          {onboardingCopy.connectExistingButton}
           <ArrowSquareOut size={11} weight="thin" />
         </button>
         <Button
@@ -251,7 +255,7 @@ export function StepModelConfig({
             )
           }
         >
-          测试并开始使用 Galley
+          {onboardingCopy.testAndStart}
         </Button>
       </div>
     </div>
@@ -315,7 +319,10 @@ function StatusLine({
   );
 }
 
-function errorMessage(e: unknown): string {
+function errorMessage(
+  e: unknown,
+  copy: ReturnType<typeof useCopy>["settings"]["models"],
+): string {
   if (typeof e === "string") {
     try {
       const parsed = JSON.parse(e) as { message?: string };
@@ -325,7 +332,7 @@ function errorMessage(e: unknown): string {
     }
   }
   if (e instanceof Error) return e.message;
-  return "操作失败";
+  return copy.actionFailed;
 }
 
 function providerDisplayName(apiBase: string): string {

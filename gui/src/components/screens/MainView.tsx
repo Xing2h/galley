@@ -18,6 +18,7 @@ import { TurnTicker } from "@/components/conversation/TurnTicker";
 import { UserQuestionRail } from "@/components/conversation/UserQuestionRail";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useTypewriter } from "@/hooks/useTypewriter";
+import { useCopy } from "@/lib/i18n";
 import { cleanPartialContent, extractPreamble } from "@/lib/ipc-handlers";
 import { cn } from "@/lib/utils";
 import type {
@@ -140,6 +141,7 @@ export function MainView({
   pendingAskUser,
   conversationWidth = "compact",
 }: MainViewProps) {
+  const copy = useCopy();
   const stillWaiting = pendingApprovals.length > 0;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pendingApprovalRefs = useRef(new Map<string, HTMLDivElement>());
@@ -637,7 +639,7 @@ export function MainView({
             <button
               type="button"
               onClick={onClickScrollToBottom}
-              aria-label="Scroll to latest"
+              aria-label={copy.conversation.scrollLatest}
               className={cn(
                 "group pointer-events-auto inline-flex size-8 items-center justify-center rounded-full",
                 "border border-line bg-elevated/92 text-ink-soft shadow-[0_6px_18px_rgba(31,27,23,0.10)] backdrop-blur-md",
@@ -647,10 +649,7 @@ export function MainView({
                 "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
               )}
             >
-              <ArrowDown
-                size={14}
-                weight="thin"
-              />
+              <ArrowDown size={14} weight="thin" />
             </button>
           </div>
         )}
@@ -674,7 +673,9 @@ export function MainView({
           <Composer
             llmDisplayName={llmDisplayName}
             placeholder={
-              pendingAskUser ? "回复以继续，或选择上方候选" : "继续这个对话…"
+              pendingAskUser
+                ? copy.composer.replyToContinue
+                : copy.composer.continueConversation
             }
             onSubmit={onSubmit}
             stopMode={isRunning}
@@ -688,15 +689,18 @@ export function MainView({
           />
 
           <div className="mt-1.5 flex items-center justify-between text-[11px] text-ink-muted">
-            <span>Enter 发送 · Shift+Enter 换行</span>
+            <span>{copy.composer.enterHint}</span>
             <span>
-              切换{" "}
-              <IconTooltip text="Large Language Model · GPT / Claude / DeepSeek 等大语言模型的统称">
+              {copy.composer.switchKeepsContext.split("LLM")[0]}
+              <IconTooltip text={copy.composer.llmTooltip}>
                 <span className="cursor-help underline decoration-line-strong decoration-dotted underline-offset-[3px]">
                   LLM
                 </span>
               </IconTooltip>{" "}
-              不会丢失上下文
+              {copy.composer.switchKeepsContext
+                .split("LLM")
+                .slice(1)
+                .join("LLM")}
             </span>
           </div>
         </div>

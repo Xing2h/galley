@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Turn } from "@/types/conversation";
 
@@ -165,6 +166,7 @@ export function UserQuestionRail({
   turns,
   scrollContainerRef,
 }: UserQuestionRailProps) {
+  const copy = useCopy();
   // Extract user-msg text in turn order. Indices in this array
   // align with the [data-role="user-msg"] DOM nodes inside the
   // scroll container — Conversation.tsx renders one MessageUser per
@@ -300,7 +302,7 @@ export function UserQuestionRail({
   return (
     <div
       role="navigation"
-      aria-label="提问索引"
+      aria-label={copy.conversation.questionIndex}
       className="pointer-events-none absolute right-1.5 top-6 bottom-6 z-10 w-5"
     >
       <div className="relative h-full">
@@ -347,7 +349,9 @@ export function UserQuestionRail({
                   <button
                     type="button"
                     onClick={() => handleJump(item.question.index)}
-                    aria-label={`跳到第 ${item.question.index + 1} 条提问`}
+                    aria-label={copy.conversation.jumpToQuestion(
+                      item.question.index + 1,
+                    )}
                     className="grid size-5 place-items-center focus:outline-none"
                   >
                     {/* Active = filled apricot disc; inactive = hollow ring.
@@ -378,7 +382,11 @@ export function UserQuestionRail({
                   <button
                     type="button"
                     onClick={() => handleJump(item.firstIndex)}
-                    aria-label={`第 ${item.firstIndex + 1} 到 ${item.lastIndex + 1} 条提问组，共 ${item.questions.length} 条，点击跳到第 ${item.firstIndex + 1} 条`}
+                    aria-label={copy.conversation.jumpToQuestionCluster(
+                      item.firstIndex + 1,
+                      item.lastIndex + 1,
+                      item.questions.length,
+                    )}
                     className="grid size-5 place-items-center focus:outline-none"
                   >
                     <span
@@ -403,7 +411,11 @@ export function UserQuestionRail({
                   />
                   <div
                     role="group"
-                    aria-label={`第 ${item.firstIndex + 1} 到 ${item.lastIndex + 1} 条提问，共 ${item.questions.length} 条`}
+                    aria-label={copy.conversation.questionCluster(
+                      item.firstIndex + 1,
+                      item.lastIndex + 1,
+                      item.questions.length,
+                    )}
                     className={cn(
                       "absolute right-full z-10 mr-2 w-[320px] max-w-[calc(100vw-80px)] rounded-sm border border-line bg-elevated py-1 text-[11.5px] text-ink-soft shadow-sm transition-opacity duration-100",
                       isClusterOpen

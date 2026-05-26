@@ -21,7 +21,9 @@ import {
   ConfirmDeleteProjectDialog,
   EditProjectDialog,
 } from "@/components/screens/project/EditProjectDialog";
+import { CopyProvider, copyForLanguage } from "@/lib/i18n";
 import { ensureHistoryReplayComplete } from "@/lib/ipc-handlers";
+import { resolveLanguagePreference } from "@/lib/language";
 import {
   currentLLMDisplayName,
   managedModelsToLLMs,
@@ -163,6 +165,8 @@ function App() {
   const acknowledgeYoloIntro = usePrefsStore((s) => s.acknowledgeYoloIntro);
   const conversationWidth = usePrefsStore((s) => s.conversationWidth);
   const setConversationWidth = usePrefsStore((s) => s.setConversationWidth);
+  const languagePreference = usePrefsStore((s) => s.languagePreference);
+  const setLanguagePreference = usePrefsStore((s) => s.setLanguagePreference);
   const petAttachedSessionId = useRuntimeStore((s) => s.petAttachedSessionId);
   const setPendingPetMigration = useUiStore((s) => s.setPendingPetMigration);
 
@@ -187,9 +191,17 @@ function App() {
     () => managedModelsToLLMs(managedModels, pendingLLMIndex),
     [managedModels, pendingLLMIndex],
   );
+  const resolvedLanguage = useMemo(
+    () => resolveLanguagePreference(languagePreference),
+    [languagePreference],
+  );
+  const copy = useMemo(
+    () => copyForLanguage(resolvedLanguage),
+    [resolvedLanguage],
+  );
   const managedLLMDisplayName = currentLLMDisplayName(
     managedLLMs,
-    "未配置模型",
+    copy.app.unconfiguredModel,
   );
   const fallbackLLMs =
     activeRuntimeKind === "managed" ? managedLLMs : cachedLLMs;
@@ -202,8 +214,8 @@ function App() {
     activeRuntimeDisplayName ?? fallbackLLMDisplayName ?? "";
   const llmConfigHint =
     activeRuntimeKind === "managed"
-      ? "在 Models 调整内置 GA 模型"
-      : "修改 mykey.py 后重启 Galley 生效";
+      ? copy.app.managedModelHint
+      : copy.app.externalModelHint;
   const hasConfiguredManagedModel = managedModels.some(
     (model) => model.credentialStatus !== "missing",
   );
@@ -213,9 +225,8 @@ function App() {
         ? "hidden"
         : "configure-models"
       : gaConfig.gaPath.trim() !== "" && gaConfig.python.trim() !== ""
-      ? "external-ready"
-      : "external-unconfigured";
-
+        ? "external-ready"
+        : "external-unconfigured";
   const openSettings = (tab: SettingsTab = "runtime") => {
     setSettingsTab(tab);
     setSettingsOpen(true);
@@ -630,15 +641,15 @@ function App() {
     const nextProject = projectId
       ? projects.find((p) => p.id === projectId)
       : undefined;
-    const sessionTitle = session?.title ?? "对话已更新";
+    const sessionTitle = session?.title ?? copy.toasts.conversationUpdated;
 
     void assignSessionToProject(sessionId, projectId).then(() => {
       if (projectId) {
-        const projectName = nextProject?.name ?? "项目";
+        const projectName = nextProject?.name ?? copy.projects.fallbackProject;
         const title =
           session?.projectId && session.projectId !== projectId
-            ? `已移到 ${projectName}`
-            : `已加入 ${projectName}`;
+            ? copy.toasts.movedTo(projectName)
+            : copy.toasts.addedTo(projectName);
         pushToast(
           makeAppError({
             category: "business",
@@ -651,7 +662,7 @@ function App() {
             traceback: null,
             action: {
               kind: "view_project",
-              label: "查看项目",
+              label: copy.toasts.viewProject,
               projectId,
             },
             autoDismissMs: 4000,
@@ -665,8 +676,8 @@ function App() {
           category: "business",
           severity: "info",
           title: previousProject
-            ? `已从 ${previousProject.name} 移除`
-            : "已从项目移除",
+            ? copy.toasts.removedFromProject(previousProject.name)
+            : copy.toasts.removedFromAnyProject,
           message: sessionTitle,
           hint: null,
           retryable: false,
@@ -715,7 +726,7 @@ function App() {
   // toggle.
   if (screen === "onboarding") {
     return (
-      <>
+      <CopyProvider language={resolvedLanguage}>
         <Onboarding
           mode={healthCheckRevisit ? "revisit" : "fresh"}
           initialPath={healthCheckRevisit ? gaConfig.gaPath : undefined}
@@ -751,12 +762,12 @@ function App() {
             setSettingsOpen(true);
           }}
         />
-      </>
+      </CopyProvider>
     );
   }
 
   return (
-    <>
+    <CopyProvider language={resolvedLanguage}>
       <AppShell
         topBar={
           <TopBar
@@ -990,7 +1001,7 @@ function App() {
                       await activateSession(sid);
                       historyReady = await ensureHistoryReplayComplete(sid);
                       if (!historyReady) {
-                        throw new Error("历史会话恢复超时");
+                        throw new Error(copy.app.restoreTimeout);
                       }
                     }
                   }
@@ -1007,7 +1018,7 @@ function App() {
                     makeAppError({
                       category: "bridge",
                       severity: "error",
-                      title: "发送失败",
+                      title: copy.errors.sendFailed,
                       message,
                       hint: null,
                       retryable: true,
@@ -1163,7 +1174,7 @@ function App() {
         onChangeRequiredTools={setApprovalRequiredTools}
         onRemoveAlwaysAllow={removeAlwaysAllow}
         onChangeGAPath={() => {
-          void pickGAPath(setGAConfig);
+          void pickGAPath(setGAConfig, copy.app.chooseGAFolderTitle);
         }}
         onCommitGAPath={async (path) => {
           // Manual-typed GA path from Settings → Runtime. The
@@ -1193,11 +1204,8 @@ function App() {
               makeAppError({
                 category: "business",
                 severity: "info",
-                title:
-                  kind === "managed"
-                    ? "已切换到内置 GA"
-                    : "已切换到外部 GA",
-                message: "原来的对话已保留，可切回查看。",
+                title: copy.toasts.switchedRuntime(kind),
+                message: copy.toasts.runtimeSwitchKept,
                 hint: null,
                 retryable: false,
                 context: "setActiveRuntimeKind",
@@ -1222,6 +1230,11 @@ function App() {
           setSettingsOpen(false);
           setHealthCheckRevisit(true);
           setScreen("onboarding");
+        }}
+        languagePreference={languagePreference}
+        resolvedLanguage={resolvedLanguage}
+        onChangeLanguagePreference={(preference) => {
+          void setLanguagePreference(preference);
         }}
       />
 
@@ -1305,7 +1318,7 @@ function App() {
           void acknowledgeYoloIntro(revertToApproval);
         }}
       />
-    </>
+    </CopyProvider>
   );
 }
 
@@ -1374,13 +1387,14 @@ async function pickGAPath(
   setGAConfig: (
     p: Partial<{ python: string; gaPath: string; bridgeCwd: string }>,
   ) => Promise<void>,
+  title: string,
 ): Promise<void> {
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "选择 GenericAgent 仓库目录",
+      title,
     });
     if (typeof selected === "string" && selected.length > 0) {
       await setGAConfig({ gaPath: selected });

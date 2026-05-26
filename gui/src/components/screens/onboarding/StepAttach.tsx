@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 
 import type { TutorialId } from "@/lib/onboarding-tutorials";
+import { useCopy } from "@/lib/i18n";
 import { EXAMPLE_GA_PATH } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +58,8 @@ export function StepAttach({
   onContinue,
   onShowTutorial,
 }: StepAttachProps) {
+  const copy = useCopy();
+  const onboardingCopy = copy.onboarding;
   const ready = validation?.kind === "ok";
   const tutorialForFailure: TutorialId | null =
     validation?.kind === "not-found"
@@ -66,18 +69,18 @@ export function StepAttach({
         : null;
   const tutorialLabel =
     tutorialForFailure === "download-ga"
-      ? "查看教程：下载 GA"
+      ? onboardingCopy.downloadGuide
       : tutorialForFailure === "wrong-directory"
-        ? "查看教程：选对 GA 目录"
+        ? onboardingCopy.folderGuide
         : null;
 
   return (
     <div className="max-w-[580px]">
       <h1 className="m-0 font-serif text-[32px] font-medium leading-tight tracking-[0.005em] text-ink">
-        接入已经安装的 GenericAgent
+        {onboardingCopy.attachTitle}
       </h1>
       <p className="mb-7 mt-2.5 font-serif text-[15.5px] italic leading-[1.55] text-ink-soft">
-        指向你本地的 GA 安装目录 · Galley 会用它启动 GA。
+        {onboardingCopy.attachSubtitle}
       </p>
 
       <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
@@ -98,7 +101,7 @@ export function StepAttach({
           className="inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-line bg-elevated px-3 py-2 text-[12.5px] text-ink-soft transition-colors hover:border-brand hover:bg-brand-soft hover:text-ink"
         >
           <FolderOpen size={13} weight="thin" />
-          选择
+          {copy.common.choose}
         </button>
       </div>
 
@@ -124,7 +127,7 @@ export function StepAttach({
           rel="noreferrer"
           className="mt-1 inline-flex items-center gap-1 text-[12px] text-ink-muted transition-colors hover:text-brand-strong"
         >
-          还没装 GenericAgent？前往安装
+          {onboardingCopy.needGA}
           <ArrowSquareOut size={11} weight="thin" />
         </a>
       )}
@@ -136,7 +139,7 @@ export function StepAttach({
           className="inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-[13px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
           <ArrowLeft size={13} weight="thin" />
-          Back
+          {copy.common.back}
         </button>
         <button
           type="button"
@@ -147,7 +150,7 @@ export function StepAttach({
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
         >
-          继续
+          {copy.common.continue}
           <ArrowRight size={13} weight="bold" />
         </button>
       </div>
@@ -156,6 +159,7 @@ export function StepAttach({
 }
 
 function ValidationLine({ validation }: { validation: PathValidation }) {
+  const copy = useCopy().onboarding;
   if (!validation) return null;
   const cls = "mt-2 flex items-center gap-1.5 text-[12.5px]";
   switch (validation.kind) {
@@ -163,9 +167,9 @@ function ValidationLine({ validation }: { validation: PathValidation }) {
       return (
         <div className={cn(cls, "text-success")}>
           <Check size={12} weight="thin" />
-          找到 GA 安装{" "}
+          {copy.foundGA}{" "}
           {validation.foundAgentmain && (
-            <span className="text-ink-muted">· agentmain.py 可见</span>
+            <span className="text-ink-muted">· {copy.agentmainVisible}</span>
           )}
         </div>
       );
@@ -173,14 +177,14 @@ function ValidationLine({ validation }: { validation: PathValidation }) {
       return (
         <div className={cn(cls, "text-warning")}>
           <Warning size={12} weight="thin" />
-          路径存在但未找到 agentmain.py — 确认这是 GA 安装目录？
+          {copy.pathMissingAgentmain}
         </div>
       );
     case "not-found":
       return (
         <div className={cn(cls, "text-error")}>
           <X size={12} weight="thin" />
-          路径不存在
+          {copy.pathNotFound}
         </div>
       );
     case "checking":
@@ -189,7 +193,7 @@ function ValidationLine({ validation }: { validation: PathValidation }) {
           <span className="spin">
             <CircleNotch size={12} weight="thin" />
           </span>
-          检查中…
+          {copy.checking}
         </div>
       );
   }
