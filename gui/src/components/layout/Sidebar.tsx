@@ -385,13 +385,10 @@ function SidebarHeader({
   const indicator = renderRuntimeIndicator(runtimeIndicator, copy.sidebar);
   const agentControlTooltip = copy.settings.agent.subtitle;
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
-      {/* Wordmark: all-caps Newsreader semibold conveys "workbench" weight
-          and product seriousness. The slightly looser tracking compensates
-          for the tighter letter-spacing all-caps tends to read with at
-          this size. Body-text references to "Galley" elsewhere stay in
-          sentence case — uppercase is reserved for the logotype display. */}
-      <div className="font-serif text-[16px] font-semibold uppercase tracking-[0.04em] text-ink">
+    <div className="flex items-center justify-between gap-3 border-b border-line/70 px-4 py-3">
+      {/* Product mark: sentence-case Galley keeps the name legible as
+          a product rather than an acronym. */}
+      <div className="font-serif text-[17px] font-medium italic tracking-[0.005em] text-ink">
         Galley
       </div>
       {indicator?.action === "models" ? (
@@ -515,7 +512,7 @@ function SidebarQuickActions({
     ? copy.sidebar.newConversationInProject(activeProjectName)
     : copy.sidebar.newConversation;
   return (
-    <div className="border-b border-line py-1.5">
+    <div className="border-b border-line/70 py-1">
       <QuickAction
         icon={<Plus size={14} weight="thin" />}
         label={newChatLabel}
@@ -1814,11 +1811,11 @@ function SidebarFooter({
     <button
       type="button"
       onClick={onOpenArchived}
-      className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11.5px] text-ink-muted transition-colors hover:bg-hover hover:text-ink"
+      className="flex w-full items-center gap-2 border-t border-line/70 px-3.5 py-1.5 text-left text-[11px] text-ink-muted transition-colors hover:bg-hover hover:text-ink-soft"
     >
-      <Archive size={12} weight="thin" />
+      <Archive size={12} weight="thin" className="text-ink-muted" />
       <span>{copy.sidebar.archived}</span>
-      {count > 0 && <span className="ml-auto text-ink-soft">{count}</span>}
+      {count > 0 && <span className="ml-auto text-ink-muted">{count}</span>}
     </button>
   );
 }

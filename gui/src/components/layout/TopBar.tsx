@@ -171,7 +171,7 @@ export function TopBar({
         }
       }}
       className={cn(
-        "flex h-11 shrink-0 items-stretch border-b border-line bg-app text-[13px]",
+        "flex h-11 shrink-0 items-stretch border-b border-line/70 bg-app text-[13px]",
         // Windows reserves no right padding here — WindowControls
         // (Step 3) will own the right edge and hug the corner per
         // Win 11 convention. Mac keeps its 12px breathing room.

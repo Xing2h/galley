@@ -79,7 +79,7 @@ export function AppShell({
         className="flex min-h-0 flex-1"
       >
         <Panel id="sidebar" defaultSize="20%" minSize="14%" maxSize="30%">
-          <aside className="flex h-full flex-col overflow-hidden border-r border-line bg-app">
+          <aside className="flex h-full flex-col overflow-hidden border-r border-line/70 bg-app">
             {sidebar}
           </aside>
         </Panel>
@@ -105,7 +105,7 @@ export function AppShell({
 function ResizeSeparator() {
   return (
     <Separator className="group relative w-1.5 shrink-0 cursor-col-resize">
-      <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-line transition-colors group-hover:bg-brand group-active:bg-brand" />
+      <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-line/70 transition-colors group-hover:bg-brand group-active:bg-brand" />
     </Separator>
   );
 }

@@ -23,9 +23,8 @@ interface StepWelcomeProps {
  * specifically, not a global app fact, so it reads more honestly there.
  *
  * Title typography: 36px sentence-case "Galley" (Newsreader medium).
- * Per CLAUDE.md brand wordmark rules: small wordmark is UPPERCASE
- * GALLEY (Sidebar 16px / Settings 20px); hero size is sentence case
- * — softer first-meeting tone. Conscious dual-mode, not inconsistency.
+ * The product name stays sentence-case across the UI so it reads as a
+ * name, not an acronym.
  */
 export function StepWelcome({ onStart }: StepWelcomeProps) {
   const copy = useCopy();

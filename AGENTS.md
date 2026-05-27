@@ -28,7 +28,8 @@ release gates, and compact phase state.
 ## Names And Terms
 
 - Use `Galley` in prose, docs, comments, and commit messages.
-- Use `GALLEY` only for small wordmark display already designed that way.
+- Use `Galley` for the product name in UI display too; do not introduce an
+  all-caps product wordmark.
 - Use `GenericAgent` / `GA` for the upstream engine, never as a synonym for
   Galley.
 - `macOS` means the operating system; `Mac` means the hardware / user device.

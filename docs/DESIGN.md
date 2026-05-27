@@ -249,7 +249,7 @@ Browser Control 是 managed GA 的核心能力完成项。未连接时，TopBar 
 
 ```
 ┌──────────────────────────────────┐
-│ GALLEY                    ● GA 就绪 │  wordmark + runtime dot
+│ Galley                    ● GA 就绪 │  product name + runtime dot
 ├──────────────────────────────────┤
 │ + 新对话                   ⌘N    │  Quick action
 │ 搜索                       ⌘K    │  打开 Command Palette
@@ -277,7 +277,7 @@ Browser Control 是 managed GA 的核心能力完成项。未连接时，TopBar 
 
 #### 关键决策
 
-- **单行 Header**：GALLEY wordmark + runtime dot 同行。`GA 就绪` 只是状态；`GA 未配置` 才可点并进入 Settings → Runtime。
+- **单行 Header**：`Galley` product name + runtime dot 同行。产品名使用 sentence case，不使用全大写 wordmark，避免读成 acronym。`GA 就绪` 只是状态；`GA 未配置` 才可点并进入 Settings → Runtime。
 - **Quick Actions 靠顶部**：New Chat / Search / Project Review 是最高频入口。Project Review 入口在同一组里，避免旧方案里「PROJECTS 标题行」和项目 row 叠在一起。右侧轻量 `+` 只负责新建项目；创建后进入 Project Review 并展开新项目。
 - **普通 sidebar 不再显示项目列表**：普通视图只保留时间线，减少重复层级；需要看项目时显式进入 Project Review。
 - **Project row 不用 emoji**：用 Phosphor `Folder` / `FolderOpen` 表达层级与 filter，避免跨平台 emoji 造成的视觉重量和渲染差异。

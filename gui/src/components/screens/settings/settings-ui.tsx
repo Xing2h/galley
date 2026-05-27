@@ -9,7 +9,7 @@ export function SettingsPanelHeader({
 }: {
   title: string;
   subtitle?: string;
-  /** Small brand mark exception for the About tab only. */
+  /** Larger brand heading for the About tab only. */
   wordmark?: boolean;
 }) {
   return (
@@ -18,7 +18,7 @@ export function SettingsPanelHeader({
         className={cn(
           "m-0 font-serif text-ink",
           wordmark
-            ? "text-[20px] font-semibold uppercase tracking-[0.04em]"
+            ? "text-[20px] font-semibold tracking-[0.005em]"
             : "text-[18px] font-medium",
         )}
       >
