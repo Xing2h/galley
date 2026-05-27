@@ -18,6 +18,7 @@
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use galley_core_lib::api::{
@@ -31,6 +32,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 const SCHEMA_VERSION: u32 = 1;
+const PROJECT_FOLLOW_IDLE_QUIET_WINDOW: Duration = Duration::from_millis(1500);
 
 #[derive(Parser, Debug)]
 #[command(
@@ -146,6 +148,16 @@ enum ProjectCmd {
         /// Include archived sessions in snapshots and subscription attempts.
         #[arg(long)]
         all: bool,
+        /// Exit after the project has had no active sessions for a short
+        /// quiet window. Useful for supervisor batch jobs where runner
+        /// processes may stay alive after a turn completes.
+        #[arg(long)]
+        until_idle: bool,
+        /// Emit one final project snapshot before the stream end frame.
+        /// This is especially useful with --until-idle so supervisors can
+        /// synthesize without running a separate project show.
+        #[arg(long)]
+        final_show: bool,
     },
     /// Permanently delete a project. Child sessions auto-detach to
     /// ungrouped (FK SET NULL); the sessions themselves survive.
@@ -569,7 +581,9 @@ async fn run(cli: Cli) -> Result<(), GalleyError> {
             project_id,
             tail,
             all,
-        }) => project_follow(project_id, tail, all).await,
+            until_idle,
+            final_show,
+        }) => project_follow(project_id, tail, all, until_idle, final_show).await,
         Command::Project(ProjectCmd::Delete {
             project_id,
             supervisor,
@@ -692,6 +706,17 @@ struct ProjectShowPayload {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ProjectFollowState {
+    mode: &'static str,
+    state: &'static str,
+    watched_sessions: usize,
+    active_status_sessions: usize,
+    idle_status_sessions: usize,
+    note: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ProjectSnapshotPayload {
     schema_version: u32,
     stream: &'static str,
@@ -700,6 +725,8 @@ struct ProjectSnapshotPayload {
     session_count: usize,
     status_counts: BTreeMap<String, usize>,
     sessions: Vec<ProjectSessionDetail>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    follow_state: Option<ProjectFollowState>,
 }
 
 #[derive(Serialize)]
@@ -738,7 +765,10 @@ async fn session_snapshot_payload(
     })
 }
 
-async fn find_project(galley: &SqliteGalley, project_id: &str) -> Result<ProjectBrief, GalleyError> {
+async fn find_project(
+    galley: &SqliteGalley,
+    project_id: &str,
+) -> Result<ProjectBrief, GalleyError> {
     galley
         .list_projects()
         .await?
@@ -790,6 +820,49 @@ fn is_live_candidate(status: SessionStatus) -> bool {
         status,
         SessionStatus::Connecting | SessionStatus::Running | SessionStatus::WaitingApproval
     )
+}
+
+fn project_follow_state(
+    mode: &'static str,
+    sessions: &[ProjectSessionDetail],
+) -> ProjectFollowState {
+    let active_status_sessions = sessions
+        .iter()
+        .filter(|detail| is_live_candidate(detail.session.status))
+        .count();
+    let idle_status_sessions = sessions
+        .iter()
+        .filter(|detail| detail.session.status == SessionStatus::Idle)
+        .count();
+    let (state, note) = if sessions.is_empty() {
+        ("empty_project", "project has no sessions to follow")
+    } else if active_status_sessions == 0 {
+        (
+            "checking_live_events",
+            "no session is marked active yet; following all project sessions before declaring the batch idle",
+        )
+    } else {
+        (
+            "active_status_sessions",
+            "one or more sessions are marked active; following project live events",
+        )
+    };
+    ProjectFollowState {
+        mode,
+        state,
+        watched_sessions: sessions.len(),
+        active_status_sessions,
+        idle_status_sessions,
+        note,
+    }
+}
+
+async fn project_has_active_sessions(project_id: &str, all: bool) -> Result<bool, GalleyError> {
+    let galley = SqliteGalley::open().await?;
+    let sessions = project_sessions(&galley, project_id, all).await?;
+    Ok(sessions
+        .iter()
+        .any(|session| is_live_candidate(session.status)))
 }
 
 async fn project_rollup_payload(
@@ -868,6 +941,7 @@ async fn project_snapshot_payload(
         session_count: show.session_count,
         status_counts: show.status_counts,
         sessions: show.sessions,
+        follow_state: None,
     })
 }
 
@@ -1041,9 +1115,12 @@ async fn open_watch_lines(id: &str) -> Result<WatchLines, GalleyError> {
 }
 
 async fn read_watch_frame(lines: &mut WatchLines) -> Result<Option<WatchFrame>, GalleyError> {
-    let Some(line) = lines.next_line().await.map_err(|e| GalleyError::DbUnavailable {
-        message: format!("watch read: {e}"),
-    })?
+    let Some(line) = lines
+        .next_line()
+        .await
+        .map_err(|e| GalleyError::DbUnavailable {
+            message: format!("watch read: {e}"),
+        })?
     else {
         return Ok(None);
     };
@@ -1441,9 +1518,108 @@ async fn forward_project_watch(
     }
 }
 
-async fn project_follow(project_id: String, tail: usize, all: bool) -> Result<(), GalleyError> {
+fn emit_project_watch_item(item: ProjectWatchItem) -> Result<(), GalleyError> {
+    match item {
+        ProjectWatchItem::Event { session_id, data } => emit_json(&ProjectEventPayload {
+            schema_version: SCHEMA_VERSION,
+            stream: "event",
+            session_id,
+            data,
+        }),
+        ProjectWatchItem::End { session_id, reason } => emit_json(&ProjectSessionEndPayload {
+            schema_version: SCHEMA_VERSION,
+            stream: "sessionEnd",
+            session_id,
+            reason,
+        }),
+        ProjectWatchItem::Error(e) => Err(e),
+    }
+}
+
+async fn emit_project_final_snapshot(
+    project_id: &str,
+    tail: usize,
+    all: bool,
+    mode: &'static str,
+) -> Result<(), GalleyError> {
     let galley = SqliteGalley::open().await?;
-    let initial = project_snapshot_payload(&galley, &project_id, "initial", tail, all).await?;
+    let mut final_snapshot =
+        project_snapshot_payload(&galley, project_id, "final", tail, all).await?;
+    final_snapshot.follow_state = Some(project_follow_state(mode, &final_snapshot.sessions));
+    emit_json(&final_snapshot)
+}
+
+async fn project_follow_until_idle(
+    project_id: String,
+    tail: usize,
+    all: bool,
+    final_show: bool,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<ProjectWatchItem>,
+) -> Result<(), GalleyError> {
+    let mut saw_stream_item = false;
+    let mut quiet_window = Box::pin(tokio::time::sleep(PROJECT_FOLLOW_IDLE_QUIET_WINDOW));
+
+    loop {
+        tokio::select! {
+            item = rx.recv() => {
+                match item {
+                    Some(item) => {
+                        saw_stream_item = true;
+                        emit_project_watch_item(item)?;
+                        quiet_window.as_mut().reset(
+                            tokio::time::Instant::now() + PROJECT_FOLLOW_IDLE_QUIET_WINDOW,
+                        );
+                    }
+                    None => {
+                        if !saw_stream_item {
+                            tokio::time::sleep(PROJECT_FOLLOW_IDLE_QUIET_WINDOW).await;
+                        }
+                        if final_show || saw_stream_item {
+                            emit_project_final_snapshot(&project_id, tail, all, "until_idle").await?;
+                        }
+                        emit_json(&StreamEndPayload {
+                            schema_version: SCHEMA_VERSION,
+                            stream: "end",
+                            reason: if saw_stream_item {
+                                "all_live_sessions_ended"
+                            } else {
+                                "no_live_sessions"
+                            },
+                        })?;
+                        return Ok(());
+                    }
+                }
+            }
+            _ = &mut quiet_window => {
+                if !project_has_active_sessions(&project_id, all).await? {
+                    if final_show {
+                        emit_project_final_snapshot(&project_id, tail, all, "until_idle").await?;
+                    }
+                    emit_json(&StreamEndPayload {
+                        schema_version: SCHEMA_VERSION,
+                        stream: "end",
+                        reason: "project_idle",
+                    })?;
+                    return Ok(());
+                }
+                quiet_window.as_mut().reset(
+                    tokio::time::Instant::now() + PROJECT_FOLLOW_IDLE_QUIET_WINDOW,
+                );
+            }
+        }
+    }
+}
+
+async fn project_follow(
+    project_id: String,
+    tail: usize,
+    all: bool,
+    until_idle: bool,
+    final_show: bool,
+) -> Result<(), GalleyError> {
+    let galley = SqliteGalley::open().await?;
+    let mut initial = project_snapshot_payload(&galley, &project_id, "initial", tail, all).await?;
+    let mode = if until_idle { "until_idle" } else { "live" };
     let watch_targets = initial
         .sessions
         .iter()
@@ -1454,9 +1630,13 @@ async fn project_follow(project_id: String, tail: usize, all: bool) -> Result<()
             )
         })
         .collect::<Vec<_>>();
+    initial.follow_state = Some(project_follow_state(mode, &initial.sessions));
     emit_json(&initial)?;
 
     if watch_targets.is_empty() {
+        if final_show {
+            emit_project_final_snapshot(&project_id, tail, all, mode).await?;
+        }
         emit_json(&StreamEndPayload {
             schema_version: SCHEMA_VERSION,
             stream: "end",
@@ -1468,35 +1648,28 @@ async fn project_follow(project_id: String, tail: usize, all: bool) -> Result<()
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     for (session_id, report_initial_failure) in watch_targets {
         let tx = tx.clone();
-        tokio::spawn(forward_project_watch(session_id, report_initial_failure, tx));
+        tokio::spawn(forward_project_watch(
+            session_id,
+            report_initial_failure,
+            tx,
+        ));
     }
     drop(tx);
+
+    if until_idle {
+        return project_follow_until_idle(project_id, tail, all, final_show, rx).await;
+    }
 
     let mut saw_stream_item = false;
     while let Some(item) = rx.recv().await {
         saw_stream_item = true;
-        match item {
-            ProjectWatchItem::Event { session_id, data } => {
-                emit_json(&ProjectEventPayload {
-                    schema_version: SCHEMA_VERSION,
-                    stream: "event",
-                    session_id,
-                    data,
-                })?;
-            }
-            ProjectWatchItem::End { session_id, reason } => {
-                emit_json(&ProjectSessionEndPayload {
-                    schema_version: SCHEMA_VERSION,
-                    stream: "sessionEnd",
-                    session_id,
-                    reason,
-                })?;
-            }
-            ProjectWatchItem::Error(e) => return Err(e),
-        }
+        emit_project_watch_item(item)?;
     }
 
     if !saw_stream_item {
+        if final_show {
+            emit_project_final_snapshot(&project_id, tail, all, mode).await?;
+        }
         emit_json(&StreamEndPayload {
             schema_version: SCHEMA_VERSION,
             stream: "end",
@@ -1505,8 +1678,7 @@ async fn project_follow(project_id: String, tail: usize, all: bool) -> Result<()
         return Ok(());
     }
 
-    let galley = SqliteGalley::open().await?;
-    emit_json(&project_snapshot_payload(&galley, &project_id, "final", tail, all).await?)?;
+    emit_project_final_snapshot(&project_id, tail, all, mode).await?;
     emit_json(&StreamEndPayload {
         schema_version: SCHEMA_VERSION,
         stream: "end",

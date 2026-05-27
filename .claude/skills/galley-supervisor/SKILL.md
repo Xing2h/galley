@@ -127,7 +127,7 @@ Core is available; writes need Core alive.
 | `galley project list` | list projects |
 | `galley project brief <id>` | project status counts |
 | `galley project show <id> --tail=20` | project sessions plus recent messages |
-| `galley project follow <id> --tail=10` | follow live sessions in one project |
+| `galley project follow <id> --tail=10 --until-idle --final-show` | follow a project batch until child sessions are idle |
 | `galley llm list` | available LLMs |
 | `galley version` | CLI + schema version |
 
@@ -249,12 +249,19 @@ create the Project, then create child sessions with `--project=<id>`:
 "$GALLEY" session new "<child task B>" --project=<project-id> \
     --supervisor=claude-skill-galley-supervisor/v1 \
     --reason="split user task into child task B"
-"$GALLEY" project follow <project-id> --tail=10
+"$GALLEY" project follow <project-id> --tail=80 --until-idle --final-show
 ```
 
-After follow ends, run `project show <project-id> --tail=80` and summarize by
-child-session responsibility, evidence, conflicts, and next action. Do not
-delete the Project after finishing unless the user explicitly confirms.
+Each child prompt should preserve the user's goal, name only that session's
+responsibility, and state scope limits such as "do not book, pay, or change
+files" unless the user explicitly asked for those actions.
+
+`project follow --until-idle --final-show` exits after no child session is
+`connecting`, `running`, or `waiting_approval` for a short quiet window, and
+prints a final snapshot. If you used plain `project follow` or interrupted the
+stream, run `project show <project-id> --tail=80`. Summarize by child-session
+responsibility, evidence, conflicts, and next action. Do not delete the Project
+after finishing unless the user explicitly confirms.
 
 ### "归档 / 停掉 / 删掉那个 session" / "archive / stop / delete"
 

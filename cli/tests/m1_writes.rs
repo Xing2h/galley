@@ -50,8 +50,8 @@ async fn seeded_db_at(path: &std::path::Path) -> SqlitePool {
         .create_if_missing(true);
     let pool = SqlitePool::connect_with(opts).await.expect("open db");
     for sql in [
-        MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008,
-        MIG_009, MIG_010, MIG_011, MIG_012, MIG_013,
+        MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
+        MIG_011, MIG_012, MIG_013,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -391,8 +391,7 @@ async fn project_brief_counts_active_sessions_and_running_subset() {
     .await;
     drop(pool);
 
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["project", "brief", "proj_batch"]);
+    let (stdout, code) = run_galley_isolated(&db, td.path(), &["project", "brief", "proj_batch"]);
     assert_eq!(code, Some(0), "stdout: {stdout}");
     let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
     assert_eq!(payload["schemaVersion"], 1);
@@ -458,8 +457,11 @@ async fn session_follow_without_core_emits_snapshot_and_clean_end() {
     seed_message(&pool, "m1", "s_review", 0, 0, "user", "inspect").await;
     drop(pool);
 
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["session", "follow", "s_review", "--tail", "1"]);
+    let (stdout, code) = run_galley_isolated(
+        &db,
+        td.path(),
+        &["session", "follow", "s_review", "--tail", "1"],
+    );
     assert_eq!(code, Some(0), "stdout: {stdout}");
     let lines: Vec<&str> = stdout.trim().lines().collect();
     assert_eq!(lines.len(), 2, "stdout: {stdout}");
@@ -490,8 +492,7 @@ async fn project_follow_without_live_sessions_ends_after_snapshot() {
     .await;
     drop(pool);
 
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["project", "follow", "proj_batch"]);
+    let (stdout, code) = run_galley_isolated(&db, td.path(), &["project", "follow", "proj_batch"]);
     assert_eq!(code, Some(0), "stdout: {stdout}");
     let lines: Vec<&str> = stdout.trim().lines().collect();
     assert_eq!(lines.len(), 2, "stdout: {stdout}");
@@ -499,7 +500,69 @@ async fn project_follow_without_live_sessions_ends_after_snapshot() {
     assert_eq!(snapshot["stream"], "snapshot");
     assert_eq!(snapshot["phase"], "initial");
     assert_eq!(snapshot["sessionCount"], 1);
+    assert_eq!(snapshot["followState"]["mode"], "live");
+    assert_eq!(snapshot["followState"]["state"], "checking_live_events");
+    assert_eq!(snapshot["followState"]["watchedSessions"], 1);
+    assert_eq!(snapshot["followState"]["activeStatusSessions"], 0);
     let end: serde_json::Value = serde_json::from_str(lines[1]).expect("end json");
+    assert_eq!(end["stream"], "end");
+    assert_eq!(end["reason"], "no_live_sessions");
+}
+
+#[tokio::test]
+async fn project_follow_until_idle_final_show_emits_final_snapshot() {
+    let td = tempdir();
+    let db = td.path().join("test.db");
+    let pool = seeded_db_at(&db).await;
+    seed_project(&pool, "proj_batch", "Release check", "2026-05-20T00:00:00Z").await;
+    seed_project_session(
+        &pool,
+        "s_idle",
+        "proj_batch",
+        "Idle",
+        "idle",
+        "2026-05-20T00:00:02Z",
+    )
+    .await;
+    seed_message(&pool, "m1", "s_idle", 0, 0, "user", "inspect").await;
+    drop(pool);
+
+    let (stdout, code) = run_galley_isolated(
+        &db,
+        td.path(),
+        &[
+            "project",
+            "follow",
+            "proj_batch",
+            "--tail",
+            "1",
+            "--until-idle",
+            "--final-show",
+        ],
+    );
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    let lines: Vec<&str> = stdout.trim().lines().collect();
+    assert_eq!(lines.len(), 3, "stdout: {stdout}");
+
+    let initial: serde_json::Value = serde_json::from_str(lines[0]).expect("initial json");
+    assert_eq!(initial["stream"], "snapshot");
+    assert_eq!(initial["phase"], "initial");
+    assert_eq!(initial["followState"]["mode"], "until_idle");
+
+    let final_snapshot: serde_json::Value =
+        serde_json::from_str(lines[1]).expect("final snapshot json");
+    assert_eq!(final_snapshot["stream"], "snapshot");
+    assert_eq!(final_snapshot["phase"], "final");
+    assert_eq!(
+        final_snapshot["sessions"][0]["messages"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(final_snapshot["followState"]["mode"], "until_idle");
+
+    let end: serde_json::Value = serde_json::from_str(lines[2]).expect("end json");
     assert_eq!(end["stream"], "end");
     assert_eq!(end["reason"], "no_live_sessions");
 }
@@ -521,8 +584,7 @@ async fn project_follow_running_session_without_core_marks_session_end() {
     .await;
     drop(pool);
 
-    let (stdout, code) =
-        run_galley_isolated(&db, td.path(), &["project", "follow", "proj_batch"]);
+    let (stdout, code) = run_galley_isolated(&db, td.path(), &["project", "follow", "proj_batch"]);
     assert_eq!(code, Some(0), "stdout: {stdout}");
     let lines: Vec<&str> = stdout.trim().lines().collect();
     assert_eq!(lines.len(), 4, "stdout: {stdout}");

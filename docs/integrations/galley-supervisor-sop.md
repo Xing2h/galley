@@ -238,7 +238,7 @@ All commands support `--help`.
 | `"$GALLEY" project list` | Available projects |
 | `"$GALLEY" project brief <id>` | Project status counts and running sessions |
 | `"$GALLEY" project show <id> --tail=20` | Project sessions plus transcript tails |
-| `"$GALLEY" project follow <id> --tail=10` | Follow all live sessions in a Project batch |
+| `"$GALLEY" project follow <id> --tail=10 --until-idle --final-show` | Follow a Project batch until all child sessions are idle, then emit final context |
 | `"$GALLEY" llm list` | Available LLMs |
 | `"$GALLEY" health` | Troubleshooting |
 
@@ -340,10 +340,17 @@ Use a Project as the visible batch container:
 "$GALLEY" session new "<child task B prompt>" --project=<project-id> \
   --supervisor=my-agent/v1 \
   --reason="split user task into child task B"
-"$GALLEY" project follow <project-id> --tail=10
+"$GALLEY" project follow <project-id> --tail=80 --until-idle --final-show
 ```
 
-When `project follow` ends, run:
+Each child prompt should preserve the user's original goal, name only that
+session's responsibility, and state scope limits such as "do not book, pay, or
+change files" unless the user explicitly asked for those actions.
+
+`project follow --until-idle --final-show` exits after a short quiet window
+once no child session is `connecting`, `running`, or `waiting_approval`. It
+also emits a final snapshot. If you need a smaller final payload, reduce
+`--tail`. If you used plain `project follow` or interrupted the stream, run:
 
 ```bash
 "$GALLEY" project show <project-id> --tail=80

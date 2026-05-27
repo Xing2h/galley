@@ -823,11 +823,11 @@ show`.
 
 Exit codes: `0` success / `3 not_found` / `4 db_unavailable`.
 
-### 5.15c · `galley project follow <project-id> [--tail=N] [--all]`
+### 5.15c · `galley project follow <project-id> [--tail=N] [--all] [--until-idle] [--final-show]`
 
 **Hybrid subscription command** — emits a project snapshot, attempts to
-follow sessions inside the project, then emits a final snapshot if any
-live stream produced output. Default `--tail=10`.
+follow sessions inside the project, and optionally exits when the
+project becomes idle. Default `--tail=10`.
 
 The command attempts subscription for project sessions because runner
 liveness lives in Galley Core, not only in the persisted SQLite status.
@@ -836,12 +836,40 @@ an initial `not_live` / `core_unavailable` is reported as a
 `sessionEnd` frame. For ordinary idle/completed sessions, that quiet
 not-live result is suppressed so large Projects do not spam the stream.
 
+Initial and final snapshot frames include an additive `followState`
+object:
+
+| Field                  | Type   | Notes |
+| ---------------------- | ------ | ----- |
+| `mode`                 | string | `live` or `until_idle`. |
+| `state`                | string | `empty_project`, `checking_live_events`, or `active_status_sessions`. |
+| `watchedSessions`      | int    | Sessions the command attempted to follow. |
+| `activeStatusSessions` | int    | Sessions persisted as `connecting` / `running` / `waiting_approval`. |
+| `idleStatusSessions`   | int    | Sessions persisted as `idle`. |
+| `note`                 | string | Human-readable hint. In particular, `checking_live_events` means the DB snapshot may still look idle while newly dispatched runners are starting. |
+
+`--until-idle` is for Supervisor batch jobs. It keeps following live
+events, but also polls the Project after a short quiet window. Once no
+session in the Project is persisted as `connecting`, `running`, or
+`waiting_approval`, the command exits with
+`{"stream":"end","reason":"project_idle"}`. This handles runner
+processes that stay alive after a turn emits `run_complete`.
+
+`--final-show` emits a final Project snapshot before the end frame even
+when no live stream naturally ended. Supervisors should usually combine
+it with `--until-idle` so they can synthesize directly from the final
+payload:
+
+```bash
+$ galley project follow proj_demo --tail=80 --until-idle --final-show
+```
+
 ```bash
 $ galley project follow proj_demo --tail=10
-{"schemaVersion":1,"stream":"snapshot","phase":"initial","project":{…},"sessions":[…]}
+{"schemaVersion":1,"stream":"snapshot","phase":"initial","project":{…},"sessions":[…],"followState":{…}}
 {"schemaVersion":1,"stream":"event","sessionId":"s-a","data":{"kind":"turn_start",…}}
 {"schemaVersion":1,"stream":"sessionEnd","sessionId":"s-a","reason":"subprocess_exited"}
-{"schemaVersion":1,"stream":"snapshot","phase":"final","project":{…},"sessions":[…]}
+{"schemaVersion":1,"stream":"snapshot","phase":"final","project":{…},"sessions":[…],"followState":{…}}
 {"schemaVersion":1,"stream":"end","reason":"all_live_sessions_ended"}
 ```
 
