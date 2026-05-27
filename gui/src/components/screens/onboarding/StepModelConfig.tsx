@@ -571,6 +571,7 @@ function StatusLine({
     <div
       className={cn(
         "flex items-center gap-1.5 rounded-sm border px-3 py-2 text-[12.5px]",
+        "select-text",
         success
           ? "border-success/20 bg-success/[0.06] text-success"
           : "border-error/20 bg-error/[0.06] text-error",

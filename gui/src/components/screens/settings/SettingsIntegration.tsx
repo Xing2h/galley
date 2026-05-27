@@ -252,7 +252,7 @@ export function SettingsIntegration() {
         </p>
         <dl className="mt-3 grid grid-cols-[150px_1fr] gap-x-3 text-[12.5px]">
           <dt className="text-ink-muted">{discoveryPlatformLabel}</dt>
-          <dd className="m-0 break-all font-mono text-ink">
+          <dd className="m-0 select-text break-all font-mono text-ink">
             {discoveryFilePath}
           </dd>
         </dl>
@@ -389,7 +389,7 @@ function PathInstallRow({
     return (
       <div className="mt-3 space-y-2">
         <p
-          className="break-all text-[12px] text-ink-soft"
+          className="select-text break-all text-[12px] text-ink-soft"
           title={status.target}
         >
           {copy.pathInstalled}
@@ -414,7 +414,7 @@ function PathInstallRow({
     return (
       <div className="mt-3 space-y-2">
         <p
-          className="break-all text-[12px] text-ink-soft"
+          className="select-text break-all text-[12px] text-ink-soft"
           title={status.actual}
         >
           <code className="font-mono text-ink">{status.symlink}</code>{" "}
@@ -484,7 +484,10 @@ function SopStatus({ state }: { state: SopCopyState }) {
       );
     case "error":
       return (
-        <span className="break-all text-[11px] text-error" title={state.reason}>
+        <span
+          className="select-text break-all text-[11px] text-error"
+          title={state.reason}
+        >
           {copy.sopFailed(state.reason.slice(0, 80))}
           {state.reason.length > 80 && "…"}
         </span>
@@ -505,7 +508,7 @@ function InlineErrorWithCopy({
     message.length > 140 ? `${message.slice(0, 140)}…` : message;
   return (
     <div className="mt-2 flex items-start gap-2 text-[11px] text-error">
-      <p className="m-0 min-w-0 flex-1 break-all" title={message}>
+      <p className="m-0 min-w-0 flex-1 select-text break-all" title={message}>
         {visible}
       </p>
       <Button

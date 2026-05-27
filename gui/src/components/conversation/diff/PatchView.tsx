@@ -39,7 +39,7 @@ export function PatchView({ path, oldContent, newContent }: PatchViewProps) {
   return (
     <div className="overflow-hidden rounded-callout border border-line bg-surface font-mono text-[12px] leading-[1.55]">
       <div className="flex items-center justify-between gap-3 border-b border-line bg-app px-3 py-2">
-        <span className="font-mono text-[12px] text-ink">{path}</span>
+        <span className="select-text font-mono text-[12px] text-ink">{path}</span>
         <span className="flex items-center gap-2 text-ink-muted">
           {added > 0 && <span className="text-success">+{added} lines</span>}
           {removed > 0 && <span className="text-error">−{removed} lines</span>}
@@ -216,7 +216,7 @@ function DiffLine({
       </span>
       <span
         className={cn(
-          "min-w-0 flex-1 overflow-x-auto whitespace-pre px-2",
+          "min-w-0 flex-1 select-text overflow-x-auto whitespace-pre px-2",
           kind === "context" && "text-ink-soft",
         )}
       >

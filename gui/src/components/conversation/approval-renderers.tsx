@@ -73,7 +73,9 @@ function FileWriteRenderer({ tool }: { tool: ConversationToolEvent }) {
           weight="thin"
           className="shrink-0 text-ink-soft"
         />
-        <span className="font-mono text-[12.5px] text-ink">{path || "—"}</span>
+        <span className="select-text font-mono text-[12.5px] text-ink">
+          {path || "—"}
+        </span>
         <span
           className={cn(
             "rounded-full px-2 py-0.5 text-[10px] font-medium tracking-[0.02em]",
@@ -146,7 +148,7 @@ function StartLongTermUpdateRenderer({
       <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[12px]">
         <Brain size={14} weight="thin" className="text-ink-soft" />
         <span className="text-ink-soft">memory key</span>
-        <span className="ml-1 font-mono text-ink">{key}</span>
+        <span className="ml-1 select-text font-mono text-ink">{key}</span>
       </div>
       <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap px-3 py-2.5 font-mono text-[12.5px] leading-[1.6] text-ink-soft">
         {content || copy.conversation.emptyContent}

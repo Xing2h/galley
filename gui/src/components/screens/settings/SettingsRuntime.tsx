@@ -769,7 +769,7 @@ function RuntimeDiagnosticRow({
     <div className="flex min-w-0 items-baseline gap-3 py-1">
       <div className="w-24 shrink-0 text-[11.5px] text-ink-muted">{label}</div>
       <div
-        className="min-w-0 truncate font-mono text-[11.5px] text-ink-soft"
+        className="min-w-0 select-text truncate font-mono text-[11.5px] text-ink-soft"
         title={value}
       >
         {value}
@@ -816,7 +816,7 @@ function GAVersionCard({
       <div className="mt-2 rounded-sm border border-line bg-surface px-3 py-2.5">
         <div className="flex items-center gap-2 font-mono text-[12.5px] text-ink">
           <span className="text-ink-muted">{copy.currentVersion}</span>
-          <span>{currentShort}</span>
+          <span className="select-text">{currentShort}</span>
           {currentDate && (
             <span className="text-ink-muted">· {currentDate}</span>
           )}
@@ -824,7 +824,7 @@ function GAVersionCard({
         {!isUnknown && (
           <div className="mt-1 flex items-center gap-2 font-mono text-[12px] text-ink-soft">
             <span className="text-ink-muted">{copy.verifiedVersion}</span>
-            <span>{baselineShort}</span>
+            <span className="select-text">{baselineShort}</span>
             <span
               className={cn(
                 "ml-1 inline-flex items-center gap-1 rounded-sm px-1.5 py-px text-[11px] not-italic",

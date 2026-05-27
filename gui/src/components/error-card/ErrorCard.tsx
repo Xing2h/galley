@@ -102,7 +102,9 @@ export function ErrorCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-medium text-ink">{title}</div>
-          <div className="mt-1 text-[13px] text-ink-soft">{brief}</div>
+          <div className="mt-1 select-text text-[13px] text-ink-soft">
+            {brief}
+          </div>
         </div>
         {!isInline && onDismiss && (
           <IconButton
@@ -137,7 +139,7 @@ export function ErrorCard({
       {open && (error.traceback || error.context) && (
         <div className="mt-3 rounded-sm border border-line bg-app p-2.5">
           {error.context && (
-            <div className="font-mono text-[11px] text-ink-muted">
+            <div className="select-text font-mono text-[11px] text-ink-muted">
               context: {error.context}
             </div>
           )}

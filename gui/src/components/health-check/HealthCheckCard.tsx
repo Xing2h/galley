@@ -170,7 +170,10 @@ function HealthRow({
         <div className="min-w-0 flex-1">
           <div className="text-[13.5px] text-ink">{item.name}</div>
           {item.detail && (
-            <div className="mt-0.5 truncate font-mono text-[11.5px] text-ink-muted">
+            <div
+              className="mt-0.5 select-text truncate font-mono text-[11.5px] text-ink-muted"
+              title={item.detail}
+            >
               {item.detail}
             </div>
           )}

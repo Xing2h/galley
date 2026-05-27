@@ -305,7 +305,7 @@ function RepairSteps({
             <div className="mt-1 text-[12px] leading-[1.5] text-success">
               {copy.stepPrepareReady}
             </div>
-            <div className="mt-1 break-all font-mono text-[11.5px] leading-[1.5] text-ink-muted">
+            <div className="mt-1 select-text break-all font-mono text-[11.5px] leading-[1.5] text-ink-muted">
               {extensionDir}
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -332,7 +332,7 @@ function RepairSteps({
             {layoutError ? (
               <div className="rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2 text-[12px] leading-[1.5] text-error">
                 <div>{copy.stepPrepareFailed}</div>
-                <div className="mt-1 break-all font-mono text-[11px] leading-[1.5] opacity-80">
+                <div className="mt-1 select-text break-all font-mono text-[11px] leading-[1.5] opacity-80">
                   {layoutError}
                 </div>
               </div>
