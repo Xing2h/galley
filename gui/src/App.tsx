@@ -1017,6 +1017,11 @@ function App() {
             runtimeIndicator={sidebarRuntimeIndicator}
             onOpenRuntimeSettings={() => openSettings("runtime")}
             onOpenModelsSettings={() => openSettings("models")}
+            onOpenAgentSettings={
+              activeRuntimeKind === "managed" && hasConfiguredManagedModel
+                ? () => openSettings("integration")
+                : undefined
+            }
             sessions={visibleSessions}
             activeId={effectiveActiveId}
             onNewChat={() => {

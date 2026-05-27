@@ -12,6 +12,7 @@ import {
   PauseCircle,
   Pencil,
   Plus,
+  PlugsConnected,
   PushPin,
   PushPinSlash,
   Trash,
@@ -19,6 +20,7 @@ import {
   X as XIcon,
 } from "@phosphor-icons/react";
 
+import { IconTooltip } from "@/components/ui/tooltip";
 import { groupSessions, SIDEBAR_BUCKET_ORDER } from "@/lib/sessions";
 import { useCopy, type AppCopy } from "@/lib/i18n";
 import {
@@ -119,6 +121,8 @@ export interface SidebarProps {
   onOpenRuntimeSettings?: () => void;
   /** Click "配置模型" → opens Settings → Models. */
   onOpenModelsSettings?: () => void;
+  /** Click the quiet Agent-control entry → opens Settings → Agent. */
+  onOpenAgentSettings?: () => void;
   /** Session that currently holds the Desktop Pet, or `null` when no
    * pet is running. Renders a small Cat badge on the matching session
    * row so users see "where the pet lives" at a glance — non-
@@ -167,6 +171,7 @@ export function Sidebar({
   archivedCount = 0,
   onOpenRuntimeSettings,
   onOpenModelsSettings,
+  onOpenAgentSettings,
   petAttachedSessionId,
 }: SidebarProps) {
   const copy = useCopy();
@@ -272,6 +277,7 @@ export function Sidebar({
         runtimeIndicator={runtimeIndicator}
         onOpenRuntimeSettings={onOpenRuntimeSettings}
         onOpenModelsSettings={onOpenModelsSettings}
+        onOpenAgentSettings={onOpenAgentSettings}
       />
       <SidebarQuickActions
         onNewChat={onNewChat}
@@ -358,10 +364,12 @@ function SidebarHeader({
   runtimeIndicator,
   onOpenRuntimeSettings,
   onOpenModelsSettings,
+  onOpenAgentSettings,
 }: {
   runtimeIndicator: SidebarRuntimeIndicator;
   onOpenRuntimeSettings?: () => void;
   onOpenModelsSettings?: () => void;
+  onOpenAgentSettings?: () => void;
 }) {
   const copy = useCopy();
   // Single-line header (refactored 2026-05-13): the "Galley" wordmark
@@ -375,6 +383,7 @@ function SidebarHeader({
   // the TopBar's bottom border).
   //
   const indicator = renderRuntimeIndicator(runtimeIndicator, copy.sidebar);
+  const agentControlTooltip = copy.settings.agent.subtitle;
   return (
     <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
       {/* Wordmark: all-caps Newsreader semibold conveys "workbench" weight
@@ -415,6 +424,17 @@ function SidebarHeader({
           <RuntimeDot tone={indicator.tone} />
           <span>{indicator.label}</span>
         </div>
+      ) : onOpenAgentSettings ? (
+        <IconTooltip text={agentControlTooltip} side="bottom">
+          <button
+            type="button"
+            onClick={onOpenAgentSettings}
+            aria-label={agentControlTooltip}
+            className="inline-flex size-6 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+          >
+            <PlugsConnected size={15} weight="thin" />
+          </button>
+        </IconTooltip>
       ) : (
         <span aria-hidden="true" />
       )}
