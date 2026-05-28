@@ -366,8 +366,10 @@ jobs:
       - name: Detect prerelease
         id: meta
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [[ "${{ github.ref_name }}" == *-* ]]; then
+          if [[ "$REF_NAME" == *-* ]]; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
