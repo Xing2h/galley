@@ -124,13 +124,12 @@ After smoke testing:
 3. Push any bug fixes that need Win-machine cycles to a feature branch
 4. Mac-side work resumes on `main`
 
-## 7 · CI follow-up (v0.2.x)
+## 7 · CI path
 
-When manual Win build works end-to-end, set up GitHub Actions:
+GitHub Actions is now the primary release path:
 
-- `.github/workflows/build.yml` with `matrix: { os: [macos-latest, windows-latest] }`
-- Cache `~/.cargo`, `node_modules`, `target/`
-- Upload artifacts: `.dmg` / `.exe` per OS
-- Release pipeline: tag-triggered, attaches both bundles to GitHub Release
+- `.github/workflows/check.yml` verifies macOS Apple Silicon, macOS Intel, and Windows x64 before merge / push.
+- `.github/workflows/release.yml` builds the three release artifacts and creates a draft GitHub Release.
+- `.github/workflows/promote-update-channel.yml` promotes a published, smoke-tested release into the beta update channel.
 
-CI removes the "borrow a Win machine" step from future releases.
+Keep this checklist for Windows smoke testing and for fallback local builds when CI is unavailable.

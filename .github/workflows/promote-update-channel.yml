@@ -18,6 +18,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.channel }}
+  cancel-in-progress: false
+
 jobs:
   promote:
     runs-on: ubuntu-latest

@@ -1,17 +1,15 @@
 name: Release
 
 # Tag-triggered release. Push a tag matching `v*` (e.g. `v0.2.0`) on main
-# to fire this workflow. It produces two artifacts in parallel:
+# to fire this workflow. It produces three primary artifacts in parallel:
 #
-#   - Galley_<version>_aarch64.dmg    (Apple Silicon Mac, macos-15 runner)
-#   - Galley_<version>_x64-setup.exe  (Windows,           windows-2022 runner)
+#   - Galley_<version>_macOS_aarch64.dmg       (Apple Silicon Mac)
+#   - Galley_<version>_macOS_x64.dmg           (Intel Mac)
+#   - Galley_<version>_Windows_x64-setup.exe   (Windows)
 #
-# Mac Intel (x86_64-apple-darwin) was dropped from the matrix in
-# v0.1.0-alpha.2 — JC's dev machine is an Intel Mac so an Intel bundle
-# can be produced locally on demand, and the GitHub-hosted macos-13
-# runner is on track for removal anyway (TBD, 2026-27; see
-# docs/release-workflow.md §"Intel runner deprecation"). Re-add the
-# matrix row if/when a sizable user base needs official Intel binaries.
+# Mac Intel uses macos-15's Apple Silicon runner with cross-compile +
+# Rosetta 2. This keeps Intel artifacts in the official CI release path
+# without relying on deprecated Intel-hosted macOS runners.
 #
 # macOS runner is macos-15 (Sequoia) as of the v0.1.0-alpha.2 CI
 # maintenance: macos-14 (Sonoma) begins GitHub-hosted deprecation
@@ -25,7 +23,7 @@ name: Release
 # macos-26 once dtolnay/rust-toolchain catches up (or we move to
 # system Rust on the runner).
 #
-# After both build, a final job collects them and creates a DRAFT
+# After all builds finish, a final job collects them and creates a DRAFT
 # GitHub Release. JC reviews the auto-generated notes, smoke-tests each
 # artifact, then publishes.
 #
@@ -43,10 +41,17 @@ on:
       - "v*"
   # Manual dispatch (Actions UI → "Release" workflow → "Run workflow") lets
   # JC validate the workflow end-to-end without polluting git tags or
-  # the Releases page. On manual dispatch we build both platforms
+  # the Releases page. On manual dispatch we build all release targets
   # but skip the `release` job that creates the GitHub Release draft —
   # because there's no tag to associate the release with anyway.
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -61,11 +66,7 @@ jobs:
             bundle_glob: "*.dmg"
           # Mac Intel via cross-compile on macos-15 (arm64 runner).
           # bundle-python.sh installs x86_64 PBS Python and pip-installs
-          # GA deps using it → needs Rosetta 2 to execute the x86_64
-          # interpreter on this arm64 host. Rosetta install step handles
-          # that. Trial entry — added in experiment/mac-x64-ci-trial
-          # branch to verify cross-compile + Rosetta before merging to
-          # main as the v0.1.2-default CI behavior.
+          # GA deps using it, so Rosetta 2 is required on this host.
           - platform: macos-15
             target: x86_64-apple-darwin
             arch: x64

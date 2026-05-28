@@ -1,21 +1,27 @@
 name: Check
 
 # Pre-merge sanity check. Runs on every PR targeting main + every push
-# to main. Verifies the build is healthy across the release matrix
-# WITHOUT producing release artifacts — much faster than the release
-# workflow (no bundling, no uploads).
+# to main. Verifies release-target health WITHOUT producing release
+# artifacts, so it stays much faster than the release workflow.
 #
-# Gates: pnpm typecheck, pnpm lint, cargo check (per target). Each
-# platform runs in parallel (~5-8 min each); fail-fast: false so both
-# report independently and we get a complete picture.
+# Gates: actionlint, pnpm typecheck, pnpm lint, managed GA payload
+# check, cargo check, and cargo test. Target jobs run in parallel;
+# fail-fast: false so every platform reports independently and we get
+# a complete picture.
 #
 # When this fails on Win but not Mac, you've likely introduced an
 # OS-conditional bug — the most common reason a Mac-led codebase
 # needs a multi-platform check.
 #
-# Matrix covers day-to-day platform health: macos-15 (Apple Silicon) +
-# windows-2022. release.yml also builds the Mac Intel bundle, but Check
-# keeps that slower cross-compile in the release path.
+# Matrix mirrors release.yml's supported targets: macOS Apple Silicon,
+# macOS Intel via cross-compile on macos-15, and Windows x64.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 on:
   pull_request:
@@ -24,17 +30,21 @@ on:
     branches: [main]
 
 jobs:
-  check:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-15
-            target: aarch64-apple-darwin
-          - platform: windows-2022
-            target: x86_64-pc-windows-msvc
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
 
-    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Actionlint
+        uses: rhysd/actionlint@v1
+
+  frontend:
+    name: Frontend and managed payload
+    needs: workflow-lint
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -53,16 +63,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: gui/pnpm-lock.yaml
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: ./core -> target
-
       - name: Install frontend deps
         working-directory: ./gui
         run: pnpm install --frozen-lockfile
@@ -77,6 +77,36 @@ jobs:
 
       - name: Managed GA payload gate
         run: node scripts/check-managed-ga-payload.mjs
+
+  check:
+    name: Core (${{ matrix.target }})
+    needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-15
+            target: aarch64-apple-darwin
+          - platform: macos-15
+            target: x86_64-apple-darwin
+          - platform: windows-2022
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./core -> target
 
       # tauri-build's build.rs validates that every path in
       # tauri.conf.json's bundle.resources exists at cargo check time
@@ -96,6 +126,10 @@ jobs:
       - name: Prepare CLI sidecar (for cargo check)
         shell: bash
         run: ./scripts/prepare-cli-sidecar.sh --profile debug --target ${{ matrix.target }}
+
+      - name: Install Rosetta 2 (x86_64 tests on arm64 host)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: softwareupdate --install-rosetta --agree-to-license
 
       - name: Cargo check
         working-directory: ./core
