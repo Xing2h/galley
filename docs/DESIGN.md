@@ -373,11 +373,12 @@ Final answer 跟 Thinking summary 都通过 `react-markdown` + `remark-gfm` + Sh
 | 块代码 ` ```python ` | 详见下方 Shiki 段 |
 | `blockquote` | 左 3px brand 竖线 + italic + ink-soft |
 | `a` | text-brand-strong + 1px 下划线 + 安全 _blank |
-| `table` (GFM) | border-collapse + th `bg-surface` + 单元格 padding 12px×8px |
+| `table` (GFM) | `overflow-x-auto` 容器 + border-collapse + th `bg-surface` + 单元格 padding 12px×8px |
 | `hr` | 1px line + my-5 |
 | `strong` | font-medium（不到 bolder，跟 Newsreader 协调） |
 | `em` | italic |
 | `~~del~~` (GFM) | line-through ink-muted |
+| `![alt](url)` | 不直接拉取/渲染图片；降级成低调的图片链接 pill，避免远程请求和版面撑坏 |
 
 **视觉哲学**：每个 markdown 元素 reuse 现有 Newsreader / Inter / JetBrains-Mono token，不为 markdown 单独引入字号 ramp。整段对话读起来是一个 document，不是 stylesheet 拼贴。
 
@@ -390,7 +391,7 @@ Final answer 跟 Thinking summary 都通过 `react-markdown` + `remark-gfm` + Sh
 - 未注册的语言：fallback 到无色 mono code block（同样的 chrome，仅没 token color），不报错
 - async render：第一次 highlighter 加载时显示 plain mono fallback，加载完替换；同 highlighter 实例 cache，跨 code block 共享
 - 视觉容器：1px line border + bg-surface + 圆角 6px + 顶部一行 mono uppercase 11px 显示语言名
-- 横向 overflow scrollable（不 wrap）
+- 默认横向 overflow scrollable；hover/focus 可切到 wrap 模式，便于读日志、错误栈、长命令
 
 V0.1 代码块顶部 header 右侧加 **hover-revealed Copy 按钮**（11px Phosphor `Copy` thin + uppercase "Copy" 标签，hover 时 fade-in，复制后变 ✓ + "Copied" 1.5s 反馈）。复制内容是**纯代码**——不带 ` ``` ` fence、不带 markdown chrome。Claude.ai / ChatGPT / Cursor 的肌肉记忆位置。
 

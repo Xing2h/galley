@@ -112,8 +112,9 @@ const PROSE_BASE = cn(
   "[&_blockquote]:my-3 [&_blockquote]:border-l-[3px] [&_blockquote]:border-brand [&_blockquote]:pl-3.5 [&_blockquote]:font-serif [&_blockquote]:italic [&_blockquote]:text-ink-soft",
   // Links.
   "[&_a]:text-brand-strong [&_a]:underline [&_a]:underline-offset-[3px] [&_a]:decoration-brand-strong/40 [&_a:hover]:decoration-brand-strong",
-  // Tables — GFM extension.
-  "[&_table]:my-3.5 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[14px]",
+  // Tables — GFM extension. The table component wraps them in an
+  // overflow container; cell styling stays here so the typography
+  // remains centralized.
   "[&_th]:border [&_th]:border-line [&_th]:bg-surface [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-medium [&_th]:text-ink",
   "[&_td]:border [&_td]:border-line [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_td]:text-ink",
   // hr inside markdown.
@@ -216,8 +217,13 @@ interface CodeBlockProps {
  * synchronously so there's no flash of empty / placeholder content.
  */
 function CodeBlock({ code, language }: CodeBlockProps) {
+  const copy = useCopy();
   const lang = normalizeLanguage(language);
   const [html, setHtml] = useState<string | null>(null);
+  const [wrapped, setWrapped] = useState(false);
+  const wrapLabel = wrapped
+    ? copy.conversation.scrollCode
+    : copy.conversation.wrapCode;
 
   useEffect(() => {
     if (!lang) return;
@@ -268,11 +274,30 @@ function CodeBlock({ code, language }: CodeBlockProps) {
         <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-muted">
           {language ?? ""}
         </span>
-        <CodeCopyButton code={code} />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            aria-pressed={wrapped}
+            onClick={() => setWrapped((value) => !value)}
+            className={cn(
+              "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10.5px] uppercase tracking-[0.08em]",
+              "transition-[background-color,color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
+              wrapped
+                ? "bg-hover text-ink-soft opacity-100"
+                : "text-ink-muted opacity-0 hover:bg-hover hover:text-ink-soft group-hover/codeblock:opacity-100 focus-visible:opacity-100",
+            )}
+          >
+            {wrapLabel}
+          </button>
+          <CodeCopyButton code={code} />
+        </div>
       </div>
       <div
         className={cn(
-          "overflow-x-auto px-3.5 py-3 font-mono text-[13px] leading-[1.55] text-ink",
+          "px-3.5 py-3 font-mono text-[13px] leading-[1.55] text-ink",
+          wrapped
+            ? "overflow-x-hidden break-words [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap"
+            : "overflow-x-auto [&_code]:whitespace-pre [&_pre]:whitespace-pre",
           // Shiki's own .shiki/.shiki span colors come through the
           // dangerouslySetInnerHTML payload; no override needed.
           "[&_pre]:m-0 [&_pre]:bg-transparent [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-[13px]",
@@ -377,6 +402,21 @@ function normalizeLanguage(language: string | null): ShikiLang | null {
  * text shape. The pre wrapper is the reliable block signal.
  */
 const COMPONENTS: Components = {
+  table({ className, children, ...props }) {
+    return (
+      <div className="my-3.5 overflow-x-auto">
+        <table
+          className={cn(
+            "w-max min-w-full border-collapse text-[14px]",
+            className,
+          )}
+          {...props}
+        >
+          {children}
+        </table>
+      </div>
+    );
+  },
   pre({ children }) {
     const codeProps = getPreCodeProps(children);
     if (!codeProps) return <pre>{children}</pre>;
@@ -395,7 +435,41 @@ const COMPONENTS: Components = {
       </a>
     );
   },
+  img({ src, alt }) {
+    return <MarkdownImageLink src={src} alt={alt} />;
+  },
 };
+
+function MarkdownImageLink({
+  src,
+  alt,
+}: {
+  src?: string | null;
+  alt?: string | null;
+}) {
+  const copy = useCopy();
+  const href = safeMarkdownHref(src);
+  const label = alt?.trim() || copy.conversation.imageLink;
+  return (
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-sm border border-line bg-surface px-2 py-1 align-baseline text-[12.5px] text-ink-soft">
+      <span className="shrink-0 text-ink-muted">{copy.conversation.image}</span>
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer noopener">
+          {label}
+        </a>
+      ) : (
+        <span className="truncate">{label}</span>
+      )}
+    </span>
+  );
+}
+
+function safeMarkdownHref(value?: string | null): string | undefined {
+  const href = value?.trim();
+  if (!href) return undefined;
+  if (/^(https?:|file:|\/|\.\/|\.\.\/|#)/i.test(href)) return href;
+  return undefined;
+}
 
 interface PreCodeProps {
   className?: string;
