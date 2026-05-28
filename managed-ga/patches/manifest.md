@@ -10,6 +10,7 @@ Current patches:
 | Patch | Upstream files | Reason | Rebase risk | Removal condition |
 |---|---|---|---|---|
 | `0001-managed-state-root.patch` | `agentmain.py`, `ga.py`, `llmcore.py`, `frontends/continue_cmd.py` | Keep Galley-managed user state under `Application Support/app.galley/managed-ga-state` instead of the shipped code payload. | Medium: upstream may rename state paths or model response logging. | Remove when GenericAgent supports an explicit state root / profile path upstream. |
+| `0002-repair-windows-path-tool-json.patch` | `llmcore.py` | Keep managed GA tolerant when models copy Windows paths into `path` / `file_path` / `filepath` tool JSON fields with raw backslashes or doubled quotes. | Low: touches only fallback text-tool JSON parsing for path fields. | Remove when GenericAgent upstream normalizes Windows path values or handles these malformed tool JSON cases. |
 
 Rules:
 

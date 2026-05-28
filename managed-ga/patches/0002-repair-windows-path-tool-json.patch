@@ -1,0 +1,77 @@
+diff --git a/llmcore.py b/llmcore.py
+index 60cebca..ee39636 100644
+--- a/llmcore.py
++++ b/llmcore.py
+@@ -892,16 +892,68 @@ def _write_llm_log(label, content, log_path=None):
+     with open(log_path, 'a', encoding='utf-8', errors='replace') as f:
+         f.write(f"=== {label} === {ts}\n{content}\n\n")
+ 
++_WINDOWS_PATH_KEYS = {'path', 'file_path', 'filepath'}
++_WINDOWS_PATH_FIELD_RE = re.compile(
++    r'("(?P<key>path|file_path|filepath)"\s*:\s*)"{1,2}'
++    r'(?P<path>[A-Za-z]:(?:\\+|/)[^"\r\n,}\]]*)"{1,2}'
++)
++_WINDOWS_CONTROL_ESCAPES = {
++    '\b': '/b',
++    '\f': '/f',
++    '\n': '/n',
++    '\r': '/r',
++    '\t': '/t',
++}
++
++def _normalize_windows_path_text(value):
++    candidate = value.strip()
++    if (
++        len(candidate) >= 2
++        and candidate[0] == candidate[-1]
++        and candidate[0] in ('"', "'")
++    ):
++        candidate = candidate[1:-1].strip()
++    if not re.match(r'^[A-Za-z]:(?:[\\/]|[\b\f\n\r\t])', candidate):
++        return value
++    for char, replacement in _WINDOWS_CONTROL_ESCAPES.items():
++        candidate = candidate.replace(char, replacement)
++    return candidate.replace('\\', '/')
++
++def _repair_windows_path_fields_in_jsonish(json_str):
++    """Repair path fields when a model copies raw Windows paths into tool JSON."""
++    def repl(match):
++        path = match.group('path').replace('\\', '/')
++        return match.group(1) + json.dumps(path, ensure_ascii=False)
++
++    return _WINDOWS_PATH_FIELD_RE.sub(repl, json_str)
++
++def _normalize_windows_path_values(value):
++    if isinstance(value, dict):
++        out = {}
++        for k, v in value.items():
++            if isinstance(v, str) and k in _WINDOWS_PATH_KEYS:
++                v = _normalize_windows_path_text(v)
++            out[k] = _normalize_windows_path_values(v)
++        return out
++    if isinstance(value, list):
++        return [_normalize_windows_path_values(v) for v in value]
++    return value
++
+ def tryparse(json_str):
+-    try: return json.loads(json_str)
++    try: return _normalize_windows_path_values(json.loads(json_str))
+     except: pass
+     json_str = json_str.strip().strip('`').replace('json\n', '', 1).strip()
+-    try: return json.loads(json_str)
++    try: return _normalize_windows_path_values(json.loads(json_str))
++    except: pass
++    repaired = _repair_windows_path_fields_in_jsonish(json_str)
++    try: return _normalize_windows_path_values(json.loads(repaired))
+     except: pass
+-    try: return json.loads(json_str[:-1])
++    try: return _normalize_windows_path_values(json.loads(json_str[:-1]))
+     except: pass
+     if '}' in json_str: json_str = json_str[:json_str.rfind('}') + 1]
+-    return json.loads(json_str)
++    return _normalize_windows_path_values(
++        json.loads(_repair_windows_path_fields_in_jsonish(json_str))
++    )
+ 
+ class MixinSession:
+     """Multi-session fallback with spring-back to primary."""
