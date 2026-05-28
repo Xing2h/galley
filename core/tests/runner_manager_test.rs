@@ -30,6 +30,7 @@ use galley_core_lib::ipc::{IpcCommand, IpcEvent};
 use galley_core_lib::runner_manager::{BroadcastItem, RunnerManager, SpawnArgs};
 use std::fs;
 use std::path::PathBuf;
+use std::process::{Command as StdCommand, Stdio};
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::broadcast::error::RecvError;
@@ -43,17 +44,33 @@ fn mock_python_path() -> Option<String> {
         "/usr/local/bin/python3",
         "/opt/homebrew/bin/python3",
         "/usr/bin/python",
+        "python3",
+        "python",
         "C:\\Python311\\python.exe",
         "C:\\Python310\\python.exe",
     ];
     for c in candidates {
-        if std::path::Path::new(c).exists() {
+        let path_like = c.contains('/') || c.contains('\\');
+        if path_like && !std::path::Path::new(c).exists() {
+            continue;
+        }
+        if python_candidate_works(c) {
             return Some(c.to_string());
         }
     }
-    // Last-resort: trust PATH; spawn errors will be caught and the test
-    // will skip via the PythonNotFound branch.
     None
+}
+
+fn python_candidate_works(candidate: &str) -> bool {
+    StdCommand::new(candidate)
+        .arg("-c")
+        .arg("import sys; raise SystemExit(0 if sys.version_info.major >= 3 else 1)")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 /// Write a mock `runner/workbench_bridge.py` (and the `runner/__init__.py`
