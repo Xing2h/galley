@@ -1,18 +1,13 @@
 import {
-  ArrowsClockwise,
   CaretDown,
   CaretRight,
   Check,
-  CheckCircle,
   CircleNotch,
   FolderOpen,
-  Info,
-  Key,
   Package,
   Warning,
   X,
 } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -20,6 +15,11 @@ import {
   SettingsSectionLabel,
 } from "@/components/screens/settings/settings-ui";
 import type { PathValidation } from "@/components/screens/onboarding/StepAttach";
+import { AdvancedRuntimeSettings } from "@/components/screens/settings/runtime/AdvancedRuntimeSettings";
+import { BuiltinRuntimeCard } from "@/components/screens/settings/runtime/BuiltinRuntimeCard";
+import { GAVersionCard } from "@/components/screens/settings/runtime/GAVersionCard";
+import { HealthCheckSection } from "@/components/screens/settings/runtime/HealthCheckSection";
+import type { SettingsRuntimeProps } from "@/components/screens/settings/runtime/types";
 import { SettingsUpdateControl } from "@/components/screens/settings/SettingsUpdateControl";
 import { Button } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
@@ -30,42 +30,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useManagedModelsStore } from "@/stores/managed-models";
 import { usePrefsStore } from "@/stores/prefs";
-import type { ManagedRuntimeDiagnostics, RuntimeInfo } from "@/types/inspector";
+import type { ManagedRuntimeDiagnostics } from "@/types/inspector";
 import type { RuntimeKind } from "@/types/session";
-
-interface SettingsRuntimeProps {
-  info: RuntimeInfo;
-  hasRunningSessions: boolean;
-  activeRuntimeKind: RuntimeKind;
-  hasManagedRuntimeConfigured: boolean;
-  hasExternalRuntimeConfigured: boolean;
-  /**
-   * v0.1.1+: when false (default), Galley spawns its own bundled Python
-   * interpreter and the Python panel is a read-only info card. When
-   * true, the legacy picker UI is shown so the user can point Galley
-   * at an external interpreter (their own venv, conda env, etc).
-   */
-  useExternalPython: boolean;
-  onChangeGAPath?: () => void;
-  onChangeBridgePython?: () => void;
-  onReRunHealthCheck?: () => void;
-  onOpenSetupAssistant?: () => void;
-  /**
-   * Toggle the bundled-vs-external Python mode. Persisted via
-   * `setGAConfig({ useExternalPython })`. Takes effect on the next
-   * bridge spawn — running sessions keep their current Python.
-   */
-  onToggleExternalPython?: (useExternal: boolean) => void;
-  onChangeRuntimeKind?: (kind: RuntimeKind) => void;
-  onOpenModels?: () => void;
-  /**
-   * Commit a manually-typed GA path. Called on Enter / blur when the
-   * draft differs from the saved value and validation hasn't returned
-   * `not-found`. App-level handler should run the same
-   * `setGAConfig({ gaPath })` flow as the folder picker.
-   */
-  onCommitGAPath?: (path: string) => Promise<void>;
-}
 
 /**
  * Settings → Runtime tab. DESIGN.md §9 Runtime tab.
@@ -179,8 +145,11 @@ export function SettingsRuntime({
         hasExternalRuntimeConfigured={hasExternalRuntimeConfigured}
         hasRunningSessions={hasRunningSessions}
         highlighted={highlightedRuntimeKind === "external"}
-        showManagedDiagnostics={activeRuntimeKind === "managed"}
-        managedDiagnostics={info.managedRuntime}
+        managedDiagnosticsSlot={
+          activeRuntimeKind === "managed" ? (
+            <ManagedRuntimeCard diagnostics={info.managedRuntime} />
+          ) : undefined
+        }
         onOpenSetupAssistant={onOpenSetupAssistant}
         onToggleExpanded={() => setExternalExpanded((current) => !current)}
         onActivate={() => activateRuntimeKind("external")}
@@ -194,369 +163,6 @@ export function SettingsRuntime({
         </div>
         <SettingsUpdateControl hasRunningSessions={hasRunningSessions} />
       </div>
-    </div>
-  );
-}
-
-function BuiltinRuntimeCard({
-  value,
-  hasManagedRuntimeConfigured,
-  hasRunningSessions,
-  highlighted,
-  onOpenModels,
-  onActivate,
-}: {
-  value: RuntimeKind;
-  hasManagedRuntimeConfigured: boolean;
-  hasRunningSessions: boolean;
-  highlighted: boolean;
-  onOpenModels?: () => void;
-  onActivate?: () => void;
-}) {
-  const appCopy = useCopy();
-  const copy = appCopy.settings.runtime;
-  const active = value === "managed";
-  const canActivate =
-    !active &&
-    hasManagedRuntimeConfigured &&
-    !hasRunningSessions &&
-    !!onActivate;
-  const needsModel = !hasManagedRuntimeConfigured;
-  const detail = active
-    ? copy.usingBundledGA
-    : needsModel
-      ? copy.needsModel
-      : copy.bundledReady;
-
-  return (
-    <div>
-      <SettingsSectionLabel>{copy.runtimeMode}</SettingsSectionLabel>
-      <div
-        className={cn(
-          "mt-2 rounded-sm border border-line bg-surface px-3 py-3",
-          highlighted && "runtime-mode-highlight",
-        )}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <Package
-              size={18}
-              weight="thin"
-              className="shrink-0 text-ink-soft"
-            />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[13px] font-medium text-ink">
-                  {copy.bundledGA}
-                </span>
-                <span className="rounded-sm bg-brand-soft px-1.5 py-px text-[10.5px] font-medium text-brand-strong">
-                  {copy.recommended}
-                </span>
-                {active && (
-                  <span className="rounded-sm bg-success/10 px-1.5 py-px text-[10.5px] text-success">
-                    {copy.active}
-                  </span>
-                )}
-              </div>
-              <div className="mt-0.5 text-[12px] text-ink-muted">{detail}</div>
-            </div>
-          </div>
-          {needsModel ? (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!onOpenModels}
-              onClick={onOpenModels}
-              leadingIcon={<Key size={12} weight="thin" />}
-            >
-              {appCopy.sidebar.configureModels}
-            </Button>
-          ) : (
-            !active && (
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!canActivate}
-                onClick={onActivate}
-              >
-                {copy.switchToBundledGA}
-              </Button>
-            )
-          )}
-        </div>
-        {hasRunningSessions && !active && (
-          <div className="mt-2 text-[11.5px] text-ink-muted">
-            {copy.runningSessionsBlock}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AdvancedRuntimeSettings({
-  expanded,
-  value,
-  hasExternalRuntimeConfigured,
-  hasRunningSessions,
-  highlighted,
-  showManagedDiagnostics,
-  managedDiagnostics,
-  onOpenSetupAssistant,
-  onToggleExpanded,
-  onActivate,
-  children,
-}: {
-  expanded: boolean;
-  value: RuntimeKind;
-  hasExternalRuntimeConfigured: boolean;
-  hasRunningSessions: boolean;
-  highlighted: boolean;
-  showManagedDiagnostics: boolean;
-  managedDiagnostics?: ManagedRuntimeDiagnostics;
-  onOpenSetupAssistant?: () => void;
-  onToggleExpanded: () => void;
-  onActivate?: () => void;
-  children: ReactNode;
-}) {
-  const copy = useCopy().settings.runtime;
-  const [setupAssistantExpanded, setSetupAssistantExpanded] = useState(false);
-  return (
-    <div>
-      <SettingsSectionLabel>{copy.more}</SettingsSectionLabel>
-      <div className="mt-2 space-y-3">
-        <SetupAssistantAccess
-          expanded={setupAssistantExpanded}
-          hasRunningSessions={hasRunningSessions}
-          onOpenSetupAssistant={onOpenSetupAssistant}
-          onToggleExpanded={() =>
-            setSetupAssistantExpanded((current) => !current)
-          }
-        />
-
-        <ExternalRuntimeAccess
-          expanded={expanded}
-          value={value}
-          hasExternalRuntimeConfigured={hasExternalRuntimeConfigured}
-          hasRunningSessions={hasRunningSessions}
-          highlighted={highlighted}
-          onToggleExpanded={onToggleExpanded}
-          onActivate={onActivate}
-        >
-          {children}
-        </ExternalRuntimeAccess>
-
-        {showManagedDiagnostics && (
-          <ManagedRuntimeCard diagnostics={managedDiagnostics} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SetupAssistantAccess({
-  expanded,
-  hasRunningSessions,
-  onOpenSetupAssistant,
-  onToggleExpanded,
-}: {
-  expanded: boolean;
-  hasRunningSessions: boolean;
-  onOpenSetupAssistant?: () => void;
-  onToggleExpanded: () => void;
-}) {
-  const copy = useCopy().settings.runtime;
-  const disabled = hasRunningSessions || !onOpenSetupAssistant;
-  return (
-    <div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onToggleExpanded}
-        className="px-0 text-[11.5px] hover:bg-transparent hover:underline"
-        leadingIcon={
-          expanded ? (
-            <CaretDown size={12} weight="bold" />
-          ) : (
-            <CaretRight size={12} weight="bold" />
-          )
-        }
-      >
-        {copy.setupAssistant}
-      </Button>
-      {expanded && (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-sm border border-line bg-surface px-3 py-2.5">
-          <div className="min-w-[260px] flex-1 text-[11.5px] leading-[1.5] text-ink-muted">
-            {copy.setupAssistantDescription}
-            {hasRunningSessions && (
-              <div className="mt-1 text-ink-muted">
-                {copy.setupAssistantRunningBlock}
-              </div>
-            )}
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={disabled}
-            onClick={onOpenSetupAssistant}
-          >
-            {copy.openSetupAssistant}
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ExternalRuntimeAccess({
-  expanded,
-  value,
-  hasExternalRuntimeConfigured,
-  hasRunningSessions,
-  highlighted,
-  onToggleExpanded,
-  onActivate,
-  children,
-}: {
-  expanded: boolean;
-  value: RuntimeKind;
-  hasExternalRuntimeConfigured: boolean;
-  hasRunningSessions: boolean;
-  highlighted: boolean;
-  onToggleExpanded: () => void;
-  onActivate?: () => void;
-  children: ReactNode;
-}) {
-  const copy = useCopy().settings.runtime;
-  return (
-    <div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onToggleExpanded}
-        className="px-0 text-[11.5px] hover:bg-transparent hover:underline"
-        leadingIcon={
-          expanded ? (
-            <CaretDown size={12} weight="bold" />
-          ) : (
-            <CaretRight size={12} weight="bold" />
-          )
-        }
-      >
-        {copy.connectExternalGA}
-      </Button>
-      {expanded && (
-        <div className="mt-2 space-y-5">
-          <ExternalRuntimeCard
-            value={value}
-            hasExternalRuntimeConfigured={hasExternalRuntimeConfigured}
-            hasRunningSessions={hasRunningSessions}
-            highlighted={highlighted}
-            onActivate={onActivate}
-          />
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ExternalRuntimeCard({
-  value,
-  hasExternalRuntimeConfigured,
-  hasRunningSessions,
-  highlighted,
-  onActivate,
-}: {
-  value: RuntimeKind;
-  hasExternalRuntimeConfigured: boolean;
-  hasRunningSessions: boolean;
-  highlighted: boolean;
-  onActivate?: () => void;
-}) {
-  const copy = useCopy().settings.runtime;
-  const active = value === "external";
-  const canActivate =
-    !active &&
-    hasExternalRuntimeConfigured &&
-    !hasRunningSessions &&
-    !!onActivate;
-  const detail = active
-    ? copy.usingExternalGA
-    : hasExternalRuntimeConfigured
-      ? copy.externalReady
-      : copy.needsGAPath;
-
-  return (
-    <div>
-      <div
-        className={cn(
-          "flex flex-wrap items-center justify-between gap-3 rounded-sm border border-line bg-surface px-3 py-2.5",
-          highlighted && "runtime-mode-highlight",
-        )}
-      >
-        <div className="flex min-w-[240px] flex-1 items-center gap-3">
-          <FolderOpen
-            size={16}
-            weight="thin"
-            className="shrink-0 text-ink-soft"
-          />
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[12.5px] font-medium text-ink">
-                {copy.externalGA}
-              </span>
-              {active && (
-                <span className="rounded-sm bg-hover px-1.5 py-px text-[10.5px] text-ink-muted">
-                  {copy.active}
-                </span>
-              )}
-            </div>
-            <div className="mt-0.5 text-[11.5px] text-ink-muted">{detail}</div>
-          </div>
-        </div>
-        {!active && (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={!canActivate}
-            onClick={onActivate}
-          >
-            {copy.switchToExternalGA}
-          </Button>
-        )}
-      </div>
-      {hasRunningSessions && !active && (
-        <div className="mt-2 text-[11.5px] text-ink-muted">
-          {copy.runningSessionsBlock}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function HealthCheckSection({
-  onReRunHealthCheck,
-}: {
-  onReRunHealthCheck?: () => void;
-}) {
-  const copy = useCopy().settings.runtime;
-  return (
-    <div>
-      <SettingsSectionLabel>Health Check</SettingsSectionLabel>
-      <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">
-        {copy.healthDescription}
-      </p>
-      <Button
-        variant="accent-secondary"
-        size="md"
-        disabled={!onReRunHealthCheck}
-        onClick={onReRunHealthCheck}
-        className="mt-3"
-        leadingIcon={<ArrowsClockwise size={13} weight="thin" />}
-      >
-        {copy.runHealthCheck}
-      </Button>
     </div>
   );
 }
@@ -776,97 +382,6 @@ function RuntimeDiagnosticRow({
       </div>
     </div>
   );
-}
-
-// ---------------- GA Version ----------------
-
-/**
- * "GA Version" card — surfaces what GA commit the user is actually
- * running (gaCommit / gaCommitDate from the ReadyEvent) alongside the
- * workbench-tested baseline. Per the 2026-05-12 product decision:
- * users drive GA's upgrade cadence via `git pull` on their local
- * GenericAgent repo. This row makes the version legible without
- * pretending to police it — no auto-update, no "outdated" badge.
- *
- * Match states:
- *   - Equal commits      → green Check icon "已对齐 baseline"
- *   - Different commits  → muted info dot "你已自行升级"
- *   - "unknown" commit   → no comparison row (ga_path isn't a git
- *                          checkout — tarball/zip install)
- */
-function GAVersionCard({
-  gaCommit,
-  gaCommitDate,
-  gaBaseline,
-}: {
-  gaCommit: string;
-  gaCommitDate: string;
-  gaBaseline: string;
-}) {
-  const copy = useCopy().settings.runtime;
-  const isUnknown = gaCommit === "unknown" || gaCommit === "";
-  const isMatched = !isUnknown && gaCommit === gaBaseline;
-  const currentShort = isUnknown ? "unknown" : gaCommit.slice(0, 7);
-  const baselineShort = gaBaseline.slice(0, 7);
-  const currentDate = formatCommitDate(gaCommitDate);
-
-  return (
-    <div>
-      <SettingsSectionLabel>{copy.genericAgentVersion}</SettingsSectionLabel>
-      <div className="mt-2 rounded-sm border border-line bg-surface px-3 py-2.5">
-        <div className="flex items-center gap-2 font-mono text-[12.5px] text-ink">
-          <span className="text-ink-muted">{copy.currentVersion}</span>
-          <span className="select-text">{currentShort}</span>
-          {currentDate && (
-            <span className="text-ink-muted">· {currentDate}</span>
-          )}
-        </div>
-        {!isUnknown && (
-          <div className="mt-1 flex items-center gap-2 font-mono text-[12px] text-ink-soft">
-            <span className="text-ink-muted">{copy.verifiedVersion}</span>
-            <span className="select-text">{baselineShort}</span>
-            <span
-              className={cn(
-                "ml-1 inline-flex items-center gap-1 rounded-sm px-1.5 py-px text-[11px] not-italic",
-                isMatched
-                  ? "bg-success/10 text-success"
-                  : "bg-hover text-ink-muted",
-              )}
-            >
-              {isMatched ? (
-                <>
-                  <CheckCircle size={11} weight="fill" />
-                  {copy.aligned}
-                </>
-              ) : (
-                <>
-                  <Info size={11} weight="bold" />
-                  {copy.selfUpdated}
-                </>
-              )}
-            </span>
-          </div>
-        )}
-      </div>
-      <p className="mt-2 text-[11.5px] leading-[1.55] text-ink-muted">
-        {copy.commitCompatibilityNote}
-      </p>
-    </div>
-  );
-}
-
-/**
- * Extract YYYY-MM-DD from the commit's own ISO timestamp without
- * routing through `new Date()` — that would convert to the viewer's
- * local timezone and silently shift a commit authored late at +08 to
- * "yesterday" for a PST viewer. The commit is a single artifact with
- * one authored date; we display it as the author wrote it, matching
- * what `git log` shows.
- */
-function formatCommitDate(iso: string): string {
-  if (!iso || iso === "unknown") return "";
-  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
 }
 
 /**
