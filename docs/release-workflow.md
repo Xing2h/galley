@@ -614,8 +614,10 @@ base64 -D < ~/.config/galley/updater.key.pub
 
 Release workflow 会在 CI 里临时写入
 `core/tauri.updater.generated.conf.json`，把 public key / endpoint 合并进
-Tauri config，同时打开 `bundle.createUpdaterArtifacts`，并上传 updater
-artifacts：
+Tauri config，同时打开 `bundle.createUpdaterArtifacts`。CI 已经在独立步骤准备
+CLI sidecar，所以这个临时 config 也会把 `beforeBuildCommand` 收窄成
+`pnpm --dir gui build`，避免 Windows Tauri bundle 阶段重新执行 bash-only
+repo script。workflow 会上传 updater artifacts：
 
 - macOS: `Galley_<version>_macOS_<arch>.app.tar.gz` 和 `.sig`
 - Windows: `Galley_<version>_Windows_x64-setup.exe` 和 `.sig`

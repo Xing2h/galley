@@ -55,6 +55,14 @@ The first dry-run exposed a Windows-only bundled-Python verification failure:
 Windows verification paths through `cygpath -w` and passes them via environment
 variables instead of interpolating shell paths into Python code.
 
+The second dry-run got past that gate and through Windows `cargo check`, then
+failed in Tauri `beforeBuildCommand`: Windows executed
+`./scripts/prepare-cli-sidecar.sh && pnpm --dir gui build` via `cmd`, which does
+not understand the `./scripts/...` shell path. The release workflow now writes
+`build.beforeBuildCommand = "pnpm --dir gui build"` into the generated updater
+config. This is safe because release CI already runs `Prepare CLI sidecar` as a
+dedicated cross-platform step before invoking `tauri build`.
+
 ## Next
 
 重跑 release dry-run；通过后先下载 Actions artifacts 做内部安装 dogfood。公开

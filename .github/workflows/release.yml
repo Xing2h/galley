@@ -150,6 +150,12 @@ jobs:
           const fs = require("node:fs");
 
           const config = {
+            build: {
+              // The matrix already prepares the CLI sidecar in a cross-platform
+              // step. Keep Tauri's Windows beforeBuildCommand out of bash-only
+              // repo scripts and leave this phase to the frontend build.
+              beforeBuildCommand: "pnpm --dir gui build",
+            },
             bundle: {
               createUpdaterArtifacts: true,
             },
