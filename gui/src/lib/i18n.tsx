@@ -340,6 +340,7 @@ const zhCopy = {
       deleteProviderAction: "删除",
       editModel: "编辑模型",
       removeModel: "移除模型",
+      removeModelInlineConfirm: "移除这个模型？",
       setupComplete: "配置完成",
       foundModels: (count: number) => `找到 ${count} 个模型`,
       connectedNoModels: "连接成功，但没有返回模型列表",
@@ -405,10 +406,13 @@ const zhCopy = {
       connectionUsable: "连接可用",
       modelUsable: "模型可用",
       connectionUsableCanSave: "连接可用，可以继续保存",
-      deleteProviderSuffix: (count: number) => `，并移除 ${count} 个已启用模型`,
-      confirmDeleteProvider: (name: string, suffix: string) =>
-        `删除 ${name}${suffix}？`,
-      confirmRemoveModel: (name: string) => `移除 ${name}？`,
+      deleteProviderDialogTitle: "删除模型提供商？",
+      deleteProviderDialogBody: (name: string, modelCount: number) =>
+        modelCount > 0
+          ? `这会删除 ${name}，同时移除 ${modelCount} 个已启用模型，并删除 Galley 本地保存的 API Key。`
+          : `这会删除 ${name}，并删除 Galley 本地保存的 API Key。`,
+      deleteProviderDialogAction: "删除提供商",
+      cannotUndo: "此操作无法撤销。",
     },
     approval: {
       subtitle: "配置 Agent 操作的审批规则",
@@ -1178,6 +1182,7 @@ const enCopy: AppCopy = {
       deleteProviderAction: "Delete",
       editModel: "Edit model",
       removeModel: "Remove model",
+      removeModelInlineConfirm: "Remove this model?",
       setupComplete: "Setup complete",
       foundModels: (count) => `Found ${count} models`,
       connectedNoModels: "Connected, but no model list was returned",
@@ -1244,10 +1249,13 @@ const enCopy: AppCopy = {
       connectionUsable: "Connection works",
       modelUsable: "Model works",
       connectionUsableCanSave: "Connection works; you can keep saving",
-      deleteProviderSuffix: (count) =>
-        ` and remove ${count} enabled model${count === 1 ? "" : "s"}`,
-      confirmDeleteProvider: (name, suffix) => `Delete ${name}${suffix}?`,
-      confirmRemoveModel: (name) => `Remove ${name}?`,
+      deleteProviderDialogTitle: "Delete model provider?",
+      deleteProviderDialogBody: (name, modelCount) =>
+        modelCount > 0
+          ? `This will delete ${name}, remove ${modelCount} enabled model${modelCount === 1 ? "" : "s"}, and delete the API Key saved locally by Galley.`
+          : `This will delete ${name} and delete the API Key saved locally by Galley.`,
+      deleteProviderDialogAction: "Delete provider",
+      cannotUndo: "This cannot be undone.",
     },
     approval: {
       subtitle: "Configure approval rules for Agent actions",

@@ -1,5 +1,5 @@
 import { Info } from "@phosphor-icons/react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   SettingsPanelHeader,
@@ -12,12 +12,11 @@ import type {
   ManagedModelRecord,
 } from "@/types/managed-models";
 import type { RuntimeKind } from "@/types/session";
-import { modelDisplayParts } from "./models/model-settings-utils";
 import {
-  EmptyRow,
-  ErrorLine,
-  LoadingRow,
-} from "./models/ModelPrimitives";
+  ConfirmDeleteProviderDialog,
+  type ProviderDeleteCandidate,
+} from "./models/DeleteProviderConfirmDialog";
+import { EmptyRow, ErrorLine, LoadingRow } from "./models/ModelPrimitives";
 import { ConfiguredModelsPanel } from "./models/ConfiguredModelsPanel";
 import { ProviderEditor } from "./models/ProviderEditor";
 import { ProviderCard } from "./models/ProviderCard";
@@ -46,6 +45,9 @@ export function SettingsModels({
   const saveModel = useManagedModelsStore((s) => s.saveModel);
   const reorderModels = useManagedModelsStore((s) => s.reorderModels);
   const deleteModel = useManagedModelsStore((s) => s.deleteModel);
+  const [providerDeleteCandidate, setProviderDeleteCandidate] = useState<
+    (ProviderDeleteCandidate & { id: string }) | null
+  >(null);
 
   useEffect(() => {
     void load();
@@ -123,27 +125,22 @@ export function SettingsModels({
 
   const handleDeleteProvider = (provider: ManagedModelProviderRecord) => {
     const providerModels = modelsByProvider[provider.id] ?? [];
-    const suffix =
-      providerModels.length > 0
-        ? modelCopy.deleteProviderSuffix(providerModels.length)
-        : "";
-    if (
-      window.confirm(
-        modelCopy.confirmDeleteProvider(provider.displayName, suffix),
-      )
-    ) {
-      void deleteProvider(provider.id);
-    }
+    setProviderDeleteCandidate({
+      id: provider.id,
+      name: provider.displayName,
+      modelCount: providerModels.length,
+    });
   };
 
   const handleDeleteModel = (model: ManagedModelRecord) => {
-    if (
-      window.confirm(
-        modelCopy.confirmRemoveModel(modelDisplayParts(model).title),
-      )
-    ) {
-      void deleteModel(model.id);
-    }
+    void deleteModel(model.id).catch(() => undefined);
+  };
+
+  const confirmDeleteProvider = () => {
+    const candidate = providerDeleteCandidate;
+    if (!candidate) return;
+    setProviderDeleteCandidate(null);
+    void deleteProvider(candidate.id).catch(() => undefined);
   };
 
   return (
@@ -301,6 +298,13 @@ export function SettingsModels({
             ))}
         </div>
       </div>
+
+      <ConfirmDeleteProviderDialog
+        candidate={providerDeleteCandidate}
+        busy={saving}
+        onCancel={() => setProviderDeleteCandidate(null)}
+        onConfirm={confirmDeleteProvider}
+      />
     </div>
   );
 }

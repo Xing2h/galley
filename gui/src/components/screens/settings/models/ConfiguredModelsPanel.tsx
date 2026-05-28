@@ -1,5 +1,11 @@
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { ArrowDown, ArrowUp, Info, Plus, Star } from "@phosphor-icons/react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CheckCircle,
+  Info,
+  Plus,
+} from "@phosphor-icons/react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
@@ -194,7 +200,7 @@ function ConfiguredModelRowContent({
         </div>
         {isDefault && (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-brand/10 px-1.5 py-px text-[10.5px] leading-4 text-brand-strong/90">
-            <Star size={10} weight="fill" />
+            <CheckCircle size={10} weight="fill" />
             {copy.defaultModel}
           </span>
         )}

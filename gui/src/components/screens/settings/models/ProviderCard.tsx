@@ -10,10 +10,9 @@ import {
   PencilSimple,
   PlugsConnected,
   Plus,
-  Star,
   Trash,
 } from "@phosphor-icons/react";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
@@ -368,10 +367,13 @@ function EnabledModelRow({
   onTest: () => void;
   onDelete: () => void;
 }) {
-  const copy = useCopy().settings.models;
+  const appCopy = useCopy();
+  const copy = appCopy.settings.models;
   const display = modelDisplayParts(model);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const testing =
     probeState.kind === "loading" && probeState.action === "model-test";
+  const showRemoveConfirm = confirmingRemove && !isDefault;
 
   return (
     <div className="group/model rounded-sm px-2 py-1.5 transition-colors hover:bg-surface/75 focus-within:bg-surface/75">
@@ -394,7 +396,10 @@ function EnabledModelRow({
             size="sm"
             className="opacity-70 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
             disabled={keyMissing || saving || testing}
-            onClick={onTest}
+            onClick={() => {
+              setConfirmingRemove(false);
+              onTest();
+            }}
           >
             {testing ? (
               <span className="spin">
@@ -407,7 +412,7 @@ function EnabledModelRow({
           <InlineProbeStatus state={probeState} action="model-test" />
           {isDefault ? (
             <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm bg-brand-soft px-1.5 text-[11px] leading-none text-brand-strong">
-              <Star size={11} weight="fill" />
+              <CheckCircle size={11} weight="fill" />
               {copy.defaultModel}
             </span>
           ) : (
@@ -416,31 +421,70 @@ function EnabledModelRow({
               size="sm"
               className="opacity-70 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
               disabled={saving}
-              onClick={onSetDefault}
+              onClick={() => {
+                setConfirmingRemove(false);
+                onSetDefault();
+              }}
             >
-              <Star size={13} weight="thin" />
+              <CheckCircle size={13} weight="thin" />
             </IconButton>
           )}
           <IconButton
             ariaLabel={copy.editModel}
             size="sm"
             className="opacity-70 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
-            onClick={onEdit}
+            onClick={() => {
+              setConfirmingRemove(false);
+              onEdit();
+            }}
           >
             <PencilSimple size={13} weight="thin" />
           </IconButton>
-          <IconButton
-            ariaLabel={copy.removeModel}
-            variant="danger"
-            size="sm"
-            className="opacity-70 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
-            disabled={saving}
-            onClick={onDelete}
-          >
-            <Trash size={13} weight="thin" />
-          </IconButton>
+          {!isDefault && !showRemoveConfirm && (
+            <IconButton
+              ariaLabel={copy.removeModel}
+              variant="danger"
+              size="sm"
+              className="opacity-70 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
+              disabled={saving}
+              onClick={() => setConfirmingRemove(true)}
+            >
+              <Trash size={13} weight="thin" />
+            </IconButton>
+          )}
         </div>
       </div>
+      {showRemoveConfirm && (
+        <div
+          className={cn(
+            "mt-2 flex items-center justify-end gap-2 rounded-sm border border-line/70",
+            "bg-surface/60 px-2 py-1.5 text-[12px] text-ink-soft",
+          )}
+        >
+          <span className="min-w-0 flex-1">
+            {copy.removeModelInlineConfirm}
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={saving}
+            onClick={() => setConfirmingRemove(false)}
+          >
+            {appCopy.common.cancel}
+          </Button>
+          <Button
+            variant="destructive-soft"
+            size="sm"
+            disabled={saving}
+            onClick={() => {
+              setConfirmingRemove(false);
+              onDelete();
+            }}
+          >
+            {copy.removeModel}
+          </Button>
+        </div>
+      )}
       <ProbeErrorLine state={probeState} action="model-test" />
     </div>
   );
