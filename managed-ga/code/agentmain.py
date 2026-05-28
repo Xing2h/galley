@@ -17,10 +17,12 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 state_dir = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or script_dir)
 def state_path(*parts):
     return os.path.join(state_dir, *parts)
+def asset_path(*parts):
+    return os.path.join(script_dir, 'assets', *parts)
 
 def load_tool_schema(suffix=''):
     global TOOLS_SCHEMA
-    TS = open(os.path.join(script_dir, f'assets/tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
+    TS = open(asset_path(f'tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
     TOOLS_SCHEMA = json.loads(TS if os.name == 'nt' else TS.replace('powershell', 'bash'))
 load_tool_schema()
 
@@ -31,9 +33,9 @@ mem_txt = os.path.join(mem_dir, 'global_mem.txt')
 if not os.path.exists(mem_txt): open(mem_txt, 'w', encoding='utf-8').write('# [Global Memory - L2]\n')
 mem_insight = os.path.join(mem_dir, 'global_mem_insight.txt')
 if not os.path.exists(mem_insight):
-    t = os.path.join(script_dir, f'assets/global_mem_insight_template{lang_suffix}.txt')
+    t = asset_path(f'global_mem_insight_template{lang_suffix}.txt')
     open(mem_insight, 'w', encoding='utf-8').write(open(t, encoding='utf-8').read() if os.path.exists(t) else '')
-cdp_cfg = os.path.join(script_dir, 'assets/tmwd_cdp_bridge/config.js')
+cdp_cfg = asset_path('tmwd_cdp_bridge', 'config.js')
 if not os.path.exists(cdp_cfg):
     try:
         os.makedirs(os.path.dirname(cdp_cfg), exist_ok=True)
@@ -41,7 +43,7 @@ if not os.path.exists(cdp_cfg):
     except Exception as e: print(f'[WARN] CDP config init failed: {e} — advanced web features (tmwebdriver) will be unavailable.')
 
 def get_system_prompt():
-    with open(os.path.join(script_dir, f'assets/sys_prompt{lang_suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
+    with open(asset_path(f'sys_prompt{lang_suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
     prompt += f"\nToday: {time.strftime('%Y-%m-%d %a')}\n"
     prompt += get_global_memory()
     return prompt

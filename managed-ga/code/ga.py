@@ -11,6 +11,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 state_dir = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or script_dir)
 def state_path(*parts):
     return os.path.join(state_dir, *parts)
+def asset_path(*parts):
+    return os.path.join(script_dir, 'assets', *parts)
 
 def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000):
     """代码执行器
@@ -587,7 +589,7 @@ def get_global_memory():
     try:
         suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
         with open(state_path('memory', 'global_mem_insight.txt'), 'r', encoding='utf-8', errors='replace') as f: insight = f.read()
-        with open(os.path.join(script_dir, f'assets/insight_fixed_structure{suffix}.txt'), 'r', encoding='utf-8') as f: structure = f.read()
+        with open(asset_path(f'insight_fixed_structure{suffix}.txt'), 'r', encoding='utf-8') as f: structure = f.read()
         prompt += f'cwd = {state_path("temp")} (./)\n'
         prompt += f"\n[Memory] (../memory)\n"
         prompt += structure + '\n../memory/global_mem_insight.txt:\n'

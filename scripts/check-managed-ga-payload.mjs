@@ -10,8 +10,11 @@ const managedRoot = path.join(repoRoot, "managed-ga");
 const codeRoot = path.join(managedRoot, "code");
 const manifestPath = path.join(managedRoot, "manifest.json");
 const tauriConfigPath = path.join(repoRoot, "core", "tauri.conf.json");
+const patchRoot = path.join(managedRoot, "patches");
 
 const errors = [];
+const pythonAssetPathPattern =
+  /os\.path\.join\([^)\n]*script_dir[^)\n]*(?:f?["']assets\/|["']assets\/)/;
 
 function fail(message) {
   errors.push(message);
@@ -61,7 +64,7 @@ function walk(dir) {
 requireDir(managedRoot);
 requireDir(codeRoot);
 requireFile(manifestPath);
-requireFile(path.join(managedRoot, "patches", "manifest.md"));
+requireFile(path.join(patchRoot, "manifest.md"));
 requireFile(path.join(managedRoot, "galley-prompts", "runtime-v1.md"));
 requireFile(path.join(managedRoot, "galley-prompts", "persona-v1.md"));
 requireFile(path.join(codeRoot, "agentmain.py"));
@@ -96,6 +99,7 @@ if (manifest) {
   if (!Array.isArray(patches) || patches.length === 0) {
     fail("managed-ga/manifest.json must list at least one replayable patch");
   } else {
+    const listedPatches = new Set();
     for (const patchName of patches) {
       if (
         typeof patchName !== "string" ||
@@ -106,7 +110,13 @@ if (manifest) {
         fail(`invalid managed GA patch name: ${patchName}`);
         continue;
       }
-      requireFile(path.join(managedRoot, "patches", patchName));
+      listedPatches.add(patchName);
+      requireFile(path.join(patchRoot, patchName));
+    }
+    for (const entry of fs.readdirSync(patchRoot)) {
+      if (entry.endsWith(".patch") && !listedPatches.has(entry)) {
+        fail(`managed-ga/manifest.json must list patch file: patches/${entry}`);
+      }
     }
   }
 }
@@ -136,6 +146,12 @@ if (fs.existsSync(codeRoot)) {
     const name = path.basename(entryPath);
     if (forbiddenNames.has(name) || name.endsWith(".pyc")) {
       fail(`managed GA payload contains generated/secret artifact: ${relative(entryPath)}`);
+    }
+    if (entryPath.endsWith(".py")) {
+      const source = fs.readFileSync(entryPath, "utf8");
+      if (pythonAssetPathPattern.test(source)) {
+        fail(`managed GA Python must join assets with path segments, not slash strings: ${relative(entryPath)}`);
+      }
     }
   }
   for (const name of forbiddenRootState) {

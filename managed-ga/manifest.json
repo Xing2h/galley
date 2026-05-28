@@ -9,7 +9,9 @@
   "patchStack": {
     "id": "galley-managed-ga-patches-v1",
     "patches": [
-      "0001-managed-state-root.patch"
+      "0001-managed-state-root.patch",
+      "0002-repair-windows-path-tool-json.patch",
+      "0003-normalize-asset-path-joins.patch"
     ]
   },
   "stateSchemaVersion": 1

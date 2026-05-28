@@ -1,0 +1,47 @@
+diff --git a/agentmain.py b/agentmain.py
+index 6989c88..af51276 100644
+--- a/agentmain.py
++++ b/agentmain.py
+@@ -18,4 +18,6 @@ state_dir = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or script_dir)
+ def state_path(*parts):
+     return os.path.join(state_dir, *parts)
+-
++def asset_path(*parts):
++    return os.path.join(script_dir, 'assets', *parts)
++
+ def load_tool_schema(suffix=''):
+@@ -22,3 +24,3 @@ def load_tool_schema(suffix=''):
+     global TOOLS_SCHEMA
+-    TS = open(os.path.join(script_dir, f'assets/tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
++    TS = open(asset_path(f'tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
+     TOOLS_SCHEMA = json.loads(TS if os.name == 'nt' else TS.replace('powershell', 'bash'))
+@@ -33,5 +35,5 @@ mem_insight = os.path.join(mem_dir, 'global_mem_insight.txt')
+ if not os.path.exists(mem_insight):
+-    t = os.path.join(script_dir, f'assets/global_mem_insight_template{lang_suffix}.txt')
++    t = asset_path(f'global_mem_insight_template{lang_suffix}.txt')
+     open(mem_insight, 'w', encoding='utf-8').write(open(t, encoding='utf-8').read() if os.path.exists(t) else '')
+-cdp_cfg = os.path.join(script_dir, 'assets/tmwd_cdp_bridge/config.js')
++cdp_cfg = asset_path('tmwd_cdp_bridge', 'config.js')
+ if not os.path.exists(cdp_cfg):
+@@ -43,3 +45,3 @@ if not os.path.exists(cdp_cfg):
+ def get_system_prompt():
+-    with open(os.path.join(script_dir, f'assets/sys_prompt{lang_suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
++    with open(asset_path(f'sys_prompt{lang_suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
+     prompt += f"\nToday: {time.strftime('%Y-%m-%d %a')}\n"
+diff --git a/ga.py b/ga.py
+index c3b6945..55e6c08 100644
+--- a/ga.py
++++ b/ga.py
+@@ -12,4 +12,6 @@ state_dir = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or script_dir)
+ def state_path(*parts):
+     return os.path.join(state_dir, *parts)
+-
++def asset_path(*parts):
++    return os.path.join(script_dir, 'assets', *parts)
++
+ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000):
+@@ -589,3 +591,3 @@ def get_global_memory():
+         with open(state_path('memory', 'global_mem_insight.txt'), 'r', encoding='utf-8', errors='replace') as f: insight = f.read()
+-        with open(os.path.join(script_dir, f'assets/insight_fixed_structure{suffix}.txt'), 'r', encoding='utf-8') as f: structure = f.read()
++        with open(asset_path(f'insight_fixed_structure{suffix}.txt'), 'r', encoding='utf-8') as f: structure = f.read()
+         prompt += f'cwd = {state_path("temp")} (./)\n'
