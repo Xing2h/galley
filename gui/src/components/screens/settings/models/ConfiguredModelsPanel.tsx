@@ -4,10 +4,9 @@ import {
   ArrowUp,
   CheckCircle,
   Info,
-  Plus,
 } from "@phosphor-icons/react";
 
-import { Button, IconButton } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ManagedModelRecord } from "@/types/managed-models";
@@ -23,19 +22,17 @@ export function ConfiguredModelsPanel({
   saving,
   moveFeedback,
   onMoveModel,
-  onAddProvider,
 }: {
   models: ManagedModelRecord[];
   saving: boolean;
   moveFeedback: ModelMoveFeedbackState | null;
   onMoveModel: (modelId: string, direction: ModelMoveDirection) => void;
-  onAddProvider: () => void;
 }) {
   const appCopy = useCopy();
   const copy = appCopy.settings.models;
   return (
     <div className="rounded-sm border border-line bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <div className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
             {copy.configuredModels}
@@ -50,14 +47,6 @@ export function ConfiguredModelsPanel({
               : copy.noEnabledModels}
           </span>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={onAddProvider}
-          leadingIcon={<Plus size={12} weight="bold" />}
-        >
-          {copy.addProvider}
-        </Button>
       </div>
       {models.length > 0 && (
         <div className="divide-y divide-line border-t border-line">

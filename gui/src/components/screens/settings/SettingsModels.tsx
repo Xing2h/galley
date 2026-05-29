@@ -1,6 +1,7 @@
-import { Info } from "@phosphor-icons/react";
+import { Info, Plus } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   SettingsPanelHeader,
   SettingsSectionLabel,
@@ -157,38 +158,48 @@ export function SettingsModels({
         saving={saving}
         moveFeedback={modelMoveFeedback}
         onMoveModel={handleMoveConfiguredModel}
-        onAddProvider={startNewProvider}
       />
 
-      {visibleProviderForm && !providerFormIsInlineEdit && (
-        <ProviderEditor
-          form={visibleProviderForm}
-          saving={saving}
-          canSave={canSaveProvider}
-          canTest={canTestProvider}
-          canFetchModels={canFetchProviderFormModels}
-          canCancel={providers.length > 0 || !!visibleProviderForm.id}
-          providerHasSavedKey={providerHasSavedKey}
-          probeState={providerFormProbeState}
-          modelOptions={providerFormModelOptions}
-          modelFilter={providerFormModelFilter}
-          onChange={updateProviderForm}
-          onSetModelFilter={setProviderFormModelFilter}
-          onSelectProviderPreset={selectProviderPreset}
-          onTest={() => void handleProviderFormTest()}
-          onFetchModels={() => void handleProviderFormFetchModels()}
-          onSave={() => void handleProviderSave()}
-          onCancel={resetProviderForm}
-        />
-      )}
-
-      {error && <ErrorLine message={error} />}
-
       <div>
-        <SettingsSectionLabel>
-          {modelCopy.connectedProviders}
-        </SettingsSectionLabel>
-        <div className="mt-3 space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SettingsSectionLabel>
+            {modelCopy.connectedProviders}
+          </SettingsSectionLabel>
+          <Button
+            variant="primary"
+            size="sm"
+            aria-label={modelCopy.addProviderAria}
+            onClick={startNewProvider}
+            leadingIcon={<Plus size={12} weight="bold" />}
+          >
+            {modelCopy.addProvider}
+          </Button>
+        </div>
+        <div className="mt-3 space-y-2">
+          {visibleProviderForm && !providerFormIsInlineEdit && (
+            <ProviderEditor
+              form={visibleProviderForm}
+              saving={saving}
+              canSave={canSaveProvider}
+              canTest={canTestProvider}
+              canFetchModels={canFetchProviderFormModels}
+              canCancel={providers.length > 0 || !!visibleProviderForm.id}
+              providerHasSavedKey={providerHasSavedKey}
+              probeState={providerFormProbeState}
+              modelOptions={providerFormModelOptions}
+              modelFilter={providerFormModelFilter}
+              onChange={updateProviderForm}
+              onSetModelFilter={setProviderFormModelFilter}
+              onSelectProviderPreset={selectProviderPreset}
+              onTest={() => void handleProviderFormTest()}
+              onFetchModels={() => void handleProviderFormFetchModels()}
+              onSave={() => void handleProviderSave()}
+              onCancel={resetProviderForm}
+            />
+          )}
+
+          {error && <ErrorLine message={error} />}
+
           {loading && (
             <div className="rounded-sm border border-line bg-surface">
               <LoadingRow />
@@ -248,7 +259,6 @@ export function SettingsModels({
                       onFetchModels={() => void handleProviderFormFetchModels()}
                       onSave={() => void handleProviderSave()}
                       onCancel={resetProviderForm}
-                      className="border-brand/30 bg-elevated/65"
                     />
                   ) : null
                 }

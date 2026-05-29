@@ -15,6 +15,7 @@ interface ManagedModelProviderPickerProps {
   value: ManagedModelProviderPresetId | null;
   protocol: ManagedModelProtocol | null;
   onChange: (value: ManagedModelProviderPresetId) => void;
+  ariaLabel?: string;
   className?: string;
 }
 
@@ -22,6 +23,7 @@ export function ManagedModelProviderPicker({
   value,
   protocol,
   onChange,
+  ariaLabel,
   className,
 }: ManagedModelProviderPickerProps) {
   const copy = useCopy().settings.models;
@@ -32,6 +34,7 @@ export function ManagedModelProviderPicker({
       <Popover.Trigger asChild>
         <button
           type="button"
+          aria-label={ariaLabel ?? copy.provider}
           className={cn(
             "group flex w-full min-w-[240px] items-center justify-between gap-3 rounded-sm border border-line bg-surface px-3 py-2 text-left",
             "outline-none transition-colors hover:bg-hover focus:border-brand focus:ring-[3px] focus:ring-brand/20",

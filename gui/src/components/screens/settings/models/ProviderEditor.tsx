@@ -92,43 +92,61 @@ export function ProviderEditor({
   return (
     <div
       className={cn(
-        "rounded-sm border border-line bg-surface px-3 py-3",
+        "rounded-sm border border-line-strong bg-selected/35 px-3 py-3 shadow-card",
         className,
       )}
     >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-[13px] font-medium text-ink">
-            {isCreatingProvider ? copy.addProvider : copy.editProvider}
-          </div>
-          {form.id && providerHasSavedKey && (
-            <div className="mt-0.5 text-[12px] text-ink-muted">
-              {copy.leaveKeyBlank}
+      {!isCreatingProvider && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-[13px] font-medium text-ink">
+              {copy.editProvider}
             </div>
+            {form.id && providerHasSavedKey && (
+              <div className="mt-0.5 text-[12px] text-ink-muted">
+                {copy.leaveKeyBlank}
+              </div>
+            )}
+          </div>
+          {canCancel && (
+            <IconButton
+              ariaLabel={copy.closeProviderEditor}
+              size="sm"
+              onClick={onCancel}
+            >
+              <X size={12} weight="thin" />
+            </IconButton>
           )}
         </div>
-        {canCancel && (
-          <IconButton
-            ariaLabel={copy.closeProviderEditor}
-            size="sm"
-            onClick={onCancel}
-          >
-            <X size={12} weight="thin" />
-          </IconButton>
-        )}
-      </div>
+      )}
 
       <div className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            {copy.provider}
-          </label>
+        {isCreatingProvider ? (
+          <div className="flex items-center gap-2">
+            <ManagedModelProviderPicker
+              value={form.providerPresetId}
+              protocol={form.protocol}
+              onChange={onSelectProviderPreset}
+              className="min-w-0 flex-1"
+            />
+            {canCancel && (
+              <IconButton
+                ariaLabel={copy.closeProviderEditor}
+                size="sm"
+                onClick={onCancel}
+                className="shrink-0"
+              >
+                <X size={12} weight="thin" />
+              </IconButton>
+            )}
+          </div>
+        ) : (
           <ManagedModelProviderPicker
             value={form.providerPresetId}
             protocol={form.protocol}
             onChange={onSelectProviderPreset}
           />
-        </div>
+        )}
 
         {providerSelected && selectedPreset && form.protocol && (
           <>

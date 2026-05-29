@@ -294,17 +294,12 @@ export function StepModelConfig({
       </p>
 
       <div className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            {modelCopy.provider}
-          </label>
-          <ManagedModelProviderPicker
-            value={providerPresetId}
-            protocol={protocol}
-            onChange={handleSelectProviderPreset}
-            className="bg-elevated"
-          />
-        </div>
+        <ManagedModelProviderPicker
+          value={providerPresetId}
+          protocol={protocol}
+          onChange={handleSelectProviderPreset}
+          className="bg-elevated"
+        />
 
         {providerSelected && selectedPreset && protocol && (
           <>
