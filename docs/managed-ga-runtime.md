@@ -124,18 +124,23 @@ Avoid copy that makes the user feel they are installing a developer tool:
 Interaction rules:
 
 - Use one screen.
-- First managed-runtime onboarding exposes only two service choices:
-  `OpenAI-compatible` and `Anthropic-compatible`.
+- First managed-runtime onboarding uses a Provider preset dropdown. It may
+  expose official-brand shortcuts such as OpenAI, Anthropic, DeepSeek, Kimi,
+  GLM, MiniMax, and OpenRouter, plus protocol-family entries when useful.
+- A fresh setup must not select a Provider implicitly. Show an explicit empty
+  state such as "选择模型提供商" first, then fill the dependent Provider fields
+  from the selected preset.
 - Keep onboarding copy plain and low-friction. Settings can use the more precise
   terms `Provider` and `Model`, but first run should not make the user learn the
   Provider / Model data model before starting.
 - Preserve all typed values on failure.
-- The primary button stays disabled until service, API key, Base URL, and model
+- The primary button stays disabled until Provider, API key, Base URL, and model
   are all filled.
 - "自动获取模型列表" is an explicit helper action that fills the model field; it
   is not hidden behind the primary button.
-- Test the connection after the primary button is clicked and before leaving
-  onboarding.
+- Test the connection before leaving onboarding. The UI may auto-test after all
+  required fields are present, but save / continue should still require a
+  verified connection.
 - Say "model key" or "模型密钥" in first-run copy. Avoid the acronym "BYOK" in
   product UI.
 - Never show generated config paths in first-run UI.
@@ -478,17 +483,21 @@ advancedOptions
 isDefault
 ```
 
-Suggested first-run presets:
+First-run Provider preset dropdown:
 
 ```text
-OpenAI-compatible
-Anthropic-compatible
+OpenAI
+Anthropic
+DeepSeek
+Zhipu GLM
+Kimi for Coding
+MiniMax
+OpenRouter
 ```
 
-Official-brand presets and provider shortcuts such as OpenAI, Anthropic,
-OpenRouter, Kimi, GLM, and MiniMax can live in Settings once the base flow
-works. They should still compile down to one of the two protocol families unless
-there is a real protocol difference.
+These are UI shortcuts, not separate runtime families. They should still compile
+down to one of the two protocol families unless there is a real protocol
+difference.
 
 First-run onboarding does not expose advanced model options. Galley owns good
 defaults so the user can start without understanding GA tuning fields.
@@ -944,7 +953,7 @@ Goal: make a fresh Galley install usable immediately after model setup.
 Scope:
 
 - Show one compact setup screen: "为 Galley 配置模型".
-- Ask only for provider/protocol preset, model key, Base URL, and model.
+- Ask only for Provider preset, model key, Base URL, and model.
 - Keep Base URL required in first-run onboarding.
 - Do not show advanced model options.
 - Keep "我已有 GenericAgent" as a secondary entry into attach mode.
@@ -955,6 +964,8 @@ Scope:
 Acceptance:
 
 - Fresh install enters managed onboarding by default.
+- Fresh install starts with no Provider selected, so the user's first action is
+  choosing the model provider they intend to connect.
 - The primary action is "测试并开始使用 Galley".
 - Successful setup routes to the empty composer with focus; the first managed
   session is created lazily when the user sends the first message.

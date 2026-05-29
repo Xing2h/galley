@@ -76,17 +76,20 @@ export function useProviderFormController({
   const providerFormIsInlineEdit = !!visibleProviderForm?.id;
   const canSaveProvider =
     !!visibleProviderForm &&
+    visibleProviderForm.protocol !== null &&
     visibleProviderForm.apiBase.trim() !== "" &&
     (visibleProviderForm.apiKey.trim() !== "" || providerHasSavedKey) &&
     (!isCreatingProvider || visibleProviderForm.model.trim() !== "") &&
     !saving;
   const canTestProvider =
     !!visibleProviderForm &&
+    visibleProviderForm.protocol !== null &&
     visibleProviderForm.apiBase.trim() !== "" &&
     (visibleProviderForm.apiKey.trim() !== "" || providerHasSavedKey) &&
     providerFormProbeState.kind !== "loading";
   const canFetchProviderFormModels =
     !!visibleProviderForm &&
+    visibleProviderForm.protocol !== null &&
     !visibleProviderForm.id &&
     visibleProviderForm.apiBase.trim() !== "" &&
     visibleProviderForm.apiKey.trim() !== "" &&
@@ -154,7 +157,13 @@ export function useProviderFormController({
   };
 
   const handleProviderFormTest = async () => {
-    if (!visibleProviderForm || !canTestProvider) return;
+    if (
+      !visibleProviderForm ||
+      !canTestProvider ||
+      !visibleProviderForm.protocol
+    ) {
+      return;
+    }
     const testModel = visibleProviderForm.model.trim();
     setProviderFormProbeState({
       kind: "loading",
@@ -188,7 +197,13 @@ export function useProviderFormController({
   };
 
   const handleProviderFormFetchModels = async () => {
-    if (!visibleProviderForm || !canFetchProviderFormModels) return;
+    if (
+      !visibleProviderForm ||
+      !canFetchProviderFormModels ||
+      !visibleProviderForm.protocol
+    ) {
+      return;
+    }
     setProviderFormProbeState({
       kind: "loading",
       action: "model-list",
@@ -226,7 +241,13 @@ export function useProviderFormController({
   };
 
   const handleProviderSave = async () => {
-    if (!visibleProviderForm || !canSaveProvider) return;
+    if (
+      !visibleProviderForm ||
+      !canSaveProvider ||
+      !visibleProviderForm.protocol
+    ) {
+      return;
+    }
     const isNewProvider = !visibleProviderForm.id;
     try {
       const saved = await saveProvider({

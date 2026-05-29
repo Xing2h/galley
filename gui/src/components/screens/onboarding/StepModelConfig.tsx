@@ -26,7 +26,6 @@ import {
 } from "@/lib/managed-models";
 import { useCopy } from "@/lib/i18n";
 import {
-  DEFAULT_MANAGED_MODEL_PROVIDER_PRESET_ID,
   getManagedModelProviderPreset,
   managedModelProviderPresetDraft,
   type ManagedModelProviderPresetId,
@@ -61,23 +60,16 @@ export function StepModelConfig({
   const onboardingCopy = copy.onboarding;
   const saveProvider = useManagedModelsStore((s) => s.saveProvider);
   const saveModel = useManagedModelsStore((s) => s.saveModel);
-  const initialPresetDraft = managedModelProviderPresetDraft(
-    DEFAULT_MANAGED_MODEL_PROVIDER_PRESET_ID,
-  );
   const [providerPresetId, setProviderPresetId] =
-    useState<ManagedModelProviderPresetId>(initialPresetDraft.providerPresetId);
-  const [protocol, setProtocol] = useState<ManagedModelProtocol>(
-    initialPresetDraft.protocol,
-  );
+    useState<ManagedModelProviderPresetId | null>(null);
+  const [protocol, setProtocol] = useState<ManagedModelProtocol | null>(null);
   const [apiKey, setApiKey] = useState("");
-  const [apiBase, setApiBase] = useState(initialPresetDraft.apiBase);
-  const [model, setModel] = useState(initialPresetDraft.model);
-  const [providerDisplayNameValue, setProviderDisplayNameValue] = useState(
-    initialPresetDraft.displayName,
-  );
+  const [apiBase, setApiBase] = useState("");
+  const [model, setModel] = useState("");
+  const [providerDisplayNameValue, setProviderDisplayNameValue] = useState("");
   const [advancedOptions, setAdvancedOptions] = useState<
     Record<string, unknown> | undefined
-  >(initialPresetDraft.advancedOptions);
+  >(undefined);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [state, setState] = useState<SetupState>({ kind: "idle" });
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
@@ -89,19 +81,23 @@ export function StepModelConfig({
   );
   const connectionTestRequestRef = useRef(0);
   const connectionFingerprintRef = useRef("");
-  const selectedPreset = getManagedModelProviderPreset(providerPresetId);
+  const selectedPreset = providerPresetId
+    ? getManagedModelProviderPreset(providerPresetId)
+    : null;
+  const providerSelected = Boolean(selectedPreset && protocol);
   const apiKeyRevealLabel = apiKeyVisible
     ? modelCopy.hideApiKey
     : modelCopy.showApiKey;
   const connectionFingerprint = useMemo(
     () =>
       JSON.stringify({
+        providerPresetId,
         protocol,
         apiKey: apiKey.trim(),
         apiBase: apiBase.trim(),
         model: model.trim(),
       }),
-    [apiBase, apiKey, model, protocol],
+    [apiBase, apiKey, model, protocol, providerPresetId],
   );
 
   useEffect(() => {
@@ -109,22 +105,32 @@ export function StepModelConfig({
   }, [connectionFingerprint]);
 
   const connectionInputComplete =
-    apiKey.trim() !== "" && apiBase.trim() !== "" && model.trim() !== "";
+    providerPresetId !== null &&
+    protocol !== null &&
+    apiKey.trim() !== "" &&
+    apiBase.trim() !== "" &&
+    model.trim() !== "";
   const isBusy = state.kind === "loading";
   const canFetchModels =
-    apiKey.trim() !== "" && apiBase.trim() !== "" && !isBusy;
+    protocol !== null &&
+    apiKey.trim() !== "" &&
+    apiBase.trim() !== "" &&
+    !isBusy;
   const canStart =
     connectionInputComplete &&
     verifiedFingerprint === connectionFingerprint &&
     !isBusy;
 
   const probeInput = useCallback(
-    () => ({
-      protocol,
-      apiKey: apiKey.trim(),
-      apiBase: apiBase.trim(),
-      model: model.trim(),
-    }),
+    () =>
+      protocol
+        ? {
+            protocol,
+            apiKey: apiKey.trim(),
+            apiBase: apiBase.trim(),
+            model: model.trim(),
+          }
+        : null,
     [apiBase, apiKey, model, protocol],
   );
 
@@ -150,10 +156,11 @@ export function StepModelConfig({
   };
 
   const handleFetchModels = async () => {
-    if (!canFetchModels) return;
+    const input = probeInput();
+    if (!canFetchModels || !input) return;
     setState({ kind: "loading", action: "list" });
     try {
-      const result = await listManagedModelOptions(probeInput());
+      const result = await listManagedModelOptions(input);
       setModelOptions(result.models);
       setState({
         kind: "success",
@@ -174,7 +181,8 @@ export function StepModelConfig({
 
   const runConnectionTest = useCallback(
     async ({ force = false }: { force?: boolean } = {}) => {
-      if (!connectionInputComplete) return;
+      const input = probeInput();
+      if (!connectionInputComplete || !input) return;
 
       const fingerprint = connectionFingerprint;
       if (!force && testedFingerprint === fingerprint) return;
@@ -185,8 +193,7 @@ export function StepModelConfig({
       setTestedFingerprint(fingerprint);
       setState({ kind: "loading", action: "test" });
       try {
-        const result =
-          await testManagedModelConnectionWithLatency(probeInput());
+        const result = await testManagedModelConnectionWithLatency(input);
         if (
           requestId !== connectionTestRequestRef.current ||
           fingerprint !== connectionFingerprintRef.current
@@ -245,7 +252,7 @@ export function StepModelConfig({
   ]);
 
   const handleStart = async () => {
-    if (!canStart) return;
+    if (!canStart || !protocol) return;
     setState({ kind: "loading", action: "start" });
     try {
       const provider = await saveProvider({
@@ -299,100 +306,104 @@ export function StepModelConfig({
           />
         </div>
 
-        <SetupInput
-          label={modelCopy.apiKey}
-          type={apiKeyVisible ? "text" : "password"}
-          value={apiKey}
-          onChange={(value) => {
-            setApiKey(value);
-            resetConnectionTest();
-          }}
-          placeholder="sk-..."
-          reserveTrailing
-          trailing={
-            apiKey.length > 0 ? (
-              <IconButton
-                ariaLabel={apiKeyRevealLabel}
-                title={apiKeyRevealLabel}
-                onClick={() => setApiKeyVisible((visible) => !visible)}
-                size="xs"
-                className="size-6 text-ink-muted hover:text-ink-soft"
+        {providerSelected && selectedPreset && protocol && (
+          <>
+            <SetupInput
+              label={modelCopy.apiKey}
+              type={apiKeyVisible ? "text" : "password"}
+              value={apiKey}
+              onChange={(value) => {
+                setApiKey(value);
+                resetConnectionTest();
+              }}
+              placeholder="sk-..."
+              reserveTrailing
+              trailing={
+                apiKey.length > 0 ? (
+                  <IconButton
+                    ariaLabel={apiKeyRevealLabel}
+                    title={apiKeyRevealLabel}
+                    onClick={() => setApiKeyVisible((visible) => !visible)}
+                    size="xs"
+                    className="size-6 text-ink-muted hover:text-ink-soft"
+                  >
+                    {apiKeyVisible ? (
+                      <EyeSlash size={13} weight="thin" />
+                    ) : (
+                      <Eye size={13} weight="thin" />
+                    )}
+                  </IconButton>
+                ) : null
+              }
+            />
+            <SetupInput
+              label={modelCopy.apiUrl}
+              value={apiBase}
+              onChange={(value) => {
+                setApiBase(value);
+                resetConnectionTest();
+              }}
+              placeholder={
+                selectedPreset.apiBase ||
+                (protocol === "openai"
+                  ? "https://api.openai.com/v1"
+                  : "https://api.anthropic.com")
+              }
+            />
+            <SetupInput
+              label={modelCopy.model}
+              value={model}
+              onChange={(value) => {
+                setModel(value);
+                resetConnectionTest();
+              }}
+              placeholder={selectedPreset.modelPlaceholder}
+            />
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="accent-secondary"
+                size="sm"
+                disabled={!canFetchModels}
+                onClick={() => void handleFetchModels()}
+                leadingIcon={
+                  state.kind === "loading" && state.action === "list" ? (
+                    <span className="spin">
+                      <CircleNotch size={12} weight="thin" />
+                    </span>
+                  ) : (
+                    <ListMagnifyingGlass size={12} weight="thin" />
+                  )
+                }
               >
-                {apiKeyVisible ? (
-                  <EyeSlash size={13} weight="thin" />
-                ) : (
-                  <Eye size={13} weight="thin" />
-                )}
-              </IconButton>
-            ) : null
-          }
-        />
-        <SetupInput
-          label={modelCopy.apiUrl}
-          value={apiBase}
-          onChange={(value) => {
-            setApiBase(value);
-            resetConnectionTest();
-          }}
-          placeholder={
-            selectedPreset.apiBase ||
-            (protocol === "openai"
-              ? "https://api.openai.com/v1"
-              : "https://api.anthropic.com")
-          }
-        />
-        <SetupInput
-          label={modelCopy.model}
-          value={model}
-          onChange={(value) => {
-            setModel(value);
-            resetConnectionTest();
-          }}
-          placeholder={selectedPreset.modelPlaceholder}
-        />
+                {modelCopy.fetchModelList}
+              </Button>
+              <InlineSetupStatus state={state} action="list" />
+            </div>
+            <SetupErrorLine state={state} action="list" />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="accent-secondary"
-            size="sm"
-            disabled={!canFetchModels}
-            onClick={() => void handleFetchModels()}
-            leadingIcon={
-              state.kind === "loading" && state.action === "list" ? (
-                <span className="spin">
-                  <CircleNotch size={12} weight="thin" />
-                </span>
-              ) : (
-                <ListMagnifyingGlass size={12} weight="thin" />
-              )
-            }
-          >
-            {modelCopy.fetchModelList}
-          </Button>
-          <InlineSetupStatus state={state} action="list" />
-        </div>
-        <SetupErrorLine state={state} action="list" />
+            {modelOptions.length > 0 && (
+              <ManagedModelOptionPicker
+                value={modelOptions.includes(model) ? model : ""}
+                options={modelOptions}
+                placeholder={modelCopy.chooseDetectedModel}
+                onChange={(value) => {
+                  setModel(value);
+                  resetConnectionTest();
+                }}
+              />
+            )}
 
-        {modelOptions.length > 0 && (
-          <ManagedModelOptionPicker
-            value={modelOptions.includes(model) ? model : ""}
-            options={modelOptions}
-            placeholder={modelCopy.chooseDetectedModel}
-            onChange={(value) => {
-              setModel(value);
-              resetConnectionTest();
-            }}
-          />
+            <div className="border-t border-line pt-3">
+              <SetupInput
+                label={modelCopy.providerName}
+                value={providerDisplayNameValue}
+                onChange={setProviderDisplayNameValue}
+                placeholder={modelCopy.providerNamePlaceholder}
+              />
+            </div>
+          </>
         )}
-
-        <div className="border-t border-line pt-3">
-          <SetupInput
-            label={modelCopy.providerName}
-            value={providerDisplayNameValue}
-            onChange={setProviderDisplayNameValue}
-            placeholder={modelCopy.providerNamePlaceholder}
-          />
-        </div>
       </div>
 
       <div className="mt-9 flex flex-wrap items-start gap-2">

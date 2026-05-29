@@ -2,7 +2,9 @@ import type { useCopy } from "@/lib/i18n";
 import type { ManagedModelProviderPresetId } from "@/lib/managed-model-presets";
 import type { ManagedModelProtocol } from "@/types/managed-models";
 
-export type SettingsModelsCopy = ReturnType<typeof useCopy>["settings"]["models"];
+export type SettingsModelsCopy = ReturnType<
+  typeof useCopy
+>["settings"]["models"];
 
 export type ProbeAction = "provider-test" | "model-list" | "model-test";
 
@@ -16,8 +18,8 @@ export type ProbeStateMap = Record<string, ProbeState>;
 
 export type ProviderFormState = {
   id?: string;
-  providerPresetId: ManagedModelProviderPresetId;
-  protocol: ManagedModelProtocol;
+  providerPresetId: ManagedModelProviderPresetId | null;
+  protocol: ManagedModelProtocol | null;
   apiKey: string;
   apiBase: string;
   model: string;

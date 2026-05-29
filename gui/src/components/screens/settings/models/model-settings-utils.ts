@@ -1,11 +1,13 @@
 import type { TimedManagedModelConnectionResult } from "@/lib/managed-models";
 import {
-  DEFAULT_MANAGED_MODEL_PROVIDER_PRESET_ID,
   managedModelProviderPresetDraft,
   managedModelProtocolLabel,
   type ManagedModelProviderPresetId,
 } from "@/lib/managed-model-presets";
-import type { ManagedModelRecord, ManagedModelProtocol } from "@/types/managed-models";
+import type {
+  ManagedModelRecord,
+  ManagedModelProtocol,
+} from "@/types/managed-models";
 
 import type {
   ModelDraftState,
@@ -15,7 +17,14 @@ import type {
 } from "./types";
 
 export function newProviderForm(): ProviderFormState {
-  return providerFormFromPreset(DEFAULT_MANAGED_MODEL_PROVIDER_PRESET_ID);
+  return {
+    providerPresetId: null,
+    protocol: null,
+    apiKey: "",
+    apiBase: "",
+    model: "",
+    displayName: "",
+  };
 }
 
 export function providerFormFromPreset(

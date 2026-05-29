@@ -382,14 +382,38 @@ function SidebarHeader({
   // the shell already covers it. The sidebar starts at y=44px (below
   // the TopBar's bottom border).
   //
-  const indicator = renderRuntimeIndicator(runtimeIndicator, copy.sidebar);
-  const agentControlTooltip = copy.settings.agent.subtitle;
+  const runtimeIndicatorView = renderRuntimeIndicator(
+    runtimeIndicator,
+    copy.sidebar,
+  );
+  const indicator =
+    runtimeIndicator === "external-ready" ? null : runtimeIndicatorView;
+  const externalRuntimeBadge =
+    runtimeIndicator === "external-ready" ? runtimeIndicatorView : null;
+  const supervisorSopLabel = copy.sidebar.supervisorSop;
+  const supervisorSopTooltip = copy.sidebar.supervisorSopTooltip;
+  const showSupervisorSop =
+    (runtimeIndicator === "hidden" || runtimeIndicator === "external-ready") &&
+    Boolean(onOpenAgentSettings);
   return (
     <div className="flex items-center justify-between gap-3 border-b border-line/70 px-4 py-3">
       {/* Product mark: sentence-case Galley keeps the name legible as
           a product rather than an acronym. */}
-      <div className="font-serif text-[17px] font-medium italic tracking-[0.005em] text-ink">
-        Galley
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="shrink-0 font-serif text-[17px] font-medium italic tracking-[0.005em] text-ink">
+          Galley
+        </div>
+        {externalRuntimeBadge ? (
+          <div
+            className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-soft"
+            title={externalRuntimeBadge.title}
+          >
+            <RuntimeDot tone={externalRuntimeBadge.tone} />
+            <span className="min-w-0 truncate">
+              {externalRuntimeBadge.label}
+            </span>
+          </div>
+        ) : null}
       </div>
       {indicator?.action === "models" ? (
         <button
@@ -397,10 +421,10 @@ function SidebarHeader({
           onClick={onOpenModelsSettings}
           title={indicator.title}
           aria-label={indicator.ariaLabel}
-          className="flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-[11.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
+          className="flex min-w-0 items-center gap-1.5 rounded-sm px-1 py-0.5 text-[11.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
           <RuntimeDot tone={indicator.tone} />
-          <span>{indicator.label}</span>
+          <span className="min-w-0 truncate">{indicator.label}</span>
         </button>
       ) : indicator?.action === "runtime" ? (
         <button
@@ -408,30 +432,31 @@ function SidebarHeader({
           onClick={onOpenRuntimeSettings}
           title={indicator.title}
           aria-label={indicator.ariaLabel}
-          className="flex items-center gap-1.5 rounded-sm px-1 py-0.5 text-[11.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
+          className="flex min-w-0 items-center gap-1.5 rounded-sm px-1 py-0.5 text-[11.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink"
         >
           <RuntimeDot tone={indicator.tone} />
-          <span>{indicator.label}</span>
+          <span className="min-w-0 truncate">{indicator.label}</span>
         </button>
-      ) : indicator ? (
-        <div
-          className="flex items-center gap-1.5 text-[11.5px] text-ink-soft"
-          title={indicator.title}
-        >
-          <RuntimeDot tone={indicator.tone} />
-          <span>{indicator.label}</span>
-        </div>
-      ) : onOpenAgentSettings ? (
-        <IconTooltip text={agentControlTooltip} side="bottom">
+      ) : showSupervisorSop ? (
+        <IconTooltip text={supervisorSopTooltip} side="bottom">
           <button
             type="button"
             onClick={onOpenAgentSettings}
-            aria-label={agentControlTooltip}
-            className="inline-flex size-6 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+            aria-label={copy.sidebar.openSupervisorSop}
+            className="inline-flex min-w-0 max-w-[132px] items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[11.5px] text-ink-soft transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
           >
-            <PlugsConnected size={15} weight="thin" />
+            <PlugsConnected size={13} weight="thin" className="shrink-0" />
+            <span className="min-w-0 truncate">{supervisorSopLabel}</span>
           </button>
         </IconTooltip>
+      ) : indicator ? (
+        <div
+          className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-soft"
+          title={indicator.title}
+        >
+          <RuntimeDot tone={indicator.tone} />
+          <span className="min-w-0 truncate">{indicator.label}</span>
+        </div>
       ) : (
         <span aria-hidden="true" />
       )}

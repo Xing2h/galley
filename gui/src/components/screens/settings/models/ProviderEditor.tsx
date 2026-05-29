@@ -70,7 +70,10 @@ export function ProviderEditor({
 }) {
   const copy = useCopy().settings.models;
   const isCreatingProvider = !form.id;
-  const selectedPreset = getManagedModelProviderPreset(form.providerPresetId);
+  const selectedPreset = form.providerPresetId
+    ? getManagedModelProviderPreset(form.providerPresetId)
+    : null;
+  const providerSelected = Boolean(selectedPreset && form.protocol);
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const apiKeyRevealLabel = apiKeyVisible ? copy.hideApiKey : copy.showApiKey;
   const trimmedModel = form.model.trim();
@@ -127,140 +130,146 @@ export function ProviderEditor({
           />
         </div>
 
-        <SettingsInput
-          label={copy.apiKey}
-          value={form.apiKey}
-          onChange={(apiKey) => onChange({ apiKey })}
-          type={apiKeyVisible ? "text" : "password"}
-          placeholder={form.id ? copy.leaveExistingKey : "sk-..."}
-          reserveTrailing
-          trailing={
-            form.apiKey.length > 0 ? (
-              <button
-                type="button"
-                aria-label={apiKeyRevealLabel}
-                title={apiKeyRevealLabel}
-                onClick={() => setApiKeyVisible((visible) => !visible)}
-                className="inline-flex size-6 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-hover hover:text-ink-soft"
-              >
-                {apiKeyVisible ? (
-                  <EyeSlash size={13} weight="thin" />
-                ) : (
-                  <Eye size={13} weight="thin" />
+        {providerSelected && selectedPreset && form.protocol && (
+          <>
+            <SettingsInput
+              label={copy.apiKey}
+              value={form.apiKey}
+              onChange={(apiKey) => onChange({ apiKey })}
+              type={apiKeyVisible ? "text" : "password"}
+              placeholder={form.id ? copy.leaveExistingKey : "sk-..."}
+              reserveTrailing
+              trailing={
+                form.apiKey.length > 0 ? (
+                  <button
+                    type="button"
+                    aria-label={apiKeyRevealLabel}
+                    title={apiKeyRevealLabel}
+                    onClick={() => setApiKeyVisible((visible) => !visible)}
+                    className="inline-flex size-6 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-hover hover:text-ink-soft"
+                  >
+                    {apiKeyVisible ? (
+                      <EyeSlash size={13} weight="thin" />
+                    ) : (
+                      <Eye size={13} weight="thin" />
+                    )}
+                  </button>
+                ) : null
+              }
+            />
+            <SettingsInput
+              label={copy.apiUrl}
+              value={form.apiBase}
+              onChange={(apiBase) => onChange({ apiBase })}
+              placeholder={
+                selectedPreset.apiBase ||
+                (form.protocol === "openai"
+                  ? "https://api.openai.com/v1"
+                  : "https://api.anthropic.com")
+              }
+            />
+            {isCreatingProvider && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="min-w-[240px] flex-1">
+                    <SettingsInput
+                      label={copy.model}
+                      value={form.model}
+                      onChange={(model) => onChange({ model })}
+                      placeholder={selectedPreset.modelPlaceholder}
+                    />
+                  </div>
+                  <Button
+                    variant="accent-secondary"
+                    size="sm"
+                    disabled={!canFetchModels}
+                    onClick={onFetchModels}
+                    leadingIcon={
+                      probeState.kind === "loading" &&
+                      probeState.action === "model-list" ? (
+                        <span className="spin">
+                          <CircleNotch size={12} weight="thin" />
+                        </span>
+                      ) : (
+                        <ListMagnifyingGlass size={12} weight="thin" />
+                      )
+                    }
+                  >
+                    {copy.fetchList}
+                  </Button>
+                  <InlineProbeStatus state={probeState} action="model-list" />
+                </div>
+                <ProbeErrorLine state={probeState} action="model-list" />
+                {shouldShowManualModelHint && (
+                  <InfoLine message={copy.modelListManualFallback} />
                 )}
-              </button>
-            ) : null
-          }
-        />
-        <SettingsInput
-          label={copy.apiUrl}
-          value={form.apiBase}
-          onChange={(apiBase) => onChange({ apiBase })}
-          placeholder={
-            selectedPreset.apiBase ||
-            (form.protocol === "openai"
-              ? "https://api.openai.com/v1"
-              : "https://api.anthropic.com")
-          }
-        />
-        {isCreatingProvider && (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="min-w-[240px] flex-1">
-                <SettingsInput
-                  label={copy.model}
-                  value={form.model}
-                  onChange={(model) => onChange({ model })}
-                  placeholder={selectedPreset.modelPlaceholder}
-                />
+                {modelOptions.length > 0 && (
+                  <ModelSelectionList
+                    title={copy.chooseDetectedModel}
+                    value={form.model}
+                    options={modelOptions}
+                    filter={modelFilter}
+                    onFilterChange={onSetModelFilter}
+                    onChange={(model) => onChange({ model })}
+                  />
+                )}
+                {selectedModelOutsideFetchedList && (
+                  <InfoLine
+                    message={copy.selectedModelOutsideList(trimmedModel)}
+                  />
+                )}
               </div>
+            )}
+            <div className="border-t border-line pt-3">
+              <SettingsInput
+                label={copy.providerName}
+                value={form.displayName}
+                onChange={(displayName) => onChange({ displayName })}
+                placeholder={copy.providerNamePlaceholder}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
               <Button
-                variant="accent-secondary"
+                variant="secondary"
                 size="sm"
-                disabled={!canFetchModels}
-                onClick={onFetchModels}
+                disabled={!canTest}
+                onClick={onTest}
                 leadingIcon={
                   probeState.kind === "loading" &&
-                  probeState.action === "model-list" ? (
+                  probeState.action === "provider-test" ? (
                     <span className="spin">
                       <CircleNotch size={12} weight="thin" />
                     </span>
                   ) : (
-                    <ListMagnifyingGlass size={12} weight="thin" />
+                    <PlugsConnected size={12} weight="thin" />
                   )
                 }
               >
-                {copy.fetchList}
+                {copy.testConnection}
               </Button>
-              <InlineProbeStatus state={probeState} action="model-list" />
+              <InlineProbeStatus state={probeState} action="provider-test" />
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!canSave}
+                onClick={onSave}
+                leadingIcon={
+                  saving ? (
+                    <span className="spin">
+                      <CircleNotch size={12} weight="thin" />
+                    </span>
+                  ) : (
+                    <Plus size={12} weight="bold" />
+                  )
+                }
+              >
+                {form.id ? copy.saveService : copy.saveAndEnableModel}
+              </Button>
             </div>
-            <ProbeErrorLine state={probeState} action="model-list" />
-            {shouldShowManualModelHint && (
-              <InfoLine message={copy.modelListManualFallback} />
-            )}
-            {modelOptions.length > 0 && (
-              <ModelSelectionList
-                title={copy.chooseDetectedModel}
-                value={form.model}
-                options={modelOptions}
-                filter={modelFilter}
-                onFilterChange={onSetModelFilter}
-                onChange={(model) => onChange({ model })}
-              />
-            )}
-            {selectedModelOutsideFetchedList && (
-              <InfoLine message={copy.selectedModelOutsideList(trimmedModel)} />
-            )}
-          </div>
+            <ProbeErrorLine state={probeState} action="provider-test" />
+          </>
         )}
-        <div className="border-t border-line pt-3">
-          <SettingsInput
-            label={copy.providerName}
-            value={form.displayName}
-            onChange={(displayName) => onChange({ displayName })}
-            placeholder={copy.providerNamePlaceholder}
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={!canTest}
-            onClick={onTest}
-            leadingIcon={
-              probeState.kind === "loading" &&
-              probeState.action === "provider-test" ? (
-                <span className="spin">
-                  <CircleNotch size={12} weight="thin" />
-                </span>
-              ) : (
-                <PlugsConnected size={12} weight="thin" />
-              )
-            }
-          >
-            {copy.testConnection}
-          </Button>
-          <InlineProbeStatus state={probeState} action="provider-test" />
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={!canSave}
-            onClick={onSave}
-            leadingIcon={
-              saving ? (
-                <span className="spin">
-                  <CircleNotch size={12} weight="thin" />
-                </span>
-              ) : (
-                <Plus size={12} weight="bold" />
-              )
-            }
-          >
-            {form.id ? copy.saveService : copy.saveAndEnableModel}
-          </Button>
-        </div>
-        <ProbeErrorLine state={probeState} action="provider-test" />
       </div>
     </div>
   );

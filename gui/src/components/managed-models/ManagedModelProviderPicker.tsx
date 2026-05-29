@@ -12,8 +12,8 @@ import { cn } from "@/lib/utils";
 import type { ManagedModelProtocol } from "@/types/managed-models";
 
 interface ManagedModelProviderPickerProps {
-  value: ManagedModelProviderPresetId;
-  protocol: ManagedModelProtocol;
+  value: ManagedModelProviderPresetId | null;
+  protocol: ManagedModelProtocol | null;
   onChange: (value: ManagedModelProviderPresetId) => void;
   className?: string;
 }
@@ -25,7 +25,7 @@ export function ManagedModelProviderPicker({
   className,
 }: ManagedModelProviderPickerProps) {
   const copy = useCopy().settings.models;
-  const selectedPreset = getManagedModelProviderPreset(value);
+  const selectedPreset = value ? getManagedModelProviderPreset(value) : null;
 
   return (
     <Popover.Root>
@@ -40,12 +40,19 @@ export function ManagedModelProviderPicker({
           )}
         >
           <span className="min-w-0">
-            <span className="block truncate text-[12.5px] font-medium text-ink">
-              {selectedPreset.label}
+            <span
+              className={cn(
+                "block truncate text-[12.5px] font-medium",
+                selectedPreset ? "text-ink" : "text-ink-muted",
+              )}
+            >
+              {selectedPreset?.label ?? copy.chooseProvider}
             </span>
-            <span className="mt-1 inline-flex rounded-sm bg-ink-muted/10 px-1.5 py-px text-[10.5px] text-ink-muted">
-              {managedModelProtocolLabel(protocol)}
-            </span>
+            {protocol && (
+              <span className="mt-1 inline-flex rounded-sm bg-ink-muted/10 px-1.5 py-px text-[10.5px] text-ink-muted">
+                {managedModelProtocolLabel(protocol)}
+              </span>
+            )}
           </span>
           <CaretDown
             size={12}

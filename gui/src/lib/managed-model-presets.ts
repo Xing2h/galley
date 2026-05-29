@@ -150,9 +150,6 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
   },
 ];
 
-export const DEFAULT_MANAGED_MODEL_PROVIDER_PRESET_ID: ManagedModelProviderPresetId =
-  "deepseek";
-
 export function getManagedModelProviderPreset(
   providerPresetId: ManagedModelProviderPresetId,
 ): ManagedModelProviderPreset {

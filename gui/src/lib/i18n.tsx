@@ -48,6 +48,9 @@ const zhCopy = {
     connectExternalGA: "接入外部 GA",
     chooseExistingGAFolder: "选择一个已有的 GenericAgent 目录",
     openRuntimeForExternal: "打开 Runtime 接入外部 GA",
+    supervisorSop: "Supervisor SOP",
+    supervisorSopTooltip: "复制 SOP，让外部 Agent 调度 Galley",
+    openSupervisorSop: "打开 Supervisor SOP 设置",
     newConversation: "新对话",
     newConversationInProject: (projectName: string) =>
       `新对话 · ${projectName}`,
@@ -312,6 +315,7 @@ const zhCopy = {
       addProvider: "添加模型提供商",
       editProvider: "编辑模型提供商",
       provider: "模型提供商",
+      chooseProvider: "选择模型提供商",
       openaiPresetDescription: "官方 API 或 OpenAI 兼容接口",
       anthropicPresetDescription: "官方 API 或 Anthropic 兼容接口",
       apiKey: "模型密钥",
@@ -566,7 +570,7 @@ const zhCopy = {
     attachTrust:
       "Galley 不会修改你的 GenericAgent。删除 Galley 后 GenericAgent 仍可独立运行。",
     modelTitle: "为 Galley 配置模型",
-    modelSubtitle: "填入你的模型 API Key 和 API 地址。",
+    modelSubtitle: "选择你要接入的模型服务，再填入密钥和模型。",
     connectExistingButton: "接入已有的 GenericAgent",
     testAndStart: "测试并开始使用 Galley",
     startUsingGalley: "开始使用 Galley",
@@ -906,6 +910,10 @@ const enCopy: AppCopy = {
     connectExternalGA: "Connect external GA",
     chooseExistingGAFolder: "Choose an existing GenericAgent folder",
     openRuntimeForExternal: "Open Runtime to connect external GA",
+    supervisorSop: "Supervisor SOP",
+    supervisorSopTooltip:
+      "Copy the SOP so an external Agent can coordinate Galley",
+    openSupervisorSop: "Open Supervisor SOP settings",
     newConversation: "New conversation",
     newConversationInProject: (projectName) =>
       `New conversation · ${projectName}`,
@@ -1181,6 +1189,7 @@ const enCopy: AppCopy = {
       addProvider: "Add model provider",
       editProvider: "Edit model provider",
       provider: "Model provider",
+      chooseProvider: "Choose model provider",
       openaiPresetDescription: "Official API or OpenAI-compatible endpoint",
       anthropicPresetDescription:
         "Official API or Anthropic-compatible endpoint",
@@ -1446,7 +1455,8 @@ const enCopy: AppCopy = {
     attachTrust:
       "Galley will not modify your GenericAgent. If you remove Galley, GenericAgent can still run on its own.",
     modelTitle: "Set up a model for Galley",
-    modelSubtitle: "Enter your model API Key and API URL.",
+    modelSubtitle:
+      "Choose the model service to connect, then enter the key and model.",
     connectExistingButton: "Connect existing GenericAgent",
     testAndStart: "Test and start using Galley",
     startUsingGalley: "Start using Galley",

@@ -463,6 +463,8 @@ function SessionTitleMenu({
   const copy = useCopy();
   const petHere = !!currentSessionHasPet;
   const [editing, setEditing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const titleClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Tracks whether the menu close was triggered by "重命名" so we can
   // suppress Radix's default focus-return-to-trigger (the trigger is
@@ -470,6 +472,28 @@ function SessionTitleMenu({
   // the about-to-unmount button and the input never wins focus on
   // mount — user has to click again.
   const renameRequestedRef = useRef(false);
+
+  const clearTitleClickTimer = () => {
+    if (!titleClickTimerRef.current) return;
+    clearTimeout(titleClickTimerRef.current);
+    titleClickTimerRef.current = null;
+  };
+
+  useEffect(() => {
+    return () => {
+      if (titleClickTimerRef.current) {
+        clearTimeout(titleClickTimerRef.current);
+      }
+    };
+  }, []);
+
+  const beginRename = () => {
+    if (!onRename) return;
+    clearTitleClickTimer();
+    renameRequestedRef.current = true;
+    setMenuOpen(false);
+    setEditing(true);
+  };
 
   if (editing && onRename) {
     return (
@@ -485,11 +509,39 @@ function SessionTitleMenu({
   }
 
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenu.Trigger asChild>
         <button
           type="button"
           aria-label={copy.topbar.moreConversationActions(title)}
+          onPointerDown={(e) => {
+            if (!onRename) return;
+            if (e.button !== 0 || e.ctrlKey) return;
+            e.preventDefault();
+          }}
+          onClick={(e) => {
+            if (!onRename) return;
+            if (e.detail > 1) {
+              clearTitleClickTimer();
+              return;
+            }
+            if (e.detail !== 1) return;
+            clearTitleClickTimer();
+            if (menuOpen) {
+              setMenuOpen(false);
+              return;
+            }
+            titleClickTimerRef.current = setTimeout(() => {
+              setMenuOpen(true);
+              titleClickTimerRef.current = null;
+            }, 160);
+          }}
+          onDoubleClick={(e) => {
+            if (!onRename) return;
+            e.preventDefault();
+            e.stopPropagation();
+            beginRename();
+          }}
           className={cn(
             "group inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1",
             "transition-colors hover:bg-hover data-[state=open]:bg-hover",
@@ -530,10 +582,7 @@ function SessionTitleMenu({
           {onRename && (
             <>
               <DropdownMenu.Item
-                onSelect={() => {
-                  renameRequestedRef.current = true;
-                  setEditing(true);
-                }}
+                onSelect={beginRename}
                 className={cn(
                   "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none",
                   "data-[highlighted]:bg-hover",
