@@ -1,7 +1,11 @@
+<p align="center">
+  <img src="docs/assets/galley-icon.png" alt="Galley logo" width="96" />
+</p>
+
 <h1 align="center">Galley</h1>
 
 <p align="center">
-  <strong>An out-of-the-box local Agent Team Orchestrator</strong>
+  <strong>Run, manage, and resume multiple AI agent sessions on your own computer</strong>
   <br/>
   Bundled GenericAgent kernel · GUI / CLI dual-native · Local-first
 </p>

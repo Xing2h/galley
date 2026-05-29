@@ -1,7 +1,11 @@
+<p align="center">
+  <img src="docs/assets/galley-icon.png" alt="Galley logo" width="96" />
+</p>
+
 <h1 align="center">Galley</h1>
 
 <p align="center">
-  <strong>开箱即用的本地 Agent Team Orchestrator</strong>
+  <strong>在本机并行运行、管理和恢复多个 AI Agent session</strong>
   <br/>
   自带 GenericAgent 内核 · GUI / CLI 双原生 · Local-first
 </p>
