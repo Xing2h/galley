@@ -9,6 +9,7 @@ pub mod error;
 pub mod ipc;
 pub mod managed_model_config;
 pub mod managed_model_probe;
+mod managed_prompt;
 pub mod managed_runtime;
 pub mod migration_backup;
 pub mod path_install;
@@ -20,8 +21,8 @@ pub mod sop_install;
 
 use api::{
     CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelProbeInput, Origin,
-    ProjectBrief, ProjectId, ProjectPatch, ReorderManagedModelsInput, SaveManagedModelInput,
-    SaveManagedProviderInput, SessionBrief, SessionFilter, SessionId,
+    ProjectBrief, ProjectId, ProjectPatch, ReorderManagedModelsInput, RuntimeKind,
+    SaveManagedModelInput, SaveManagedProviderInput, SessionBrief, SessionFilter, SessionId,
 };
 use db::{
     MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
@@ -733,10 +734,11 @@ async fn backfill_fts_if_empty() -> std::result::Result<u32, String> {
 async fn search_messages(
     query: String,
     limit: u32,
+    runtime_kind: Option<RuntimeKind>,
 ) -> std::result::Result<Vec<MessageSearchHit>, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
-        .search_message_hits(query, limit)
+        .search_message_hits(query, limit, runtime_kind)
         .await
         .map_err(stringify_error)
 }
@@ -1387,7 +1389,7 @@ pub fn run() {
                 let about_metadata = AboutMetadataBuilder::new()
                     .name(Some("Galley"))
                     .version(Some(env!("CARGO_PKG_VERSION")))
-                    .credits(Some("Made by wangjc683".to_string()))
+                    .credits(Some("Made by JC Wang".to_string()))
                     .website(Some("https://github.com/wangjc683/galley".to_string()))
                     .website_label(Some("GitHub".to_string()))
                     .build();

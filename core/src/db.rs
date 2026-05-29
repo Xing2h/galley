@@ -292,16 +292,22 @@ impl SqliteGalley {
         &self,
         query: String,
         limit: u32,
+        runtime_kind: Option<RuntimeKind>,
     ) -> Result<Vec<MessageSearchHit>> {
         let q = query.trim();
         if q.chars().count() < 2 {
             return Ok(vec![]);
         }
         let limit = i64::from(limit);
+        let runtime_clause = if runtime_kind.is_some() {
+            " AND s.ga_runtime_kind = ?"
+        } else {
+            ""
+        };
 
         if q.chars().count() >= 3 {
             let phrase = format!("\"{}\"", q.replace('"', "\"\""));
-            let res = sqlx::query_as::<_, MessageSearchHit>(
+            let sql = format!(
                 "SELECT \
                    fts.message_id AS message_id, \
                    fts.session_id AS session_id, \
@@ -313,14 +319,15 @@ impl SqliteGalley {
                  FROM messages_fts fts \
                  JOIN sessions s ON s.id = fts.session_id \
                  WHERE messages_fts MATCH ? \
-                   AND s.status != 'archived' \
+                   AND s.status != 'archived'{runtime_clause} \
                  ORDER BY s.last_activity_at DESC \
-                 LIMIT ?",
-            )
-            .bind(&phrase)
-            .bind(limit)
-            .fetch_all(&self.pool)
-            .await;
+                 LIMIT ?"
+            );
+            let mut query = sqlx::query_as::<_, MessageSearchHit>(&sql).bind(&phrase);
+            if let Some(kind) = runtime_kind {
+                query = query.bind(runtime_kind_sql(kind));
+            }
+            let res = query.bind(limit).fetch_all(&self.pool).await;
             match res {
                 Ok(rows) => return Ok(rows),
                 Err(e) => {
@@ -330,7 +337,7 @@ impl SqliteGalley {
         }
 
         let like = format!("%{}%", escape_like(q));
-        let rows = sqlx::query_as::<_, MessageSearchHit>(
+        let sql = format!(
             "SELECT \
                m.id AS message_id, \
                m.session_id AS session_id, \
@@ -349,16 +356,21 @@ impl SqliteGalley {
                AND ( \
                  m.content LIKE ? ESCAPE '\\' \
                  OR m.final_answer LIKE ? ESCAPE '\\' \
-               ) \
+               ){runtime_clause} \
              ORDER BY s.last_activity_at DESC \
-             LIMIT ?",
-        )
-        .bind(&like)
-        .bind(&like)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_sqlx_err)?;
+             LIMIT ?"
+        );
+        let mut query = sqlx::query_as::<_, MessageSearchHit>(&sql)
+            .bind(&like)
+            .bind(&like);
+        if let Some(kind) = runtime_kind {
+            query = query.bind(runtime_kind_sql(kind));
+        }
+        let rows = query
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
         Ok(rows
             .into_iter()
             .map(|mut row| {
@@ -1801,7 +1813,12 @@ impl GalleyApi for SqliteGalley {
         rows.into_iter().map(MessageRow::into_brief).collect()
     }
 
-    async fn search_messages(&self, query: String, scope: SearchScope) -> Result<Vec<SearchHit>> {
+    async fn search_messages(
+        &self,
+        query: String,
+        scope: SearchScope,
+        runtime_kind: Option<RuntimeKind>,
+    ) -> Result<Vec<SearchHit>> {
         let q = query.trim();
         if q.len() < 2 {
             return Ok(vec![]);
@@ -1817,6 +1834,11 @@ impl GalleyApi for SqliteGalley {
                 SearchScope::All => "",
                 SearchScope::Active => " AND s.status != 'archived'",
             };
+            let runtime_clause = if runtime_kind.is_some() {
+                " AND s.ga_runtime_kind = ?"
+            } else {
+                ""
+            };
             let sql = format!(
                 "SELECT fts.message_id AS message_id, \
                         fts.session_id AS session_id, \
@@ -1824,15 +1846,15 @@ impl GalleyApi for SqliteGalley {
                         bm25(messages_fts) AS rank \
                  FROM messages_fts fts \
                  JOIN sessions s ON s.id = fts.session_id \
-                 WHERE messages_fts MATCH ?{scope_clause} \
+                 WHERE messages_fts MATCH ?{scope_clause}{runtime_clause} \
                  ORDER BY rank ASC \
                  LIMIT ?"
             );
-            let res = sqlx::query_as::<_, SearchHitRow>(&sql)
-                .bind(&phrase)
-                .bind(LIMIT)
-                .fetch_all(&self.pool)
-                .await;
+            let mut query = sqlx::query_as::<_, SearchHitRow>(&sql).bind(&phrase);
+            if let Some(kind) = runtime_kind {
+                query = query.bind(runtime_kind_sql(kind));
+            }
+            let res = query.bind(LIMIT).fetch_all(&self.pool).await;
             match res {
                 Ok(rows) => return Ok(rows.into_iter().map(into_search_hit).collect()),
                 Err(e) => {
@@ -1851,6 +1873,11 @@ impl GalleyApi for SqliteGalley {
             SearchScope::All => "",
             SearchScope::Active => " AND s.status != 'archived'",
         };
+        let runtime_clause = if runtime_kind.is_some() {
+            " AND s.ga_runtime_kind = ?"
+        } else {
+            ""
+        };
         let sql = format!(
             "SELECT m.id AS message_id, \
                     m.session_id AS session_id, \
@@ -1858,12 +1885,15 @@ impl GalleyApi for SqliteGalley {
              FROM messages m \
              JOIN sessions s ON s.id = m.session_id \
              WHERE m.role IN ('user','assistant') \
-               AND m.content LIKE ? ESCAPE '\\'{scope_clause} \
+               AND m.content LIKE ? ESCAPE '\\'{scope_clause}{runtime_clause} \
              ORDER BY s.last_activity_at DESC \
              LIMIT ?"
         );
-        let rows = sqlx::query_as::<_, SearchHitRow>(&sql)
-            .bind(&like)
+        let mut query = sqlx::query_as::<_, SearchHitRow>(&sql).bind(&like);
+        if let Some(kind) = runtime_kind {
+            query = query.bind(runtime_kind_sql(kind));
+        }
+        let rows = query
             .bind(LIMIT)
             .fetch_all(&self.pool)
             .await

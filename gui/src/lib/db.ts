@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { MessageRow, ToolEventRow } from "@/types/db";
 import type { ApprovalDecision } from "@/types/ipc";
+import type { RuntimeKind } from "@/types/session";
 
 /**
  * Thin GUI wrappers over Galley Core Tauri commands. The GUI does not
@@ -152,10 +153,15 @@ export interface MessageSearchHit {
 export async function searchMessages(
   query: string,
   limit = 20,
+  runtimeKind?: RuntimeKind,
 ): Promise<MessageSearchHit[]> {
   const q = query.trim();
   if (q.length < 2) return [];
-  return invoke<MessageSearchHit[]>("search_messages", { query: q, limit });
+  return invoke<MessageSearchHit[]>("search_messages", {
+    query: q,
+    limit,
+    runtimeKind,
+  });
 }
 
 /**

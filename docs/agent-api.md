@@ -355,15 +355,18 @@ $ galley sessions list --project=proj_demo
 | `gaRuntimeId`     | string?         | stable runtime id for future multi-runtime support                                 |
 | `promptProfile`   | string?         | managed prompt profile id, when applied                                            |
 
-### 5.3 · `galley sessions search <query> [--all]`
+### 5.3 · `galley sessions search <query> [--runtime current|managed|external|all] [--all]`
 
 FTS5 trigram search over message bodies. Two-character queries fall
 back to LIKE substring search. Queries shorter than two characters
-return empty.
+return empty. By default, search follows the GUI's current runtime context, so
+managed and external GA histories stay separate unless the caller explicitly
+asks for all runtimes.
 
-| Flag     | Default | Notes                                  |
-| -------- | ------- | -------------------------------------- |
-| `--all`  | false   | include archived sessions in the scan  |
+| Flag        | Default   | Notes                                                         |
+| ----------- | --------- | ------------------------------------------------------------- |
+| `--runtime` | `current` | runtime scope: current GUI context, managed, external, or all |
+| `--all`     | false     | include archived sessions in the scan; does not change runtime scope |
 
 Example:
 

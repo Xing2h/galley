@@ -5,7 +5,7 @@
 //! cases isolated.
 
 use galley_core_lib::api::{
-    GalleyApi, OriginVia, SearchScope, SessionFilter, SessionId, SessionStatus,
+    GalleyApi, OriginVia, RuntimeKind, SearchScope, SessionFilter, SessionId, SessionStatus,
 };
 use galley_core_lib::db::SqliteGalley;
 use sqlx::SqlitePool;
@@ -100,10 +100,21 @@ async fn runtime_identity_migration_preserves_existing_attach_users() {
 }
 
 async fn seed_session(pool: &SqlitePool, id: &str, title: &str, status: &str, ts: &str) {
+    seed_session_with_runtime(pool, id, title, status, ts, "external").await;
+}
+
+async fn seed_session_with_runtime(
+    pool: &SqlitePool,
+    id: &str,
+    title: &str,
+    status: &str,
+    ts: &str,
+    runtime_kind: &str,
+) {
     sqlx::query(
         "INSERT INTO sessions (id, title, status, turn_count, pending_approval_count, \
-            error_count, pinned, last_activity_at, created_at, updated_at) \
-         VALUES (?, ?, ?, 0, 0, 0, 0, ?, ?, ?)",
+            error_count, pinned, last_activity_at, created_at, updated_at, ga_runtime_kind) \
+         VALUES (?, ?, ?, 0, 0, 0, 0, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(title)
@@ -111,6 +122,7 @@ async fn seed_session(pool: &SqlitePool, id: &str, title: &str, status: &str, ts
     .bind(ts)
     .bind(ts)
     .bind(ts)
+    .bind(runtime_kind)
     .execute(pool)
     .await
     .expect("seed session");
@@ -416,10 +428,95 @@ async fn search_messages_short_query_returns_empty() {
 
     let galley = SqliteGalley::from_pool(pool);
     assert!(galley
-        .search_messages("a".into(), SearchScope::default())
+        .search_messages("a".into(), SearchScope::default(), None)
         .await
         .expect("search 1-char")
         .is_empty());
+}
+
+#[tokio::test]
+async fn search_messages_runtime_filter_limits_fts_and_like() {
+    let pool = fresh_pool().await;
+    seed_session_with_runtime(
+        &pool,
+        "sess_managed",
+        "managed",
+        "idle",
+        "2026-05-18T00:00:00Z",
+        "managed",
+    )
+    .await;
+    seed_session_with_runtime(
+        &pool,
+        "sess_external",
+        "external",
+        "idle",
+        "2026-05-18T00:00:01Z",
+        "external",
+    )
+    .await;
+    seed_message(
+        &pool,
+        "m1",
+        "sess_managed",
+        1,
+        0,
+        "user",
+        "sharedtoken 兔子",
+        "2026-05-18T00:00:00Z",
+    )
+    .await;
+    seed_message(
+        &pool,
+        "m2",
+        "sess_external",
+        1,
+        0,
+        "user",
+        "sharedtoken 兔子",
+        "2026-05-18T00:00:01Z",
+    )
+    .await;
+
+    let galley = SqliteGalley::from_pool(pool);
+    let managed_hits = galley
+        .search_messages(
+            "sharedtoken".into(),
+            SearchScope::Active,
+            Some(RuntimeKind::Managed),
+        )
+        .await
+        .expect("managed fts search");
+    assert_eq!(managed_hits.len(), 1);
+    assert_eq!(managed_hits[0].session_id.0, "sess_managed");
+
+    let external_hits = galley
+        .search_messages(
+            "sharedtoken".into(),
+            SearchScope::Active,
+            Some(RuntimeKind::External),
+        )
+        .await
+        .expect("external fts search");
+    assert_eq!(external_hits.len(), 1);
+    assert_eq!(external_hits[0].session_id.0, "sess_external");
+
+    let all_runtime_hits = galley
+        .search_messages("sharedtoken".into(), SearchScope::Active, None)
+        .await
+        .expect("all-runtime fts search");
+    assert_eq!(all_runtime_hits.len(), 2);
+
+    let managed_like_hits = galley
+        .search_messages(
+            "兔子".into(),
+            SearchScope::Active,
+            Some(RuntimeKind::Managed),
+        )
+        .await
+        .expect("managed like search");
+    assert_eq!(managed_like_hits.len(), 1);
+    assert_eq!(managed_like_hits[0].session_id.0, "sess_managed");
 }
 
 #[tokio::test]
@@ -451,7 +548,7 @@ async fn search_messages_fts_finds_hit() {
 
     let galley = SqliteGalley::from_pool(pool);
     let hits = galley
-        .search_messages("quick".into(), SearchScope::default())
+        .search_messages("quick".into(), SearchScope::default(), None)
         .await
         .expect("search");
 
@@ -459,6 +556,79 @@ async fn search_messages_fts_finds_hit() {
     assert_eq!(hits[0].message_id.0, "m1");
     // snippet wraps the hit token in <mark>…</mark>.
     assert!(hits[0].snippet.contains("<mark>"));
+}
+
+#[tokio::test]
+async fn gui_search_message_hits_runtime_filter_limits_fts_and_like() {
+    let pool = fresh_pool().await;
+    seed_session_with_runtime(
+        &pool,
+        "sess_managed",
+        "managed",
+        "idle",
+        "2026-05-18T00:00:00Z",
+        "managed",
+    )
+    .await;
+    seed_session_with_runtime(
+        &pool,
+        "sess_external",
+        "external",
+        "idle",
+        "2026-05-18T00:00:01Z",
+        "external",
+    )
+    .await;
+    seed_message(
+        &pool,
+        "m1",
+        "sess_managed",
+        1,
+        0,
+        "user",
+        "guitoken 猫猫",
+        "2026-05-18T00:00:00Z",
+    )
+    .await;
+    seed_message(
+        &pool,
+        "m2",
+        "sess_external",
+        1,
+        0,
+        "user",
+        "guitoken 猫猫",
+        "2026-05-18T00:00:01Z",
+    )
+    .await;
+
+    let galley = SqliteGalley::from_pool(pool);
+    let managed_hits = galley
+        .search_message_hits("guitoken".into(), 20, Some(RuntimeKind::Managed))
+        .await
+        .expect("managed gui fts search");
+    assert_eq!(managed_hits.len(), 1);
+    assert_eq!(managed_hits[0].session_id, "sess_managed");
+
+    let external_hits = galley
+        .search_message_hits("guitoken".into(), 20, Some(RuntimeKind::External))
+        .await
+        .expect("external gui fts search");
+    assert_eq!(external_hits.len(), 1);
+    assert_eq!(external_hits[0].session_id, "sess_external");
+
+    let all_runtime_hits = galley
+        .search_message_hits("guitoken".into(), 20, None)
+        .await
+        .expect("all-runtime gui fts search");
+    assert_eq!(all_runtime_hits.len(), 2);
+
+    let managed_like_hits = galley
+        .search_message_hits("猫猫".into(), 20, Some(RuntimeKind::Managed))
+        .await
+        .expect("managed gui like search");
+    assert_eq!(managed_like_hits.len(), 1);
+    assert_eq!(managed_like_hits[0].session_id, "sess_managed");
 }
 
 #[tokio::test]
@@ -498,14 +668,14 @@ async fn search_messages_active_scope_excludes_archived() {
 
     let galley = SqliteGalley::from_pool(pool);
     let active_hits = galley
-        .search_messages("needle".into(), SearchScope::Active)
+        .search_messages("needle".into(), SearchScope::Active, None)
         .await
         .expect("search active");
     assert_eq!(active_hits.len(), 1);
     assert_eq!(active_hits[0].message_id.0, "m1");
 
     let all_hits = galley
-        .search_messages("needle".into(), SearchScope::All)
+        .search_messages("needle".into(), SearchScope::All, None)
         .await
         .expect("search all");
     assert_eq!(all_hits.len(), 2);

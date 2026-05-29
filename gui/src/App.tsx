@@ -1281,6 +1281,7 @@ function App() {
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         sessions={visibleSessions}
+        runtimeKind={activeRuntimeKind}
         llms={llms}
         onNewChat={() => {
           setActiveProjectFilter(undefined);

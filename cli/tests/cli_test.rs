@@ -83,6 +83,30 @@ async fn seed_session_with_runtime(
     .expect("seed session");
 }
 
+async fn seed_message(pool: &SqlitePool, id: &str, session_id: &str, content: &str) {
+    sqlx::query(
+        "INSERT INTO messages (id, session_id, turn_index, sequence, role, content, created_at) \
+         VALUES (?, ?, 1, 0, 'user', ?, '2026-05-18T00:00:00Z')",
+    )
+    .bind(id)
+    .bind(session_id)
+    .bind(content)
+    .execute(pool)
+    .await
+    .expect("seed message");
+
+    sqlx::query(
+        "INSERT INTO messages_fts (message_id, session_id, role, turn_index, body) \
+         VALUES (?, ?, 'user', 1, ?)",
+    )
+    .bind(id)
+    .bind(session_id)
+    .bind(content)
+    .execute(pool)
+    .await
+    .expect("seed fts row");
+}
+
 /// Resolve the binary path. Cargo writes test binaries to
 /// `target/<profile>/deps/...` but workspace bins land at
 /// `target/<profile>/<name>`. `CARGO_BIN_EXE_galley` is set by Cargo
@@ -102,6 +126,31 @@ fn run_galley(db_path: &std::path::Path, args: &[&str]) -> (String, Option<i32>)
         .expect("spawn galley");
     let stdout = String::from_utf8(out.stdout).expect("utf8 stdout");
     (stdout, out.status.code())
+}
+
+fn search_session_ids(stdout: &str) -> Vec<String> {
+    let mut ids = stdout
+        .trim()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let payload: serde_json::Value = serde_json::from_str(line).expect("ndjson line");
+            payload["sessionId"]
+                .as_str()
+                .expect("sessionId")
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids
+}
+
+fn assert_search_session_ids(stdout: &str, expected: &[&str]) {
+    let expected = expected
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(search_session_ids(stdout), expected);
 }
 
 #[tokio::test]
@@ -208,6 +257,86 @@ async fn sessions_list_defaults_to_current_runtime() {
     let only: serde_json::Value = serde_json::from_str(lines[0]).expect("ndjson line");
     assert_eq!(only["id"], "external");
     assert_eq!(only["runtimeKind"], "external");
+}
+
+#[tokio::test]
+async fn sessions_search_defaults_to_current_runtime() {
+    let td = tempdir();
+    let db = td.path().join("workbench.db");
+    let pool = seeded_db_at(&db).await;
+    seed_session_with_runtime(
+        &pool,
+        "external",
+        "external",
+        "idle",
+        "2026-05-18T00:00:00Z",
+        "external",
+    )
+    .await;
+    seed_session_with_runtime(
+        &pool,
+        "managed",
+        "managed",
+        "idle",
+        "2026-05-19T00:00:00Z",
+        "managed",
+    )
+    .await;
+    seed_session_with_runtime(
+        &pool,
+        "managed_archived",
+        "managed archived",
+        "archived",
+        "2026-05-20T00:00:00Z",
+        "managed",
+    )
+    .await;
+    seed_message(&pool, "m_ext", "external", "sharedtoken").await;
+    seed_message(&pool, "m_man", "managed", "sharedtoken").await;
+    seed_message(&pool, "m_arch", "managed_archived", "sharedtoken").await;
+    drop(pool);
+
+    let (stdout, code) = run_galley(&db, &["sessions", "search", "sharedtoken"]);
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    assert_search_session_ids(&stdout, &["managed"]);
+
+    let (stdout, code) = run_galley(&db, &["sessions", "search", "sharedtoken", "--all"]);
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    assert_search_session_ids(&stdout, &["managed", "managed_archived"]);
+
+    let (stdout, code) = run_galley(
+        &db,
+        &[
+            "sessions",
+            "search",
+            "sharedtoken",
+            "--runtime",
+            "external",
+        ],
+    );
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    assert_search_session_ids(&stdout, &["external"]);
+
+    let (stdout, code) = run_galley(
+        &db,
+        &["sessions", "search", "sharedtoken", "--runtime", "all"],
+    );
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    assert_search_session_ids(&stdout, &["external", "managed"]);
+
+    let (stdout, code) = run_galley(
+        &db,
+        &[
+            "sessions",
+            "search",
+            "sharedtoken",
+            "--runtime",
+            "all",
+            "--all",
+        ],
+    );
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    assert_search_session_ids(&stdout, &["external", "managed", "managed_archived"]);
 }
 
 #[tokio::test]

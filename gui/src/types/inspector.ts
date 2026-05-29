@@ -68,6 +68,8 @@ export interface ManagedRuntimeDiagnostics {
   patchStackId: string;
   patchCount: number;
   stateSchemaVersion: number;
+  promptProfileId: string;
+  promptHash: string;
   paths: ManagedRuntimePaths;
   code: ManagedCodeDiagnostics;
   state: ManagedStateDiagnostics;
@@ -78,9 +80,6 @@ export interface ManagedRuntimePaths {
   codeRoot: string;
   manifestPath: string;
   patchManifestPath: string;
-  promptDir: string;
-  runtimePromptPath: string;
-  personaPromptPath: string;
   stateRoot: string;
   memoryDir: string;
   sopDir: string;
@@ -97,8 +96,6 @@ export interface ManagedCodeDiagnostics {
   agentmainExists: boolean;
   manifestExists: boolean;
   patchManifestExists: boolean;
-  runtimePromptExists: boolean;
-  personaPromptExists: boolean;
 }
 
 export interface ManagedStateDiagnostics {

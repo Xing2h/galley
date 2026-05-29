@@ -45,7 +45,7 @@ use crate::ipc::IpcCommand;
 use crate::runner_manager::{
     BroadcastItem, RunnerManager, RunnerSpawnError, SendCommandError, ShutdownError, SpawnArgs,
 };
-use crate::{credential_store, managed_model_config, managed_runtime};
+use crate::{credential_store, managed_model_config, managed_prompt, managed_runtime};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -174,15 +174,6 @@ pub(crate) async fn prepare_managed_spawn_args(
             ),
         });
     }
-    if !diagnostics.code.runtime_prompt_exists || !diagnostics.code.persona_prompt_exists {
-        return Err(RunnerSpawnError::ManagedRuntimeInvalid {
-            detail: format!(
-                "managed prompt profile is incomplete: runtimePrompt={}, personaPrompt={}",
-                diagnostics.paths.runtime_prompt_path, diagnostics.paths.persona_prompt_path
-            ),
-        });
-    }
-
     let galley =
         SqliteGalley::open()
             .await
@@ -271,12 +262,12 @@ pub(crate) async fn prepare_managed_spawn_args(
         model_config_path.to_string_lossy().into_owned(),
     ));
     args.env.push((
-        "GALLEY_RUNTIME_PROMPT_PATH".into(),
-        diagnostics.paths.runtime_prompt_path.clone(),
+        "GALLEY_RUNTIME_PROMPT_TEXT".into(),
+        managed_prompt::RUNTIME_PROMPT.into(),
     ));
     args.env.push((
-        "GALLEY_PERSONA_PROMPT_PATH".into(),
-        diagnostics.paths.persona_prompt_path.clone(),
+        "GALLEY_PERSONA_PROMPT_TEXT".into(),
+        managed_prompt::PERSONA_PROMPT.into(),
     ));
     args.env
         .push(("GALLEY_MANAGED_MODEL_CONFIG_JSON".into(), runtime_config));

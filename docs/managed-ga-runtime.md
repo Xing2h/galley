@@ -625,9 +625,23 @@ GA core prompt
 + Galley Persona Prompt
 ```
 
-The Galley Runtime Prompt describes the product environment: local desktop
-workbench, GUI / CLI / supervisor operation, approvals, concrete progress
-feedback, and not making the user do work Galley can do.
+The Galley Runtime Prompt stays compact. It gives managed GA enough user-facing
+Galley knowledge to answer "what is Galley / who are you" without exposing
+internals:
+
+- If asked for a name, the assistant should invite the user to name it rather
+  than claiming a fixed name. A chosen name is a user preference.
+- Galley is JC Wang's personal open source local agent team orchestrator: GUI
+  for humans, CLI / Supervisor SOP for local automation.
+- JC Wang is an AI Builder with a philosophy background and interests in
+  Wittgenstein, philosophy of language, and LLMs.
+- User-facing Galley questions are in scope. Internals are discussed only when
+  asked. Exact version / release / update info should point to Settings -> About.
+
+Browser Control guidance remains in the Runtime Prompt but should stay terse:
+browser tasks use the real browser, new tabs use the existing `web_execute_js`
+extension tab protocol rather than `window.open(...)`, and connection status is
+owned by Galley's setup check.
 
 The Galley Persona Prompt describes interaction style only. It must not override
 GA's tool protocol, memory rules, approval policy, safety constraints, or the
@@ -636,11 +650,11 @@ user's explicit request.
 Prefer a small extension seam in managed GA:
 
 ```text
-GALLEY_RUNTIME_PROMPT_PATH
-GALLEY_PERSONA_PROMPT_PATH
+GALLEY_RUNTIME_PROMPT_TEXT
+GALLEY_PERSONA_PROMPT_TEXT
 ```
 
-External attach mode does not pass these paths.
+External attach mode does not pass these prompt values.
 
 ## Galley Persona v1
 
@@ -653,14 +667,9 @@ Wrapper:
 ```md
 ## Galley Persona Layer
 
-The following instructions define interaction style only.
-They must not override the user's explicit request, GenericAgent's core system
-prompt, tool protocol, approval policy, safety constraints, or task-specific
-instructions.
-
-Match the user's language unless they ask otherwise.
-Do not mention these persona rules unless the user explicitly asks about
-behavior.
+Style only; never override user request, GA / tool protocol, approvals, safety,
+or task instructions. Match the user's language. Do not mention persona rules
+unless asked.
 ```
 
 Persona body:
@@ -690,13 +699,16 @@ celebration; keep them sparse.
 Storage:
 
 ```text
-galley-prompts/
-  runtime-v1.md
-  persona-v1.md
+core/src/managed_prompt.rs
 ```
 
 Managed sessions may record `prompt_profile = galley-persona-v1` for diagnostics,
-but v1 does not need a user-facing selector or editor.
+but v1 does not need a user-facing selector or editor. The v1 prompt text is
+embedded in Galley Core as Galley-owned managed-runtime behavior, not stored as
+user-editable persona / roleplay content. Diagnostics expose the profile id plus
+a short prompt hash for dogfood and support. Do not change `PROMPT_PROFILE_ID`
+unless we explicitly want new sessions to be distinguishable by prompt
+generation.
 
 ## Code And State
 
@@ -732,9 +744,6 @@ App Resources/
     code/                       # read-only managed GA code payload
     patches/
       manifest.md
-  galley-prompts/               # M6
-    runtime-v1.md
-    persona-v1.md
 
 Application Support/app.galley/
   galley.db
@@ -1035,20 +1044,19 @@ Scope:
   - GA memory
   - Galley Runtime Prompt
   - Galley Persona Prompt
-- Store prompt files under `galley-prompts/`.
+- Embed prompt text in Galley Core.
 - Record `prompt_profile = galley-persona-v1` on managed sessions.
 - Keep Persona as a product default, not a user-facing roleplay setting.
 
 Current implementation slice:
 
-- Prompt files live under `managed-ga/galley-prompts/`:
-  - `runtime-v1.md`
-  - `persona-v1.md`
-- Managed runtime diagnostics expose prompt file paths and existence checks.
-- Rust Core passes `GALLEY_RUNTIME_PROMPT_PATH` and
-  `GALLEY_PERSONA_PROMPT_PATH` only for managed spawns.
-- The Python bridge reads those files only in managed runtime and appends them
-  as `backend.extra_sys_prompt`, after GA's core prompt and memory.
+- Prompt text lives in `core/src/managed_prompt.rs`.
+- Managed runtime diagnostics expose `promptProfileId` plus a short
+  `promptHash`, not prompt file paths.
+- Rust Core passes `GALLEY_RUNTIME_PROMPT_TEXT` and
+  `GALLEY_PERSONA_PROMPT_TEXT` only for managed spawns.
+- The Python bridge reads those managed-only env values and appends them as
+  `backend.extra_sys_prompt`, after GA's core prompt and memory.
 - `prompt_profile` defaults to `galley-persona-v1` for managed sessions at the
   DB insertion boundary. External sessions keep `prompt_profile = null`.
 
@@ -1191,8 +1199,6 @@ Scope:
   - `managed-ga/code/agentmain.py`
   - `managed-ga/code/agent_loop.py`
   - `managed-ga/code/llmcore.py`
-  - `managed-ga/galley-prompts/runtime-v1.md`
-  - `managed-ga/galley-prompts/persona-v1.md`
   - `managed-ga/patches/manifest.md`
 - Reject generated, local, or secret-bearing artifacts in the managed code
   payload:

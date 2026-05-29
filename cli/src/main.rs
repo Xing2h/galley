@@ -222,6 +222,10 @@ enum SessionsCmd {
     },
     /// FTS5 trigram search across persisted message bodies.
     Search {
+        /// Runtime scope. Default follows the GUI's current runtime so
+        /// agents see the same session set as the human operator.
+        #[arg(long, value_enum, default_value = "current")]
+        runtime: RuntimeArg,
         /// Query string. Returns no hits for <2 chars; LIKE fallback
         /// for 2-char queries; FTS5 phrase match for >=3 chars.
         query: String,
@@ -465,14 +469,19 @@ async fn run(cli: Cli) -> Result<(), GalleyError> {
             }
             Ok(())
         }
-        Command::Sessions(SessionsCmd::Search { query, all }) => {
+        Command::Sessions(SessionsCmd::Search {
+            runtime,
+            query,
+            all,
+        }) => {
             let galley = SqliteGalley::open().await?;
             let scope = if all {
                 SearchScope::All
             } else {
                 SearchScope::Active
             };
-            let hits = galley.search_messages(query, scope).await?;
+            let runtime_kind = runtime_filter(&galley, runtime).await?;
+            let hits = galley.search_messages(query, scope, runtime_kind).await?;
             for hit in hits {
                 emit_json(&hit)?;
             }

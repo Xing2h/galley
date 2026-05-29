@@ -58,7 +58,12 @@ pub trait GalleyApi: Send + Sync {
     ) -> Result<Vec<MessageBrief>>;
 
     /// FTS5 search across messages.
-    async fn search_messages(&self, query: String, scope: SearchScope) -> Result<Vec<SearchHit>>;
+    async fn search_messages(
+        &self,
+        query: String,
+        scope: SearchScope,
+        runtime_kind: Option<RuntimeKind>,
+    ) -> Result<Vec<SearchHit>>;
 
     /// Aggregate counts useful for status dashboards.
     async fn status(&self) -> Result<StatusSummary>;

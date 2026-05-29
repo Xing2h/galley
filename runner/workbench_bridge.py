@@ -129,8 +129,8 @@ _GALLEY_RUNTIME_KIND_ENV = "GALLEY_RUNTIME_KIND"
 _GALLEY_MANAGED_STATE_ROOT_ENV = "GALLEY_GA_STATE_ROOT"
 _GALLEY_MANAGED_MODEL_CONFIG_ENV = "GALLEY_MANAGED_MODEL_CONFIG_JSON"
 _GALLEY_MANAGED_MODEL_CONFIG_PATH_ENV = "GALLEY_MANAGED_MODEL_CONFIG_PATH"
-_GALLEY_RUNTIME_PROMPT_PATH_ENV = "GALLEY_RUNTIME_PROMPT_PATH"
-_GALLEY_PERSONA_PROMPT_PATH_ENV = "GALLEY_PERSONA_PROMPT_PATH"
+_GALLEY_RUNTIME_PROMPT_TEXT_ENV = "GALLEY_RUNTIME_PROMPT_TEXT"
+_GALLEY_PERSONA_PROMPT_TEXT_ENV = "GALLEY_PERSONA_PROMPT_TEXT"
 
 
 def _is_managed_runtime() -> bool:
@@ -612,14 +612,13 @@ class Bridge:
     def _install_managed_prompt_profile(self) -> None:
         prompts = []
         for env_name in (
-            _GALLEY_RUNTIME_PROMPT_PATH_ENV,
-            _GALLEY_PERSONA_PROMPT_PATH_ENV,
+            _GALLEY_RUNTIME_PROMPT_TEXT_ENV,
+            _GALLEY_PERSONA_PROMPT_TEXT_ENV,
         ):
-            raw_path = os.environ.get(env_name)
-            if not raw_path:
+            raw_prompt = os.environ.get(env_name)
+            if not raw_prompt:
                 raise RuntimeError(f"managed runtime missing {env_name}")
-            path = Path(raw_path).expanduser().resolve()
-            prompts.append(path.read_text(encoding="utf-8").strip())
+            prompts.append(raw_prompt.strip())
         extra_prompt = "\n\n".join(p for p in prompts if p)
         if not extra_prompt:
             raise RuntimeError("managed prompt profile is empty")

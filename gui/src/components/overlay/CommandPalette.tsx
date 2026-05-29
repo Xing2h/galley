@@ -19,7 +19,7 @@ import { useCopy } from "@/lib/i18n";
 import { formatShortcut, formatShortcutReadable } from "@/lib/shortcuts";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
-import type { Session } from "@/types/session";
+import type { RuntimeKind, Session } from "@/types/session";
 
 import "./command-palette.css";
 
@@ -36,6 +36,7 @@ export interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void;
 
   sessions: Session[];
+  runtimeKind: RuntimeKind;
   llms?: LLMOption[];
 
   onNewChat?: () => void;
@@ -96,6 +97,12 @@ export function CommandPalette(props: CommandPaletteProps) {
     return () => clearTimeout(t);
   }, [props.open]);
 
+  useEffect(() => {
+    if (!props.open) return;
+    const t = setTimeout(() => setMessageHits([]), 0);
+    return () => clearTimeout(t);
+  }, [props.open, props.runtimeKind]);
+
   // Debounced full-text content search via SQLite FTS5. Fires only
   // on the root page so the LLM-switcher subpage isn't burning DB
   // queries. The query.length < 2 guard mirrors `searchMessages`
@@ -113,7 +120,7 @@ export function CommandPalette(props: CommandPaletteProps) {
     }
     let cancelled = false;
     const handle = setTimeout(() => {
-      void searchMessages(q, 8).then((hits) => {
+      void searchMessages(q, 8, props.runtimeKind).then((hits) => {
         if (!cancelled) setMessageHits(hits);
       });
     }, 180);
@@ -121,7 +128,7 @@ export function CommandPalette(props: CommandPaletteProps) {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [search, props.open, page]);
+  }, [search, props.open, page, props.runtimeKind]);
 
   const close = () => props.onOpenChange(false);
 
@@ -291,6 +298,7 @@ function RootPage({
           {messageHits.map((h) => (
             <Command.Item
               key={h.messageId}
+              className="cmdk-message-hit"
               forceMount
               value={`msg-hit ${h.messageId} ${search}`}
               onSelect={() => onOpenSession(h.sessionId)}
@@ -425,7 +433,7 @@ function SwitchLLMPage({
 function MessageHitRow({ hit }: { hit: MessageSearchHit }) {
   const copy = useCopy();
   return (
-    <div className="flex w-full items-start gap-2.5">
+    <div className="flex min-w-0 w-full items-start gap-2.5">
       <span
         className="inline-flex shrink-0 pt-0.5 text-ink-soft"
         title={
@@ -440,11 +448,11 @@ function MessageHitRow({ hit }: { hit: MessageSearchHit }) {
           <ChatCircleText size={14} weight="thin" />
         )}
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-hidden">
         <div className="truncate text-[12.5px] text-ink-soft">
           {hit.sessionTitle}
         </div>
-        <div className="mt-0.5 line-clamp-2 text-[12px] leading-[1.45] text-ink">
+        <div className="mt-0.5 line-clamp-2 break-words text-[12px] leading-[1.45] text-ink">
           <HighlightedSnippet raw={hit.snippet} />
         </div>
       </div>
@@ -464,7 +472,10 @@ function HighlightedSnippet({ raw }: { raw: string }) {
     <>
       {parts.map((p, i) =>
         i % 2 === 1 ? (
-          <mark key={i} className="rounded-sm bg-brand/20 px-0.5 text-ink">
+          <mark
+            key={i}
+            className="box-decoration-clone rounded-sm bg-brand/20 px-0.5 text-ink"
+          >
             {p}
           </mark>
         ) : (

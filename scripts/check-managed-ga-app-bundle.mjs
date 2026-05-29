@@ -93,11 +93,12 @@ requireDir(managedRoot);
 requireDir(codeRoot);
 requireFile(manifestPath);
 requireFile(path.join(managedRoot, "patches", "manifest.md"));
-requireFile(path.join(managedRoot, "galley-prompts", "runtime-v1.md"));
-requireFile(path.join(managedRoot, "galley-prompts", "persona-v1.md"));
 requireFile(path.join(codeRoot, "agentmain.py"));
 requireFile(path.join(codeRoot, "agent_loop.py"));
 requireFile(path.join(codeRoot, "llmcore.py"));
+if (fs.existsSync(path.join(managedRoot, "galley-prompts"))) {
+  fail("managed prompt profile is embedded in Core; app bundle must not ship managed-ga/galley-prompts");
+}
 
 const manifest = fs.existsSync(manifestPath) ? readJson(manifestPath) : null;
 if (manifest) {

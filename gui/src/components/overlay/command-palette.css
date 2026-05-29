@@ -104,6 +104,14 @@
   color: var(--color-ink);
 }
 
+[cmdk-item].cmdk-message-hit {
+  height: auto;
+  min-height: 64px;
+  align-items: flex-start;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 [cmdk-item][data-selected="true"] {
   background: var(--color-hover);
 }

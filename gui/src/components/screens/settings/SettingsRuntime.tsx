@@ -271,10 +271,7 @@ function ManagedRuntimeCard({
     diagnostics?.upstreamCommit.slice(0, 7) ?? copy.notLoaded;
   const defaultModel = models.find((m) => m.isDefault) ?? models[0];
   const promptStatus = diagnostics
-    ? diagnostics.code.runtimePromptExists &&
-      diagnostics.code.personaPromptExists
-      ? copy.complete
-      : copy.missing
+    ? `${diagnostics.promptProfileId} · ${diagnostics.promptHash}`
     : copy.notLoaded;
   const modelStatus =
     models.length === 0

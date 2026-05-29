@@ -7,12 +7,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::managed_model_config;
+use crate::managed_prompt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 const MANIFEST_JSON: &str = include_str!("../../managed-ga/manifest.json");
 const STATE_SCHEMA_VERSION: u32 = 1;
-pub const PROMPT_PROFILE_ID: &str = "galley-persona-v1";
+pub use managed_prompt::PROMPT_PROFILE_ID;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,6 +51,8 @@ pub struct ManagedRuntimeDiagnostics {
     pub patch_stack_id: String,
     pub patch_count: usize,
     pub state_schema_version: u32,
+    pub prompt_profile_id: String,
+    pub prompt_hash: String,
     pub paths: ManagedRuntimePaths,
     pub code: ManagedCodeDiagnostics,
     pub state: ManagedStateDiagnostics,
@@ -62,9 +65,6 @@ pub struct ManagedRuntimePaths {
     pub code_root: String,
     pub manifest_path: String,
     pub patch_manifest_path: String,
-    pub prompt_dir: String,
-    pub runtime_prompt_path: String,
-    pub persona_prompt_path: String,
     pub state_root: String,
     pub memory_dir: String,
     pub sop_dir: String,
@@ -83,8 +83,6 @@ pub struct ManagedCodeDiagnostics {
     pub agentmain_exists: bool,
     pub manifest_exists: bool,
     pub patch_manifest_exists: bool,
-    pub runtime_prompt_exists: bool,
-    pub persona_prompt_exists: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -163,14 +161,13 @@ fn ensure_layout(
         patch_stack_id: manifest.patch_stack.id,
         patch_count: manifest.patch_stack.patches.len(),
         state_schema_version: manifest.state_schema_version,
+        prompt_profile_id: PROMPT_PROFILE_ID.into(),
+        prompt_hash: managed_prompt::prompt_hash(),
         paths: ManagedRuntimePaths {
             resource_root: path_to_string(&paths.resource_root),
             code_root: path_to_string(&paths.code_root),
             manifest_path: path_to_string(&paths.manifest_path),
             patch_manifest_path: path_to_string(&paths.patch_manifest_path),
-            prompt_dir: path_to_string(&paths.prompt_dir),
-            runtime_prompt_path: path_to_string(&paths.runtime_prompt_path),
-            persona_prompt_path: path_to_string(&paths.persona_prompt_path),
             state_root: path_to_string(&paths.state_root),
             memory_dir: path_to_string(&paths.memory_dir),
             sop_dir: path_to_string(&paths.sop_dir),
@@ -186,8 +183,6 @@ fn ensure_layout(
             agentmain_exists: paths.code_root.join("agentmain.py").is_file(),
             manifest_exists: paths.manifest_path.is_file(),
             patch_manifest_exists: paths.patch_manifest_path.is_file(),
-            runtime_prompt_exists: paths.runtime_prompt_path.is_file(),
-            persona_prompt_exists: paths.persona_prompt_path.is_file(),
         },
         state: ManagedStateDiagnostics {
             initialized: state_initialized,
@@ -228,9 +223,6 @@ struct ManagedLayoutPaths {
     code_root: PathBuf,
     manifest_path: PathBuf,
     patch_manifest_path: PathBuf,
-    prompt_dir: PathBuf,
-    runtime_prompt_path: PathBuf,
-    persona_prompt_path: PathBuf,
     state_root: PathBuf,
     memory_dir: PathBuf,
     sop_dir: PathBuf,
@@ -243,16 +235,12 @@ struct ManagedLayoutPaths {
 
 fn layout_paths(resource_root: PathBuf, app_data_dir: PathBuf) -> ManagedLayoutPaths {
     let code_root = resource_root.join("code");
-    let prompt_dir = resource_root.join("galley-prompts");
     let state_root = app_data_dir.join("managed-ga-state");
     let model_config_dir = app_data_dir.join("managed-model-config");
     let model_config_path = model_config_dir.join(managed_model_config::GENERATED_CONFIG_FILENAME);
     ManagedLayoutPaths {
         manifest_path: resource_root.join("manifest.json"),
         patch_manifest_path: resource_root.join("patches").join("manifest.md"),
-        runtime_prompt_path: prompt_dir.join("runtime-v1.md"),
-        persona_prompt_path: prompt_dir.join("persona-v1.md"),
-        prompt_dir,
         code_root,
         resource_root,
         memory_dir: state_root.join("memory"),
@@ -288,6 +276,8 @@ mod tests {
 
         let app_data = tmp.path().join("app-data");
         let first = ensure_layout(resource_root.clone(), app_data.clone()).expect("ensure first");
+        assert_eq!(first.prompt_profile_id, PROMPT_PROFILE_ID);
+        assert_eq!(first.prompt_hash.len(), 8);
         assert!(first.state.initialized);
         assert!(!first.state.created_dirs.is_empty());
         assert!(app_data.join("managed-ga-state").join("memory").is_dir());
