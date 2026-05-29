@@ -16,9 +16,9 @@ Release and update are two separate gates:
 
 Do not point the update channel at a draft, untested, or failed build. The
 draft Release `latest.json` is a review artifact, not the live user channel.
-For invited-tester alpha releases, publish the GitHub Pre-release for manual
-downloads only and skip the beta-channel promotion unless we explicitly decide
-to offer that alpha to all current update-channel users.
+For tester / early-adopter alpha releases, publish the GitHub Pre-release for
+manual downloads only and skip the beta-channel promotion unless we explicitly
+decide to offer that alpha to all current update-channel users.
 
 ## Pre-Flight
 
@@ -123,19 +123,21 @@ Do not publish if assets are missing or release notes are misleading.
 
 #### Alpha Release Notes Template
 
-Use this compact template for invited-tester alpha builds:
+Use this compact template for tester / early-adopter alpha builds. Keep updater
+checks out of the default test list unless the alpha is explicitly promoted to
+an update channel.
 
 ````markdown
-仅供内测用户使用，alpha 版本存在稳定性风险，不建议普通用户安装。
-For invited testers only. This alpha build may be unstable and is not recommended for general users.
+适合内测用户和愿意尝鲜的用户体验。alpha 版本仍在快速迭代，可能存在稳定性问题，不建议普通用户安装。
+For testers and early adopters. This alpha build is still evolving quickly and may be unstable, so it is not recommended for general users.
 
 ## 请重点测试
 
 - 全新安装后完成 Onboarding，配置模型并进入主界面。
 - 新建对话，确认 Galley 能正常回复。
+- Settings -> IM 接入微信，扫码后从微信给 Galley 发消息。
 - 浏览器控制扩展安装、连接测试和简单浏览器任务。
-- 退出并重启 Galley，确认模型配置和历史对话仍在。
-- Settings -> About 里的检查更新状态。
+- 退出并重启 Galley，确认模型配置、历史对话和微信接入状态符合预期。
 
 ## macOS 安装提示
 
@@ -149,9 +151,9 @@ xattr -dr com.apple.quarantine /Applications/Galley.app
 
 - Complete Onboarding after a fresh install, configure a model, and enter the main screen.
 - Start a new conversation and confirm Galley replies normally.
+- Connect WeChat in Settings -> IM, then send a message to Galley from WeChat.
 - Install the Browser Control extension, test the connection, and run a simple browser task.
-- Quit and relaunch Galley, then confirm model settings and conversation history are still there.
-- Check the update status in Settings -> About.
+- Quit and relaunch Galley, then confirm model settings, conversation history, and WeChat connection state still look correct.
 
 ## macOS Install Note
 
@@ -190,8 +192,8 @@ After publish:
 
 Promote after publish + smoke:
 
-Skip this step for invited-tester alpha releases unless we explicitly decide
-that all current beta-channel users should receive the alpha build.
+Skip this step for tester / early-adopter alpha releases unless we explicitly
+decide that all current beta-channel users should receive the alpha build.
 
 ```bash
 gh workflow run promote-update-channel.yml \
