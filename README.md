@@ -50,7 +50,7 @@ Galley 在你的电脑上并行运行多个 AI agent session。Human 用 GUI 看
 | | |
 |---|---|
 | 📦 **开箱即用**<br/>内置 GenericAgent runtime、bundled CPython 3.11 和运行依赖。 | 🪟 **多 session + Project 编排**<br/>多任务并行跑；复杂目标可由 Supervisor Agent 拆到一个 Project 下统一汇总。 |
-| ⚙️ **GUI + CLI 双原生**<br/>人在 GUI 里操作，Supervisor Agent 通过稳定的 `galley` CLI 操作；两边共享同一份 session 和历史。 | 💬 **IM 接入能力**<br/>微信、飞书、QQ、Telegram、Discord 等 GA IM 前端能力已随内置 GA 带入。 |
+| ⚙️ **GUI + CLI 双原生**<br/>人在 GUI 里操作，Supervisor Agent 通过稳定的 `galley` CLI 操作；两边共享同一份 session 和历史。 | 💬 **IM 接入能力**<br/>内置 GA 模式下，微信可在 **Settings → IM** 扫码接入；更多 IM 平台后续扩展。 |
 | 🔒 **Localhost-only**<br/>Core 只监听 Unix socket / Windows named pipe；远程传输交给 Supervisor Agent。 | 🔧 **工具时间线 + 审批**<br/>工具调用、参数、结果、时延内联展示；高风险动作可审批、白名单或 YOLO。 |
 | 🌐 **浏览器控制**<br/>连接 Chrome/Chromium 后，agent 可以操作你已登录的浏览器。发挥你的想象空间。 | 💾 **持久化 + 搜索 + 后台常驻**<br/>关窗不退出，远程通过 Supervisor Agent 调度，回来继续聊、搜索历史会话。 |
 
@@ -96,7 +96,7 @@ GUI 启动后进 **Settings → Agent**：
 | **复制 SOP** | 复制 [`galley-supervisor-sop.md`](./docs/integrations/galley-supervisor-sop.md)，发给你的 Agent，让它学会在单 session、已有 session 跟进、Project-backed session group 之间选择 |
 | **查看 Agent API 文档** | 打开完整命令清单、JSON schema 和 exit code |
 
-用户无需学习 CLI，直接用自然语言告诉 Supervisor Agent，让它安排 Galley 做什么即可。复杂任务不会直接变成一个“大 prompt”：Supervisor SOP 会先选择编排模式，简单问题直接读或跟进一个 session，复杂目标用 Project 承载一组 sessions 并行跑，结束后汇总。当前版本先通过 SOP + CLI 使用 IM 接入能力，GUI 内一键配置入口后续再补。
+用户无需学习 CLI，直接用自然语言告诉 Supervisor Agent，让它安排 Galley 做什么即可。复杂任务不会直接变成一个“大 prompt”：Supervisor SOP 会先选择编排模式，简单问题直接读或跟进一个 session，复杂目标用 Project 承载一组 sessions 并行跑，结束后汇总。内置 GA 用户也可以在 **Settings → IM** 接入微信，扫码后从微信里给 Galley 发消息。
 
 <details>
 <summary>展开 CLI 示例</summary>
