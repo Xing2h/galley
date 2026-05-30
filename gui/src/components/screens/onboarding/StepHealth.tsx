@@ -71,10 +71,10 @@ export function StepHealth({
 
   return (
     <div className="max-w-[580px]">
-      <h1 className="m-0 font-serif text-[32px] font-medium leading-tight tracking-[0.005em] text-ink">
+      <h1 className="m-0 font-serif text-[32px] font-medium leading-tight tracking-[0.005em] text-ink [@media(max-height:719px)]:text-[26px]">
         {onboardingCopy.healthTitle}
       </h1>
-      <p className="mb-7 mt-2.5 font-serif text-[15.5px] italic leading-[1.55] text-ink-soft">
+      <p className="mb-7 mt-2.5 font-serif text-[15.5px] italic leading-[1.55] text-ink-soft [@media(max-height:719px)]:mb-4 [@media(max-height:719px)]:mt-1.5">
         {onboardingCopy.healthSubtitle}
       </p>
 
@@ -85,16 +85,7 @@ export function StepHealth({
         itemActions={itemActions}
       />
 
-      <div className="mt-7 flex items-start gap-2.5 rounded-callout border border-line bg-surface p-3.5 text-[12.5px] leading-[1.55] text-ink-soft">
-        <Info
-          size={14}
-          weight="thin"
-          className="mt-0.5 shrink-0 text-ink-muted"
-        />
-        <div>{onboardingCopy.skipLLMTest}</div>
-      </div>
-
-      <div className="mt-7 flex items-center gap-2">
+      <div className="sticky bottom-0 z-10 -mx-1 mt-5 flex items-center gap-2 bg-app/95 px-1 py-3 backdrop-blur">
         <Button
           variant="ghost"
           onClick={onBack}
@@ -122,6 +113,15 @@ export function StepHealth({
         >
           {resolvedContinueLabel}
         </Button>
+      </div>
+
+      <div className="mt-5 flex items-start gap-2.5 rounded-callout border border-line bg-surface p-3.5 text-[12.5px] leading-[1.55] text-ink-soft">
+        <Info
+          size={14}
+          weight="thin"
+          className="mt-0.5 shrink-0 text-ink-muted"
+        />
+        <div>{onboardingCopy.skipLLMTest}</div>
       </div>
     </div>
   );

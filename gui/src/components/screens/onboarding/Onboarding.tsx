@@ -265,7 +265,7 @@ export function Onboarding({
     // normally — Tauri's drag region inherits down the DOM tree.
     <div
       data-tauri-drag-region
-      className="flex h-screen min-h-[720px] w-screen min-w-[1120px] flex-col overflow-y-auto bg-app pl-20 pr-16 pt-16"
+      className="flex h-screen min-h-[600px] w-screen min-w-[960px] flex-col overflow-y-auto bg-app pl-20 pr-16 pt-16 [@media(max-height:719px)]:pl-10 [@media(max-height:719px)]:pr-8 [@media(max-height:719px)]:pt-8"
     >
       <div
         data-tauri-drag-region="false"
@@ -288,7 +288,7 @@ export function Onboarding({
           </div>
         </div>
 
-        <div className="mt-10">
+        <div className="mt-10 [@media(max-height:719px)]:mt-6">
           {step === "model" && (
             <StepModelConfig
               onComplete={handleManagedComplete}

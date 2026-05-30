@@ -19,11 +19,11 @@ import {
  * Resizable two-column layout via react-resizable-panels v4 (`Group`
  * + `Panel` + `Separator`). Widths are persisted to localStorage via
  * `useDefaultLayout` so layout survives across runs. Percentages (not
- * pixels) so it scales gracefully across window sizes; the macOS
- * minimum window is 1120px (Tauri config).
+ * pixels) so it scales gracefully across window sizes; the desktop
+ * minimum window is 960px (Tauri config).
  *
  * Constraints:
- *   - Sidebar  14–30%  (≈ 156–444px at 1120w)
+ *   - Sidebar  14–30%  (≈ 134–444px across supported widths)
  *   - Main     ≥ 40%
  *
  * **Why no right pane**: the previous Inspector (right-side Details /
@@ -69,7 +69,7 @@ export function AppShell({
     panelIds: ["sidebar", "main"],
   });
   return (
-    <div className="flex h-screen min-h-[720px] w-screen min-w-[1120px] flex-col bg-app text-ink">
+    <div className="flex h-screen min-h-[600px] w-screen min-w-[960px] flex-col bg-app text-ink">
       {topBar}
       <Group
         id="ga-workbench-layout-2col-v2"
