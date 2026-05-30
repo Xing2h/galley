@@ -7,6 +7,7 @@ import {
   ArrowsOutLineHorizontal,
   CaretDown,
   Cat,
+  ChatCircleText,
   CircleNotch,
   Gear,
   Lightning,
@@ -25,6 +26,7 @@ import { isMac, isWindowActionTarget } from "@/lib/platform";
 import { formatShortcutReadable } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import type { BrowserControlStatus } from "@/lib/browser-control";
+import type { ImSupervisorState } from "@/lib/im-supervisor";
 
 import { WindowControls } from "./WindowControls";
 
@@ -49,6 +51,9 @@ export interface TopBarProps {
   onOpenApprovalSettings?: () => void;
   browserControlStatus?: BrowserControlStatus | null;
   onOpenBrowserControl?: () => void;
+  channelsState?: ImSupervisorState | null;
+  channelsLoadError?: string | null;
+  onOpenChannelsSettings?: () => void;
   /**
    * Conversation column width mode. "compact" = 760px (default), "wide"
    * = 1400px. Renders an icon button next to Settings that flips
@@ -147,6 +152,9 @@ export function TopBar({
   onOpenApprovalSettings,
   browserControlStatus = null,
   onOpenBrowserControl,
+  channelsState = null,
+  channelsLoadError = null,
+  onOpenChannelsSettings,
   conversationWidth = "compact",
   onToggleConversationWidth,
   onReinjectTools,
@@ -255,6 +263,13 @@ export function TopBar({
               onOpen={onOpenBrowserControl}
             />
           )}
+          {onOpenChannelsSettings && (
+            <ChannelsIndicator
+              state={channelsState}
+              loadError={channelsLoadError}
+              onOpen={onOpenChannelsSettings}
+            />
+          )}
           <IconButton
             title={copy.topbar.settingsShortcut(
               formatShortcutReadable("Mod+,"),
@@ -273,6 +288,53 @@ export function TopBar({
       </div>
     </div>
   );
+}
+
+function ChannelsIndicator({
+  state,
+  loadError,
+  onOpen,
+}: {
+  state: ImSupervisorState | null;
+  loadError?: string | null;
+  onOpen?: () => void;
+}) {
+  const copy = useCopy().topbar;
+  const status = channelsTopbarStatus(state, loadError);
+  const title = {
+    setup: copy.channelsSetup,
+    connecting: copy.channelsConnecting,
+    waitingScan: copy.channelsWaitingScan,
+    connected: copy.channelsConnected,
+    needsAttention: copy.channelsNeedsAttention,
+  }[status];
+
+  return (
+    <IconButton
+      title={title}
+      onClick={onOpen}
+      ariaLabel={title}
+      className={cn(
+        status === "needsAttention" &&
+          "text-error hover:bg-error/10 hover:text-error",
+      )}
+    >
+      <ChatCircleText size={16} weight="thin" />
+    </IconButton>
+  );
+}
+
+function channelsTopbarStatus(
+  state: ImSupervisorState | null,
+  loadError?: string | null,
+) {
+  if (loadError || state === "expired" || state === "error") {
+    return "needsAttention";
+  }
+  if (state === "running") return "connected";
+  if (state === "starting") return "connecting";
+  if (state === "waiting_scan") return "waitingScan";
+  return "setup";
 }
 
 function BrowserControlIndicator({

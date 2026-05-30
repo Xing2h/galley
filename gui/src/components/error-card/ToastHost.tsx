@@ -18,9 +18,11 @@ interface ToastHostProps extends ErrorCardActions {
  * Top-level toast container for non-runtime errors. DESIGN.md §6.2.
  *
  * Bridge / business errors render here so they don't fight for space
- * inside the conversation document. Stacks toasts in the top-right
- * corner under the macOS chrome (the `top-14` value clears the 44px
- * top bar + a bit of padding).
+ * inside the conversation document. Stacks toasts in the bottom-left
+ * corner so system feedback has one stable home without covering the
+ * Settings close button or the Composer controls. Compact info toasts
+ * should feel like quiet system feedback, while warning/error toasts
+ * keep the fuller ErrorCard chrome.
  *
  * Toasts sit above modal dialogs because they are system feedback,
  * not content inside the active dialog. The container stays
@@ -37,7 +39,7 @@ export function ToastHost({
   ...actions
 }: ToastHostProps) {
   return (
-    <div className="pointer-events-none fixed right-4 top-14 z-[90] flex w-[360px] flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-3 left-3 z-[90] flex w-[320px] max-w-[calc(100vw-24px)] flex-col gap-2">
       {toasts.map((t) => (
         <ToastFrame
           key={t.id}

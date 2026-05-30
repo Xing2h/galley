@@ -22,6 +22,7 @@ import {
   EditProjectDialog,
 } from "@/components/screens/project/EditProjectDialog";
 import { CopyProvider, copyForLanguage } from "@/lib/i18n";
+import { useImSupervisorStatus } from "@/hooks/useImSupervisorStatus";
 import { ensureHistoryReplayComplete } from "@/lib/ipc-handlers";
 import { resolveLanguagePreference } from "@/lib/language";
 import {
@@ -197,6 +198,10 @@ function App() {
   const setActiveRuntimeKind = usePrefsStore((s) => s.setActiveRuntimeKind);
   const gaConfig = usePrefsStore((s) => s.gaConfig);
   const activeRuntimeKind = usePrefsStore((s) => s.activeRuntimeKind);
+  const channelsStatus = useImSupervisorStatus(
+    "wechat",
+    activeRuntimeKind === "managed",
+  );
   const managedModels = useManagedModelsStore((s) => s.models);
   const managedLLMs = useMemo(
     () => managedModelsToLLMs(managedModels, pendingLLMIndex),
@@ -954,6 +959,19 @@ function App() {
               activeRuntimeKind === "managed" ? browserControlStatus : null
             }
             onOpenBrowserControl={openBrowserControlSetup}
+            channelsState={
+              activeRuntimeKind === "managed"
+                ? (channelsStatus.status?.state ?? null)
+                : null
+            }
+            channelsLoadError={
+              activeRuntimeKind === "managed" ? channelsStatus.loadError : null
+            }
+            onOpenChannelsSettings={
+              activeRuntimeKind === "managed"
+                ? () => openSettings("im")
+                : undefined
+            }
             conversationWidth={conversationWidth}
             onToggleConversationWidth={() => {
               void setConversationWidth(
@@ -1394,7 +1412,7 @@ function App() {
                 message: copy.toasts.runtimeSwitchKept,
                 hint: null,
                 retryable: false,
-                context: "setActiveRuntimeKind",
+                context: null,
                 traceback: null,
                 autoDismissMs: 4200,
               }),

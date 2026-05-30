@@ -78,6 +78,8 @@ export function ErrorCard({
   //   3. defaultTitle(error) — category-flavored fallback.
   const title = error.title ?? hintCfg?.title ?? defaultTitle(error, copy);
   const brief = hintCfg?.brief ?? error.message;
+  const hasDetails = hasDiagnosticDetails(error);
+  const isCompactInfoToast = variant === "toast" && error.severity === "info";
   const actions = (hintCfg?.actions ?? defaultActions(error, copy)).filter(
     (action) =>
       isActionAvailable(action, error, {
@@ -88,6 +90,62 @@ export function ErrorCard({
         onViewProject,
       }),
   );
+
+  if (isCompactInfoToast) {
+    return (
+      <div
+        className={cn(
+          "rounded-md border bg-elevated px-3 py-2.5 shadow-card",
+          sev.borderClass,
+        )}
+      >
+        <div className="flex items-start gap-2.5">
+          <span className="mt-0.5 inline-flex shrink-0">
+            <SeverityIcon severity={error.severity} size={14} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-medium leading-5 text-ink">
+              {title}
+            </div>
+            {brief && (
+              <div className="mt-0.5 select-text text-[12px] leading-5 text-ink-soft">
+                {brief}
+              </div>
+            )}
+          </div>
+          {onDismiss && (
+            <IconButton
+              onClick={onDismiss}
+              ariaLabel={copy.common.close}
+              size="xs"
+              className="-mr-1 -mt-0.5"
+            >
+              <XIcon size={11} weight="thin" />
+            </IconButton>
+          )}
+        </div>
+
+        {actions.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {actions.map((a) => (
+              <ActionButton
+                key={a.id}
+                action={a}
+                error={error}
+                onRetry={onRetry}
+                onSwitchLLM={onSwitchLLM}
+                onOpenMyKey={onOpenMyKey}
+                onOpenGADocs={onOpenGADocs}
+                onViewProject={onViewProject}
+                onToggleDetails={() => setOpen((v) => !v)}
+                detailsOpen={open}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -136,7 +194,7 @@ export function ErrorCard({
         </div>
       )}
 
-      {open && (error.traceback || error.context) && (
+      {open && hasDetails && (
         <div className="mt-3 rounded-sm border border-line bg-app p-2.5">
           {error.context && (
             <div className="select-text font-mono text-[11px] text-ink-muted">
@@ -195,10 +253,16 @@ const SEVERITY_CONFIG: Record<AppErrorSeverity, SeverityConfig> = {
   },
 };
 
-function SeverityIcon({ severity }: { severity: AppErrorSeverity }) {
+function SeverityIcon({
+  severity,
+  size = 16,
+}: {
+  severity: AppErrorSeverity;
+  size?: number;
+}) {
   const cfg = SEVERITY_CONFIG[severity];
   const Icon = cfg.icon;
-  return <Icon size={16} weight="thin" className={cfg.iconClass} />;
+  return <Icon size={size} weight="thin" className={cfg.iconClass} />;
 }
 
 interface HintConfig {
@@ -296,7 +360,7 @@ function defaultActions(error: AppError, copy: AppCopy): ActionDef[] {
       handler: "onRetry",
     });
   }
-  if (error.traceback || error.context) {
+  if (hasDiagnosticDetails(error)) {
     actions.push({
       id: "copy-details",
       label: copy.errors.copyDetails,
@@ -325,12 +389,20 @@ function isActionAvailable(
     case "onOpenGADocs":
       return Boolean(handlers.onOpenGADocs);
     case "onViewProject":
-      return error.action?.kind === "view_project" && Boolean(handlers.onViewProject);
+      return (
+        error.action?.kind === "view_project" && Boolean(handlers.onViewProject)
+      );
     case "copyDetails":
-      return Boolean(error.context || error.traceback);
+      return hasDiagnosticDetails(error);
     case "toggleDetails":
-      return Boolean(error.context || error.traceback);
+      return hasDiagnosticDetails(error);
   }
+}
+
+function hasDiagnosticDetails(error: AppError): boolean {
+  return (
+    error.severity !== "info" && Boolean(error.context || error.traceback)
+  );
 }
 
 function ActionButton({

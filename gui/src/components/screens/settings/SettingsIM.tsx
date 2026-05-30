@@ -1,5 +1,4 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -14,12 +13,12 @@ import {
   QrCode,
   WarningCircle,
 } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { SettingsPanelHeader } from "@/components/screens/settings/settings-ui";
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
+import { useImSupervisorStatus } from "@/hooks/useImSupervisorStatus";
 import {
-  getImSupervisorStatus,
   logoutImSupervisor,
   startImSupervisor,
   stopImSupervisor,
@@ -40,42 +39,15 @@ export function SettingsIM({
 }) {
   const copy = useCopy();
   const imCopy = copy.settings.im;
-  const [status, setStatus] = useState<ImSupervisorStatus | null>(null);
+  const {
+    status,
+    setStatus,
+    loadError: statusLoadError,
+  } = useImSupervisorStatus("wechat", hasManagedRuntimeConfigured);
   const [busyAction, setBusyAction] = useState<
     "connect" | "rescan" | "stop" | "disconnect" | null
   >(null);
   const [invokeError, setInvokeError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getImSupervisorStatus("wechat")
-      .then((next) => {
-        if (!cancelled) setStatus(next);
-      })
-      .catch((e) => {
-        if (!cancelled) setInvokeError(e instanceof Error ? e.message : String(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    let unlisten: (() => void) | null = null;
-    void listen<ImSupervisorStatus>("im-supervisor-updated", (event) => {
-      if (!cancelled && event.payload.platform === "wechat") {
-        setStatus(event.payload);
-      }
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
-    });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, []);
 
   const runAction = async (
     action: "connect" | "rescan" | "stop" | "disconnect",
@@ -118,7 +90,7 @@ export function SettingsIM({
         <WeChatCard
           status={status}
           busyAction={busyAction}
-          invokeError={invokeError}
+          invokeError={invokeError ?? statusLoadError}
           onConnect={() =>
             runAction("connect", () => startImSupervisor("wechat", false))
           }
