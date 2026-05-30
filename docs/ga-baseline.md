@@ -176,6 +176,7 @@ Current bundled GenericAgent core deps:
 - `aiohttp`
 - `qrcode[pil]` (managed WeChat IM Supervisor)
 - `pycryptodome` (managed WeChat IM Supervisor)
+- `python-dotenv` (common external-GA `mykey.py` compatibility)
 
 Runtime packaging details live in [desktop runtime](./desktop-runtime.md).
 

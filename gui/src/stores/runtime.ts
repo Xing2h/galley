@@ -334,6 +334,13 @@ function missingBridgeMessage(
   }
 }
 
+function actionableBridgeCrashMessage(message: string): string {
+  if (!/mykey\.py.*failed to import/i.test(message)) return message;
+  const moduleName =
+    message.match(/No module named ['"]([^'"]+)['"]/)?.[1] ?? null;
+  return currentCopy().errors.externalMyKeyImportFailed(moduleName);
+}
+
 function shouldFailWhenBridgeMissing(cmd: IPCCommand): boolean {
   return cmd.kind === "user_message" || cmd.kind === "ask_user_response";
 }
@@ -456,11 +463,14 @@ function makeBridgeHandlers(sessionId: string): BridgeHandlers {
       console.info(`[bridge ${sessionId}] closed`, { code, signal });
       const abnormalClose = code !== 0;
       const tail = abnormalClose ? (_stderrTails.get(sessionId) ?? []) : [];
-      const message = tail.length
+      const rawMessage = tail.length
         ? tail.slice(-3).join("\n")
         : code === null
           ? "Galley 运行时意外退出，未返回退出码。"
           : `Bridge exited with code ${code}`;
+      const message = abnormalClose
+        ? actionableBridgeCrashMessage(rawMessage)
+        : rawMessage;
       if (abnormalClose) {
         useUiStore.getState().pushToast(
           makeAppError({

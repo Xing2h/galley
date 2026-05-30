@@ -255,8 +255,7 @@ const zhCopy = {
       bundledReady: "内置 GA 已可用",
       externalGA: "外部 GA",
       externalPath: "外部 GA 路径",
-      pathHint:
-        "选择包含 agentmain.py 的 GenericAgent 目录，或粘贴路径后回车",
+      pathHint: "选择包含 agentmain.py 的 GenericAgent 目录，或粘贴路径后回车",
       healthDescription:
         "不知道哪儿出问题了？跑一次完整体检 —— 重新探测 Python 解释器、检查 GA 路径和必要文件。",
       runHealthCheck: "跑一次 Health Check",
@@ -635,12 +634,11 @@ const zhCopy = {
     folderGuide: "查看教程：选对 GA 目录",
     healthTitle: "检查 GA 运行环境",
     healthSubtitle: "全部通过后才能进入主界面 · Galley 不会修改你的 GA。",
-    skipLLMTest:
-      "跳过了 LLM 连接测试以节省费用。第一次发送消息时如有问题会提示具体错误并给出修复路径。",
     rerunChecks: "重新检查",
     enterGalley: "进入 Galley",
     backToSettings: "返回设置",
     continueWithCurrentModel: "继续使用当前模型",
+    useGAVenv: "改用 GA venv 并重新检查",
     tutorialDownloadGA: "查看教程：下载 GA",
     tutorialChooseFolder: "查看教程：选对目录",
     tutorialMyKey: "查看教程：配置 API 密钥",
@@ -666,12 +664,17 @@ const zhCopy = {
     pythonInterpreter: "Python 解释器",
     bundledPython: "Galley 内置 Python",
     loadablePython: "查找能加载 GA 的 Python",
+    llmConnection: "LLM 连接测试",
+    llmConnectionDetail: "真实测试，最多 1 个输出 token",
     entryModule: "GA 入口模块",
     llmConfigFile: "LLM 配置文件",
     memoryStore: "L1-L4 记忆存储",
     resourcesDir: "GA 资源目录",
     bundledPythonDetail: (version: string) =>
       `CPython ${version} · 已附带 GA 依赖`,
+    runtimeReadyDetail: (count: number) => `已加载 ${count} 个模型配置`,
+    llmConnectionPassed: "测试消息已返回",
+    llmConnectionSkipped: "运行环境未通过，未发送测试消息",
     noLoadablePython:
       "在常见路径未找到能加载 GA 的 Python · 请先在 GA 目录把依赖装到一个 .venv 里",
   },
@@ -765,6 +768,10 @@ const zhCopy = {
     sendFailed: "发送失败",
     bridgeCrashed: "Bridge 进程崩溃",
     bridgeFailed: "Bridge 启动失败",
+    externalMyKeyImportFailed: (moduleName: string | null) =>
+      moduleName
+        ? `外部 GA 的 mykey.py 依赖 ${moduleName}，但当前 Python 没有这个包。请在 Settings → Runtime 跑 Health Check，或切到你的 GA venv。`
+        : "外部 GA 的 mykey.py 导入失败。请在 Settings → Runtime 跑 Health Check，或切到你的 GA venv。",
     llmConfig: {
       title: "LLM 配置可能有问题",
       brief: "首次发送失败，通常是 API key 或配置问题。",
@@ -1572,12 +1579,11 @@ const enCopy: AppCopy = {
     healthTitle: "Check GA runtime",
     healthSubtitle:
       "All checks must pass before entering Galley. Galley will not modify your GA.",
-    skipLLMTest:
-      "LLM connection testing is skipped to avoid cost. If the first message fails, Galley will show the specific error and the next step.",
     rerunChecks: "Re-run checks",
     enterGalley: "Enter Galley",
     backToSettings: "Back to Settings",
     continueWithCurrentModel: "Continue with current model",
+    useGAVenv: "Use GA venv and re-check",
     tutorialDownloadGA: "Open guide: download GA",
     tutorialChooseFolder: "Open guide: choose the right folder",
     tutorialMyKey: "Open guide: configure API key",
@@ -1603,12 +1609,18 @@ const enCopy: AppCopy = {
     pythonInterpreter: "Python interpreter",
     bundledPython: "Galley bundled Python",
     loadablePython: "Find Python that can load GA",
+    llmConnection: "LLM connection test",
+    llmConnectionDetail: "Real test, max 1 output token",
     entryModule: "GA entry module",
     llmConfigFile: "LLM config file",
     memoryStore: "L1-L4 memory storage",
     resourcesDir: "GA resources",
     bundledPythonDetail: (version) =>
       `CPython ${version} · GA dependencies included`,
+    runtimeReadyDetail: (count) =>
+      `${count} model config${count === 1 ? "" : "s"} loaded`,
+    llmConnectionPassed: "Test message returned",
+    llmConnectionSkipped: "Runtime check did not pass; no test message sent",
     noLoadablePython:
       "No Python found that can load GA. Install GA dependencies into a .venv in the GA folder first.",
   },
@@ -1702,6 +1714,10 @@ const enCopy: AppCopy = {
     sendFailed: "Send failed",
     bridgeCrashed: "Bridge process crashed",
     bridgeFailed: "Bridge failed to start",
+    externalMyKeyImportFailed: (moduleName) =>
+      moduleName
+        ? `External GA's mykey.py depends on ${moduleName}, but the current Python does not have it. Run Health Check in Settings > Runtime, or switch to your GA venv.`
+        : "External GA's mykey.py failed to import. Run Health Check in Settings > Runtime, or switch to your GA venv.",
     llmConfig: {
       title: "LLM configuration may be wrong",
       brief:

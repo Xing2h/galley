@@ -390,7 +390,7 @@ export async function attachBridge(
  * spawn through Rust, arbitrary absolute paths just work). Until then,
  * this shim keeps existing dogfood `gaConfig.python` values working.
  */
-async function resolvePythonPath(
+export async function resolvePythonPath(
   userPath: string | undefined,
   wantBundled: boolean,
 ): Promise<string> {

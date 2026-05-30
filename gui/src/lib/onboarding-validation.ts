@@ -5,16 +5,19 @@
  * (#5). Uses Tauri's fs plugin to do real `exists()` checks against
  * the user-picked path and the GA repo's expected layout.
  *
- * Filesystem layer + a Python interpreter probe (added 2026-05-15
- * after the first packaged-build dogfood revealed that the bridge's
- * Python in prod was the macOS-bundled 3.9.6 with no GA deps). The
- * probe is what catches the "anthropic missing" failure mode the user
- * would otherwise hit on first send-message. See lib/python-probe.ts
- * for the rationale.
+ * Filesystem layer + a Python / GA runtime probe. The runtime probe
+ * catches `mykey.py` import failures, missing GA deps, and model-list
+ * failures before the user reaches the main Composer.
  */
 
 import type { PathValidation } from "@/components/screens/onboarding/StepAttach";
-import { probePython, type ProbeResult } from "@/lib/python-probe";
+import { resolvePythonPath } from "@/lib/bridge";
+import {
+  probeGARuntime,
+  probePython,
+  type ProbeResult,
+  type RuntimeProbeResult,
+} from "@/lib/python-probe";
 import type { HealthCheckItem } from "@/types/inspector";
 
 interface HealthCheckLabels {
@@ -26,11 +29,16 @@ interface HealthCheckLabels {
   pythonInterpreter: string;
   bundledPython: string;
   loadablePython: string;
+  llmConnection: string;
+  llmConnectionDetail: string;
   entryModule: string;
   llmConfigFile: string;
   memoryStore: string;
   resourcesDir: string;
   bundledPythonDetail: (version: string) => string;
+  runtimeReadyDetail: (count: number) => string;
+  llmConnectionPassed: string;
+  llmConnectionSkipped: string;
   noLoadablePython: string;
 }
 
@@ -43,12 +51,17 @@ const DEFAULT_HEALTH_CHECK_LABELS: HealthCheckLabels = {
   pythonInterpreter: "Python 解释器",
   bundledPython: "Galley 内置 Python",
   loadablePython: "查找能加载 GA 的 Python",
+  llmConnection: "LLM 连接测试",
+  llmConnectionDetail: "真实测试，最多 1 个输出 token",
   entryModule: "GA 入口模块",
   llmConfigFile: "LLM 配置文件",
   memoryStore: "L1-L4 记忆存储",
   resourcesDir: "GA 资源目录",
   bundledPythonDetail: (version: string) =>
     `CPython ${version} · 已附带 GA 依赖`,
+  runtimeReadyDetail: (count: number) => `已加载 ${count} 个模型配置`,
+  llmConnectionPassed: "测试消息已返回",
+  llmConnectionSkipped: "运行环境未通过，未发送测试消息",
   noLoadablePython:
     "在常见路径未找到能加载 GA 的 Python · 请先在 GA 目录把依赖装到一个 .venv 里",
 };
@@ -105,18 +118,10 @@ export const BUNDLED_PYTHON_VERSION = "3.11.15";
 /**
  * Run the health check against the chosen path. Each check fires
  * sequentially with a brief delay so the user sees the progression —
- * same visual rhythm as the original mock, just driven by real fs
- * probes. The last row is the Python interpreter status.
- *
- * Python row has two modes:
- *   - **Bundled (default, v0.1.1+)**: synthesized success row showing
- *     "Galley 内置 Python <version>". No subprocess spawn — the
- *     bundle ships with GA core deps pre-installed and is validated
- *     at build time by bundle-python.sh.
- *   - **External (`useExternalPython=true`)**: legacy behavior —
- *     spawn the python-probe subprocess to find a user-installed
- *     interpreter with GA's deps. Surfaces tutorial fix-it links if
- *     no candidate succeeds.
+ * same visual rhythm as the original mock, but the final runtime rows
+ * now execute a subprocess probe that mirrors bridge startup closely:
+ * import GA, instantiate GenericAgent, collect `list_llms()`, then
+ * optionally send a one-token smoke request.
  *
  * Caller passes:
  *   - `path`: the validated GA path
@@ -125,7 +130,11 @@ export const BUNDLED_PYTHON_VERSION = "3.11.15";
  *   - `signal`: AbortSignal so the host can cancel if the user
  *     navigates away from the Health step mid-run
  *   - `options.useExternalPython`: when true, run the probe. Default
- *     false — synthesize the bundled-Python success row.
+ *     false — use the same bundled-vs-dev Python resolution as bridge spawn.
+ *   - `options.python`: persisted Python alias / absolute path, used
+ *     when external Python mode is enabled.
+ *   - `options.smokeTest`: when true, send a tiny model request after
+ *     local runtime validation succeeds.
  *   - `options.onPythonProbed`: only fired when `useExternalPython`
  *     is true. Receives the winning alias (Tauri shell-capability
  *     name like "python-framework-3-14") or null when every
@@ -142,6 +151,8 @@ export async function runHealthChecks(
   signal: AbortSignal,
   options?: {
     useExternalPython?: boolean;
+    python?: string;
+    smokeTest?: boolean;
     onPythonProbed?: (alias: string | null, result: ProbeResult) => void;
     labels?: HealthCheckLabels;
   },
@@ -163,9 +174,9 @@ export async function runHealthChecks(
       name: labels.mykeyExists,
       detail: labels.llmConfigFile,
       check: async () => fsExists(await joinPath(resolved, "mykey.py")),
-      // mykey.py is user-supplied + .gitignored; a missing file is a
-      // warning rather than an error — the user can still attach and
-      // configure later.
+      // mykey.py is user-supplied + .gitignored. Keep the file-presence
+      // row as a warning so the later runtime probe can provide the
+      // authoritative import/model-loading error.
       warnOnMissing: true,
     },
     {
@@ -183,10 +194,9 @@ export async function runHealthChecks(
   ];
 
   const useExternalPython = options?.useExternalPython ?? false;
-  // Two row identities. The label diverges so the Onboarding
-  // itemActions map (which keys by name) only attaches the "fix it"
-  // tutorial buttons in external mode — bundled-mode row has no
-  // failure path so no actions are needed.
+  // Two row identities. External mode says "Python interpreter"
+  // because Galley may switch to a discovered venv; bundled mode names
+  // the packaged interpreter directly.
   const pythonRow: HealthCheckItem = useExternalPython
     ? {
         name: labels.pythonInterpreter,
@@ -198,6 +208,11 @@ export async function runHealthChecks(
         detail: labels.bundledPythonDetail(BUNDLED_PYTHON_VERSION),
         state: "pending",
       };
+  const llmRow: HealthCheckItem = {
+    name: labels.llmConnection,
+    detail: labels.llmConnectionDetail,
+    state: "pending",
+  };
   let items: HealthCheckItem[] = [
     ...probes.map<HealthCheckItem>((p) => ({
       name: p.name,
@@ -205,6 +220,7 @@ export async function runHealthChecks(
       state: "pending",
     })),
     pythonRow,
+    llmRow,
   ];
   onUpdate(items);
 
@@ -238,60 +254,35 @@ export async function runHealthChecks(
     onUpdate(items);
   }
 
-  // Python row. Bundled mode (default v0.1.1+) synthesizes a success
-  // row — no subprocess spawn, no probe. bundle-python.sh runs
-  // `import agentmain` against the staged interpreter at build time;
-  // by the time a .dmg / .exe ships, the bundle is already verified.
-  // External mode runs the legacy spawn-based probe.
+  // Runtime rows. Both bundled and external modes run a real subprocess
+  // probe now; this catches `mykey.py` import failures before the user
+  // reaches the main Composer.
   if (signal.aborted) return items;
-  const pythonIdx = items.length - 1;
+  const pythonIdx = items.length - 2;
+  const llmIdx = items.length - 1;
   items = items.map((c, idx) =>
     idx === pythonIdx ? { ...c, state: "running" } : c,
   );
   onUpdate(items);
 
-  if (!useExternalPython) {
-    // Brief paced delay so the row reads as a deliberate check rather
-    // than flashing past — matches the fs probes' rhythm above.
-    await sleep(220);
-    if (signal.aborted) return items;
-    items = items.map((c, idx) =>
-      idx === pythonIdx ? { ...c, state: "success" } : c,
-    );
-    onUpdate(items);
-    return items;
-  }
-
-  // Pass the GA path to the probe so it validates the actual import
-  // chain (`sys.path.insert(0, gaPath); import agentmain`) rather
-  // than a generic deps check. Catches venv mismatches that a
-  // gaPath-agnostic probe would silently pass.
-  const probeResult = await probePython(resolved, signal);
+  const smokeTest = options?.smokeTest ?? false;
+  const runtimeProbe = useExternalPython
+    ? await runExternalRuntimeProbe(resolved, signal, labels, options)
+    : await runBundledRuntimeProbe(resolved, labels, {
+        python: options?.python,
+        smokeTest,
+      });
   if (signal.aborted) return items;
 
-  if (probeResult.winner) {
-    items = items.map((c, idx) =>
-      idx === pythonIdx
-        ? {
-            ...c,
-            state: "success",
-            detail: `${probeResult.winner!.label} · ${probeResult.winner!.displayPath}`,
-          }
-        : c,
-    );
-    options?.onPythonProbed?.(probeResult.winner.alias, probeResult);
-  } else {
-    items = items.map((c, idx) =>
-      idx === pythonIdx
-        ? {
-            ...c,
-            state: "failed",
-            detail: labels.noLoadablePython,
-          }
-        : c,
-    );
-    options?.onPythonProbed?.(null, probeResult);
-  }
+  items = applyRuntimeProbeResult(items, {
+    pythonIdx,
+    llmIdx,
+    labels,
+    smokeTest,
+    result: runtimeProbe.result,
+    pythonDetail: runtimeProbe.pythonDetail,
+    runtimeFailureDetail: runtimeProbe.runtimeFailureDetail,
+  });
   onUpdate(items);
 
   return items;
@@ -306,6 +297,144 @@ interface HealthProbe {
   /** Treat false result as `warning` not `error`. For non-critical
    * files like mykey.py / memory/ that user may set up later. */
   warnOnMissing?: boolean;
+}
+
+interface RuntimeProbeOutcome {
+  result: RuntimeProbeResult;
+  pythonDetail: string;
+  runtimeFailureDetail?: string;
+}
+
+async function runExternalRuntimeProbe(
+  resolvedGaPath: string,
+  signal: AbortSignal,
+  labels: HealthCheckLabels,
+  options:
+    | {
+        useExternalPython?: boolean;
+        python?: string;
+        smokeTest?: boolean;
+        onPythonProbed?: (alias: string | null, result: ProbeResult) => void;
+      }
+    | undefined,
+): Promise<RuntimeProbeOutcome> {
+  const probeResult = await probePython(resolvedGaPath, signal, {
+    smokeTest: options?.smokeTest ?? false,
+  });
+  options?.onPythonProbed?.(probeResult.winner?.alias ?? null, probeResult);
+  const winningAttempt = probeResult.attempts.find(
+    (attempt) => attempt.outcome === "ok",
+  );
+  const llmFailureAttempt = probeResult.attempts.find(
+    (attempt) => attempt.outcome === "llm-failed",
+  );
+  const decisiveAttempt = winningAttempt ?? llmFailureAttempt;
+  if (probeResult.winner && decisiveAttempt?.result) {
+    return {
+      result: decisiveAttempt.result,
+      pythonDetail: `${probeResult.winner.label} · ${probeResult.winner.displayPath}`,
+    };
+  }
+  const lastAttempt = probeResult.attempts[probeResult.attempts.length - 1];
+  return {
+    result: lastAttempt?.result ?? {
+      ok: false,
+      llms: [],
+      smokeTested: false,
+      errorStage: "runtime",
+      error: labels.noLoadablePython,
+    },
+    pythonDetail: labels.loadablePython,
+    runtimeFailureDetail: lastAttempt?.detail ?? labels.noLoadablePython,
+  };
+}
+
+async function runBundledRuntimeProbe(
+  resolvedGaPath: string,
+  labels: HealthCheckLabels,
+  options: { python?: string; smokeTest: boolean },
+): Promise<RuntimeProbeOutcome> {
+  const wantBundled = import.meta.env.PROD;
+  const python = await resolvePythonPath(options.python, wantBundled);
+  const result = await probeGARuntime(python, resolvedGaPath, {
+    smokeTest: options.smokeTest,
+  });
+  return {
+    result,
+    pythonDetail: labels.bundledPythonDetail(BUNDLED_PYTHON_VERSION),
+  };
+}
+
+function applyRuntimeProbeResult(
+  items: HealthCheckItem[],
+  args: {
+    pythonIdx: number;
+    llmIdx: number;
+    labels: HealthCheckLabels;
+    smokeTest: boolean;
+    result: RuntimeProbeResult;
+    pythonDetail: string;
+    runtimeFailureDetail?: string;
+  },
+): HealthCheckItem[] {
+  const llmCount = args.result.llms.length;
+  if (args.result.ok) {
+    return items.map((item, idx) => {
+      if (idx === args.pythonIdx) {
+        return {
+          ...item,
+          state: "success",
+          detail:
+            llmCount > 0
+              ? `${args.pythonDetail} · ${args.labels.runtimeReadyDetail(llmCount)}`
+              : args.pythonDetail,
+        };
+      }
+      if (idx === args.llmIdx) {
+        return {
+          ...item,
+          state: args.smokeTest ? "success" : "warning",
+          detail: args.smokeTest
+            ? args.labels.llmConnectionPassed
+            : args.labels.llmConnectionSkipped,
+        };
+      }
+      return item;
+    });
+  }
+
+  const failedInLLM = args.result.errorStage === "llm";
+  const detail = runtimeFailureMessage(args.result, args.runtimeFailureDetail);
+  return items.map((item, idx) => {
+    if (idx === args.pythonIdx) {
+      return {
+        ...item,
+        state: failedInLLM ? "success" : "failed",
+        detail: failedInLLM
+          ? `${args.pythonDetail} · ${args.labels.runtimeReadyDetail(llmCount)}`
+          : detail,
+      };
+    }
+    if (idx === args.llmIdx) {
+      return {
+        ...item,
+        state: "failed",
+        detail: failedInLLM ? detail : args.labels.llmConnectionSkipped,
+      };
+    }
+    return item;
+  });
+}
+
+function runtimeFailureMessage(
+  result: RuntimeProbeResult,
+  fallback?: string,
+): string {
+  const error = result.error?.trim();
+  if (error) return error;
+  const stderr = result.stderr?.trim();
+  if (stderr) return stderr.split("\n").slice(-3).join("\n");
+  return fallback ?? "GA runtime probe failed";
 }
 
 async function fsExists(path: string): Promise<boolean> {

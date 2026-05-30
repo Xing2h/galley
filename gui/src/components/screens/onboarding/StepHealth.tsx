@@ -1,9 +1,4 @@
-import {
-  ArrowClockwise,
-  ArrowLeft,
-  ArrowRight,
-  Info,
-} from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 
 import { HealthCheckCard } from "@/components/health-check/HealthCheckCard";
 import { Button } from "@/components/ui/button";
@@ -45,9 +40,8 @@ interface StepHealthProps {
  * to do, so we don't pretend read-only mode is useful (DESIGN.md §5
  * "故意决策").
  *
- * The dry-run-skipped explanation lives at the bottom in a quiet info
- * box so users with quota concerns understand why we don't validate
- * the LLM session itself here.
+ * LLM test cost is surfaced directly in the LLM row detail, keeping
+ * this step compact.
  */
 export function StepHealth({
   items,
@@ -113,15 +107,6 @@ export function StepHealth({
         >
           {resolvedContinueLabel}
         </Button>
-      </div>
-
-      <div className="mt-5 flex items-start gap-2.5 rounded-callout border border-line bg-surface p-3.5 text-[12.5px] leading-[1.55] text-ink-soft">
-        <Info
-          size={14}
-          weight="thin"
-          className="mt-0.5 shrink-0 text-ink-muted"
-        />
-        <div>{onboardingCopy.skipLLMTest}</div>
       </div>
     </div>
   );

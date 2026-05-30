@@ -1104,6 +1104,7 @@ pub fn run() {
             runner_commands::shutdown_runner,
             runner_commands::kill_runner,
             runner_commands::runner_stderr_tail,
+            runner_commands::probe_ga_runtime,
             runner_commands::shutdown_all_runners,
         ])
         .setup(move |_app| {

@@ -31,6 +31,7 @@ GA_DEPS=(
   "aiohttp==3.13.5"
   "qrcode[pil]==8.2"
   "pycryptodome==3.23.0"
+  "python-dotenv==1.2.1"
 )
 
 ARCH="${1:-}"
@@ -148,6 +149,7 @@ import sys
 sys.path.insert(0, os.environ["GALLEY_VERIFY_GA_PATH"])
 import agentmain
 import qrcode
+import dotenv
 from Crypto.Cipher import AES
 import importlib.util
 assert importlib.util.find_spec("frontends.wechatapp") is not None
@@ -155,7 +157,7 @@ print("  managed GA import OK (bundle is bridge-ready)")
 '
 else
   "$PYTHON_BIN" -c '
-import aiohttp, requests, bs4, bottle
+import aiohttp, requests, bs4, bottle, dotenv
 import simple_websocket_server  # ensure underscore-renamed import works
 print("  deps OK")
 '

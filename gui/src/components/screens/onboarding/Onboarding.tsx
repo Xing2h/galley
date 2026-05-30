@@ -28,12 +28,12 @@ export interface OnboardingProps {
   /** Called when the user completes Step 2 successfully. The host
    * unmounts the Onboarding screen and renders the main app.
    *
-   * `pythonAlias` is the Tauri shell-capability name (e.g.
-   * "python-framework-3-14") for the interpreter the probe found —
-   * what `Command.create()` takes as its first argument. The host
-   * persists it to gaConfig so subsequent bridge spawns use the right
-   * interpreter. Null when probe failed (the Continue button is
-   * disabled in that case, so this is mostly a type-safety hatch). */
+   * `pythonAlias` is the interpreter value the probe found. This can
+   * be a legacy alias (e.g. "python-framework-3-14") or an absolute
+   * venv path. The host persists it to gaConfig so subsequent bridge
+   * spawns use the right interpreter. Null when probe failed (the
+   * Continue button is disabled in that case, so this is mostly a
+   * type-safety hatch). */
   onComplete: (gaPath: string, pythonAlias: string | null) => void;
   /** Called when managed model setup succeeds. */
   onManagedComplete?: () => void;
@@ -103,6 +103,7 @@ export function Onboarding({
   );
   const isRevisit = mode === "revisit";
   const isSetup = mode === "setup";
+  const setGAConfig = usePrefsStore((s) => s.setGAConfig);
   // Revisit jumps straight to Health (Settings already has a saved GA
   // path; user just wants to re-validate). Setup starts at the same
   // model screen as first launch but adds a Settings escape hatch.
@@ -178,23 +179,31 @@ export function Onboarding({
   const [healthChecks, setHealthChecks] = useState<HealthCheckItem[]>([]);
 
   // v0.1.1+: when gaConfig.useExternalPython is false (the default),
-  // runHealthChecks synthesizes the Python row as a success without
-  // spawning anything. Only the legacy external-Python mode runs the
-  // probe + populates probedPython. We still subscribe to the toggle
-  // value so a user flipping the Settings switch mid-revisit triggers
-  // a re-run with the new mode.
+  // runHealthChecks resolves the bundled Python in production and runs
+  // a bridge-equivalent runtime probe. External mode probes candidate
+  // venvs and populates probedPython with the winning value.
   const useExternalPython = usePrefsStore((s) => s.gaConfig.useExternalPython);
+  const configuredPython = usePrefsStore((s) => s.gaConfig.python);
 
   useEffect(() => {
     if (step !== "health") return;
     const controller = new AbortController();
     void runHealthChecks(path, setHealthChecks, controller.signal, {
       useExternalPython,
+      python: configuredPython,
+      smokeTest: true,
       onPythonProbed: (alias) => setProbedPython(alias),
       labels: copy.health,
     });
     return () => controller.abort();
-  }, [copy.health, step, path, healthRunNonce, useExternalPython]);
+  }, [
+    copy.health,
+    step,
+    path,
+    healthRunNonce,
+    useExternalPython,
+    configuredPython,
+  ]);
 
   // Tutorial mapping: each named health check (and StepAttach failure)
   // maps to one fix-it snippet. The action id we hand to
@@ -224,11 +233,27 @@ export function Onboarding({
           label: copy.onboarding.tutorialPython,
         },
       ],
+      [copy.health.bundledPython]: [
+        {
+          id: "use-external-python",
+          label: copy.onboarding.useGAVenv,
+        },
+      ],
+      [copy.health.llmConnection]: [
+        { id: "mykey-setup", label: copy.onboarding.tutorialMyKey },
+      ],
     }),
     [copy],
   );
 
   const handleItemAction = (_item: HealthCheckItem, actionId: string) => {
+    if (actionId === "use-external-python") {
+      setProbedPython(null);
+      void setGAConfig({ useExternalPython: true }).then(() => {
+        setHealthRunNonce((n) => n + 1);
+      });
+      return;
+    }
     if (isTutorialId(actionId)) setActiveTutorial(actionId);
   };
 
@@ -293,9 +318,7 @@ export function Onboarding({
             <StepModelConfig
               onComplete={handleManagedComplete}
               onAttachExisting={() => setStep("attach")}
-              canContinueWithExisting={
-                isSetup && canContinueWithCurrentModel
-              }
+              canContinueWithExisting={isSetup && canContinueWithCurrentModel}
             />
           )}
           {step === "attach" && (

@@ -161,7 +161,7 @@ source .venv/bin/activate
 pip install -e .
 \`\`\`
 
-\`pip install -e .\` 会按 \`pyproject.toml\` 装好 GA 的核心依赖。完成后回到 Galley 点 **重新检查** —— 我们会优先识别 GA 目录下的 \`.venv/bin/python\`。
+\`pip install -e .\` 会按 \`pyproject.toml\` 装好 GA 的核心依赖。完成后回到 Galley 点 **重新检查** —— 我们会优先识别 GA 目录下的 \`.venv/bin/python\`，Windows 下是 \`.venv\\Scripts\\python.exe\`。
 
 **如果你想用系统 Python**
 
@@ -311,7 +311,7 @@ source .venv/bin/activate
 pip install -e .
 \`\`\`
 
-\`pip install -e .\` installs GA's core dependencies from \`pyproject.toml\`. After it finishes, come back to Galley and run the Health Check again.
+\`pip install -e .\` installs GA's core dependencies from \`pyproject.toml\`. After it finishes, come back to Galley and run the Health Check again. Galley checks \`.venv/bin/python\` first, or \`.venv\\Scripts\\python.exe\` on Windows.
 
 **Why not just use terminal \`python3\`?**
 
