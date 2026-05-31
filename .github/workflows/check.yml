@@ -52,9 +52,9 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
-        with:
-          # Pin major version explicitly — see release.yml for why.
-          version: 10
+        # pnpm version comes from the root package.json `packageManager`
+        # field. Do not also pass `with.version`; pnpm/action-setup
+        # treats the duplicate as a release-blocking mismatch.
 
       - name: Setup Node
         uses: actions/setup-node@v6
