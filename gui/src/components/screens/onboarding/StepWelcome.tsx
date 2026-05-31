@@ -78,9 +78,9 @@ function ModeCard({ title, body, onClick, disabled }: ModeCardProps) {
         disabled
           ? "cursor-not-allowed border-line bg-app opacity-60"
           : cn(
-              "cursor-pointer border-line bg-elevated shadow-[0_1px_0_rgba(31,27,23,0.10),0_1px_2px_rgba(31,27,23,0.04),inset_0_1px_0_rgba(255,255,255,0.34)]",
-              "hover:-translate-y-[0.5px] hover:border-line-strong hover:bg-surface hover:shadow-[0_2px_0_rgba(31,27,23,0.10),0_8px_18px_rgba(31,27,23,0.09),inset_0_1px_0_rgba(255,255,255,0.42)]",
-              "active:translate-y-[0.5px] active:shadow-[inset_0_1px_3px_rgba(31,27,23,0.14)]",
+              "cursor-pointer border-line bg-elevated shadow-[var(--shadow-button-raised)]",
+              "hover:-translate-y-[0.5px] hover:border-line-strong hover:bg-surface hover:shadow-[var(--shadow-button-raised-hover)]",
+              "active:translate-y-[0.5px] active:shadow-[var(--shadow-button-raised-active)]",
             ),
       )}
     >

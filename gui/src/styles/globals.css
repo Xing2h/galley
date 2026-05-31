@@ -73,12 +73,116 @@
   /* --- shadows (additive; Tailwind defaults remain available) --- */
   --shadow-card: 0 1px 2px rgba(31, 27, 23, 0.04);
   --shadow-elevated: 0 8px 24px rgba(31, 27, 23, 0.12);
+  --shadow-button-raised:
+    0 1px 0 rgba(31, 27, 23, 0.12), 0 1px 2px rgba(31, 27, 23, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  --shadow-button-raised-hover:
+    0 2px 0 rgba(31, 27, 23, 0.12), 0 6px 14px rgba(31, 27, 23, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  --shadow-button-raised-active: inset 0 1px 3px rgba(31, 27, 23, 0.14);
+  --shadow-button-primary:
+    0 1px 0 rgba(31, 27, 23, 0.24), 0 2px 6px rgba(31, 27, 23, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  --shadow-button-primary-hover:
+    0 2px 0 rgba(31, 27, 23, 0.22), 0 8px 18px rgba(31, 27, 23, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --shadow-button-primary-active: inset 0 2px 5px rgba(0, 0, 0, 0.2);
+  --shadow-brand-control:
+    0 1px 0 rgba(198, 135, 98, 0.3), 0 2px 7px rgba(198, 135, 98, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --shadow-brand-control-hover:
+    0 2px 0 rgba(198, 135, 98, 0.28), 0 8px 16px rgba(198, 135, 98, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --shadow-brand-control-active: inset 0 2px 5px rgba(31, 27, 23, 0.18);
+  --shadow-neutral-control:
+    0 1px 0 rgba(31, 27, 23, 0.04), 0 2px 7px rgba(31, 27, 23, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  --shadow-neutral-control-hover:
+    0 2px 0 rgba(31, 27, 23, 0.05), 0 8px 16px rgba(31, 27, 23, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --shadow-neutral-control-active: inset 0 2px 5px rgba(31, 27, 23, 0.12);
+  --shadow-float: 0 6px 18px rgba(31, 27, 23, 0.1);
+  --shadow-float-hover: 0 8px 22px rgba(31, 27, 23, 0.14);
+  --shadow-composer-stop:
+    0 1px 0 rgba(191, 122, 31, 0.3), 0 2px 7px rgba(191, 122, 31, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 0 rgba(191, 122, 31, 0.14);
+  --shadow-composer-stop-pulse:
+    0 1px 0 rgba(191, 122, 31, 0.3), 0 2px 7px rgba(191, 122, 31, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 4px rgba(191, 122, 31, 0.1);
 
   /* --- overlay (for ⌘K palette / modals) --- */
   --color-overlay: rgba(31, 27, 23, 0.4);
 }
 
-/* Light-only at V0.1; dark mode tokens reserved for V0.2+ */
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-app: #171411;
+  --color-surface: #1d1915;
+  --color-elevated: #24201b;
+
+  --color-line: #332c25;
+  --color-line-strong: #4c4035;
+  --color-line-subtle: rgba(239, 231, 220, 0.08);
+
+  --color-ink: #efe7dc;
+  --color-ink-soft: #c9bcad;
+  --color-ink-muted: #958878;
+
+  --color-hover: #28231e;
+  --color-selected: #3a2d23;
+
+  --color-brand: #d6a083;
+  --color-brand-soft: #3a2d23;
+  --color-brand-strong: #e2ae8d;
+
+  --color-success: #8fbf8f;
+  --color-warning: #d6a250;
+  --color-error: #d97a76;
+  --color-info: #a8a7c3;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow-elevated:
+    0 14px 36px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(239, 231, 220, 0.03);
+  --shadow-button-raised:
+    0 1px 0 rgba(239, 231, 220, 0.07), 0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(239, 231, 220, 0.08);
+  --shadow-button-raised-hover:
+    0 1px 0 rgba(239, 231, 220, 0.08), 0 8px 18px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(239, 231, 220, 0.1);
+  --shadow-button-raised-active: inset 0 1px 3px rgba(0, 0, 0, 0.34);
+  --shadow-button-primary:
+    0 1px 0 rgba(239, 231, 220, 0.09), 0 2px 8px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(239, 231, 220, 0.08);
+  --shadow-button-primary-hover:
+    0 1px 0 rgba(239, 231, 220, 0.1), 0 8px 18px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(239, 231, 220, 0.1);
+  --shadow-button-primary-active: inset 0 2px 5px rgba(0, 0, 0, 0.44);
+  --shadow-brand-control:
+    0 1px 0 rgba(226, 174, 141, 0.18), 0 2px 8px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(239, 231, 220, 0.08);
+  --shadow-brand-control-hover:
+    0 1px 0 rgba(226, 174, 141, 0.22), 0 8px 18px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(239, 231, 220, 0.1);
+  --shadow-brand-control-active: inset 0 2px 5px rgba(0, 0, 0, 0.38);
+  --shadow-neutral-control:
+    0 1px 0 rgba(239, 231, 220, 0.05), 0 2px 8px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(239, 231, 220, 0.07);
+  --shadow-neutral-control-hover:
+    0 1px 0 rgba(239, 231, 220, 0.08), 0 8px 18px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(239, 231, 220, 0.08);
+  --shadow-neutral-control-active: inset 0 2px 5px rgba(0, 0, 0, 0.34);
+  --shadow-float: 0 10px 24px rgba(0, 0, 0, 0.38);
+  --shadow-float-hover: 0 12px 30px rgba(0, 0, 0, 0.46);
+  --shadow-composer-stop:
+    0 1px 0 rgba(214, 162, 80, 0.22), 0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(239, 231, 220, 0.08), 0 0 0 0 rgba(214, 162, 80, 0.16);
+  --shadow-composer-stop-pulse:
+    0 1px 0 rgba(214, 162, 80, 0.24), 0 2px 8px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(239, 231, 220, 0.08), 0 0 0 4px rgba(214, 162, 80, 0.12);
+
+  --color-overlay: rgba(0, 0, 0, 0.56);
+}
 
 * {
   box-sizing: border-box;
@@ -93,6 +197,7 @@ body,
 }
 
 html {
+  color-scheme: light;
   overscroll-behavior: none;
 }
 
@@ -108,6 +213,19 @@ body {
   user-select: none;
   overflow: hidden;
   text-rendering: optimizeLegibility;
+}
+
+@keyframes theme-fade {
+  from {
+    opacity: 0.88;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+html.theme-fade body {
+  animation: theme-fade 0.12s ease-out;
 }
 
 input,
@@ -395,18 +513,10 @@ code {
 @keyframes composer-stop-breath {
   0%,
   100% {
-    box-shadow:
-      0 1px 0 rgba(191, 122, 31, 0.3),
-      0 2px 7px rgba(191, 122, 31, 0.16),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      0 0 0 0 rgba(191, 122, 31, 0.14);
+    box-shadow: var(--shadow-composer-stop);
   }
   50% {
-    box-shadow:
-      0 1px 0 rgba(191, 122, 31, 0.3),
-      0 2px 7px rgba(191, 122, 31, 0.16),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      0 0 0 4px rgba(191, 122, 31, 0.1);
+    box-shadow: var(--shadow-composer-stop-pulse);
   }
 }
 .composer-stop-breath {
@@ -485,5 +595,9 @@ code {
   .composer-submit-ack::after {
     animation: none;
     opacity: 0;
+  }
+
+  html.theme-fade body {
+    animation: none;
   }
 }

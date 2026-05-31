@@ -24,7 +24,10 @@ pnpm tauri build    # 打 .app / .dmg
 
 ## 设计 tokens
 
-`src/styles/globals.css` 的 `@theme` block。命名见 `../CLAUDE.md` "TypeScript（desktop/）" 段。
+`src/styles/globals.css` 的 `@theme` block 是 light theme 基线；
+`html[data-theme="dark"]` 覆盖同一套语义 token。主题偏好走
+`prefs.theme_preference`，并同步 `localStorage.galley_theme_preference`
+给首屏防闪白脚本使用。
 
 ## IPC types
 

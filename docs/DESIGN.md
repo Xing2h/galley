@@ -87,6 +87,43 @@ Galley 的视觉与交互气质 = **Notion + Claude**。
 | `--color-error` | `text-error` / `bg-error` | `#B14545` | 深红 |
 | `--color-info` | `text-info` / `bg-info` | `#7A7A8E` | muted 灰蓝（info severity） |
 
+#### Dark theme（暖炭黑）
+
+Dark theme 是 Galley light theme 的夜间版本，不是另一个产品方向。视觉目标是
+**夜间书桌**：长文可读、状态仍清楚、杏沙品牌只作为体温点出现；不走纯黑
+OLED，也不走冷灰蓝 IDE / dashboard 感。
+
+默认主题偏好为 `system`，跟随系统深浅；用户可手动选择 `light` / `dark`。
+实现上写 `html[data-theme="light|dark"]` 与 `color-scheme`，所有颜色从
+同一套 `--color-*` 语义 token 翻转。
+
+| CSS variable | Dark 值 | 用途 |
+|---|---|---|
+| `--color-app` | `#171411` | 暖黑 app 底 |
+| `--color-surface` | `#1D1915` | 普通卡片底 |
+| `--color-elevated` | `#24201B` | 浮层 / dialog / command palette |
+| `--color-line` | `#332C25` | 默认边框 |
+| `--color-line-strong` | `#4C4035` | hover / focus 边 |
+| `--color-ink` | `#EFE7DC` | 主文本，不用纯白 |
+| `--color-ink-soft` | `#C9BCAD` | 次级文本 |
+| `--color-ink-muted` | `#958878` | hint / timestamp |
+| `--color-hover` | `#28231E` | 中性 hover |
+| `--color-selected` / `--color-brand-soft` | `#3A2D23` | 杏沙 tint |
+| `--color-brand` | `#D6A083` | 品牌主色 |
+| `--color-brand-strong` | `#E2AE8D` | 品牌 hover / link |
+
+交互入口：
+
+- TopBar 放 icon-only 外观按钮，固定在 Settings 左侧；状态类入口（Browser Control /
+  Channels）在它左边，避免外观偏好的肌肉记忆随状态按钮出现而漂移。
+  图标表达**当前实际主题**：浅色显示 `Sun`，深色显示 `Moon`。
+- 点击弹三选菜单：`Monitor` 跟随系统 / `Sun` 浅色 / `Moon` 深色；菜单勾选
+  当前偏好，tooltip/aria 显示“偏好 · 当前实际主题”。
+- Settings 左侧底部放同一个 Appearance 菜单，和语言偏好并列；当前不新增
+  General tab。
+- 切换主题只做 120ms root opacity acknowledgement，首次启动不播放，
+  `prefers-reduced-motion` 下禁用；不做全局 color transition，避免整屏拖影。
+
 ### 2.2 字体（方案 C：三 register）
 
 | Register | 字体（英 / 中） | 用途 |
@@ -198,7 +235,11 @@ Galley 是桌面客户端，不应暴露不必要的网页线索：
   - 长 title truncate 居中
 - **Session title menu**：有 active session 时 title + `CaretDown` 是一个按钮，打开 session-scoped 菜单（Rename / Reinject Tools / Desktop Pet）。空状态渲染 italic muted "新对话"，不可点。
 - Rename 从 title menu 进入 inline edit；Enter 提交，Esc 取消。
-- 右：YOLO indicator（条件渲染）+ conversation width toggle（compact / wide）+ Browser Control indicator + Settings 入口（Phosphor `Gear` thin，中文 UI tooltip "设置 · ⌘ + ,"）+ Windows window controls。
+- 右：YOLO indicator（条件渲染）+ conversation width toggle（compact / wide）+ Browser Control indicator + Channels indicator + Appearance icon-only menu + Settings 入口（Phosphor `Gear` thin，中文 UI tooltip "设置 · ⌘ + ,"）+ Windows window controls。
+- TopBar 的 icon-only controls 必须使用项目统一的 Radix tooltip（`TooltipLabel` /
+  `IconButton` tooltip），不使用原生 `title` 作为 hover 提示。原生 `title`
+  的延迟、样式和出现时机不可控，会让相邻按钮的反馈节奏不一致；可访问名称用
+  `aria-label` 保留。
 - **不在 TopBar 放 Command Palette 按钮**：Sidebar 已有 Search quick action，`⌘K` 全局可用；重复 click affordance 只增加 chrome 噪音。
 - **不放 Sidebar toggle**：Sidebar 当前不可折叠，只可拖拽调整宽度。
 - 整个 TopBar 加 `data-tauri-drag-region`，作为窗口拖动 handle（Tauri v2 需要 `core:window:allow-start-dragging` 权限，buttons 由 Tauri 自动豁免）
@@ -385,7 +426,7 @@ Final answer 跟 Thinking summary 都通过 `react-markdown` + `remark-gfm` + Sh
 #### 代码块语法高亮（Shiki）
 
 - 引擎：[Shiki](https://shiki.style) v1+，TextMate grammar，跟 VS Code / Claude.ai web 同款
-- 主题：`github-light`，跟 Galley light 主题对齐
+- 主题：跟随 Galley 当前主题，light 用 `github-light`，dark 用 `github-dark`
 - 注册语言（hand-picked）：`bash` / `css` / `diff` / `html` / `javascript` / `json` / `markdown` / `python` / `rust` / `shell` / `sql` / `tsx` / `typescript` / `yaml` —— 14 种 coding agent 用户高频
 - 别名：`js → javascript` / `ts → typescript` / `py → python` / `rs → rust` / `sh → bash` / `yml → yaml`
 - 未注册的语言：fallback 到无色 mono code block（同样的 chrome，仅没 token color），不报错
@@ -1089,7 +1130,7 @@ YOLO = "You Only Live Once"。
 
 ### 推到未来版本的 Tab
 
-- **General / Preferences**（theme / telemetry / launch behavior 等）—— 只有当全局偏好超过左侧轻量入口承载范围时再新增；语言当前不单独触发这个 tab。
+- **General / Preferences**（telemetry / launch behavior 等）—— 只有当全局偏好超过左侧轻量入口承载范围时再新增；外观和语言当前不单独触发这个 tab。
 - **LLM**（custom displayName / default index）—— per-app preference 已够，custom name V0.2
 - **Data**（SQLite 位置 / export / clear history）—— V0.1 不做高危数据 UI
 - **Developer**（Logs / IPC trace）—— V0.1 用 stderr 调试

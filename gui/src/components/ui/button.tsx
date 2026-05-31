@@ -108,8 +108,10 @@ export type IconButtonVariant =
 
 export type IconButtonSize = "xs" | "sm" | "md";
 
-export interface IconButtonProps
-  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label"> {
+export interface IconButtonProps extends Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  "aria-label"
+> {
   /** Accessible name. Icon-only buttons must not rely on visual icon meaning. */
   ariaLabel: string;
   /** Fast Radix tooltip text. Defaults to `title ?? ariaLabel`; `false` disables it. */
@@ -120,15 +122,14 @@ export interface IconButtonProps
   active?: boolean;
 }
 
-export interface DialogActionRowProps
-  extends HTMLAttributes<HTMLDivElement> {
+export interface DialogActionRowProps extends HTMLAttributes<HTMLDivElement> {
   align?: "start" | "end" | "between";
 }
 
 const RAISED_BUTTON_SURFACE = cn(
-  "shadow-[0_1px_0_rgba(31,27,23,0.12),0_1px_2px_rgba(31,27,23,0.05),inset_0_1px_0_rgba(255,255,255,0.34)]",
-  "hover:-translate-y-[0.5px] hover:shadow-[0_2px_0_rgba(31,27,23,0.12),0_6px_14px_rgba(31,27,23,0.10),inset_0_1px_0_rgba(255,255,255,0.42)]",
-  "active:translate-y-[0.5px] active:shadow-[inset_0_1px_3px_rgba(31,27,23,0.14)]",
+  "shadow-[var(--shadow-button-raised)]",
+  "hover:-translate-y-[0.5px] hover:shadow-[var(--shadow-button-raised-hover)]",
+  "active:translate-y-[0.5px] active:shadow-[var(--shadow-button-raised-active)]",
   "disabled:translate-y-0 disabled:shadow-none",
 );
 
@@ -140,9 +141,9 @@ const QUIET_BUTTON_PRESS = cn(
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: cn(
     "border border-ink bg-ink font-medium text-elevated",
-    "shadow-[0_1px_0_rgba(31,27,23,0.24),0_2px_6px_rgba(31,27,23,0.10),inset_0_1px_0_rgba(255,255,255,0.10)]",
-    "hover:-translate-y-[0.5px] hover:bg-ink/95 hover:shadow-[0_2px_0_rgba(31,27,23,0.22),0_8px_18px_rgba(31,27,23,0.16),inset_0_1px_0_rgba(255,255,255,0.14)]",
-    "active:translate-y-[0.5px] active:bg-ink active:shadow-[inset_0_2px_5px_rgba(0,0,0,0.20)]",
+    "shadow-[var(--shadow-button-primary)]",
+    "hover:-translate-y-[0.5px] hover:bg-ink/95 hover:shadow-[var(--shadow-button-primary-hover)]",
+    "active:translate-y-[0.5px] active:bg-ink active:shadow-[var(--shadow-button-primary-active)]",
     "disabled:translate-y-0 disabled:shadow-none",
   ),
   secondary: cn(
@@ -312,7 +313,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         {children}
       </button>
     );
-    const tooltipText = tooltip === false ? null : (tooltip ?? title ?? ariaLabel);
+    const tooltipText =
+      tooltip === false ? null : (tooltip ?? title ?? ariaLabel);
     if (!tooltipText) return button;
     return (
       <IconTooltip text={tooltipText} side={tooltipSide}>

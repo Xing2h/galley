@@ -1,5 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { CaretDown, Check, Translate } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, Check, Translate } from "@phosphor-icons/react";
 
 import { useCopy } from "@/lib/i18n";
 import {
@@ -22,6 +22,9 @@ export function LanguagePreferenceMenu({
 }) {
   const copy = useCopy();
   const isChinese = isChineseLanguage(resolvedLanguage);
+  const resolvedLabel =
+    resolvedLanguage === "zh-CN" ? copy.language.zh : copy.language.en;
+  const resolvedCurrentLabel = copy.language.current(resolvedLabel);
   const options: Array<{
     value: LanguagePreference;
     label: string;
@@ -31,7 +34,7 @@ export function LanguagePreferenceMenu({
         {
           value: "system",
           label: copy.language.system,
-          subLabel: copy.language.systemHelper,
+          subLabel: resolvedCurrentLabel,
         },
         { value: "zh-CN", label: copy.language.zh },
         { value: "en-US", label: copy.language.en },
@@ -40,15 +43,19 @@ export function LanguagePreferenceMenu({
         {
           value: "system",
           label: copy.language.system,
-          subLabel: copy.language.systemHelper,
+          subLabel: resolvedCurrentLabel,
         },
         { value: "zh-CN", label: copy.language.zh },
         { value: "en-US", label: copy.language.en },
       ];
   const current = options.find((option) => option.value === preference);
-  const compactLabel =
-    current?.value === "system" ? copy.language.systemHelper : current?.label;
+  const compactLabel = current?.label;
+  const sidebarStatusLabel =
+    current?.value === "system"
+      ? `${resolvedLabel} · ${copy.language.system}`
+      : (current?.label ?? resolvedLabel);
   const compact = variant === "compact";
+  const ChevronIcon = compact ? CaretDown : CaretRight;
 
   return (
     <DropdownMenu.Root>
@@ -58,7 +65,7 @@ export function LanguagePreferenceMenu({
           className={cn(
             compact
               ? "inline-flex h-8 items-center gap-1.5 rounded-sm px-2 text-[12px]"
-              : "flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left",
+              : "group flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left",
             "text-ink-soft outline-none transition-colors hover:bg-hover hover:text-ink",
             "data-[state=open]:bg-hover data-[state=open]:text-ink",
           )}
@@ -71,7 +78,7 @@ export function LanguagePreferenceMenu({
           />
           {compact ? (
             <span className="max-w-[72px] truncate">
-              {compactLabel ?? "Auto"}
+              {compactLabel ?? copy.language.system}
             </span>
           ) : (
             <span className="min-w-0 flex-1">
@@ -79,14 +86,19 @@ export function LanguagePreferenceMenu({
                 {copy.language.button}
               </span>
               <span className="block truncate text-[11px] leading-3 text-ink-muted">
-                {current?.label ?? "Auto"}
+                {sidebarStatusLabel}
               </span>
             </span>
           )}
-          <CaretDown
+          <ChevronIcon
             size={compact ? 10 : 11}
             weight="bold"
-            className="shrink-0"
+            className={cn(
+              "shrink-0",
+              compact
+                ? ""
+                : "text-ink-muted transition-colors group-hover:text-ink-soft",
+            )}
           />
         </button>
       </DropdownMenu.Trigger>

@@ -7,6 +7,12 @@ import {
   resolveLanguagePreference,
   type LanguagePreference,
 } from "@/lib/language";
+import {
+  cacheThemePreference,
+  isThemePreference,
+  readCachedThemePreference,
+  type ThemePreference,
+} from "@/lib/theme";
 import { findCandidateByAlias } from "@/lib/python-probe";
 import { DEFAULT_APPROVAL_CONFIG, DEFAULT_GA_CONFIG } from "@/stores/defaults";
 import { useRuntimeStore } from "@/stores/runtime";
@@ -27,6 +33,7 @@ import type { RuntimeKind } from "@/types/session";
  *   - yoloIntroSeen       (pref: yolo_intro_seen)
  *   - conversationWidth   (pref: conversation_width)
  *   - languagePreference  (pref: language_preference)
+ *   - themePreference     (pref: theme_preference)
  *
  * setGAConfig fans out to runtimeStore (patchRuntimeInfo / resetWarmup
  * / warmupLLMList) + uiStore (pushToast) so a Settings → Runtime path
@@ -127,6 +134,13 @@ interface PrefsState {
    * OS / WebView language preference at render time.
    */
   languagePreference: LanguagePreference;
+
+  /**
+   * Appearance preference. `system` follows the OS color scheme;
+   * `light` / `dark` are explicit user overrides. Persisted to
+   * SQLite and mirrored to localStorage for first-paint theme setup.
+   */
+  themePreference: ThemePreference;
 }
 
 interface PrefsActions {
@@ -151,6 +165,9 @@ interface PrefsActions {
 
   // ---- Language ----
   setLanguagePreference: (preference: LanguagePreference) => Promise<void>;
+
+  // ---- Appearance ----
+  setThemePreference: (preference: ThemePreference) => Promise<void>;
 
   // ---- GA config ----
   /**
@@ -197,6 +214,7 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
   yoloIntroSeen: true,
   conversationWidth: "compact",
   languagePreference: "system",
+  themePreference: readCachedThemePreference(),
 
   // ---- Approval ----
   setApprovalRequiredTools: (tools) =>
@@ -281,6 +299,17 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
         "[prefs] setLanguagePreference: pref persistence failed.",
         e,
       );
+    }
+  },
+
+  // ---- Appearance ----
+  setThemePreference: async (preference) => {
+    set({ themePreference: preference });
+    cacheThemePreference(preference);
+    try {
+      await setPref("theme_preference", preference);
+    } catch (e) {
+      console.warn("[prefs] setThemePreference: pref persistence failed.", e);
     }
   },
 
@@ -401,6 +430,19 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
     } catch (e) {
       console.warn(
         "[prefs] hydratePrefs: language_preference pref load failed.",
+        e,
+      );
+    }
+    try {
+      const themePreference =
+        await getPref<ThemePreference>("theme_preference");
+      if (isThemePreference(themePreference)) {
+        set({ themePreference });
+        cacheThemePreference(themePreference);
+      }
+    } catch (e) {
+      console.warn(
+        "[prefs] hydratePrefs: theme_preference pref load failed.",
         e,
       );
     }

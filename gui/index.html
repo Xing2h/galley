@@ -4,6 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Galley</title>
+    <script>
+      (() => {
+        const key = "galley_theme_preference";
+        let preference = "system";
+        try {
+          const cached = window.localStorage.getItem(key);
+          if (cached === "light" || cached === "dark" || cached === "system") {
+            preference = cached;
+          }
+        } catch {}
+        const systemDark = window.matchMedia?.(
+          "(prefers-color-scheme: dark)",
+        ).matches;
+        const theme =
+          preference === "system"
+            ? systemDark
+              ? "dark"
+              : "light"
+            : preference;
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
   </head>
 
   <body>

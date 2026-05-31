@@ -97,8 +97,9 @@ export function ProviderCard({
   const copy = useCopy().settings.models;
   const keyMissing = provider.credentialStatus === "missing";
   const headerUsesModelList = models.length === 0;
-  const providerProbeAction: ProbeAction =
-    headerUsesModelList ? "model-list" : "model-test";
+  const providerProbeAction: ProbeAction = headerUsesModelList
+    ? "model-list"
+    : "model-test";
   const headerProbeState = headerUsesModelList
     ? modelProbeState
     : providerProbeState;
@@ -130,7 +131,7 @@ export function ProviderCard({
         "group/provider overflow-hidden rounded-sm border border-line bg-surface",
         "transition-[background-color,border-color,box-shadow,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
         "hover:-translate-y-[0.5px] hover:border-line-strong hover:bg-hover/45 hover:shadow-card",
-        "active:translate-y-[0.5px] active:bg-hover/60 active:shadow-[inset_0_1px_2px_rgba(31,27,23,0.08)]",
+        "active:translate-y-[0.5px] active:bg-hover/60 active:shadow-[var(--shadow-button-raised-active)]",
         "focus-within:border-line-strong focus-within:bg-hover/45 focus-within:shadow-card",
         open &&
           "border-line-strong bg-selected/35 shadow-card hover:bg-selected/45 focus-within:bg-selected/35 active:bg-selected/50",

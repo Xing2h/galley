@@ -648,9 +648,9 @@ export function MainView({
               aria-label={copy.conversation.scrollLatest}
               className={cn(
                 "group pointer-events-auto inline-flex size-8 items-center justify-center rounded-full",
-                "border border-line bg-elevated/92 text-ink-soft shadow-[0_6px_18px_rgba(31,27,23,0.10)] backdrop-blur-md",
+                "border border-line bg-elevated/92 text-ink-soft shadow-[var(--shadow-float)] backdrop-blur-md",
                 "transition-all duration-150 ease-out",
-                "hover:-translate-y-0.5 hover:border-line-strong hover:bg-elevated hover:text-ink hover:shadow-[0_8px_22px_rgba(31,27,23,0.14)]",
+                "hover:-translate-y-0.5 hover:border-line-strong hover:bg-elevated hover:text-ink hover:shadow-[var(--shadow-float-hover)]",
                 "active:translate-y-0 active:scale-95",
                 "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
               )}

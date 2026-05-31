@@ -131,7 +131,9 @@ function WeChatCard({
   const qrSrc = status?.qrImagePath
     ? `${convertFileSrc(status.qrImagePath)}?v=${encodeURIComponent(status.updatedAt)}`
     : null;
-  const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null);
+  const [expandedOverride, setExpandedOverride] = useState<boolean | null>(
+    null,
+  );
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
   const attentionState =
     state === "waiting_scan" || state === "expired" || state === "error";
@@ -160,7 +162,7 @@ function WeChatCard({
         "group/im overflow-hidden rounded-sm border border-line bg-surface",
         "transition-[background-color,border-color,box-shadow,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
         "hover:-translate-y-[0.5px] hover:border-line-strong hover:bg-hover/45 hover:shadow-card",
-        "active:translate-y-[0.5px] active:bg-hover/60 active:shadow-[inset_0_1px_2px_rgba(31,27,23,0.08)]",
+        "active:translate-y-[0.5px] active:bg-hover/60 active:shadow-[var(--shadow-button-raised-active)]",
         "focus-within:border-line-strong focus-within:bg-hover/45 focus-within:shadow-card",
         expanded &&
           "border-line-strong bg-selected/35 shadow-card hover:bg-selected/45 focus-within:bg-selected/35 active:bg-selected/50",
@@ -367,7 +369,13 @@ function primaryActionForState({
   if (state === "running") return null;
   if (state === "starting") {
     return (
-      <Button type="button" size="sm" variant="secondary" disabled leadingIcon={loadingIcon}>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled
+        leadingIcon={loadingIcon}
+      >
         {imCopy.working}
       </Button>
     );
@@ -394,7 +402,9 @@ function primaryActionForState({
         size="sm"
         variant="primary"
         disabled={busy}
-        leadingIcon={busyAction === "rescan" ? loadingIcon : <QrCode size={13} />}
+        leadingIcon={
+          busyAction === "rescan" ? loadingIcon : <QrCode size={13} />
+        }
         onClick={onRescan}
       >
         {busyAction === "rescan" ? imCopy.working : imCopy.reconnect}
@@ -408,7 +418,9 @@ function primaryActionForState({
         size="sm"
         variant="primary"
         disabled={busy}
-        leadingIcon={busyAction === "connect" ? loadingIcon : <Power size={13} />}
+        leadingIcon={
+          busyAction === "connect" ? loadingIcon : <Power size={13} />
+        }
         onClick={onConnect}
       >
         {busyAction === "connect" ? imCopy.working : imCopy.retry}
@@ -421,7 +433,9 @@ function primaryActionForState({
       size="sm"
       variant="primary"
       disabled={busy}
-      leadingIcon={busyAction === "connect" ? loadingIcon : <QrCode size={13} />}
+      leadingIcon={
+        busyAction === "connect" ? loadingIcon : <QrCode size={13} />
+      }
       onClick={onConnect}
     >
       {busyAction === "connect" ? imCopy.working : imCopy.connect}
@@ -526,11 +540,7 @@ function WeChatGlyph({ active }: { active: boolean }) {
           : "text-ink-muted group-hover/im:bg-brand-soft group-hover/im:text-brand-strong group-focus-within/im:bg-brand-soft group-focus-within/im:text-brand-strong",
       )}
     >
-      <svg
-        viewBox="0 0 24 24"
-        className="size-5"
-        fill="none"
-      >
+      <svg viewBox="0 0 24 24" className="size-5" fill="none">
         <path
           fill="currentColor"
           d="M10.2 3.8c-4.6 0-8.3 2.9-8.3 6.4 0 2 1.2 3.7 3.1 4.9l-.6 3.1 3.3-1.6c.8.2 1.6.3 2.5.3 4.6 0 8.3-2.9 8.3-6.4s-3.7-6.7-8.3-6.7Z"

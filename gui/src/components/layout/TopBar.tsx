@@ -20,10 +20,12 @@ import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { Button, IconButton } from "@/components/ui/button";
+import { ThemePreferenceMenu } from "@/components/theme/ThemePreferenceMenu";
 import { TooltipLabel } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
 import { isMac, isWindowActionTarget } from "@/lib/platform";
 import { formatShortcutReadable } from "@/lib/shortcuts";
+import type { ResolvedTheme, ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { BrowserControlStatus } from "@/lib/browser-control";
 import type { ImSupervisorState } from "@/lib/im-supervisor";
@@ -61,6 +63,9 @@ export interface TopBarProps {
    */
   conversationWidth?: "compact" | "wide";
   onToggleConversationWidth?: () => void;
+  themePreference?: ThemePreference;
+  resolvedTheme?: ResolvedTheme;
+  onChangeThemePreference?: (preference: ThemePreference) => void;
   /**
    * Session-level overflow menu items (`⋯` button). The menu holds
    * actions that operate on the current session and don't deserve a
@@ -157,6 +162,9 @@ export function TopBar({
   onOpenChannelsSettings,
   conversationWidth = "compact",
   onToggleConversationWidth,
+  themePreference = "system",
+  resolvedTheme = "light",
+  onChangeThemePreference,
   onReinjectTools,
   onTogglePet,
   currentSessionHasPet = false,
@@ -268,6 +276,14 @@ export function TopBar({
               state={channelsState}
               loadError={channelsLoadError}
               onOpen={onOpenChannelsSettings}
+            />
+          )}
+          {onChangeThemePreference && (
+            <ThemePreferenceMenu
+              preference={themePreference}
+              resolvedTheme={resolvedTheme}
+              onChange={onChangeThemePreference}
+              variant="topbar"
             />
           )}
           <IconButton
@@ -431,20 +447,22 @@ function YoloIndicator({
   const copy = useCopy();
   return (
     <Popover.Root>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          aria-label={copy.topbar.yoloView}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1",
-            "text-[12px] font-medium uppercase text-warning",
-            "transition-colors hover:bg-warning/20",
-          )}
-        >
-          <Lightning size={14} weight="thin" />
-          YOLO
-        </button>
-      </Popover.Trigger>
+      <TooltipLabel text={copy.topbar.yoloTooltip} side="bottom">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            aria-label={copy.topbar.yoloView}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1",
+              "text-[12px] font-medium uppercase text-warning",
+              "transition-colors hover:bg-warning/20",
+            )}
+          >
+            <Lightning size={14} weight="thin" />
+            YOLO
+          </button>
+        </Popover.Trigger>
+      </TooltipLabel>
       <Popover.Portal>
         <Popover.Content
           align="end"

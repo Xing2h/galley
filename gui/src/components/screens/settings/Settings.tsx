@@ -13,6 +13,7 @@ import { SettingsShortcuts } from "@/components/screens/settings/SettingsShortcu
 import { IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
 import type { LanguagePreference, ResolvedLanguage } from "@/lib/language";
+import type { ResolvedTheme, ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { RuntimeInfo } from "@/types/inspector";
 import type { RuntimeKind } from "@/types/session";
@@ -56,6 +57,9 @@ export interface SettingsProps {
   languagePreference: LanguagePreference;
   resolvedLanguage: ResolvedLanguage;
   onChangeLanguagePreference: (preference: LanguagePreference) => void;
+  themePreference: ThemePreference;
+  resolvedTheme: ResolvedTheme;
+  onChangeThemePreference: (preference: ThemePreference) => void;
 }
 
 /**
@@ -107,6 +111,9 @@ export function Settings({
   languagePreference,
   resolvedLanguage,
   onChangeLanguagePreference,
+  themePreference,
+  resolvedTheme,
+  onChangeThemePreference,
   tab: controlledTab,
   onTabChange,
 }: SettingsProps) {
@@ -143,6 +150,9 @@ export function Settings({
             languagePreference={languagePreference}
             resolvedLanguage={resolvedLanguage}
             onChangeLanguagePreference={onChangeLanguagePreference}
+            themePreference={themePreference}
+            resolvedTheme={resolvedTheme}
+            onChangeThemePreference={onChangeThemePreference}
             showImTab={showImTab}
           />
 

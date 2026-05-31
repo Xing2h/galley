@@ -88,24 +88,24 @@ const COMPOSER_ACTION_BUTTON = cn(
 const COMPOSER_SEND_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
   "border-brand-strong/40 bg-brand text-ink",
-  "shadow-[0_1px_0_rgba(198,135,98,0.30),0_2px_7px_rgba(198,135,98,0.16),inset_0_1px_0_rgba(255,255,255,0.18)]",
-  "hover:bg-brand-strong hover:text-elevated hover:shadow-[0_2px_0_rgba(198,135,98,0.28),0_8px_16px_rgba(198,135,98,0.20),inset_0_1px_0_rgba(255,255,255,0.18)]",
-  "active:bg-brand-strong active:text-elevated active:shadow-[inset_0_2px_5px_rgba(31,27,23,0.18)]",
+  "shadow-[var(--shadow-brand-control)]",
+  "hover:bg-brand-strong hover:text-elevated hover:shadow-[var(--shadow-brand-control-hover)]",
+  "active:bg-brand-strong active:text-elevated active:shadow-[var(--shadow-brand-control-active)]",
 );
 
 const COMPOSER_STOP_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
   "border-warning/70 bg-warning text-elevated",
   "hover:bg-warning/90",
-  "active:shadow-[inset_0_2px_5px_rgba(31,27,23,0.18)]",
+  "active:shadow-[var(--shadow-brand-control-active)]",
 );
 
 const COMPOSER_CONFIG_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
   "border-line bg-surface text-ink-soft",
-  "shadow-[0_1px_0_rgba(31,27,23,0.04),0_2px_7px_rgba(31,27,23,0.07),inset_0_1px_0_rgba(255,255,255,0.22)]",
-  "hover:border-brand/35 hover:bg-brand-soft hover:text-ink hover:shadow-[0_2px_0_rgba(31,27,23,0.05),0_8px_16px_rgba(31,27,23,0.10),inset_0_1px_0_rgba(255,255,255,0.18)]",
-  "active:shadow-[inset_0_2px_5px_rgba(31,27,23,0.12)]",
+  "shadow-[var(--shadow-neutral-control)]",
+  "hover:border-brand/35 hover:bg-brand-soft hover:text-ink hover:shadow-[var(--shadow-neutral-control-hover)]",
+  "active:shadow-[var(--shadow-neutral-control-active)]",
 );
 
 export interface ComposerProps {

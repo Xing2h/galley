@@ -15,7 +15,9 @@ import {
   type LanguagePreference,
   type ResolvedLanguage,
 } from "@/lib/language";
+import type { ResolvedTheme, ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { ThemePreferenceMenu } from "@/components/theme/ThemePreferenceMenu";
 
 import type { SettingsTab } from "./settings-types";
 
@@ -25,6 +27,9 @@ export function SettingsSidebar({
   languagePreference,
   resolvedLanguage,
   onChangeLanguagePreference,
+  themePreference,
+  resolvedTheme,
+  onChangeThemePreference,
   showImTab,
 }: {
   tab: SettingsTab;
@@ -32,6 +37,9 @@ export function SettingsSidebar({
   languagePreference: LanguagePreference;
   resolvedLanguage: ResolvedLanguage;
   onChangeLanguagePreference: (preference: LanguagePreference) => void;
+  themePreference: ThemePreference;
+  resolvedTheme: ResolvedTheme;
+  onChangeThemePreference: (preference: ThemePreference) => void;
   showImTab: boolean;
 }) {
   const copy = useCopy();
@@ -92,7 +100,12 @@ export function SettingsSidebar({
           onClick={() => onChange("about")}
         />
       </div>
-      <div className="mt-auto border-t border-line/70 px-2 pt-2">
+      <div className="mt-auto space-y-1 border-t border-line/70 px-2 pt-2">
+        <ThemePreferenceMenu
+          preference={themePreference}
+          resolvedTheme={resolvedTheme}
+          onChange={onChangeThemePreference}
+        />
         <LanguagePreferenceMenu
           preference={languagePreference}
           resolvedLanguage={resolvedLanguage}

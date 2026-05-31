@@ -16,6 +16,7 @@ import remarkGfm from "remark-gfm";
 import { createHighlighterCore, type HighlighterCore } from "shiki/core";
 import { createOnigurumaEngine } from "shiki/engine/oniguruma";
 
+import { useResolvedTheme } from "@/components/theme/ThemeContext";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -183,14 +184,20 @@ const SHIKI_LANGUAGES = [
 ] as const;
 type ShikiLang = (typeof SHIKI_LANGUAGES)[number];
 
-const SHIKI_THEME = "github-light";
+const SHIKI_THEMES = {
+  light: "github-light",
+  dark: "github-dark",
+} as const;
 
 let _highlighterPromise: Promise<HighlighterCore> | null = null;
 
 function getHighlighter(): Promise<HighlighterCore> {
   if (!_highlighterPromise) {
     _highlighterPromise = createHighlighterCore({
-      themes: [import("shiki/themes/github-light.mjs")],
+      themes: [
+        import("shiki/themes/github-light.mjs"),
+        import("shiki/themes/github-dark.mjs"),
+      ],
       langs: [
         import("shiki/langs/bash.mjs"),
         import("shiki/langs/css.mjs"),
@@ -226,8 +233,15 @@ interface CodeBlockProps {
  */
 function CodeBlock({ code, language }: CodeBlockProps) {
   const copy = useCopy();
+  const resolvedTheme = useResolvedTheme();
   const lang = normalizeLanguage(language);
-  const [html, setHtml] = useState<string | null>(null);
+  const shikiTheme = SHIKI_THEMES[resolvedTheme];
+  const highlightKey = `${shikiTheme}:${lang ?? "plain"}:${code}`;
+  const [highlighted, setHighlighted] = useState<{
+    key: string;
+    html: string;
+  } | null>(null);
+  const html = highlighted?.key === highlightKey ? highlighted.html : null;
   const [wrapped, setWrapped] = useState(false);
   const wrapLabel = wrapped
     ? copy.conversation.scrollCode
@@ -242,7 +256,7 @@ function CodeBlock({ code, language }: CodeBlockProps) {
         try {
           const out = h.codeToHtml(code, {
             lang,
-            theme: SHIKI_THEME,
+            theme: shikiTheme,
             // Let outer wrapper own padding / background; Shiki's
             // <pre> just provides the colored tokens.
             transformers: [
@@ -257,7 +271,7 @@ function CodeBlock({ code, language }: CodeBlockProps) {
               },
             ],
           });
-          setHtml(out);
+          setHighlighted({ key: highlightKey, html: out });
         } catch {
           // Unknown language slip — keep the plain fallback below.
         }
@@ -270,7 +284,7 @@ function CodeBlock({ code, language }: CodeBlockProps) {
     return () => {
       cancelled = true;
     };
-  }, [code, lang]);
+  }, [code, highlightKey, lang, shikiTheme]);
 
   return (
     <div className="group/codeblock relative my-3.5 overflow-hidden rounded-md border border-line bg-surface">
