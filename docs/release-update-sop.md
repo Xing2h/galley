@@ -296,7 +296,8 @@ Run the live channel verifier:
 node scripts/check-update-channel.mjs \
   --repo wangjc683/galley \
   --tag "${RELEASE_TAG}" \
-  --channel beta
+  --channel beta \
+  --cache-bust
 ```
 
 Check:
@@ -308,8 +309,9 @@ Check:
 - The manifest changed on `galley-update-channel`.
 
 The promote workflow runs the same verifier after it pushes the channel branch.
-If this step fails, treat the update channel as not promoted even if the
-workflow generated a local `latest.json`.
+It passes `--cache-bust` so GitHub raw CDN cache cannot keep returning a stale
+but valid old manifest. If this step fails, treat the update channel as not
+promoted even if the workflow generated a local `latest.json`.
 
 ### 9. Dogfood App Update
 
@@ -358,6 +360,7 @@ Then:
 | Update downloads during active task | Protection regression | Stop release, fix before promotion |
 | Manifest URL points at wrong version | Wrong tag promoted | Promote the correct tag |
 | Live channel verifier returns 404 | Channel branch was not promoted or raw URL is wrong | Rerun promote, then verify `updates/beta/latest.json` on `galley-update-channel` |
+| Live channel verifier reads previous version | GitHub raw CDN returned stale but valid manifest content | Use `--cache-bust`, keep validation inside verifier retries, and confirm the pushed file on `galley-update-channel` |
 
 ## Done Criteria
 

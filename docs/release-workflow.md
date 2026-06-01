@@ -231,11 +231,13 @@ promote workflow 推送后会运行同一份 live channel verifier：
 node scripts/check-update-channel.mjs \
   --repo wangjc683/galley \
   --tag v0.2.0-beta.1 \
-  --channel beta
+  --channel beta \
+  --cache-bust
 ```
 
 这个检查必须过：它会确认 raw `latest.json` 返回 200、版本号匹配、三平台
 manifest 都存在、signature 是 inline 内容、平台 asset URL 可访问。
+`--cache-bust` 用来避开 GitHub raw CDN 短时间返回旧 manifest 的情况。
 如果这里失败，不要把 update channel 当作已经发布。
 
 ### Step 7. 后续
@@ -640,7 +642,8 @@ manifest 规则：
 
 - manifest 里的 `signature` 必须是 `.sig` 文件内容，不是 `.sig` URL。
 - manifest 里的 `url` 指向对应平台的 updater 包。
-- live channel 必须通过 `scripts/check-update-channel.mjs` 验证后才算完成。
+- live channel 必须通过 `scripts/check-update-channel.mjs --cache-bust`
+  验证后才算完成。
 - beta prerelease 不标记 GitHub Release 为 Latest，所以不要依赖
   `/releases/latest/download/latest.json` 作为 beta channel；使用上面的显式
   beta endpoint。

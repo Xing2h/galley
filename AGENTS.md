@@ -20,8 +20,8 @@ Current target:
 - Version: `0.2.1`
 - Release tag: `v0.2.1`
 - Agent API: `schemaVersion: 1`
-- Release tier: stable patch candidate; preparing post-0.2 dogfood polish
-  release for GitHub Latest and beta update-channel promotion.
+- Release tier: stable patch release; published as GitHub Latest and promoted
+  to the beta update channel on 2026-06-01.
 
 Read [project status](./docs/project-status.md) for the current milestone,
 release gates, and compact phase state.
