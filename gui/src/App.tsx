@@ -196,6 +196,7 @@ function App() {
   const pushToast = useUiStore((s) => s.pushToast);
   const dismissToast = useUiStore((s) => s.dismissToast);
   const checkForAppUpdate = useAppUpdateStore((s) => s.check);
+  const restartAppUpdate = useAppUpdateStore((s) => s.restart);
   const [emptyComposerFocusTick, setEmptyComposerFocusTick] = useState(0);
 
   const bridgeStatus = useRuntimeStore((s) =>
@@ -1628,6 +1629,9 @@ function App() {
         onViewProject={openProjectInSidebar}
         onRestartChannels={() => {
           void restartChannelsFromToast();
+        }}
+        onRestartAppUpdate={() => {
+          void restartAppUpdate();
         }}
       />
 

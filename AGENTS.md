@@ -193,7 +193,10 @@ pnpm --dir gui tauri dev
 ```
 
 This is a client app. Do not treat `pnpm dev` alone as full verification unless
-the task is explicitly web-only.
+the task is explicitly web-only. Do not spend verification time opening the
+Vite-only app in a browser for Settings, updater, IPC, database, menu/tray, or
+other Tauri-dependent flows: it lacks the Tauri runtime and will produce
+expected API errors. Use `pnpm --dir gui tauri dev` or static checks instead.
 
 ## Documentation Discipline
 

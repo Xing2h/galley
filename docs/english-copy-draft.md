@@ -488,9 +488,9 @@ Health Check rows:
 | 宠物会实时显示本对话的进展。 | It will show this conversation's progress in real time. |
 | 桌面宠物已关闭 | Desktop Pet closed |
 | 已是最新版本。 | Galley is up to date. |
-| 正在检查更新... | Checking for updates... |
-| 正在后台下载并准备更新... | Downloading and preparing the update in the background... |
-| v{version} 已准备好，重启后生效。 | v{version} is ready. Restart to apply it. |
+| 正在检查更新 | Checking for updates |
+| 发现新版本，正在后台准备更新 | New version found. Preparing it in the background. |
+| 新版本已下载，重启 Galley 生效 | New version downloaded. Restart Galley to apply it. |
 
 ## Project Dialogs And Archives
 

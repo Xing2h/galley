@@ -968,7 +968,7 @@ function SidebarSessionRow({
         )}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex min-h-5 items-center gap-1.5">
+        <div className="flex min-h-5 min-w-0 items-center gap-1.5">
           {isEditing ? (
             <SessionTitleEditor
               initial={session.title}
@@ -977,6 +977,7 @@ function SidebarSessionRow({
             />
           ) : (
             <div
+              title={session.title}
               className={cn(
                 "min-w-0 flex-1 truncate text-[13px] text-ink",
                 isRunning || showUnread || hasPendingAsk || hasPendingApproval

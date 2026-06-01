@@ -2,6 +2,7 @@ pub mod api;
 mod app_paths;
 pub mod app_update;
 pub mod browser_control;
+pub mod conversation_image;
 pub mod credential_store;
 pub mod db;
 pub mod discovery;
@@ -1070,6 +1071,8 @@ pub fn run() {
             get_supervisor_sop,
             app_update::check_app_update,
             app_update::install_app_update,
+            conversation_image::save_conversation_image,
+            conversation_image::open_conversation_image,
             check_path_install_status,
             install_galley_to_path,
             uninstall_galley_from_path,

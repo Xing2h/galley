@@ -53,8 +53,9 @@ export async function hydrateApp(): Promise<void> {
   // tauri.conf.json at build time. Failing fetch leaves the empty
   // string, which renders as `v` in Settings → About — a louder
   // "something's wrong" than silently displaying a stale literal.
+  let realVersion: string | null = null;
   try {
-    const realVersion = await getVersion();
+    realVersion = await getVersion();
     useRuntimeStore
       .getState()
       .patchRuntimeInfo({ workbenchVersion: realVersion });
@@ -65,6 +66,9 @@ export async function hydrateApp(): Promise<void> {
   // 2. Prefs hydrate. Runtime mode gates the sessions hydrate below:
   // the sidebar should list only the current runtime's sessions.
   const { hasGAConfig } = await usePrefsStore.getState().hydratePrefs();
+  if (realVersion) {
+    void useAppUpdateStore.getState().noteAppLaunched(realVersion);
+  }
 
   // 3. Managed runtime layout. This is intentionally safe to run on
   // every cold start: it only creates missing Galley-owned directories.

@@ -591,7 +591,7 @@ Today's vX.Y ships:
 - `TAURI_SIGNING_PRIVATE_KEY`: Tauri updater private key, GitHub Secret
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: 可选，Tauri updater private key 密码
 
-还没有配置时，UI 会显示「此构建未连接更新通道；Dev 模式下这是预期状态」，
+还没有配置时，UI 会显示「Dev 构建未连接更新通道」，
 但不会影响 Dev 或本地 build。生成 key pair：
 
 保护逻辑：只要有 session 正在运行，Galley 不会下载 / 安装 / relaunch 更新。

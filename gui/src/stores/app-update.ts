@@ -6,10 +6,13 @@ import {
   relaunchApp,
   type AppUpdateCheckResult,
 } from "@/lib/app-update";
+import { getPref, setPref } from "@/lib/db";
 import { copyForLanguage } from "@/lib/i18n";
 import { resolveLanguagePreference } from "@/lib/language";
 import { useMessagesStore } from "@/stores/messages";
 import { usePrefsStore } from "@/stores/prefs";
+import { useUiStore } from "@/stores/ui";
+import { makeAppError } from "@/types/app-error";
 
 export type AppUpdateStatus =
   | { kind: "idle" }
@@ -22,7 +25,6 @@ export type AppUpdateStatus =
       version: string;
       body: string | null;
       date: string | null;
-      autoDownload: boolean;
     }
   | { kind: "downloading"; version?: string }
   | { kind: "ready"; currentVersion: string; version: string }
@@ -39,8 +41,14 @@ interface AppUpdateStore {
   check: (options?: CheckOptions) => Promise<void>;
   downloadAndInstall: () => Promise<void>;
   restart: () => Promise<void>;
+  noteAppLaunched: (currentVersion: string) => Promise<void>;
   resetError: () => void;
 }
+
+const PREF_LAST_SEEN_VERSION = "app_update_last_seen_version";
+const PREF_PREPARED_VERSION = "app_update_prepared_version";
+const PREF_READY_TOAST_VERSION = "app_update_ready_toast_version";
+const PREF_COMPLETED_TOAST_VERSION = "app_update_completed_toast_version";
 
 export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
   status: { kind: "idle" },
@@ -57,19 +65,16 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
         set({ status: { kind: "idle" } });
         return;
       }
+      const shouldPrepare =
+        result.kind === "available" &&
+        (options?.downloadIfAvailable === true || options?.silent !== true);
       set({
-        status: statusFromCheckResult(result, {
-          autoDownload: options?.downloadIfAvailable === true,
-        }),
+        status: statusFromCheckResult(result),
         lastCheckedAt: new Date().toISOString(),
       });
-      if (
-        options?.downloadIfAvailable &&
-        result.kind === "available" &&
-        hasRunningSessions()
-      ) {
+      if (shouldPrepare && hasRunningSessions()) {
         ensureAutoPrepareOnIdleWatcher();
-      } else if (options?.downloadIfAvailable && result.kind === "available") {
+      } else if (shouldPrepare) {
         await get().downloadAndInstall();
       }
     } catch (error) {
@@ -88,7 +93,7 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
     const current = get().status;
     if (current.kind === "checking" || current.kind === "downloading") return;
     if (hasRunningSessions()) {
-      if (current.kind === "available" && current.autoDownload) {
+      if (current.kind === "available") {
         ensureAutoPrepareOnIdleWatcher();
       }
       return;
@@ -109,6 +114,7 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
           version: result.version,
         },
       });
+      await notifyUpdateReady(result.version);
     } catch (error) {
       console.warn("[updates] download/install failed", error);
       set({
@@ -125,6 +131,16 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
     await relaunchApp();
   },
 
+  noteAppLaunched: async (currentVersion) => {
+    if (!currentVersion) return;
+    await maybeNotifyUpdateCompleted(currentVersion);
+    try {
+      await setPref(PREF_LAST_SEEN_VERSION, currentVersion);
+    } catch (error) {
+      console.warn("[updates] last-seen version persistence failed", error);
+    }
+  },
+
   resetError: () => {
     if (get().status.kind === "error") {
       set({ status: { kind: "idle" } });
@@ -132,10 +148,7 @@ export const useAppUpdateStore = create<AppUpdateStore>((set, get) => ({
   },
 }));
 
-function statusFromCheckResult(
-  result: AppUpdateCheckResult,
-  options: { autoDownload: boolean },
-): AppUpdateStatus {
+function statusFromCheckResult(result: AppUpdateCheckResult): AppUpdateStatus {
   switch (result.kind) {
     case "unconfigured":
       return {
@@ -154,7 +167,6 @@ function statusFromCheckResult(
         version: result.version,
         body: result.body,
         date: result.date,
-        autoDownload: options.autoDownload,
       };
   }
 }
@@ -172,16 +184,116 @@ function hasRunningSessionsInState(
 let autoPrepareOnIdleWatcherStarted = false;
 
 function ensureAutoPrepareOnIdleWatcher(): void {
-  if (autoPrepareOnIdleWatcherStarted) return;
-  autoPrepareOnIdleWatcherStarted = true;
-  useMessagesStore.subscribe((state, previousState) => {
-    if (hasRunningSessionsInState(state)) return;
-    if (!hasRunningSessionsInState(previousState)) return;
+  if (!autoPrepareOnIdleWatcherStarted) {
+    autoPrepareOnIdleWatcherStarted = true;
+    useMessagesStore.subscribe((state, previousState) => {
+      if (hasRunningSessionsInState(state)) return;
+      if (!hasRunningSessionsInState(previousState)) return;
 
-    const status = useAppUpdateStore.getState().status;
-    if (status.kind !== "available" || !status.autoDownload) return;
+      const status = useAppUpdateStore.getState().status;
+      if (status.kind !== "available") return;
+      void useAppUpdateStore.getState().downloadAndInstall();
+    });
+  }
+
+  const status = useAppUpdateStore.getState().status;
+  if (status.kind === "available" && !hasRunningSessions()) {
     void useAppUpdateStore.getState().downloadAndInstall();
-  });
+  }
+}
+
+async function notifyUpdateReady(version: string): Promise<void> {
+  try {
+    await setPref(PREF_PREPARED_VERSION, version);
+  } catch (error) {
+    console.warn("[updates] prepared version persistence failed", error);
+  }
+
+  const alreadyShown = await safeGetPref<string>(PREF_READY_TOAST_VERSION);
+  if (alreadyShown === version) return;
+
+  const copy = updateCopy();
+  useUiStore.getState().pushToast(
+    makeAppError({
+      id: `app-update-ready-${version}`,
+      category: "business",
+      severity: "info",
+      title: copy.toasts.updateReady,
+      message: copy.toasts.updateReadyMessage,
+      hint: null,
+      retryable: false,
+      context: "app_update_ready",
+      traceback: null,
+      action: {
+        kind: "restart_app_update",
+        label: copy.updates.restart,
+      },
+    }),
+  );
+
+  try {
+    await setPref(PREF_READY_TOAST_VERSION, version);
+  } catch (error) {
+    console.warn("[updates] ready toast persistence failed", error);
+  }
+}
+
+async function maybeNotifyUpdateCompleted(currentVersion: string): Promise<void> {
+  const [lastSeenVersion, preparedVersion, completedToastVersion] =
+    await Promise.all([
+      safeGetPref<string>(PREF_LAST_SEEN_VERSION),
+      safeGetPref<string>(PREF_PREPARED_VERSION),
+      safeGetPref<string>(PREF_COMPLETED_TOAST_VERSION),
+    ]);
+
+  const versionChanged =
+    typeof lastSeenVersion === "string" &&
+    lastSeenVersion.length > 0 &&
+    lastSeenVersion !== currentVersion;
+  const preparedThisVersion = preparedVersion === currentVersion;
+
+  if (
+    completedToastVersion === currentVersion ||
+    (!versionChanged && !preparedThisVersion)
+  ) {
+    return;
+  }
+
+  const copy = updateCopy();
+  useUiStore.getState().pushToast(
+    makeAppError({
+      id: `app-update-completed-${currentVersion}`,
+      category: "business",
+      severity: "info",
+      title: copy.toasts.appUpdated,
+      message: copy.toasts.appUpdatedMessage,
+      hint: null,
+      retryable: false,
+      context: "app_update_completed",
+      traceback: null,
+    }),
+  );
+
+  try {
+    await setPref(PREF_COMPLETED_TOAST_VERSION, currentVersion);
+  } catch (error) {
+    console.warn("[updates] completed toast persistence failed", error);
+  }
+}
+
+async function safeGetPref<T>(key: string): Promise<T | undefined> {
+  try {
+    return await getPref<T>(key);
+  } catch (error) {
+    console.warn(`[updates] pref load failed: ${key}`, error);
+    return undefined;
+  }
+}
+
+function updateCopy() {
+  return copyForLanguage(
+    resolveLanguagePreference(usePrefsStore.getState().languagePreference),
+  );
 }
 
 type UpdateErrorPhase = "check" | "install";
@@ -190,9 +302,7 @@ function readableUpdateError(
   error: unknown,
   phase: UpdateErrorPhase,
 ): string {
-  const copy = copyForLanguage(
-    resolveLanguagePreference(usePrefsStore.getState().languagePreference),
-  );
+  const copy = updateCopy();
   const raw =
     typeof error === "string"
       ? error

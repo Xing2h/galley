@@ -1,5 +1,12 @@
-import { Check, Copy } from "@phosphor-icons/react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import {
+  ArrowSquareOut,
+  Check,
+  Copy,
+  DownloadSimple,
+} from "@phosphor-icons/react";
+import * as ContextMenu from "@radix-ui/react-context-menu";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   Children,
   isValidElement,
@@ -17,8 +24,10 @@ import { createHighlighterCore, type HighlighterCore } from "shiki/core";
 import { createOnigurumaEngine } from "shiki/engine/oniguruma";
 
 import { useResolvedTheme } from "@/components/theme/ThemeContext";
-import { useCopy } from "@/lib/i18n";
+import { useCopy, type AppCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { useUiStore } from "@/stores/ui";
+import { makeAppError } from "@/types/app-error";
 
 /**
  * Markdown rendering for agent output (final answers + thinking
@@ -469,6 +478,7 @@ function MarkdownImage({
   src?: string | null;
   alt?: string | null;
 }) {
+  const copy = useCopy();
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const rawSrc = src?.trim() ?? "";
   const preview = failedSrc === rawSrc ? null : markdownImagePreview(src);
@@ -476,24 +486,55 @@ function MarkdownImage({
 
   if (!preview) return <MarkdownImageLink src={src} alt={alt} />;
 
+  const openLabel =
+    preview.kind === "remote"
+      ? copy.conversation.openImageInBrowser
+      : copy.conversation.openOriginalImageFile;
+  const itemClass = cn(
+    "flex cursor-pointer items-center gap-2 rounded-sm px-2.5 py-1.5 text-[12.5px] text-ink-soft outline-none transition-colors",
+    "data-[highlighted]:bg-hover data-[highlighted]:text-ink",
+  );
+
   return (
-    <span className="my-3 block max-w-full">
-      <a
-        href={preview.openHref}
-        target="_blank"
-        rel="noreferrer noopener"
-        className="inline-block max-w-full no-underline"
-      >
-        <img
-          src={preview.previewSrc}
-          alt={label}
-          loading="lazy"
-          decoding="async"
-          onError={() => setFailedSrc(rawSrc)}
-          className="block max-h-[420px] max-w-full rounded-[6px] border border-line bg-surface object-contain"
-        />
-      </a>
-    </span>
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
+        <span className="my-3 block max-w-full">
+          <a
+            href={preview.openHref}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-block max-w-full no-underline"
+          >
+            <img
+              src={preview.previewSrc}
+              alt={label}
+              loading="lazy"
+              decoding="async"
+              onError={() => setFailedSrc(rawSrc)}
+              className="block max-h-[420px] max-w-full rounded-[6px] border border-line bg-surface object-contain"
+            />
+          </a>
+        </span>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-50 min-w-[160px] rounded-md border border-line bg-elevated p-1 shadow-elevated">
+          <ContextMenu.Item
+            onSelect={() => void saveMarkdownImage(preview, copy)}
+            className={itemClass}
+          >
+            <DownloadSimple size={13} weight="thin" />
+            {copy.conversation.saveImage}
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            onSelect={() => void openMarkdownImage(preview, copy)}
+            className={itemClass}
+          >
+            <ArrowSquareOut size={13} weight="thin" />
+            {openLabel}
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }
 
@@ -524,29 +565,188 @@ function MarkdownImageLink({
 interface MarkdownImagePreview {
   previewSrc: string;
   openHref: string;
+  kind: "remote" | "local";
+  source: string;
+  filename: string;
+  extension: string;
 }
 
 const RASTER_IMAGE_EXT_RE = /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i;
 const WINDOWS_ABSOLUTE_PATH_RE = /^[a-zA-Z]:[\\/]/;
 const WINDOWS_UNC_PATH_RE = /^\\\\[^\\]+\\[^\\]+/;
+const IMAGE_FILENAME_UNSAFE_RE = /[<>:"/\\|?*]/g;
 
 function markdownImagePreview(
   value?: string | null,
 ): MarkdownImagePreview | null {
   const src = value?.trim();
   if (!src || !RASTER_IMAGE_EXT_RE.test(src)) return null;
+  const extension = rasterImageExtension(src);
+  if (!extension) return null;
 
   if (/^https:\/\//i.test(src)) {
-    return { previewSrc: src, openHref: src };
+    try {
+      const url = new URL(src);
+      return {
+        previewSrc: src,
+        openHref: src,
+        kind: "remote",
+        source: url.toString(),
+        filename: imageFilename(url.pathname, extension),
+        extension,
+      };
+    } catch {
+      return null;
+    }
   }
 
   const localPath = localPathFromMarkdownImageSrc(src);
   if (localPath) {
     const previewSrc = localPathToAssetSrc(localPath);
-    return previewSrc ? { previewSrc, openHref: previewSrc } : null;
+    const localExtension = rasterImageExtension(localPath) ?? extension;
+    return previewSrc
+      ? {
+          previewSrc,
+          openHref: previewSrc,
+          kind: "local",
+          source: localPath,
+          filename: imageFilename(localPath, localExtension),
+          extension: localExtension,
+        }
+      : null;
   }
 
   return null;
+}
+
+async function saveMarkdownImage(
+  preview: MarkdownImagePreview,
+  copy: AppCopy,
+): Promise<void> {
+  try {
+    const destinationPath = await save({
+      defaultPath: preview.filename,
+      filters: [{ name: "Image", extensions: [preview.extension] }],
+    });
+    if (!destinationPath) return;
+
+    await invoke("save_conversation_image", {
+      kind: preview.kind,
+      source: preview.source,
+      destinationPath,
+    });
+    pushImageToast({
+      title: copy.toasts.imageSaved,
+      message: copy.toasts.imageSavedMessage,
+      severity: "info",
+      context: "save_conversation_image",
+    });
+  } catch (e) {
+    console.warn("[MarkdownView] save image failed", e);
+    pushImageToast({
+      title: copy.toasts.imageSaveFailed,
+      message: copy.toasts.imageSaveFailedMessage,
+      severity: "error",
+      context: "save_conversation_image",
+      traceback: errorMessage(e),
+    });
+  }
+}
+
+async function openMarkdownImage(
+  preview: MarkdownImagePreview,
+  copy: AppCopy,
+): Promise<void> {
+  try {
+    await invoke("open_conversation_image", {
+      kind: preview.kind,
+      source: preview.source,
+    });
+  } catch (e) {
+    console.warn("[MarkdownView] open image failed", e);
+    pushImageToast({
+      title: copy.toasts.imageOpenFailed,
+      message: copy.toasts.imageOpenFailedMessage,
+      severity: "error",
+      context: "open_conversation_image",
+      traceback: errorMessage(e),
+    });
+  }
+}
+
+function pushImageToast({
+  title,
+  message,
+  severity,
+  context,
+  traceback = null,
+}: {
+  title: string;
+  message: string;
+  severity: "info" | "error";
+  context: string;
+  traceback?: string | null;
+}): void {
+  useUiStore.getState().pushToast(
+    makeAppError({
+      category: "business",
+      severity,
+      title,
+      message,
+      hint: null,
+      retryable: false,
+      context,
+      traceback,
+      autoDismissMs: severity === "info" ? 2600 : undefined,
+    }),
+  );
+}
+
+function rasterImageExtension(value: string): string | null {
+  const match = /\.([a-z0-9]+)(?:[?#].*)?$/i.exec(value);
+  const ext = match?.[1]?.toLowerCase();
+  if (!ext || !["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) {
+    return null;
+  }
+  return ext;
+}
+
+function imageFilename(pathOrUrlPath: string, extension: string): string {
+  const raw = pathOrUrlPath.split(/[\\/]/).filter(Boolean).pop() ?? "";
+  const decoded = decodeMarkdownLocalPath(raw);
+  const sanitized = stripFilenameControlChars(decoded)
+    .replace(IMAGE_FILENAME_UNSAFE_RE, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (sanitized && rasterImageExtension(sanitized)) return sanitized;
+  return fallbackImageFilename(extension);
+}
+
+function stripFilenameControlChars(value: string): string {
+  return Array.from(value)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join("");
+}
+
+function fallbackImageFilename(extension: string): string {
+  const stamp = new Date()
+    .toISOString()
+    .slice(0, 19)
+    .replace(/[-:T]/g, "")
+    .replace(/^(\d{8})(\d{6})$/, "$1-$2");
+  return `galley-image-${stamp}.${extension}`;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.stack ?? error.message;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
 }
 
 function markdownUrlTransform(

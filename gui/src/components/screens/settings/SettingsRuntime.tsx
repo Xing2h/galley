@@ -159,11 +159,15 @@ export function SettingsRuntime({
         {externalRuntimeDetails}
       </AdvancedRuntimeSettings>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
-        <div className="font-mono text-[11px] text-ink-muted">
-          Galley v{info.workbenchVersion}
-        </div>
-        <SettingsUpdateControl hasRunningSessions={hasRunningSessions} />
+      <div className="border-t border-line pt-4">
+        <SettingsUpdateControl
+          hasRunningSessions={hasRunningSessions}
+          leading={
+            <div className="font-mono text-[11px] text-ink-muted">
+              Galley v{info.workbenchVersion}
+            </div>
+          }
+        />
       </div>
     </div>
   );

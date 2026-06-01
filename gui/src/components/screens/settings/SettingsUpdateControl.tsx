@@ -2,10 +2,10 @@ import {
   ArrowClockwise,
   CheckCircle,
   CircleNotch,
-  DownloadSimple,
   Info,
   Warning,
 } from "@phosphor-icons/react";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useCopy, type AppCopy } from "@/lib/i18n";
@@ -14,17 +14,18 @@ import { useAppUpdateStore, type AppUpdateStatus } from "@/stores/app-update";
 
 interface SettingsUpdateControlProps {
   hasRunningSessions: boolean;
+  leading?: ReactNode;
   className?: string;
 }
 
 export function SettingsUpdateControl({
   hasRunningSessions,
+  leading,
   className,
 }: SettingsUpdateControlProps) {
   const copy = useCopy();
   const updateStatus = useAppUpdateStore((s) => s.status);
   const checkUpdate = useAppUpdateStore((s) => s.check);
-  const downloadAndInstall = useAppUpdateStore((s) => s.downloadAndInstall);
   const restart = useAppUpdateStore((s) => s.restart);
 
   const handleUpdateAction = async () => {
@@ -32,10 +33,6 @@ export function SettingsUpdateControl({
       updateStatus.kind === "checking" ||
       updateStatus.kind === "downloading"
     ) {
-      return;
-    }
-    if (updateStatus.kind === "available") {
-      await downloadAndInstall();
       return;
     }
     if (updateStatus.kind === "ready") {
@@ -48,12 +45,15 @@ export function SettingsUpdateControl({
 
   return (
     <div className={cn("min-w-0", className)}>
-      <UpdateActionButton
-        status={updateStatus}
-        hasRunningSessions={hasRunningSessions}
-        copy={copy}
-        onClick={handleUpdateAction}
-      />
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {leading}
+        <UpdateActionButton
+          status={updateStatus}
+          hasRunningSessions={hasRunningSessions}
+          copy={copy}
+          onClick={handleUpdateAction}
+        />
+      </div>
       <UpdateStatusLine
         status={updateStatus}
         hasRunningSessions={hasRunningSessions}
@@ -102,22 +102,25 @@ function UpdateStatusLine({
   copy: AppCopy;
 }) {
   const view = updateStatusView(status, hasRunningSessions, copy);
-  if (!view) return null;
-  const Icon = view.Icon;
+  const Icon = view?.Icon;
   return (
     <div
       aria-live="polite"
       className={cn(
-        "mt-1 flex min-w-0 items-center gap-1.5 text-[11.5px] leading-[1.45]",
-        view.className,
+        "mt-1 flex min-h-[17px] min-w-0 items-center gap-1.5 text-[11.5px] leading-[1.45]",
+        view?.className,
       )}
     >
-      <Icon
-        size={11}
-        weight="thin"
-        className={cn("shrink-0", view.spin && "spin")}
-      />
-      <span className="min-w-0">{view.message}</span>
+      {view && Icon && (
+        <>
+          <Icon
+            size={11}
+            weight="thin"
+            className={cn("shrink-0", view.spin && "spin")}
+          />
+          <span className="min-w-0">{view.message}</span>
+        </>
+      )}
     </div>
   );
 }
@@ -144,9 +147,10 @@ function updateButtonView(
       return {
         label: hasRunningSessions
           ? copy.updates.waitForTasks
-          : copy.updates.download,
-        Icon: DownloadSimple,
-        disabled: hasRunningSessions,
+          : copy.updates.preparingShort,
+        Icon: ArrowClockwise,
+        disabled: true,
+        spin: !hasRunningSessions,
       };
     case "downloading":
       return {
@@ -163,7 +167,7 @@ function updateButtonView(
       };
     case "upToDate":
       return {
-        label: copy.updates.checkAgain,
+        label: copy.updates.check,
         Icon: ArrowClockwise,
         disabled: false,
       };
@@ -194,14 +198,14 @@ function updateStatusView(
 } | null {
   if (status.kind === "ready" && hasRunningSessions) {
     return {
-      message: copy.updates.readyAfterTasks(status.version),
+      message: copy.updates.readyAfterTasks,
       Icon: Warning,
       className: "text-warning",
     };
   }
   if (status.kind === "available" && hasRunningSessions) {
     return {
-      message: copy.updates.foundAfterTasks(status.version),
+      message: copy.updates.foundAfterTasks,
       Icon: Warning,
       className: "text-warning",
     };
@@ -229,20 +233,21 @@ function updateStatusView(
       };
     case "available":
       return {
-        message: copy.updates.found(status.version),
-        Icon: DownloadSimple,
+        message: copy.updates.foundPreparing,
+        Icon: CircleNotch,
         className: "text-brand-strong",
+        spin: true,
       };
     case "downloading":
       return {
-        message: copy.updates.downloading,
+        message: copy.updates.preparing,
         Icon: CircleNotch,
         className: "text-brand-strong",
         spin: true,
       };
     case "ready":
       return {
-        message: copy.updates.ready(status.version),
+        message: copy.updates.ready,
         Icon: CheckCircle,
         className: "text-success",
       };

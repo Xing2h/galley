@@ -158,11 +158,11 @@ interface CreateProjectInputWire {
 // ---------------- helpers (private) ----------------
 
 /**
- * Title length cap for the derived title path (`maybeDeriveTitle` —
- * called from messagesStore.appendUserTurn). Chinese chars eat one cell
- * each; ~30 fills the Sidebar row's truncate window without wrapping.
+ * Safety cap for auto-derived persisted titles. Sidebar rows decide visible
+ * width with CSS truncation, so keep enough source text for wide sidebars while
+ * avoiding unbounded prompt-sized titles in rename/search surfaces.
  */
-const TITLE_DERIVE_MAX = 30;
+const TITLE_DERIVE_MAX = 80;
 
 function deriveTitleFromText(text: string): string {
   const oneLine = text.replace(/\s+/g, " ").trim();

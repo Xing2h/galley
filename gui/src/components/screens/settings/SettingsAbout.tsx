@@ -60,10 +60,12 @@ export function SettingsAbout({
       <dl className="m-0 grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
         <dt className="text-ink-muted">{copy.settings.about.galleyVersion}</dt>
         <dd className="m-0 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-ink">v{workbenchVersion}</span>
-            <SettingsUpdateControl hasRunningSessions={hasRunningSessions} />
-          </div>
+          <SettingsUpdateControl
+            hasRunningSessions={hasRunningSessions}
+            leading={
+              <span className="font-mono text-ink">v{workbenchVersion}</span>
+            }
+          />
         </dd>
 
         <dt className="text-ink-muted">

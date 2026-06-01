@@ -60,6 +60,12 @@ pnpm tauri build
 `pnpm tauri dev` is the normal desktop dogfood command. It runs the client app,
 not a web-only experience.
 
+Avoid opening the Vite-only app in a browser for Settings, updater, IPC,
+database, menu/tray, or other Tauri-dependent flows. The page lacks the Tauri
+runtime, so `invoke` / `listen` / plugin APIs fail with expected errors and do
+not provide useful GUI verification. Use static checks for fast feedback, and
+use `pnpm --dir gui tauri dev` when the rendered desktop surface matters.
+
 ## Python Runner Rules
 
 - Python 3.10+.
