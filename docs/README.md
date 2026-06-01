@@ -12,7 +12,7 @@ matches who you are and what you are trying to do.
 | Contributor | [CONTRIBUTING](../CONTRIBUTING.md), then [engineering workflow](./engineering-workflow.md) |
 | Maintainer | [project status](./project-status.md), [release / update SOP](./release-update-sop.md), [release workflow](./release-workflow.md), [GA baseline](./ga-baseline.md) |
 | Historical reader | [devlog](./devlog/README.md) |
-| Coding agent | [CLAUDE.md](../CLAUDE.md), then the focused docs below |
+| Coding agent | [AGENTS.md](../AGENTS.md), then the focused docs below |
 
 ## Read By Task
 
@@ -38,7 +38,7 @@ matches who you are and what you are trying to do.
 
 ## Document Roles
 
-- [CLAUDE.md](../CLAUDE.md): short startup constitution for coding agents.
+- [AGENTS.md](../AGENTS.md): short startup constitution for coding agents.
 - [CONTRIBUTING](../CONTRIBUTING.md): contributor entry point.
 - [architecture](./architecture.md): external-facing system overview.
 - [project status](./project-status.md): current milestone, release gates, and
@@ -70,4 +70,4 @@ Do not duplicate long history into task documents. Prefer:
 - current rule in the focused document
 - link to the devlog for why
 - link to the playbook for how
-- update `CLAUDE.md` only for global rules every session must know
+- update `AGENTS.md` only for global rules every session must know

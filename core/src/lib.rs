@@ -1184,7 +1184,7 @@ pub fn run() {
             // Start the local socket listener (Unix socket on macOS/Linux,
             // Windows named pipe on Windows). CLI clients connect here to
             // send write commands + watch event streams from B2 M4 onward.
-            // Per CLAUDE.md Galley 架构原则 #1: localhost only, fs-perm
+            // Per AGENTS.md § Localhost Only: fs-perm
             // auth, no TCP / token. If bind fails or another instance
             // owns the socket, start() returns a dormant guard and Galley
             // Core keeps running — CLI clients will see exit 4 in that case.

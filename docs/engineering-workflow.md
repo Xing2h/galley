@@ -1,7 +1,7 @@
 # Engineering Workflow
 
 > Contributor-facing document. Coding agents should still start from
-> [CLAUDE.md](../CLAUDE.md); human contributors should start from
+> [AGENTS.md](../AGENTS.md); human contributors should start from
 > [CONTRIBUTING](../CONTRIBUTING.md).
 
 This document holds the engineering conventions that do not need to live in
@@ -13,11 +13,13 @@ every agent startup context.
 galley/
 ├── README.md
 ├── README_en.md
-├── CLAUDE.md
+├── AGENTS.md
 ├── runner/                  # Python bridge into GenericAgent
 ├── core/                    # Rust Galley Core + Tauri backend
 ├── cli/                     # Rust `galley` CLI
 ├── gui/                     # React / Tauri frontend
+├── managed-ga/              # Galley-managed GenericAgent runtime (code, patches, manifest)
+├── scripts/                 # Build, bundle, and release / update-channel scripts
 ├── docs/                    # Product, architecture, workflow, devlog
 └── .github/workflows/       # CI and release workflows
 ```
@@ -30,6 +32,9 @@ Key directories:
   socket / named pipe listener, bundled resources.
 - `cli/`: Agent-facing `galley` command.
 - `gui/`: React 19 + Tauri frontend, Zustand domain stores, visual components.
+- `managed-ga/`: Galley-managed GenericAgent runtime — vendored code, Galley
+  patches, and the runtime manifest.
+- `scripts/`: build, bundle, and release / update-channel automation.
 - `docs/refactor/`: B-phase implementation playbooks and invariants.
 - `docs/devlog/`: decision provenance and historical narrative.
 

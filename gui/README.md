@@ -2,7 +2,7 @@
 
 Tauri v2 + React 19 + TypeScript + Tailwind v4. macOS-first.
 
-See `../CLAUDE.md` for project-wide conventions; this README is just the dev quickstart.
+See `../AGENTS.md` for project-wide conventions; this README is just the dev quickstart.
 
 ## Dev
 

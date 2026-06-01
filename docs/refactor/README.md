@@ -6,13 +6,13 @@
 
 | 文档 | 角色 | 节奏 | 新 session 是否要读 |
 |---|---|---|---|
-| [`/CLAUDE.md`](../../CLAUDE.md) | 项目地图（在做什么） | 阶段切换 | 是 |
+| [`/AGENTS.md`](../../AGENTS.md) | 项目宪法（全局边界） | 每个 session | 是 |
 | [`docs/PRD.md`](../PRD.md) | 产品定义（要做什么） | 大版本 | 是（首次） |
 | [`docs/DESIGN.md`](../DESIGN.md) | 设计系统（UI 长啥样） | 设计决策时 | 否（只在 UI session 时） |
 | [`docs/devlog/`](../devlog/) | 决策叙事（为什么这么走） | 决策 / session 结束 | **新 session 必读最近 1-2 篇** |
 | **`docs/refactor/`（本目录）** | **执行手册（现在做哪一步）** | **每个 sub-task 完成时更新** | **新 session 必读本 README + 当前 phase playbook** |
 
-简言之：**CLAUDE.md / PRD 是 what 和 why，refactor/ 是 how 和 now**。
+简言之：**AGENTS.md 是不可违反的边界，PRD 是 what 和 why，refactor/ 是 how 和 now**。
 
 ## 目录结构
 
@@ -60,12 +60,13 @@ Blocker:  None for v0.2.0. Future release gates still follow
 
 每次开新 session 先按这个走：
 
-1. **读 [`/CLAUDE.md`](../../CLAUDE.md) 阶段表**，确认当前在哪个 stage（确认本文件没漂）
-2. **读本文件 progress dashboard**，看 cursor 指向哪个 phase
-3. **打开对应 phase playbook**，读它顶部的 cursor 字段——这是真正的"下一步"
-4. **读该 phase 的 running notes**（playbook 底部）——看前几个 session 踩过什么坑
-5. **读 [invariants.md](./invariants.md)**——确认本次操作不违反任何硬规则
-6. **读最近 1-2 篇 [devlog](../devlog/)**——补叙事上下文
+1. **读 [`/AGENTS.md`](../../AGENTS.md)**，确认全局边界和必须遵守的项目规则
+2. **读 [`project-status`](../project-status.md)**，确认当前版本、release 状态和 compact phase state
+3. **读本文件 progress dashboard**，看 cursor 指向哪个 phase
+4. **打开对应 phase playbook**，读它顶部的 cursor 字段——这是真正的"下一步"
+5. **读该 phase 的 running notes**（playbook 底部）——看前几个 session 踩过什么坑
+6. **读 [invariants.md](./invariants.md)**——确认本次操作不违反任何硬规则
+7. **读最近 1-2 篇 [devlog](../devlog/)**——补叙事上下文
 
 加起来 10 分钟内能上手。
 

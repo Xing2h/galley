@@ -77,4 +77,4 @@ skill is re-synced — pull the latest skill version.
 
 - [Galley CLI agent-api](https://github.com/wangjc683/galley/blob/main/docs/agent-api.md) — full command schema
 - [Galley PRD §11](https://github.com/wangjc683/galley/blob/main/docs/PRD.md) — CLI surface
-- [Galley architecture principles](https://github.com/wangjc683/galley/blob/main/CLAUDE.md) — why Galley is localhost-only and your data never leaves your machine
+- [Galley architecture principles](https://github.com/wangjc683/galley/blob/main/AGENTS.md) — why Galley is localhost-only and your data never leaves your machine

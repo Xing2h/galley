@@ -17,7 +17,7 @@ The contract between **Galley** and any agent that drives it via the
 The CLI output schema **and the socket wire format** are both part of
 Galley's public contract — supervisor agents and Skills depend on
 them. We commit to the rules in
-[CLAUDE.md "Galley 架构原则 §2 CLI surface 是公开契约面"](../CLAUDE.md).
+[AGENTS.md "CLI Surface Is Public Contract"](../AGENTS.md).
 
 - **`schemaVersion: 1` is additive-only.** New optional fields can
   arrive on requests and responses; existing field names and semantics
@@ -181,7 +181,7 @@ runner is available.
 **No TCP, no token, no TLS.** Auth = filesystem permission (Unix) /
 user-scoped namespace (Windows). Cross-machine access goes through
 GA's IM frontends + Galley CLI on the host machine, not directly to
-this socket. See [CLAUDE.md "Galley 架构原则 #1 Localhost only"](../CLAUDE.md).
+this socket. See [AGENTS.md "Localhost Only"](../AGENTS.md).
 
 #### Wire format (NDJSON)
 
@@ -609,10 +609,10 @@ agents know the delegated task did not actually start.
 | `--reason`     | (none)                               | Free-text rationale on `origin.reason`.                                                        |
 
 ```bash
-$ galley session new "summarize CLAUDE.md" --project=proj_demo --llm=glm-4.5-x \
+$ galley session new "summarize AGENTS.md" --project=proj_demo --llm=glm-4.5-x \
     --supervisor=ga-claude-1 --reason="weekly review"
 {"session":{"id":"s-mvr2-3a7q","title":"新对话","status":"idle",…},
- "message":{"id":"msg_…","sessionId":"s-mvr2-3a7q","role":"user","content":"summarize CLAUDE.md", …},
+ "message":{"id":"msg_…","sessionId":"s-mvr2-3a7q","role":"user","content":"summarize AGENTS.md", …},
  "dispatch":"dispatched"}
 ```
 

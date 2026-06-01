@@ -413,4 +413,4 @@ Refuse these — they're not in the surface:
 - [`references/galley-supervisor-sop.md`](references/galley-supervisor-sop.md) — full SOP (edge cases, extended scenarios, `not in v0.2.0-beta.1` list)
 - [PRD §11](https://github.com/wangjc683/galley/blob/main/docs/PRD.md) — CLI command surface
 - [agent-api.md](https://github.com/wangjc683/galley/blob/main/docs/agent-api.md) — full schema (authoritative if SOP and schema diverge)
-- [CLAUDE.md "Galley 架构原则"](https://github.com/wangjc683/galley/blob/main/CLAUDE.md) — localhost only / CLI public contract / data stays in Galley
+- [AGENTS.md "Galley 架构原则"](https://github.com/wangjc683/galley/blob/main/AGENTS.md) — localhost only / CLI public contract / data stays in Galley

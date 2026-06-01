@@ -5,7 +5,8 @@
 
 > **Purpose**: M9 T9.1 / A13 acceptance deliverable.
 > **Status**: v0.2.0 shipped, 2026-05-31.
-> **Scope**: 把 [CLAUDE.md "Galley 架构原则"](../CLAUDE.md) 4 条原则逐条 demo 到具体代码位置 + grep / 测试可验证项。
+> **Scope**: 把 v0.2 / B-phase 的 4 个架构不变量逐条 demo 到具体代码位置 + grep / 测试可验证项。
+> [AGENTS.md](../AGENTS.md) 是完整项目宪法；本文件只覆盖这 4 个 verification-facing invariants。
 
 ---
 
@@ -41,7 +42,7 @@ grep -rin "jwt\|oauth\|api[_-]key\|bearer" core/src/ | grep -v "//\|test"
 ### Tests demonstrating principle
 
 - [`core/tests/socket_listener_test.rs:7-13`](../core/tests/socket_listener_test.rs) — only AF_UNIX/named pipe accepted; no TCP fallback
-- B2 M3 sub-plan §1.3 explicitly rejects TCP variant; CLAUDE.md §B4-I2 codifies invariant
+- B2 M3 sub-plan §1.3 explicitly rejects TCP variant; AGENTS.md § Localhost Only codifies invariant
 
 ---
 
@@ -189,9 +190,9 @@ All four expect exit code 0.
 
 This document serves M9 T9.1 acceptance:
 
-- **A13** (所有 Galley 架构原则在 code review 中能逐条 demo) ✅ — 4 principles 各自有 code refs + grep gates + tests + devlog provenance.
+- **A13** (v0.2 / B-phase 架构不变量在 code review 中能逐条 demo) ✅ — 4 invariants 各自有 code refs + grep gates + tests + devlog provenance.
 
 Future B-phase or v0.6 additions to this doc should:
-1. Keep the 4-principle structure (additive only — never remove a principle without first changing CLAUDE.md)
+1. Keep this 4-invariant structure focused; AGENTS.md may contain broader project rules that belong in separate verification docs.
 2. Update code references when files move (B3 example: `desktop/src-tauri/` → `core/`)
-3. Add new principle as §5 / §6 if architecture genuinely extends (rare — last addition was v0.2 vision pivot 2026-05-15)
+3. Add a new invariant as §5 / §6 if this verification surface genuinely extends (rare — last addition was v0.2 vision pivot 2026-05-15)

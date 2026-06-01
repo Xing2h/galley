@@ -9,7 +9,7 @@
 # builds (`cargo build` from core/) never see this crate.
 #
 # **Different identifier** (`app.galley.m2spike`): isolates app-data dir
-# from production `app.galley` per CLAUDE.md "Tauri Identifier 不可随意改"
+# from production `app.galley` per AGENTS.md "Tauri Identifier Is Data-Critical"
 # discipline — we don't want spike runs to land near user dogfood data.
 #
 # **Throwaway**: per spike convention (B4 M2 prereq), this binary doesn't

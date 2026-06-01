@@ -9,7 +9,7 @@ existing architecture.
 
 Before changing code, read:
 
-- [CLAUDE.md](./CLAUDE.md) for non-negotiable project rules
+- [AGENTS.md](./AGENTS.md) for non-negotiable project rules
 - [docs/README.md](./docs/README.md) for the documentation map
 - [docs/engineering-workflow.md](./docs/engineering-workflow.md) for commands,
   repo layout, IPC rules, and git expectations

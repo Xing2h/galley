@@ -13,7 +13,7 @@
 //!
 //! ## Localhost only
 //!
-//! Per [CLAUDE.md Galley 架构原则 #1](../../CLAUDE.md), Galley Core never
+//! Per [AGENTS.md § Localhost Only](../../AGENTS.md), Galley Core never
 //! binds TCP. Filesystem permissions on the socket file (0600 on Unix,
 //! user-scoped pipe namespace on Windows) are the only access control —
 //! no tokens, no TLS, no auth layer. Remote access (e.g. supervisor agents

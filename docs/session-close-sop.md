@@ -29,7 +29,7 @@ full closeout unless the user is ending or pausing the session.
    - Prefer devlog for why a decision was made and what was rejected.
 
 3. Update documentation only where needed.
-   - `CLAUDE.md`: global rules and routing links only.
+   - `AGENTS.md`: global rules and routing links only.
    - Focused docs in `docs/`: current SOPs, architecture, API, release rules.
    - `docs/devlog/`: decision history, debugging narratives, rejected paths.
    - `docs/README.md`: add major new documents to the routing index.

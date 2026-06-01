@@ -610,7 +610,7 @@ Before acting, ask yourself:
 
 - Agent API: `https://github.com/wangjc683/galley/blob/main/docs/agent-api.md`
 - PRD: `https://github.com/wangjc683/galley/blob/main/docs/PRD.md`
-- Architecture principles: `https://github.com/wangjc683/galley/blob/main/CLAUDE.md`
+- Architecture principles: `https://github.com/wangjc683/galley/blob/main/AGENTS.md`
 
 If this SOP conflicts with `agent-api.md`, follow `agent-api.md`. The API schema
 is the contract; this SOP is operational guidance.

@@ -17,14 +17,11 @@ operators:
 
 Current target:
 
-- Version: `0.2.1`
-- Release tag: `v0.2.1`
-- Agent API: `schemaVersion: 1`
-- Release tier: stable patch release; published as GitHub Latest and promoted
-  to the beta update channel on 2026-06-01.
+- Agent API: `schemaVersion: 1` (frozen for the `0.2.x` line; see Rule 3)
 
-Read [project status](./docs/project-status.md) for the current milestone,
-release gates, and compact phase state.
+Read [project status](./docs/project-status.md) for the current version, release
+tag, release gates, update-channel state, and compact phase state. Those values
+change every release and are intentionally not pinned here.
 
 ## Names And Terms
 
@@ -139,11 +136,13 @@ The Tauri identifier controls the user data directory. Do not change
 ## Repo Map
 
 ```text
-runner/   Python bridge into GenericAgent
-core/     Rust Galley Core + Tauri backend
-cli/      Rust `galley` command for agents
-gui/      React / Tauri frontend
-docs/     Product, architecture, workflow, and history
+runner/      Python bridge into GenericAgent
+core/        Rust Galley Core + Tauri backend
+cli/         Rust `galley` command for agents
+gui/         React / Tauri frontend
+managed-ga/  Galley-managed GenericAgent runtime (code, patches, manifest)
+scripts/     Build, bundle, and release / update-channel scripts
+docs/        Product, architecture, workflow, and history
 ```
 
 ## Read On Demand
@@ -186,6 +185,17 @@ pnpm --dir gui lint
 git diff --check
 ```
 
+When the change touches `runner/` (Python bridge), also run:
+
+```bash
+.venv/bin/python -m pytest          # unit tests (e2e is deselected by default)
+.venv/bin/python -m mypy runner     # strict typing
+.venv/bin/ruff check runner         # lint
+```
+
+The e2e suite needs a real GA + LLM and is opt-in:
+`GA_PATH=… BRIDGE_PYTHON=… .venv/bin/python -m pytest -m e2e`.
+
 Desktop dogfood:
 
 ```bash
@@ -200,7 +210,7 @@ expected API errors. Use `pnpm --dir gui tauri dev` or static checks instead.
 
 ## Documentation Discipline
 
-- `CLAUDE.md` should stay short and global.
+- `AGENTS.md` should stay short and global.
 - Put task detail in focused docs under `docs/`.
 - Put decision history and rejected alternatives in [devlog](./docs/devlog/README.md).
 - Update [docs index](./docs/README.md) when adding a major new document.

@@ -272,7 +272,7 @@ percentiles. ~half-day of setup but trivial mechanics.
   is on a cold Python (full GA import). The TS path baseline measurement
   needs the same cold-start scenario for apples-to-apples. Will run TS-side
   measurement in Session 2.
-- **L1's GA commit is `fc6b5ad`** but today's CLAUDE.md baseline is
+- **L1's GA commit is `fc6b5ad`** but the documented GA baseline is
   `b063518`. JC's `~/Documents/GenericAgent` is on `main` (still on the old
   baseline), not on `upstream/main`. Not a problem for the prototype since
   we're not testing GA behavior — but flagging in case it matters for any
