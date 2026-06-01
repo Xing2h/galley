@@ -32,7 +32,7 @@ export function MessageAgent({
   if (typeof children === "string") {
     return (
       <div>
-        <MarkdownView source={children} variant="agent" />
+        <MarkdownView source={children} variant="agent" selectionCopyScope />
         {showActions && <MessageActions source={children} />}
       </div>
     );

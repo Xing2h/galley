@@ -13,6 +13,7 @@ import {
 } from "@/components/conversation/Conversation";
 import { StreamingCursor } from "@/components/conversation/LiveIndicators";
 import { MarkdownView } from "@/components/conversation/MarkdownView";
+import { SelectionCopyToolbar } from "@/components/conversation/SelectionCopyToolbar";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
 import { TurnTicker } from "@/components/conversation/TurnTicker";
 import { UserQuestionRail } from "@/components/conversation/UserQuestionRail";
@@ -634,6 +635,7 @@ export function MainView({
           turns={turns}
           scrollContainerRef={scrollContainerRef}
         />
+        <SelectionCopyToolbar scrollContainerRef={scrollContainerRef} />
 
         {/* Scroll-to-bottom floating button (DESIGN.md §4.3 streaming
             generation). Visible only when the user has scrolled away

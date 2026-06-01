@@ -45,25 +45,28 @@ export function SettingsUpdateControl({
 
   return (
     <div className={cn("min-w-0", className)}>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div
+        aria-live="polite"
+        className="flex min-w-0 flex-wrap items-center gap-2"
+      >
         {leading}
-        <UpdateActionButton
+        <UpdateActionControl
           status={updateStatus}
           hasRunningSessions={hasRunningSessions}
           copy={copy}
           onClick={handleUpdateAction}
         />
+        <UpdateInlineStatus
+          status={updateStatus}
+          hasRunningSessions={hasRunningSessions}
+          copy={copy}
+        />
       </div>
-      <UpdateStatusLine
-        status={updateStatus}
-        hasRunningSessions={hasRunningSessions}
-        copy={copy}
-      />
     </div>
   );
 }
 
-function UpdateActionButton({
+function UpdateActionControl({
   status,
   hasRunningSessions,
   copy,
@@ -74,8 +77,23 @@ function UpdateActionButton({
   copy: AppCopy;
   onClick: () => void;
 }) {
-  const view = updateButtonView(status, hasRunningSessions, copy);
+  const view = updateActionView(status, hasRunningSessions, copy);
   const Icon = view.Icon;
+  if (view.kind === "status") {
+    return (
+      <span
+        role="status"
+        className={cn(
+          "inline-flex h-6 cursor-default select-none items-center justify-center gap-1 rounded-sm border px-2 text-[11.5px] leading-none",
+          view.className,
+        )}
+      >
+        <Icon size={12} weight="thin" className={cn(view.spin && "spin")} />
+        <span>{view.label}</span>
+      </span>
+    );
+  }
+
   return (
     <Button
       variant="secondary"
@@ -92,7 +110,7 @@ function UpdateActionButton({
   );
 }
 
-function UpdateStatusLine({
+function UpdateInlineStatus({
   status,
   hasRunningSessions,
   copy,
@@ -101,84 +119,99 @@ function UpdateStatusLine({
   hasRunningSessions: boolean;
   copy: AppCopy;
 }) {
-  const view = updateStatusView(status, hasRunningSessions, copy);
+  const view = updateInlineStatusView(status, hasRunningSessions, copy);
   const Icon = view?.Icon;
+  if (!view || !Icon) return null;
   return (
-    <div
-      aria-live="polite"
+    <span
+      role="status"
       className={cn(
-        "mt-1 flex min-h-[17px] min-w-0 items-center gap-1.5 text-[11.5px] leading-[1.45]",
-        view?.className,
+        "inline-flex min-w-0 items-center gap-1.5 text-[11.5px] leading-[1.45]",
+        view.className,
       )}
     >
-      {view && Icon && (
-        <>
-          <Icon
-            size={11}
-            weight="thin"
-            className={cn("shrink-0", view.spin && "spin")}
-          />
-          <span className="min-w-0">{view.message}</span>
-        </>
-      )}
-    </div>
+      <Icon
+        size={11}
+        weight="thin"
+        className={cn("shrink-0", view.spin && "spin")}
+      />
+      <span className="min-w-0">{view.message}</span>
+    </span>
   );
 }
 
-function updateButtonView(
+function updateActionView(
   status: AppUpdateStatus,
   hasRunningSessions: boolean,
   copy: AppCopy,
-): {
-  label: string;
-  Icon: typeof ArrowClockwise;
-  disabled: boolean;
-  spin?: boolean;
-} {
+):
+  | {
+      kind: "button";
+      label: string;
+      Icon: typeof ArrowClockwise;
+      disabled: boolean;
+      spin?: boolean;
+    }
+  | {
+      kind: "status";
+      label: string;
+      Icon: typeof ArrowClockwise;
+      className: string;
+      spin?: boolean;
+    } {
   switch (status.kind) {
     case "checking":
       return {
-        label: copy.updates.checkingShort,
-        Icon: ArrowClockwise,
-        disabled: true,
+        kind: "status",
+        label: copy.updates.checking,
+        Icon: CircleNotch,
+        className: "border-line bg-elevated text-ink-muted",
         spin: true,
       };
     case "available":
       return {
+        kind: "status",
         label: hasRunningSessions
-          ? copy.updates.waitForTasks
-          : copy.updates.preparingShort,
-        Icon: ArrowClockwise,
-        disabled: true,
+          ? copy.updates.foundAfterTasks
+          : copy.updates.preparing,
+        Icon: hasRunningSessions ? Warning : CircleNotch,
+        className: hasRunningSessions
+          ? "border-warning/30 bg-warning/10 text-warning"
+          : "border-line bg-elevated text-brand-strong",
         spin: !hasRunningSessions,
       };
     case "downloading":
       return {
-        label: copy.updates.preparingShort,
-        Icon: ArrowClockwise,
-        disabled: true,
+        kind: "status",
+        label: copy.updates.preparing,
+        Icon: CircleNotch,
+        className: "border-line bg-elevated text-brand-strong",
         spin: true,
       };
     case "ready":
       return {
+        kind: "button",
         label: copy.updates.restart,
         Icon: CheckCircle,
         disabled: hasRunningSessions,
       };
     case "upToDate":
       return {
+        kind: "button",
         label: copy.updates.check,
         Icon: ArrowClockwise,
         disabled: false,
       };
     case "error":
       return {
+        kind: "button",
         label: copy.updates.retry,
         Icon: ArrowClockwise,
         disabled: false,
       };
     default:
       return {
+        kind: "button",
         label: copy.updates.check,
         Icon: ArrowClockwise,
         disabled: false,
@@ -186,7 +219,7 @@ function updateButtonView(
   }
 }
 
-function updateStatusView(
+function updateInlineStatusView(
   status: AppUpdateStatus,
   hasRunningSessions: boolean,
   copy: AppCopy,
@@ -203,22 +236,8 @@ function updateStatusView(
       className: "text-warning",
     };
   }
-  if (status.kind === "available" && hasRunningSessions) {
-    return {
-      message: copy.updates.foundAfterTasks,
-      Icon: Warning,
-      className: "text-warning",
-    };
-  }
 
   switch (status.kind) {
-    case "checking":
-      return {
-        message: copy.updates.checking,
-        Icon: CircleNotch,
-        className: "text-ink-muted",
-        spin: true,
-      };
     case "unconfigured":
       return {
         message: copy.updates.devNoChannel,
@@ -231,26 +250,6 @@ function updateStatusView(
         Icon: CheckCircle,
         className: "text-success",
       };
-    case "available":
-      return {
-        message: copy.updates.foundPreparing,
-        Icon: CircleNotch,
-        className: "text-brand-strong",
-        spin: true,
-      };
-    case "downloading":
-      return {
-        message: copy.updates.preparing,
-        Icon: CircleNotch,
-        className: "text-brand-strong",
-        spin: true,
-      };
-    case "ready":
-      return {
-        message: copy.updates.ready,
-        Icon: CheckCircle,
-        className: "text-success",
-      };
     case "error":
       return {
         message: status.message,
@@ -258,6 +257,10 @@ function updateStatusView(
         className: "text-warning",
       };
     case "idle":
+    case "checking":
+    case "available":
+    case "downloading":
+    case "ready":
       return null;
   }
 }

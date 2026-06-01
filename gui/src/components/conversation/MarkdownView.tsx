@@ -67,12 +67,14 @@ interface MarkdownViewProps {
    */
   variant: "agent" | "narration" | "thinking";
   className?: string;
+  selectionCopyScope?: boolean;
 }
 
 export function MarkdownView({
   source,
   variant,
   className,
+  selectionCopyScope = false,
 }: MarkdownViewProps) {
   const proseClass =
     variant === "agent"
@@ -81,7 +83,12 @@ export function MarkdownView({
         ? PROSE_NARRATION
         : PROSE_THINKING;
   return (
-    <div className={cn("select-text", proseClass, className)}>
+    <div
+      data-selection-copy-scope={
+        selectionCopyScope ? "assistant-answer" : undefined
+      }
+      className={cn("select-text", proseClass, className)}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={COMPONENTS}
