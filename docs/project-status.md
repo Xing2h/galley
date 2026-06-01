@@ -9,11 +9,11 @@ live in [refactor](./refactor/README.md).
 
 ## Current Target
 
-- Package version: `0.2.0`
-- Git tag / GitHub Release: `v0.2.0`
+- Package version: `0.2.1`
+- Git tag / GitHub Release: `v0.2.1`
 - Agent API schema: `schemaVersion: 1`
-- Release tier: first stable release; published as GitHub Latest and promoted
-  to the beta update channel on 2026-05-31.
+- Release tier: stable patch candidate; preparing post-0.2 dogfood polish
+  release for GitHub Latest and beta update-channel promotion.
 - Product shape: dual-native local agent team orchestrator
 
 Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
@@ -22,19 +22,16 @@ Supervisor automation on the same machine.
 
 ## Current Release State
 
-`v0.2.0` is published as Galley's first stable release. It includes the
-alpha.2 build plus post-alpha.2 dogfood fixes: small-screen onboarding,
-external-GA runtime probing, clearer model probe copy, unified tooltip
-behavior, compact bottom-left toasts, and the managed-mode Channels TopBar
-entry.
+`v0.2.1` is the current release candidate. It builds on the first stable
+`v0.2.0` release with post-0.2 dogfood polish: dark mode, Channels model-config
+restart feedback, bridge cwd resolution, update-check automation, stable
+Sidebar title expansion, and image save/open actions in conversation output.
 
 For the next release:
 
-1. Monitor post-release feedback, especially Windows path handling, selected GA
-   virtualenv / user-Python probing, bundled runtime startup, `960x600`
-   minimum window behavior, Browser Control, Channels entry, and IM QR refresh.
-2. Use `v0.2.1` for focused P0 / P1 bug fixes; do not bundle broad feature
-   work into a hotfix.
+1. Wait for CI and release workflow draft assets before publishing `v0.2.1`.
+2. Smoke Settings -> About update status, model-config Channels restart,
+   dark-mode switching, conversation image save/open, and Windows/macOS launch.
 3. Run release/update dry-run if packaging, signing, updater config, or bundled
    Python dependencies changed.
 4. Keep GitHub Release publishing and update-channel promotion as separate
@@ -55,8 +52,8 @@ For the next release:
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
 | Managed GA runtime | Shipped in v0.2.0; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | Backup mechanism exists; runtime identity and managed model config migrations are in dogfood | [B4 M8](./refactor/B4-M8-sub-plan.md) |
-| Release path | v0.2.0 published; macOS DMG + Windows NSIS + gated updater channel are live | [release / update SOP](./release-update-sop.md) |
-| Windows | v0.2.0 artifact shipped; post-release feedback should especially watch path / probe / min-window / IM flows | [Windows checklist](./windows-build-checklist.md) |
+| Release path | v0.2.1 candidate in prep; macOS DMG + Windows NSIS + gated updater channel remain the release path | [release / update SOP](./release-update-sop.md) |
+| Windows | v0.2.0 artifact shipped; v0.2.1 smoke should re-check path / probe / min-window / IM flows | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream commit | [GA baseline](./ga-baseline.md) |
 
 ## Compact Timeline
@@ -80,7 +77,7 @@ Detailed phase narratives are intentionally not duplicated here. Use:
 
 ## Release Version Rules
 
-- Current package metadata uses `0.2.0`. For the next release, update:
+- Current package metadata uses `0.2.1`. For the next release, update:
   - `package.json`
   - `core/tauri.conf.json`
   - `core/Cargo.toml`

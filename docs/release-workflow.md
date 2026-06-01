@@ -46,7 +46,7 @@ Semver 0.x.y，pre-1.0 阶段：
 | 例子 | 含义 | 触发场景 |
 |---|---|---|
 | `v0.2.0` | 增功能 release | 新 feature ship (e.g. Win 支持上线) |
-| `v0.2.1` | 补丁 release | 单点 bug fix (e.g. Win toggleMaximize 不灵) |
+| `v0.2.1` | 补丁 release | post-release bug fix / dogfood polish |
 | `v0.2.0-alpha.1` | alpha 预发版 | 内测 / 尝鲜 / dogfood 版 |
 | `v0.2.0-beta.1` | beta 预发版 | 更接近公开发布的 dogfood 版 |
 | `v0.2.0-rc.1` | release candidate | 稳定版前最后验证版 |

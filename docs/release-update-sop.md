@@ -28,7 +28,7 @@ promote the app update channel.
 Set the release tag for the rest of the checklist:
 
 ```bash
-RELEASE_TAG=v0.2.0
+RELEASE_TAG=v0.2.1
 ```
 
 Replace the example value before every release.
