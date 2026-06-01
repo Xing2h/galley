@@ -33,12 +33,14 @@ main().catch((error) => {
 
 async function main() {
   const manifest = await retry(
-    () => fetchJson(manifestUrl),
+    async () => {
+      const candidate = await fetchJson(manifestUrl);
+      validateManifest(candidate);
+      return candidate;
+    },
     retries,
     retryDelayMs,
   );
-
-  validateManifest(manifest);
 
   if (checkAssets) {
     for (const platform of REQUIRED_PLATFORMS) {
