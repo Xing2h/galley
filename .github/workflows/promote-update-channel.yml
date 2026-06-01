@@ -98,5 +98,6 @@ jobs:
             --repo "${{ github.repository }}" \
             --tag "${{ inputs.tag }}" \
             --channel "${{ inputs.channel }}" \
+            --cache-bust \
             --retries 6 \
             --retry-delay-ms 10000

@@ -23,6 +23,7 @@ const manifestUrl =
   args.url ??
   `https://raw.githubusercontent.com/${repo}/galley-update-channel/updates/${channel}/latest.json`;
 const checkAssets = args["no-asset-check"] !== true;
+const cacheBust = args["cache-bust"] === true;
 const retries = parsePositiveInt(args.retries ?? "1", "--retries");
 const retryDelayMs = parsePositiveInt(args["retry-delay-ms"] ?? "3000", "--retry-delay-ms");
 
@@ -34,7 +35,7 @@ main().catch((error) => {
 async function main() {
   const manifest = await retry(
     async () => {
-      const candidate = await fetchJson(manifestUrl);
+      const candidate = await fetchJson(manifestUrl, { cacheBust });
       validateManifest(candidate);
       return candidate;
     },
@@ -105,7 +106,7 @@ function validateManifest(manifest) {
   }
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, options = {}) {
   if (url.startsWith("file://")) {
     try {
       return JSON.parse(await fs.readFile(new URL(url), "utf8"));
@@ -114,7 +115,14 @@ async function fetchJson(url) {
     }
   }
 
-  const response = await fetch(url, { redirect: "follow" });
+  const requestUrl = options.cacheBust ? withCacheBust(url) : url;
+  const response = await fetch(requestUrl, {
+    redirect: "follow",
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+    },
+  });
   if (!response.ok) {
     throw new Error(`GET ${url} returned HTTP ${response.status}`);
   }
@@ -123,6 +131,15 @@ async function fetchJson(url) {
   } catch (error) {
     throw new Error(`GET ${url} did not return valid JSON: ${error.message}`);
   }
+}
+
+function withCacheBust(url) {
+  const parsed = new URL(url);
+  parsed.searchParams.set(
+    "_galley_check",
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  return parsed.toString();
 }
 
 async function assertUrlOk(url, label) {
@@ -214,6 +231,7 @@ Options:
   --url <url>                Override the manifest URL.
   --version <version>        Defaults to tag without leading "v".
   --no-asset-check           Skip HEAD/GET checks for platform asset URLs.
+  --cache-bust               Add a per-attempt query param to avoid stale raw CDN reads.
   --retries <count>          Defaults to 1.
   --retry-delay-ms <ms>      Defaults to 3000.
 `);
