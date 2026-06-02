@@ -107,14 +107,33 @@ def ask_user(question, candidates=None):
 
 import simphtml
 driver = None
+NO_BROWSER_TABS_MSG = "浏览器插件已连接，但没有可操作网页标签页。请在同一个 Chrome / Edge 里打开任意普通网页（http/https），然后重试。"
+NO_BROWSER_CONNECTION_MSG = "没有可用的浏览器标签页。请确认浏览器插件已加载，并在同一浏览器打开任意普通网页（http/https）。"
+
+def browser_control_empty_msg():
+    try:
+        if driver is not None and driver.get_status().get('extension_connected'):
+            return NO_BROWSER_TABS_MSG
+    except Exception:
+        pass
+    return NO_BROWSER_CONNECTION_MSG
+
 def first_init_driver():
     global driver
     from TMWebDriver import TMWebDriver
     driver = TMWebDriver()
-    for i in range(20):
+    # Chrome MV3 alarms have a 30s floor; first-run Browser Control can need
+    # one alarm cycle before the extension service worker reconnects.
+    deadline = time.time() + 45
+    sess = []
+    while time.time() < deadline:
         time.sleep(1)
         sess = driver.get_all_sessions()
         if len(sess) > 0: break
+        try:
+            if driver.get_status().get('extension_connected'): break
+        except Exception:
+            pass
     if len(sess) == 0: return 
     if len(sess) == 1: 
         #driver.newtab()
@@ -129,7 +148,7 @@ def web_scan(tabs_only=False, switch_tab_id=None, text_only=False, maxlen=35000)
     try:
         if driver is None: first_init_driver()
         if len(driver.get_all_sessions()) == 0:
-            return {"status": "error", "msg": "没有可用的浏览器标签页，查L3记忆分析原因。"}
+            return {"status": "error", "msg": browser_control_empty_msg()}
         tabs = []
         for sess in driver.get_all_sessions(): 
             sess.pop('connected_at', None)
@@ -175,7 +194,7 @@ def web_execute_js(script, switch_tab_id=None, no_monitor=False):
     global driver
     try:
         if driver is None: first_init_driver()
-        if len(driver.get_all_sessions()) == 0: return {"status": "error", "msg": "没有可用的浏览器标签页，查L3记忆分析原因。"}
+        if len(driver.get_all_sessions()) == 0: return {"status": "error", "msg": browser_control_empty_msg()}
         if switch_tab_id: driver.default_session_id = switch_tab_id
         result = simphtml.execute_js_rich(script, driver, no_monitor=no_monitor)
         return result

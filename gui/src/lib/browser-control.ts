@@ -2,12 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type BrowserControlProbeStatus =
   | "connected"
+  | "connected_no_tabs"
   | "not_connected"
   | "error";
 
 export type BrowserControlStatus =
   | "unknown"
   | "not_connected"
+  | "connected_no_tabs"
   | "connected"
   | "error";
 
@@ -41,4 +43,10 @@ export function openBrowserControlExtensionsPage(
   browser: BrowserControlBrowser,
 ): Promise<void> {
   return invoke("open_browser_control_extensions_page", { browser });
+}
+
+export function openBrowserControlTestPage(
+  browser: BrowserControlBrowser,
+): Promise<void> {
+  return invoke("open_browser_control_test_page", { browser });
 }

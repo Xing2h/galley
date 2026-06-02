@@ -20,6 +20,8 @@ use tokio::time;
 
 use crate::{managed_runtime, process_command};
 
+const PROBE_PROCESS_TIMEOUT: Duration = Duration::from_secs(50);
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserControlLayout {
@@ -44,6 +46,7 @@ pub struct BrowserControlProbe {
 #[serde(rename_all = "snake_case")]
 pub enum BrowserControlProbeStatus {
     Connected,
+    ConnectedNoTabs,
     NotConnected,
     Error,
 }
@@ -57,6 +60,7 @@ pub enum BrowserControlBrowser {
 
 const CHROME_EXTENSION_MANAGEMENT_URL: &str = "chrome://extensions";
 const EDGE_EXTENSION_MANAGEMENT_URL: &str = "edge://extensions";
+const BROWSER_CONTROL_TEST_PAGE_URL: &str = "https://example.com";
 
 #[cfg(any(target_os = "windows", test))]
 const CHROME_EXTENSION_MANAGEMENT_ARGS: &[&str] = &[CHROME_EXTENSION_MANAGEMENT_URL];
@@ -151,7 +155,7 @@ pub async fn probe_for_app(app: AppHandle) -> std::io::Result<BrowserControlProb
         let _ = stdin.shutdown().await;
     }
 
-    let output = match time::timeout(Duration::from_secs(12), child.wait_with_output()).await {
+    let output = match time::timeout(PROBE_PROCESS_TIMEOUT, child.wait_with_output()).await {
         Ok(output) => output?,
         Err(_) => {
             return Ok(BrowserControlProbe {
@@ -160,7 +164,9 @@ pub async fn probe_for_app(app: AppHandle) -> std::io::Result<BrowserControlProb
                 manifest_version: layout.manifest_version,
                 tab_count: 0,
                 sample_title: None,
-                message: Some("未检测到浏览器扩展连接。请确认扩展已加载并启用。".into()),
+                message: Some(
+                    "未检测到浏览器扩展连接。请确认扩展已加载并启用，然后重新测试。".into(),
+                ),
             });
         }
     };
@@ -187,6 +193,7 @@ pub async fn probe_for_app(app: AppHandle) -> std::io::Result<BrowserControlProb
 
     let status = match parsed.status.as_str() {
         "connected" => BrowserControlProbeStatus::Connected,
+        "connected_no_tabs" => BrowserControlProbeStatus::ConnectedNoTabs,
         "not_connected" => BrowserControlProbeStatus::NotConnected,
         _ => BrowserControlProbeStatus::Error,
     };
@@ -202,6 +209,10 @@ pub async fn probe_for_app(app: AppHandle) -> std::io::Result<BrowserControlProb
 
 pub async fn open_extensions_page(browser: BrowserControlBrowser) -> io::Result<()> {
     open_extensions_page_for_platform(browser).await
+}
+
+pub async fn open_test_page(browser: BrowserControlBrowser) -> io::Result<()> {
+    open_test_page_for_platform(browser).await
 }
 
 #[cfg(target_os = "macos")]
@@ -224,6 +235,18 @@ async fn open_extensions_page_for_platform(browser: BrowserControlBrowser) -> io
     }
 }
 
+#[cfg(target_os = "macos")]
+async fn open_test_page_for_platform(browser: BrowserControlBrowser) -> io::Result<()> {
+    let (bundle_id, app_name) = match browser {
+        BrowserControlBrowser::Chrome => ("com.google.Chrome", "Google Chrome"),
+        BrowserControlBrowser::Edge => ("com.microsoft.edgemac", "Microsoft Edge"),
+    };
+    match run_command("open", &["-b", bundle_id, BROWSER_CONTROL_TEST_PAGE_URL]).await {
+        Ok(()) => Ok(()),
+        Err(_) => run_command("open", &["-a", app_name, BROWSER_CONTROL_TEST_PAGE_URL]).await,
+    }
+}
+
 #[cfg(target_os = "windows")]
 async fn open_extensions_page_for_platform(browser: BrowserControlBrowser) -> io::Result<()> {
     let (command, args) = windows_extension_management_launch(browser);
@@ -240,6 +263,30 @@ async fn open_extensions_page_for_platform(browser: BrowserControlBrowser) -> io
     }
     let mut start_args = vec!["/C", "start", "", command];
     start_args.extend_from_slice(args);
+    match run_command("cmd", &start_args).await {
+        Ok(()) => Ok(()),
+        Err(e) => Err(last_error.unwrap_or(e)),
+    }
+}
+
+#[cfg(target_os = "windows")]
+async fn open_test_page_for_platform(browser: BrowserControlBrowser) -> io::Result<()> {
+    let command = match browser {
+        BrowserControlBrowser::Chrome => "chrome",
+        BrowserControlBrowser::Edge => "msedge",
+    };
+    let mut last_error = None;
+    for candidate in windows_browser_candidates(browser) {
+        if !candidate.is_file() {
+            continue;
+        }
+        let program = candidate.to_string_lossy().into_owned();
+        match spawn_command(&program, &[BROWSER_CONTROL_TEST_PAGE_URL]) {
+            Ok(()) => return Ok(()),
+            Err(e) => last_error = Some(e),
+        }
+    }
+    let start_args = vec!["/C", "start", "", command, BROWSER_CONTROL_TEST_PAGE_URL];
     match run_command("cmd", &start_args).await {
         Ok(()) => Ok(()),
         Err(e) => Err(last_error.unwrap_or(e)),
@@ -282,6 +329,28 @@ async fn open_extensions_page_for_platform(browser: BrowserControlBrowser) -> io
     let mut last_error = None;
     for command in commands {
         match spawn_command(command, &[url]) {
+            Ok(()) => return Ok(()),
+            Err(e) => last_error = Some(e),
+        }
+    }
+    Err(last_error
+        .unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "browser command not found")))
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+async fn open_test_page_for_platform(browser: BrowserControlBrowser) -> io::Result<()> {
+    let commands: &[&str] = match browser {
+        BrowserControlBrowser::Chrome => &[
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+        ],
+        BrowserControlBrowser::Edge => &["microsoft-edge", "microsoft-edge-stable"],
+    };
+    let mut last_error = None;
+    for command in commands {
+        match spawn_command(command, &[BROWSER_CONTROL_TEST_PAGE_URL]) {
             Ok(()) => return Ok(()),
             Err(e) => last_error = Some(e),
         }
@@ -398,18 +467,32 @@ if code_root:
 try:
     from TMWebDriver import TMWebDriver
     driver = TMWebDriver()
-    deadline = time.time() + 8
+    deadline = time.time() + 45
     sessions = []
+    bridge_status = {}
     while time.time() < deadline:
         sessions = driver.get_all_sessions()
         if sessions:
             break
+        try:
+            bridge_status = driver.get_status()
+            if bridge_status.get("extension_connected"):
+                break
+        except Exception:
+            bridge_status = {}
         time.sleep(0.25)
     if not sessions:
+        if bridge_status.get("extension_connected"):
+            print(json.dumps({
+                "status": "connected_no_tabs",
+                "tab_count": 0,
+                "message": "浏览器插件已连接，但没有可操作网页标签页。请在同一浏览器打开任意普通网页（http/https），然后重新测试。"
+            }, ensure_ascii=True))
+            raise SystemExit(0)
         print(json.dumps({
             "status": "not_connected",
             "tab_count": 0,
-            "message": "未检测到浏览器扩展连接。请确认扩展已加载并启用。"
+            "message": "未检测到浏览器扩展连接。请确认扩展已加载并启用，然后重新测试。"
         }, ensure_ascii=True))
     else:
         session_id = str(sessions[0].get("id"))

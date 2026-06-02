@@ -39,6 +39,8 @@ class TMWebDriver:
         self.sessions, self.results, self.acks = {}, {}, {}
         self.default_session_id = None  
         self.latest_session_id = None  
+        self.extension_client = None
+        self.extension_connected_at = None
         self.is_remote = socket.socket().connect_ex((host, port+1)) == 0
         if not self.is_remote:  
             self.start_ws_server()  
@@ -85,6 +87,7 @@ class TMWebDriver:
         @app.route('/link', method=['GET','POST'])
         def link():
             data = request.json
+            if data.get('cmd') == 'get_status': return json.dumps({'r': self.get_status()}, ensure_ascii=False)
             if data.get('cmd') == 'get_all_sessions': return json.dumps({'r': self.get_all_sessions()}, ensure_ascii=False)  
             if data.get('cmd') == 'find_session': 
                 url_pattern = data.get('url_pattern', '')
@@ -129,6 +132,7 @@ class TMWebDriver:
                             'connected_at': time.time(), 'type': 'ws'}  
                         driver._register_client(session_id, self, session_info)  
                     elif data.get('type') in ['ext_ready', 'tabs_update']:
+                        driver._register_extension_client(self)
                         tabs = data.get('tabs', [])
                         current_tab_ids = {str(tab['id']) for tab in tabs}
                         print(f"Received tabs update: {current_tab_ids}")
@@ -175,8 +179,14 @@ class TMWebDriver:
 
         self.latest_session_id = session_id
         if self.default_session_id is None: self.default_session_id = session_id 
+
+    def _register_extension_client(self, client: WebSocket) -> None:
+        self.extension_client = client
+        self.extension_connected_at = time.time()
     
     def _unregister_client(self, client: WebSocket) -> None:  
+        if self.extension_client == client:
+            self.extension_client = None
         for session in self.sessions.values():
             if session.ws_client == client: session.mark_disconnected()
     
@@ -252,6 +262,17 @@ class TMWebDriver:
             return self._remote_cmd({"cmd": "get_all_sessions"}).get('r', [])
         return [{'id': session.id, **session.info} for session in self.sessions.values()
                 if session.is_active()]  
+
+    def get_status(self):
+        if self.is_remote:
+            try: return self._remote_cmd({"cmd": "get_status"}).get('r', {})
+            except Exception: return {'extension_connected': False, 'tab_count': len(self.get_all_sessions())}
+        sessions = self.get_all_sessions()
+        return {
+            'extension_connected': self.extension_client is not None,
+            'extension_connected_at': self.extension_connected_at,
+            'tab_count': len(sessions)
+        }
 
     def get_session_dict(self):
         return {session['id']: session['url'] for session in self.get_all_sessions()}

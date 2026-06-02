@@ -360,6 +360,15 @@ async fn open_browser_control_extensions_page(
 }
 
 #[tauri::command]
+async fn open_browser_control_test_page(
+    browser: browser_control::BrowserControlBrowser,
+) -> std::result::Result<(), String> {
+    browser_control::open_test_page(browser)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn get_im_supervisor_status(
     app: tauri::AppHandle,
     manager: tauri::State<'_, std::sync::Arc<im_supervisor::ImSupervisorManager>>,
@@ -1214,6 +1223,7 @@ pub fn run() {
             ensure_browser_control_layout,
             probe_browser_control,
             open_browser_control_extensions_page,
+            open_browser_control_test_page,
             get_im_supervisor_status,
             start_im_supervisor,
             stop_im_supervisor,

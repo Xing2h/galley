@@ -11,16 +11,16 @@ import {
   Warning,
   X,
 } from "@phosphor-icons/react";
-import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
 import {
   openBrowserControlExtensionsPage,
+  openBrowserControlTestPage,
   type BrowserControlBrowser,
 } from "@/lib/browser-control";
 import { useCopy } from "@/lib/i18n";
-import { isWindows } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useBrowserControlStore } from "@/stores/browser-control";
 
@@ -32,6 +32,7 @@ interface BrowserControlSetupDialogProps {
 
 const BROWSER_CONTROL_GUIDE_URL =
   "https://datawhalechina.github.io/hello-generic-agent/part1/chapter2/#_2-1-1-chrome-安装步骤";
+const BROWSER_CONTROL_TEST_PAGE_URL = "https://example.com";
 
 export function BrowserControlSetupDialog({
   open,
@@ -53,13 +54,19 @@ export function BrowserControlSetupDialog({
 
   const extensionDir = layout?.extensionDir ?? lastProbe?.extensionDir ?? "";
   const connected = status === "connected";
+  const connectedNoTabs = status === "connected_no_tabs";
+  const bridgeReady = connected || connectedNoTabs;
   const layoutReady = Boolean(extensionDir);
   const statusMessage = connected
     ? copy.connectedStatus
-    : error || lastProbe?.message || copy.waitingStatus;
+    : connectedNoTabs
+      ? copy.connectedNoTabsStatus
+      : error || lastProbe?.message || copy.waitingStatus;
   const statusDetail = connected
     ? copy.connectedStatusDetail(lastProbe?.tabCount ?? 0)
-    : "";
+    : connectedNoTabs
+      ? copy.connectedNoTabsStatusDetail
+      : "";
 
   useEffect(() => {
     if (!open || layoutReady || busy || layoutError) return;
@@ -86,16 +93,21 @@ export function BrowserControlSetupDialog({
     }
   };
 
+  const openTestPage = async (browser: BrowserControlBrowser) => {
+    setOpenError(null);
+    try {
+      await openBrowserControlTestPage(browser);
+    } catch {
+      setOpenError(copy.openTestPageFallback(BROWSER_CONTROL_TEST_PAGE_URL));
+    }
+  };
+
   const showFolder = async () => {
     setOpenError(null);
     const currentLayout = layout ?? (await ensureLayout());
     if (!currentLayout) return;
     try {
-      if (isWindows) {
-        await revealItemInDir(currentLayout.extensionDir);
-      } else {
-        await openPath(currentLayout.extensionDir);
-      }
+      await revealItemInDir(currentLayout.extensionDir);
     } catch {
       setOpenError(copy.showFolderFallback);
     }
@@ -116,11 +128,11 @@ export function BrowserControlSetupDialog({
         <Dialog.Content
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 z-[60] max-h-[calc(100vh-32px)] w-[680px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-[60] flex max-h-[calc(100vh-32px)] w-[680px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col",
             "overflow-hidden rounded-lg border border-line bg-elevated shadow-elevated",
           )}
         >
-          <div className="relative max-h-[calc(100vh-32px)] overflow-y-auto px-6 py-5">
+          <div className="relative shrink-0 px-6 pb-3 pt-5 [@media(max-height:640px)]:pb-2 [@media(max-height:640px)]:pt-4">
             <IconButton
               ariaLabel={copy.close}
               className="absolute right-3 top-3"
@@ -134,7 +146,7 @@ export function BrowserControlSetupDialog({
               <div
                 className={cn(
                   "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm border",
-                  connected
+                  bridgeReady
                     ? "border-success/25 bg-success/10 text-success"
                     : "border-warning/30 bg-warning/10 text-warning",
                 )}
@@ -143,19 +155,29 @@ export function BrowserControlSetupDialog({
               </div>
               <div className="min-w-0">
                 <Dialog.Title className="font-serif text-[18px] font-medium leading-6 text-ink">
-                  {connected ? copy.connectedTitle : copy.title}
+                  {connected
+                    ? copy.connectedTitle
+                    : connectedNoTabs
+                      ? copy.connectedNoTabsTitle
+                      : copy.title}
                 </Dialog.Title>
                 <p className="mt-1 text-[12.5px] leading-[1.6] text-ink-soft">
-                  {connected ? copy.connectedDescription : copy.description}
+                  {connected
+                    ? copy.connectedDescription
+                    : connectedNoTabs
+                      ? copy.connectedNoTabsDescription
+                      : copy.description}
                 </p>
               </div>
             </div>
+          </div>
 
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3 [@media(max-height:640px)]:py-2">
             {connected ? (
-              <div className="mt-5 grid gap-3">
+              <div className="grid gap-3">
                 <ConnectionStatusCard
                   busy={busy}
-                  connected={connected}
+                  connected={bridgeReady}
                   status={status}
                   statusDetail={statusDetail}
                   statusMessage={statusMessage}
@@ -175,6 +197,7 @@ export function BrowserControlSetupDialog({
                         openError={openError}
                         openExtensionsPage={openExtensionsPage}
                         openGuide={openGuide}
+                        openTestPage={openTestPage}
                         retryPrepare={ensureLayout}
                         showFolder={showFolder}
                       />
@@ -183,7 +206,7 @@ export function BrowserControlSetupDialog({
                 )}
               </div>
             ) : (
-              <div className="mt-5 rounded-callout border border-line bg-surface p-3.5">
+              <div className="rounded-callout border border-line bg-surface p-3.5 [@media(max-height:640px)]:p-3">
                 <div className="grid gap-3">
                   <RepairSteps
                     busy={busy}
@@ -196,12 +219,13 @@ export function BrowserControlSetupDialog({
                     openError={openError}
                     openExtensionsPage={openExtensionsPage}
                     openGuide={openGuide}
+                    openTestPage={openTestPage}
                     retryPrepare={ensureLayout}
                     showFolder={showFolder}
                   />
 
                   {layoutReady && (
-                    <SetupStep index={5} title={copy.stepTest}>
+                    <SetupStep index={6} title={copy.stepTest}>
                       <StepHint>
                         {copy.stepTestHintPrefix}
                         <StrongTerm>{copy.sameBrowser}</StrongTerm>
@@ -212,7 +236,7 @@ export function BrowserControlSetupDialog({
                       <div className="mt-2.5">
                         <ConnectionStatusCard
                           busy={busy}
-                          connected={connected}
+                          connected={bridgeReady}
                           status={status}
                           statusDetail={statusDetail}
                           statusMessage={statusMessage}
@@ -223,60 +247,63 @@ export function BrowserControlSetupDialog({
                 </div>
               </div>
             )}
+          </div>
 
-            <DialogActionRow align="between" className="mt-5">
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={connected ? "ghost" : "secondary"}
-                  size="md"
-                  disabled={busy || !layoutReady}
-                  onClick={() => void probe()}
-                  leadingIcon={
-                    busy ? (
-                      <CircleNotch size={13} weight="thin" className="spin" />
-                    ) : connected ? (
-                      <ArrowsClockwise size={13} weight="thin" />
-                    ) : (
-                      <CursorClick size={13} weight="thin" />
-                    )
-                  }
-                >
-                  {busy ? copy.testing : connected ? copy.retest : copy.test}
-                </Button>
-                {connected && (
-                  <Button
-                    variant="ghost"
-                    size="md"
-                    onClick={() => setShowRepair((show) => !show)}
-                    leadingIcon={<PuzzlePiece size={13} weight="thin" />}
-                  >
-                    {showRepair ? copy.hideRepair : copy.repairTitle}
-                  </Button>
-                )}
-              </div>
-              {connected ? (
-                <Button
-                  variant="accent-secondary"
-                  size="md"
-                  title={copy.runDemoTitle}
-                  onClick={() => {
-                    onOpenChange(false);
-                    onRunDemo?.();
-                  }}
-                >
-                  {copy.runDemo}
-                </Button>
-              ) : (
+          <DialogActionRow
+            align="between"
+            className="mt-0 shrink-0 border-t border-line bg-elevated px-6 py-3 [@media(max-height:640px)]:py-2.5"
+          >
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={connected ? "ghost" : "secondary"}
+                size="md"
+                disabled={busy || !layoutReady}
+                onClick={() => void probe()}
+                leadingIcon={
+                  busy ? (
+                    <CircleNotch size={13} weight="thin" className="spin" />
+                  ) : connected ? (
+                    <ArrowsClockwise size={13} weight="thin" />
+                  ) : (
+                    <CursorClick size={13} weight="thin" />
+                  )
+                }
+              >
+                {busy ? copy.testing : connected ? copy.retest : copy.test}
+              </Button>
+              {connected && (
                 <Button
                   variant="ghost"
                   size="md"
-                  onClick={() => onOpenChange(false)}
+                  onClick={() => setShowRepair((show) => !show)}
+                  leadingIcon={<PuzzlePiece size={13} weight="thin" />}
                 >
-                  {copy.later}
+                  {showRepair ? copy.hideRepair : copy.repairTitle}
                 </Button>
               )}
-            </DialogActionRow>
-          </div>
+            </div>
+            {connected ? (
+              <Button
+                variant="accent-secondary"
+                size="md"
+                title={copy.runDemoTitle}
+                onClick={() => {
+                  onOpenChange(false);
+                  onRunDemo?.();
+                }}
+              >
+                {copy.runDemo}
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => onOpenChange(false)}
+              >
+                {copy.later}
+              </Button>
+            )}
+          </DialogActionRow>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -294,6 +321,7 @@ function RepairSteps({
   openError,
   openExtensionsPage,
   openGuide,
+  openTestPage,
   retryPrepare,
   showFolder,
 }: {
@@ -307,6 +335,7 @@ function RepairSteps({
   openError: string | null;
   openExtensionsPage: (browser: BrowserControlBrowser) => Promise<void>;
   openGuide: () => Promise<void>;
+  openTestPage: (browser: BrowserControlBrowser) => Promise<void>;
   retryPrepare: () => Promise<unknown>;
   showFolder: () => Promise<void>;
 }) {
@@ -413,23 +442,50 @@ function RepairSteps({
           </SetupStep>
 
           <SetupStep index={4} title={copy.stepInstall}>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] leading-[1.5] text-ink-muted">
-              <span>
+            <div className="mt-1 grid gap-1 text-[12px] leading-[1.5] text-ink-muted">
+              <div>
                 {copy.stepInstallHintPrefix}
                 <StrongTerm>{copy.folderName}</StrongTerm>
                 {copy.stepInstallHintMiddle}
-                <StrongTerm>{copy.loadUnpacked}</StrongTerm>
-                {copy.stepInstallHintSuffix}
-              </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>
+                  {copy.stepInstallFallbackPrefix}
+                  <span className="text-ink">{copy.loadUnpacked}</span>
+                  {copy.stepInstallFallbackSuffix}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2 h-6 px-2 text-[12px]"
+                  title={copy.openGuideTitle}
+                  onClick={() => void openGuide()}
+                  trailingIcon={<ArrowSquareOut size={12} weight="thin" />}
+                >
+                  {copy.openGuide}
+                </Button>
+              </div>
+            </div>
+          </SetupStep>
+
+          <SetupStep index={5} title={copy.stepOpenTestPage}>
+            <StepHint>{copy.stepOpenTestPageHint}</StepHint>
+            <div className="mt-2 flex flex-wrap gap-2">
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="sm"
-                className="-ml-2 h-6 px-2 text-[12px]"
-                title={copy.openGuideTitle}
-                onClick={() => void openGuide()}
-                trailingIcon={<ArrowSquareOut size={12} weight="thin" />}
+                onClick={() => void openTestPage("chrome")}
+                leadingIcon={<ArrowSquareOut size={13} weight="thin" />}
               >
-                {copy.openGuide}
+                {copy.openChromeTestPage}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void openTestPage("edge")}
+                leadingIcon={<ArrowSquareOut size={13} weight="thin" />}
+              >
+                {copy.openEdgeTestPage}
               </Button>
             </div>
           </SetupStep>

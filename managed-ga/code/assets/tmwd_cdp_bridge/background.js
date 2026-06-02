@@ -214,24 +214,13 @@ let ws = null;
 const WS_URL = 'ws://127.0.0.1:18765';
 
 function scheduleProbe() {
-  // Use chrome.alarms to survive MV3 service worker suspension
-  chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: 0.083 }); // ~5s
+  // Chrome MV3 alarms do not fire more often than every 30s. Keep the server
+  // probe aligned with that floor so Galley waits through one wake-up cycle.
+  chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: 0.5 });
 }
 
 function scheduleKeepalive() {
-  // Keep SW alive while WS is connected (~25s, under 30s SW timeout)
-  chrome.alarms.create('tmwd-ws-keepalive', { delayInMinutes: 0.4 }); // ~24s
-}
-
-async function isServerAlive() {
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 2000);
-    await fetch('http://127.0.0.1:18765', { signal: ctrl.signal });
-    return true; // Got HTTP response → port is listening
-  } catch (e) {
-    return false; // Network error (connection refused) or timeout → server not alive
-  }
+  chrome.alarms.create('tmwd-ws-keepalive', { delayInMinutes: 0.5 });
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -252,12 +241,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
   if (alarm.name === 'tmwd-ws-probe') {
     if (ws && ws.readyState <= 1) return; // Already connected/connecting
-    if (await isServerAlive()) {
-      console.log('[TMWD-WS] Server detected, connecting...');
-      connectWS();
-    } else {
-      scheduleProbe(); // Server not up, keep probing
-    }
+    connectWS();
   }
 });
 

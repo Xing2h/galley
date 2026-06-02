@@ -63,6 +63,8 @@ export const useBrowserControlStore = create<BrowserControlState>(
         const status: BrowserControlStatus =
           probe.status === "connected"
             ? "connected"
+            : probe.status === "connected_no_tabs"
+              ? "connected_no_tabs"
             : probe.status === "not_connected"
               ? "not_connected"
               : "error";

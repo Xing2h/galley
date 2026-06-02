@@ -136,6 +136,7 @@ const zhCopy = {
     browserControlError: "浏览器控制 · 需检查",
     browserControlPendingTitle: "连接浏览器控制",
     browserControlConnectedTitle: "浏览器控制已可用",
+    browserControlNoTabsTitle: "浏览器控制已连接，暂无网页",
     browserControlErrorTitle: "浏览器控制需要检查",
     channelsSetup: "设置 Channels",
     channelsConnecting: "Channels 正在连接",
@@ -155,14 +156,17 @@ const zhCopy = {
   browserControl: {
     title: "连接浏览器控制",
     connectedTitle: "浏览器控制已可用",
+    connectedNoTabsTitle: "浏览器控制已连接",
     connectedDescription: "Galley 已能读取和操作浏览器，并沿用你的登录态。",
+    connectedNoTabsDescription:
+      "插件已连接。打开一个普通网页后，Galley 就能开始控制浏览器。",
     description: "安装后，Galley 可以读取和操作浏览器，并沿用你的登录态。",
     close: "关闭浏览器控制设置",
     folderName: "tmwd_cdp_bridge",
     developerMode: "开发者模式",
     loadUnpacked: "加载已解压的扩展程序",
     sameBrowser: "同一浏览器",
-    anyWebsite: "任意一个网站",
+    anyWebsite: "任意普通网页",
     stepPrepare: "定位 tmwd_cdp_bridge 文件夹",
     stepPrepareReady: "文件夹已准备好",
     stepPrepareFailed:
@@ -174,16 +178,25 @@ const zhCopy = {
     stepDeveloperModeHintPrefix: "在扩展管理右上角打开「",
     stepDeveloperModeHintSuffix: "」开关。",
     stepInstall: "安装 tmwd_cdp_bridge",
-    stepInstallHintPrefix: "把 ",
-    stepInstallHintMiddle: " 文件夹拖到扩展管理窗口。拖拽无效时，点击「",
-    stepInstallHintSuffix: "」。",
+    stepInstallHintPrefix: "把整个 ",
+    stepInstallHintMiddle: " 文件夹拖到扩展管理窗口。",
+    stepInstallFallbackPrefix: "拖拽无效时，再点击「",
+    stepInstallFallbackSuffix: "」选择这个文件夹。",
+    stepOpenTestPage: "打开测试网页",
+    stepOpenTestPageHint:
+      "在刚才安装插件的浏览器里打开一个普通网页，Galley 会用它确认浏览器控制可用。",
+    openChromeTestPage: "用 Chrome 打开测试网页",
+    openEdgeTestPage: "用 Edge 打开测试网页",
+    openTestPageFallback: (url: string) =>
+      `无法自动打开测试网页，请在刚才安装插件的浏览器地址栏输入 ${url}`,
     openGuide: "图文指南",
     openGuideTitle: "打开官方 Chrome 图文安装步骤",
     openGuideFallback: (url: string) => `无法自动打开图文指南，请访问 ${url}`,
     stepTest: "测试连接",
     stepTestHintPrefix: "在",
     stepTestHintMiddle: "打开",
-    stepTestHintSuffix: "，然后回到 Galley 测试连接。",
+    stepTestHintSuffix:
+      "，不要停在扩展管理页或新标签页，然后回到 Galley 测试连接。",
     preparingPath: "正在准备路径…",
     retryPrepare: "重新准备",
     showFolder: "定位文件夹",
@@ -194,8 +207,10 @@ const zhCopy = {
     openEdge: "打开 Edge 扩展管理",
     openExtensionsFallback: (url: string) =>
       `无法自动打开扩展管理，请在浏览器地址栏输入 ${url}`,
-    waitingStatus: "等待浏览器扩展连接。",
+    waitingStatus: "正在等待浏览器扩展连接，首次唤醒可能需要约 30 秒。",
     connectedStatus: "已连接浏览器",
+    connectedNoTabsStatus: "插件已连接，暂无可操作网页",
+    connectedNoTabsStatusDetail: "打开测试网页后重新测试即可。",
     connectedStatusDetail: (tabCount: number) =>
       tabCount > 0 ? `检测到 ${tabCount} 个可操作标签页` : "",
     repairTitle: "重新加载插件",
@@ -203,7 +218,7 @@ const zhCopy = {
     hideRepair: "收起",
     test: "测试连接",
     retest: "重新测试",
-    testing: "测试中",
+    testing: "测试中，约 45 秒内完成",
     later: "稍后再说",
     runDemo: "新建测试对话",
     runDemoTitle: "新建一条对话，让 Galley 打开浏览器搜索天气",
@@ -1104,6 +1119,7 @@ const enCopy: AppCopy = {
     browserControlError: "Browser Control · Needs setup",
     browserControlPendingTitle: "Connect Browser Control",
     browserControlConnectedTitle: "Browser Control ready",
+    browserControlNoTabsTitle: "Browser Control connected, no page open",
     browserControlErrorTitle: "Browser Control needs attention",
     channelsSetup: "Set up Channels",
     channelsConnecting: "Channels connecting",
@@ -1124,8 +1140,11 @@ const enCopy: AppCopy = {
   browserControl: {
     title: "Connect Browser Control",
     connectedTitle: "Browser Control is ready",
+    connectedNoTabsTitle: "Browser Control is connected",
     connectedDescription:
       "Galley can already read and operate this browser, using your existing login state.",
+    connectedNoTabsDescription:
+      "The extension is connected. Open a regular webpage and Galley can start operating the browser.",
     description:
       "After installation, Galley can read and operate this browser, using your existing login state.",
     close: "Close Browser Control setup",
@@ -1133,7 +1152,7 @@ const enCopy: AppCopy = {
     developerMode: "Developer mode",
     loadUnpacked: "Load unpacked",
     sameBrowser: "same browser",
-    anyWebsite: "any website",
+    anyWebsite: "any regular website",
     stepPrepare: "Reveal the tmwd_cdp_bridge folder",
     stepPrepareReady: "Folder ready",
     stepPrepareFailed:
@@ -1146,10 +1165,17 @@ const enCopy: AppCopy = {
     stepDeveloperModeHintPrefix: "Turn on ",
     stepDeveloperModeHintSuffix: " in the top-right of extension management.",
     stepInstall: "Install tmwd_cdp_bridge",
-    stepInstallHintPrefix: "Drag the ",
-    stepInstallHintMiddle:
-      " folder into extension management. If dragging does not work, click ",
-    stepInstallHintSuffix: ".",
+    stepInstallHintPrefix: "Drag the whole ",
+    stepInstallHintMiddle: " folder into extension management.",
+    stepInstallFallbackPrefix: "If dragging does not work, click ",
+    stepInstallFallbackSuffix: " and choose that folder.",
+    stepOpenTestPage: "Open a test page",
+    stepOpenTestPageHint:
+      "Open a regular website in the browser where you installed the extension, so Galley can confirm Browser Control works.",
+    openChromeTestPage: "Open test page in Chrome",
+    openEdgeTestPage: "Open test page in Edge",
+    openTestPageFallback: (url) =>
+      `Could not open the test page automatically. Enter ${url} in the browser where you installed the extension.`,
     openGuide: "Visual guide",
     openGuideTitle: "Open the official Chrome visual install steps",
     openGuideFallback: (url) =>
@@ -1157,7 +1183,8 @@ const enCopy: AppCopy = {
     stepTest: "Test the connection",
     stepTestHintPrefix: "In the ",
     stepTestHintMiddle: ", open ",
-    stepTestHintSuffix: ", then return to Galley to test the connection.",
+    stepTestHintSuffix:
+      ", not extension management or a new tab, then return to Galley to test the connection.",
     preparingPath: "Preparing path...",
     retryPrepare: "Prepare again",
     showFolder: "Reveal folder",
@@ -1169,8 +1196,11 @@ const enCopy: AppCopy = {
     openEdge: "Open Edge extension management",
     openExtensionsFallback: (url) =>
       `Could not open extension management automatically. Enter ${url} in the browser address bar.`,
-    waitingStatus: "Waiting for the browser extension to connect.",
+    waitingStatus:
+      "Waiting for the browser extension to connect. First wake-up can take about 30 seconds.",
     connectedStatus: "Browser connected",
+    connectedNoTabsStatus: "Extension connected, no operable webpage yet",
+    connectedNoTabsStatusDetail: "Open the test page, then retest.",
     connectedStatusDetail: (tabCount) =>
       tabCount > 0 ? `${tabCount} operable tabs detected` : "",
     repairTitle: "Reload extension",
@@ -1178,7 +1208,7 @@ const enCopy: AppCopy = {
     hideRepair: "Hide",
     test: "Test connection",
     retest: "Retest",
-    testing: "Testing",
+    testing: "Testing, up to about 45s",
     later: "Later",
     runDemo: "New test chat",
     runDemoTitle:
