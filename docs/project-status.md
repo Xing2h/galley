@@ -9,11 +9,12 @@ live in [refactor](./refactor/README.md).
 
 ## Current Target
 
-- Package version: `0.2.1`
-- Git tag / GitHub Release: `v0.2.1`
+- Package version: `0.2.2`
+- Git tag / GitHub Release: preparing `v0.2.2`; `v0.2.1` remains the current
+  published release until the draft is reviewed and published.
 - Agent API schema: `schemaVersion: 1`
-- Release tier: stable patch release; published as GitHub Latest and promoted
-  to the beta update channel on 2026-06-01.
+- Release tier: stable patch release prep; publish as GitHub Latest and promote
+  to the beta update channel only after draft review and installer smoke.
 - Product shape: dual-native local agent team orchestrator
 
 Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
@@ -22,18 +23,21 @@ Supervisor automation on the same machine.
 
 ## Current Release State
 
-`v0.2.1` is the current published stable patch release. It builds on the first
-stable `v0.2.0` release with post-0.2 dogfood polish: dark mode, Channels
-model-config restart feedback, bridge cwd resolution, update-check automation,
-stable Sidebar title expansion, and image save/open actions in conversation
-output.
+`v0.2.2` is the current stable patch release target on `main`. It builds on
+`v0.2.1` with the audited GenericAgent baseline upgrade to `5f46b438`, improved
+selection-copy behavior, clearer Settings update copy, close-to-background
+feedback, and release/update verification polish.
+
+`v0.2.1` remains the current published GitHub Latest release and beta update
+channel version until the `v0.2.2` draft release is reviewed, smoke tested,
+published, and promoted.
 
 For the next release:
 
-1. Dogfood update from an installed `v0.2.0` or `v0.2.1` build before promoting
-   the next stable patch.
-2. Smoke Settings -> About update status, model-config Channels restart,
-   dark-mode switching, conversation image save/open, and Windows/macOS launch.
+1. Dogfood update from an installed `v0.2.1` build before promoting `v0.2.2`.
+2. Smoke managed-GA conversation startup, Settings -> About update status,
+   model-config Channels restart, close-to-background feedback, selection-copy
+   toolbar, and Windows/macOS launch.
 3. Run release/update dry-run if packaging, signing, updater config, or bundled
    Python dependencies changed.
 4. Keep GitHub Release publishing and update-channel promotion as separate
@@ -54,8 +58,8 @@ For the next release:
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
 | Managed GA runtime | Shipped in v0.2.0; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | Backup mechanism exists; runtime identity and managed model config migrations are in dogfood | [B4 M8](./refactor/B4-M8-sub-plan.md) |
-| Release path | v0.2.1 shipped; macOS DMG + Windows NSIS + gated updater channel remain the release path | [release / update SOP](./release-update-sop.md) |
-| Windows | v0.2.1 artifact shipped; next smoke should re-check path / probe / min-window / IM flows | [Windows checklist](./windows-build-checklist.md) |
+| Release path | v0.2.2 release prep; macOS DMG + Windows NSIS + gated updater channel remain the release path | [release / update SOP](./release-update-sop.md) |
+| Windows | v0.2.1 artifact shipped; v0.2.2 smoke should re-check path / probe / min-window / IM flows | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream commit | [GA baseline](./ga-baseline.md) |
 
 ## Compact Timeline
@@ -79,7 +83,7 @@ Detailed phase narratives are intentionally not duplicated here. Use:
 
 ## Release Version Rules
 
-- Current package metadata uses `0.2.1`. For the next release, update:
+- Current package metadata uses `0.2.2`. For the next release, update:
   - `package.json`
   - `core/tauri.conf.json`
   - `core/Cargo.toml`
