@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowUUpLeft,
   CheckSquare,
+  MagnifyingGlass,
   Square,
   Trash,
   WarningCircle,
@@ -25,8 +26,9 @@ export interface ArchivedDialogProps {
   /** Permanent delete with no confirm flow at this level — caller is
    * the dialog that already showed a confirm. */
   onDeletePermanently: (id: string) => Promise<void>;
-  /** Empty all archived. The dialog shows a second confirm prompt
-   * (checkbox + destructive button) before calling this. */
+  /** Permanently delete all archived sessions. The dialog shows a
+   * second confirm prompt (checkbox + destructive button) before
+   * calling this. */
   onEmptyAll: () => Promise<number>;
   /** Bulk restore — drains the user's checkbox selection into a
    * single store action. No confirm: restore is non-destructive. */
@@ -48,12 +50,11 @@ export interface ArchivedDialogProps {
  *     showing the count. The user picked the rows explicitly, so
  *     no GitHub-style checkbox friction.
  *
- *   - Empty all (header button): two-layer confirm. The button
- *     itself is destructive-styled (red + warning icon); clicking
- *     it opens an AlertDialog that REQUIRES checking an
- *     acknowledgement checkbox to enable the final "清空全部"
- *     button. Mirrors the GitHub "delete repository" pattern for
- *     undifferentiated batch destruction.
+ *   - Delete all (header ghost action): two-layer confirm. The entry
+ *     stays visible but low-priority; clicking it opens an AlertDialog
+ *     that REQUIRES checking an acknowledgement checkbox to enable the
+ *     final destructive button. Mirrors the GitHub "delete repository"
+ *     pattern for undifferentiated batch destruction.
  *
  * Restore is non-destructive — no confirm in any mode, just executes
  * and the row drops out of the archived list immediately.
@@ -85,6 +86,7 @@ export function ArchivedDialog({
   const [pendingDelete, setPendingDelete] = useState<Session | null>(null);
   const [emptyConfirmOpen, setEmptyConfirmOpen] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deletingOne, setDeletingOne] = useState(false);
@@ -96,6 +98,7 @@ export function ArchivedDialog({
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => {
+      setQuery("");
       setSelectMode(false);
       setSelected(new Set());
       setBulkDeleteConfirmOpen(false);
@@ -117,15 +120,25 @@ export function ArchivedDialog({
     setSelected(new Set());
   };
 
+  const trimmedQuery = query.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (trimmedQuery === "") return archived;
+    return archived.filter((s) => {
+      const hay = `${s.title}\n${s.summary ?? ""}`.toLowerCase();
+      return hay.includes(trimmedQuery);
+    });
+  }, [archived, trimmedQuery]);
+  const isFiltered = trimmedQuery !== "";
+
   const allVisibleSelected =
-    archived.length > 0 && archived.every((s) => selected.has(s.id));
+    filtered.length > 0 && filtered.every((s) => selected.has(s.id));
   const toggleSelectAllVisible = () => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (allVisibleSelected) {
-        for (const s of archived) next.delete(s.id);
+        for (const s of filtered) next.delete(s.id);
       } else {
-        for (const s of archived) next.add(s.id);
+        for (const s of filtered) next.add(s.id);
       }
       return next;
     });
@@ -147,7 +160,9 @@ export function ArchivedDialog({
             )}
           >
             <Header
-              count={archived.length}
+              total={archived.length}
+              shown={filtered.length}
+              filtered={isFiltered}
               selectMode={selectMode}
               selectedCount={selected.size}
               onEnterSelectMode={enterSelectMode}
@@ -156,12 +171,14 @@ export function ArchivedDialog({
               onEmptyAll={() => setEmptyConfirmOpen(true)}
             />
 
+            <SearchBar query={query} onChange={setQuery} />
+
             <div className="min-h-0 flex-1 overflow-y-auto bg-app">
-              {archived.length === 0 ? (
-                <EmptyState />
+              {filtered.length === 0 ? (
+                <EmptyState filtered={isFiltered} />
               ) : (
                 <ul className="divide-y divide-line">
-                  {archived.map((s) => (
+                  {filtered.map((s) => (
                     <ArchivedRow
                       key={s.id}
                       session={s}
@@ -261,7 +278,9 @@ export function ArchivedDialog({
 // ---------------- Header ----------------
 
 function Header({
-  count,
+  total,
+  shown,
+  filtered,
   selectMode,
   selectedCount,
   onEnterSelectMode,
@@ -269,7 +288,9 @@ function Header({
   onClose,
   onEmptyAll,
 }: {
-  count: number;
+  total: number;
+  shown: number;
+  filtered: boolean;
   selectMode: boolean;
   selectedCount: number;
   onEnterSelectMode: () => void;
@@ -280,9 +301,13 @@ function Header({
   const copy = useCopy();
   const summary = selectMode
     ? copy.projects.selected(selectedCount)
-    : count > 0
-      ? copy.projects.archivedCountLabel(count)
-      : copy.projects.noArchived;
+    : filtered
+      ? shown === 0
+        ? copy.projects.noMatches
+        : copy.projects.hits(shown, total)
+      : total > 0
+        ? copy.projects.archivedCountLabel(total)
+        : copy.projects.noArchived;
 
   return (
     <div className="flex items-center gap-3 border-b border-line bg-elevated px-5 py-3.5">
@@ -298,20 +323,20 @@ function Header({
           </Button>
         ) : (
           <>
-            {count > 0 && (
-              <Button variant="secondary" size="sm" onClick={onEnterSelectMode}>
-                {copy.projects.select}
-              </Button>
-            )}
-            {count > 0 && (
+            {total > 0 && (
               <Button
-                variant="destructive-soft"
+                variant="ghost"
                 size="sm"
                 onClick={onEmptyAll}
                 title={copy.projects.deleteAllArchived}
-                leadingIcon={<WarningCircle size={12} weight="bold" />}
+                className="text-ink-muted hover:bg-error/10 hover:text-error active:bg-error/15"
               >
                 {copy.projects.emptyAll}
+              </Button>
+            )}
+            {total > 0 && (
+              <Button variant="secondary" size="sm" onClick={onEnterSelectMode}>
+                {copy.projects.select}
               </Button>
             )}
           </>
@@ -322,6 +347,36 @@ function Header({
           </IconButton>
         </Dialog.Close>
       </div>
+    </div>
+  );
+}
+
+function SearchBar({
+  query,
+  onChange,
+}: {
+  query: string;
+  onChange: (q: string) => void;
+}) {
+  const copy = useCopy();
+  return (
+    <div className="relative shrink-0 border-b border-line bg-elevated px-4 py-2.5">
+      <MagnifyingGlass
+        size={14}
+        weight="thin"
+        className="pointer-events-none absolute left-7 top-1/2 -translate-y-1/2 text-ink-muted"
+      />
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={copy.projects.filterArchive}
+        autoFocus
+        className={cn(
+          "h-7 w-full rounded-sm border border-line bg-app pl-7 pr-3 text-[12.5px] text-ink",
+          "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
+        )}
+      />
     </div>
   );
 }
@@ -491,12 +546,14 @@ function SelectActionBar({
 
 // ---------------- Empty ----------------
 
-function EmptyState() {
+function EmptyState({ filtered }: { filtered: boolean }) {
   const copy = useCopy();
   return (
     <div className="flex h-full items-center justify-center">
       <p className="font-serif text-[13.5px] italic text-ink-muted">
-        {copy.projects.noArchivedConversations}
+        {filtered
+          ? copy.projects.noMatchingConversations
+          : copy.projects.noArchivedConversations}
       </p>
     </div>
   );
@@ -644,7 +701,7 @@ function ConfirmDeleteManyDialog({
 }
 
 /**
- * Two-layer confirm for "Empty all". The user must check the
+ * Two-layer confirm for "Delete all". The user must check the
  * "我了解此操作无法撤销" checkbox before the destructive button
  * becomes enabled. Mirrors GitHub's "delete repository" friction
  * for batch destructive operations.

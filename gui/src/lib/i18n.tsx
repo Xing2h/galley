@@ -914,9 +914,9 @@ const zhCopy = {
     noEarlier: "暂无早期对话",
     noEarlierEmpty: "7 天前还没有对话。",
     noMatchingConversations: "没有匹配的对话。",
-    archivedCountLabel: (count: number) => `${count} 个已归档`,
+    archivedCountLabel: (count: number) => `${count} 个对话`,
     archivedOn: (date: string) => `归档于 ${date}`,
-    noArchived: "暂无归档",
+    noArchived: "暂无对话",
     noArchivedConversations: "没有已归档的对话。",
     turns: (count: number) => `${count} 步`,
     deleteProject: "删除项目",
@@ -933,8 +933,8 @@ const zhCopy = {
     permanentlyDeleteSelectedBody:
       "这些对话连同它们的所有消息和工具调用记录将被永久删除。",
     permanentlyDeleteCount: (count: number) => `永久删除 ${count} 个`,
-    emptyAll: "清空全部",
-    emptyAllTitle: "清空所有归档？",
+    emptyAll: "永久删除全部...",
+    emptyAllTitle: "永久删除所有归档？",
     emptyAllBody: (count: number) =>
       `将永久删除 ${count} 个已归档对话，包括它们的所有消息和工具调用记录。`,
     acknowledgeCannotUndo: "我了解此操作无法撤销",
@@ -1938,9 +1938,9 @@ const enCopy: AppCopy = {
     noEarlierEmpty: "No conversations older than 7 days.",
     noMatchingConversations: "No matching conversations.",
     archivedCountLabel: (count) =>
-      `${count} archived conversation${count === 1 ? "" : "s"}`,
+      `${count} conversation${count === 1 ? "" : "s"}`,
     archivedOn: (date) => `Archived on ${date}`,
-    noArchived: "No archived conversations",
+    noArchived: "No conversations",
     noArchivedConversations: "No archived conversations.",
     turns: (count) => `${count} step${count === 1 ? "" : "s"}`,
     deleteProject: "Delete project",
@@ -1959,8 +1959,8 @@ const enCopy: AppCopy = {
     permanentlyDeleteSelectedBody:
       "These conversations, including all messages and tool call records, will be permanently deleted.",
     permanentlyDeleteCount: (count) => `Permanently delete ${count}`,
-    emptyAll: "Empty all",
-    emptyAllTitle: "Empty all archived conversations?",
+    emptyAll: "Permanently delete all...",
+    emptyAllTitle: "Permanently delete all archived conversations?",
     emptyAllBody: (count) =>
       `${count} archived conversation${count === 1 ? "" : "s"}, including all messages and tool call records, will be permanently deleted.`,
     acknowledgeCannotUndo: "I understand this cannot be undone",
