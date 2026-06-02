@@ -63,4 +63,9 @@ for patch in "$ROOT"/managed-ga/patches/*.patch; do
   echo "Applied managed GA patch: $(basename "$patch")"
 done
 
+# Upstream sometimes ships incidental trailing spaces. Keep the generated
+# checked-in payload compatible with Galley's `git diff --check` gate without
+# baking whitespace-only removals into patch files that would fail that same gate.
+perl -0pi -e 's/[ \t]+$//mg' "$DEST/agentmain.py" "$DEST/llmcore.py"
+
 echo "Managed GA code copied to $DEST"

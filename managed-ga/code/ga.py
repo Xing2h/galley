@@ -14,6 +14,7 @@ def state_path(*parts):
 def asset_path(*parts):
     return os.path.join(script_dir, 'assets', *parts)
 
+
 def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000):
     """代码执行器
     python: 运行复杂的 .py 脚本（文件模式）
@@ -24,7 +25,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
     cwd = cwd or state_path('temp'); tmp_path = None
     if code_type in ["python", "py"]:
         tmp_file = tempfile.NamedTemporaryFile(suffix=".ai.py", delete=False, mode='w', encoding='utf-8', dir=code_cwd)
-        cr_header = os.path.join(script_dir, 'assets', 'code_run_header.py')
+        cr_header = asset_path('code_run_header.py')
         if os.path.exists(cr_header): tmp_file.write(open(cr_header, encoding='utf-8').read())
         tmp_file.write(code)
         tmp_path = tmp_file.name
@@ -536,7 +537,7 @@ class GenericAgentHandler(BaseHandler):
                 flush(); parts.append(line); cnt = 0; last = ''
             else: cnt += 1; last = line
         flush()
-        return "\n".join(parts[-100:])
+        return "\n".join(parts[-70:])
 
     def _get_anchor_prompt(self, skip=False):
         if skip: return "\n"

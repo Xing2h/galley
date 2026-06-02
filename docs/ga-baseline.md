@@ -15,31 +15,42 @@ audited against.
 
 ## Current Baseline
 
-Locked commit: `1c9f141ecd52d1e6900ca1405ebbd75a382bee5f`
+Locked commit: `5f46b43816d6298f5e1d34c7076ea31f875b7810`
 
 - Source: `lsdefine/GenericAgent` upstream `main`
-- Date audited: 2026-05-27
-- Previous baseline: `1a8abc4`
-- Delta: 18 commits
-- Result: no external bridge protocol break; managed runtime needed a
-  `connect_timeout` -> `timeout` adapter because upstream GA now reads
-  `timeout` for connection timeout; managed patch stack replayed cleanly
-- Devlog: [GA upstream upgrade 1a8abc4 -> 1c9f141](./devlog/2026-05-27-ga-upstream-upgrade-1a8abc4-to-1c9f141.md)
+- Date audited: 2026-06-02
+- Previous baseline: `1c9f141`
+- Delta: 80 commits
+- Result: no external bridge protocol break; managed runtime needed a refreshed
+  state-root patch because upstream added new writes for long prompt temp files
+  and `/continue` round-count cache; managed patch stack replayed cleanly after
+  the state-root and asset-path patches were regenerated; the managed build
+  script now normalizes two incidental upstream trailing spaces so the
+  checked-in payload stays compatible with `git diff --check`
+- Devlog: [GA upstream upgrade 1c9f141 -> 5f46b438](./devlog/2026-06-02-ga-upstream-upgrade-1c9f141-to-5f46b438.md)
 
 Relevant compatibility notes:
 
-- `agent_loop.py`: no relevant diff in this range. `BaseHandler.dispatch`
-  still uses `plugins.hooks` and still has the
+- `agent_loop.py`: no diff in this range. `BaseHandler.dispatch` still uses
+  `plugins.hooks` and still has the
   `(tool_name, args, response, index=0, tool_num=1)` generator protocol.
-- `ga.py`: `_turn_end_hooks` iteration now wraps `.values()` with `list()`;
-  compatible with Galley's hook registration. Windows `code_run` now prefers
-  `pwsh` and forces UTF-8 output.
-- `llmcore.py`: `reload_mykeys()` now fails closed to existing config on load
-  errors. `BaseSession.connect_timeout` now reads GA config key `timeout`
-  instead of `connect_timeout`; Galley's managed config adapter emits both.
-- `pyproject.toml`: core dependencies were unchanged in this delta. Optional UI
-  dependencies added `prompt_toolkit`, `rich`, and `pillow`; Galley does not
-  bundle optional GA frontends by default.
+- `agentmain.py`: task / reflect paths now force non-stream mode and long user
+  prompts are externalized to `temp/user_prompt_*.md`. Galley's bridge still
+  receives the same display-queue shape; managed mode routes the new temp write
+  through `GALLEY_GA_STATE_ROOT`.
+- `ga.py`: `_fold_earlier()` keeps fewer folded entries (`100` -> `70`).
+  `_turn_end_hooks` remains compatible with Galley's hook registration.
+- `llmcore.py`: retryable HTTP statuses now include Cloudflare `520`-`527`;
+  `BaseSession.ask()` always returns the generator path; NativeClaude headers,
+  beta flags, and fake-Claude-Code system injection changed; `MixinSession`
+  now broadcasts `stream` and `read_timeout`. Galley's bridge already consumes
+  the generator path and managed config continues to emit both `connect_timeout`
+  and `timeout`.
+- `frontends/continue_cmd.py`: `/continue` added bounded preview/search and a
+  round-count cache. Managed mode routes both the log scan root and cache file
+  under `GALLEY_GA_STATE_ROOT`.
+- `pyproject.toml`: no dependency diff in this range; bundled Python
+  dependencies did not need changes.
 
 ## Contract Surface
 

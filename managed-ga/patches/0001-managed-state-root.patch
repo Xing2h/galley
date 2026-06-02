@@ -1,8 +1,8 @@
 diff --git a/agentmain.py b/agentmain.py
-index 5c40e30..df1ca3a 100644
+index 90ba952..34268e6 100644
 --- a/agentmain.py
 +++ b/agentmain.py
-@@ -23,6 +23,10 @@ except Exception: pass
+@@ -14,6 +14,10 @@ except Exception: pass
  from ga import GenericAgentHandler, smart_format, get_global_memory, format_error, consume_file
  
  script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -13,7 +13,7 @@ index 5c40e30..df1ca3a 100644
  def load_tool_schema(suffix=''):
      global TOOLS_SCHEMA
      TS = open(os.path.join(script_dir, f'assets/tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
-@@ -30,7 +34,7 @@ def load_tool_schema(suffix=''):
+@@ -21,7 +25,7 @@ def load_tool_schema(suffix=''):
  load_tool_schema()
  
  lang_suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
@@ -22,7 +22,7 @@ index 5c40e30..df1ca3a 100644
  if not os.path.exists(mem_dir): os.makedirs(mem_dir)
  mem_txt = os.path.join(mem_dir, 'global_mem.txt')
  if not os.path.exists(mem_txt): open(mem_txt, 'w', encoding='utf-8').write('# [Global Memory - L2]\n')
-@@ -53,7 +57,7 @@ def get_system_prompt():
+@@ -43,7 +47,7 @@ def get_system_prompt():
  
  class GenericAgent:
      def __init__(self):
@@ -31,16 +31,16 @@ index 5c40e30..df1ca3a 100644
          self.lock = threading.Lock()
          self.task_dir = None
          self.history = []; self.handler = None; 
-@@ -61,7 +65,7 @@ class GenericAgent:
-         self.is_running = False; self.stop_sig = False; self.llm_no = 0;  
+@@ -53,7 +57,7 @@ class GenericAgent:
          self.inc_out = False; self.verbose = True; self.show_mode = 'text'
          self.peer_hint = True
+         self.force_non_stream = False
 -        self.log_path = os.path.join(script_dir, f'temp/model_responses/model_responses_{int(time.time()*1e6)%1000000:06d}.txt')
 +        self.log_path = state_path('temp', 'model_responses', f'model_responses_{int(time.time()*1e6)%1000000:06d}.txt')
          self.load_llm_sessions()
  
      def load_llm_sessions(self):
-@@ -123,7 +127,7 @@ class GenericAgent:
+@@ -115,7 +119,7 @@ class GenericAgent:
          if not raw_query.startswith('/'): return raw_query
          if _sm := re.match(r'/session\.(\w+)=(.*)', raw_query.strip()):
              k, v = _sm.group(1), _sm.group(2)
@@ -49,7 +49,16 @@ index 5c40e30..df1ca3a 100644
              if os.path.isfile(vfile): v = open(vfile, encoding='utf-8').read().strip()
              try: v = json.loads(v)  # cover number parsing
              except (json.JSONDecodeError, ValueError): pass
-@@ -147,7 +151,7 @@ class GenericAgent:
+@@ -135,7 +139,7 @@ class GenericAgent:
+                 self.task_queue.task_done(); continue
+             self.is_running = True
+             if len(raw_query) > 1500:
+-                task_file = os.path.join(script_dir, 'temp', f'user_prompt_{int(time.time())}.md')
++                task_file = state_path('temp', f'user_prompt_{int(time.time())}.md')
+                 with open(task_file, 'w', encoding='utf-8') as f: f.write(raw_query)
+                 raw_query = f'Long user prompt saved to {task_file}. Read and execute.'
+             rquery = smart_format(raw_query.replace('\n', ' '), max_str_len=200)
+@@ -143,7 +147,7 @@ class GenericAgent:
              
              sys_prompt = get_system_prompt() + getattr(self.llmclient.backend, 'extra_sys_prompt', '')
              if self.peer_hint: sys_prompt += f"\n[Peer] 用户提及其他会话/后台任务状态时: temp/model_responses/ (只找近期修改的文件尾部)\n"
@@ -58,7 +67,7 @@ index 5c40e30..df1ca3a 100644
              if self.handler and 'key_info' in self.handler.working: 
                  ki = re.sub(r'\n\[SYSTEM\] 此为.*?工作记忆[。\n]*', '', self.handler.working['key_info'])  # 去旧
                  handler.working['key_info'] = ki
-@@ -202,7 +206,7 @@ if __name__ == '__main__':
+@@ -201,7 +205,7 @@ if __name__ == '__main__':
      if args.task and not args.nobg:
          import subprocess, platform
          cmd = [sys.executable, os.path.abspath(__file__)] + [a for a in sys.argv[1:]] + ['--nobg']
@@ -68,15 +77,15 @@ index 5c40e30..df1ca3a 100644
              creationflags=0x08000000 if platform.system() == 'Windows' else 0,
              stdout=open(os.path.join(d, 'stdout.log'), 'w', encoding='utf-8'),
 @@ -216,7 +220,7 @@ if __name__ == '__main__':
- 
      if args.task:
          agent.peer_hint = False
+         agent.force_non_stream = True
 -        agent.task_dir = d = os.path.join(script_dir, f'temp/{args.task}'); nround = ''
 +        agent.task_dir = d = state_path('temp', args.task); nround = ''
          infile = os.path.join(d, 'input.txt')
          if args.input:
              os.makedirs(d, exist_ok=True)
-@@ -266,7 +270,7 @@ if __name__ == '__main__':
+@@ -267,7 +271,7 @@ if __name__ == '__main__':
              except Exception as e:
                  if getattr(mod, 'ONCE', False): raise
                  print(f'[Reflect] drain error: {e}'); result = f'[ERROR] {e}'
@@ -86,20 +95,21 @@ index 5c40e30..df1ca3a 100644
              open(os.path.join(log_dir, f'{script_name}_{datetime.now():%Y-%m-%d}.log'), 'a', encoding='utf-8').write(f'[{datetime.now():%m-%d %H:%M}]\n{result}\n\n')
              if (on_done := getattr(mod, 'on_done', None)):
 diff --git a/ga.py b/ga.py
-index 4ccd84f..98d471d 100644
+index 2f1f144..1330db0 100644
 --- a/ga.py
 +++ b/ga.py
-@@ -8,6 +8,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+@@ -8,6 +8,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
  
  from agent_loop import BaseHandler, StepOutcome, json_default
  script_dir = os.path.dirname(os.path.abspath(__file__))
 +state_dir = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or script_dir)
 +def state_path(*parts):
 +    return os.path.join(state_dir, *parts)
++
  
  def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000):
      """代码执行器
-@@ -16,7 +19,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
+@@ -16,7 +20,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
      优先使用python，仅在必要系统操作时使用powershell"""
      preview = (code[:60].replace('\n', ' ') + '...') if len(code) > 60 else code.strip()
      yield f"[Action] Running {code_type} in {os.path.basename(cwd)}: {preview}\n"
@@ -108,7 +118,7 @@ index 4ccd84f..98d471d 100644
      if code_type in ["python", "py"]:
          tmp_file = tempfile.NamedTemporaryFile(suffix=".ai.py", delete=False, mode='w', encoding='utf-8', dir=code_cwd)
          cr_header = os.path.join(script_dir, 'assets', 'code_run_header.py')
-@@ -153,7 +156,7 @@ def format_error(e):
+@@ -156,7 +160,7 @@ def format_error(e):
  
  def log_memory_access(path):
      if 'memory' not in path: return
@@ -117,7 +127,7 @@ index 4ccd84f..98d471d 100644
      try:
          with open(stats_file, 'r', encoding='utf-8') as f: stats = json.load(f)
      except: stats = {}
-@@ -580,9 +583,9 @@ def get_global_memory():
+@@ -583,9 +587,9 @@ def get_global_memory():
      prompt = "\n"
      try:
          suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
@@ -130,10 +140,10 @@ index 4ccd84f..98d471d 100644
          prompt += structure + '\n../memory/global_mem_insight.txt:\n'
          prompt += insight + "\n"
 diff --git a/llmcore.py b/llmcore.py
-index 704874f..e1b61b1 100644
+index 4562893..7a9f27a 100644
 --- a/llmcore.py
 +++ b/llmcore.py
-@@ -883,7 +883,8 @@ def _ensure_text_block(blocks):
+@@ -908,7 +908,8 @@ def _ensure_text_block(blocks):
  
  def _write_llm_log(label, content, log_path=None):
      if not log_path:
@@ -144,10 +154,10 @@ index 704874f..e1b61b1 100644
      ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
      with open(log_path, 'a', encoding='utf-8', errors='replace') as f:
 diff --git a/frontends/continue_cmd.py b/frontends/continue_cmd.py
-index dd3b30d..10c7d79 100644
+index 260a8c3..039c4a3 100644
 --- a/frontends/continue_cmd.py
 +++ b/frontends/continue_cmd.py
-@@ -2,8 +2,9 @@
+@@ -2,14 +2,15 @@
  Pure functions + one `install(cls)` monkey-patch entry. No side effects at import.
  """
  import ast, glob, json, os, re, time
@@ -159,3 +169,10 @@ index dd3b30d..10c7d79 100644
  _LOG_GLOB = os.path.join(_LOG_DIR, 'model_responses_*.txt')
  _BLOCK_RE = re.compile(r'^=== (Prompt|Response) ===.*?\n(.*?)(?=^=== (?:Prompt|Response) ===|\Z)',
                         re.DOTALL | re.MULTILINE)
+ _SUMMARY_RE = re.compile(r'<summary>\s*(.*?)\s*</summary>', re.DOTALL)
+ _ROUND_HEADER_RE = re.compile(rb'^=== (Prompt|Response) ===', re.MULTILINE)
+-_ROUNDS_CACHE_PATH = os.path.join(os.path.expanduser('~'), '.genericagent', 'continue_rounds_cache.json')
++_ROUNDS_CACHE_PATH = os.path.join(_STATE_ROOT, 'temp', 'continue_rounds_cache.json')
+ _ROUNDS_CACHE_VERSION = 1
+ _rounds_cache = None
+ _rounds_cache_dirty = False
