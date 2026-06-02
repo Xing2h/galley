@@ -22,8 +22,7 @@ export type SidebarRuntimeIndicator =
   | "external-ready"
   | "external-unconfigured";
 
-export 
-type RuntimeIndicatorView = {
+export type RuntimeIndicatorView = {
   label: string;
   title: string;
   ariaLabel: string;

@@ -538,4 +538,3 @@ function resolveSidebarAttention({
   if (showUnread) return "unread";
   return "none";
 }
-

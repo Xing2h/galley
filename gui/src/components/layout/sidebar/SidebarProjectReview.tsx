@@ -20,8 +20,7 @@ import type { Project, Session } from "@/types/session";
 import { SidebarSectionLabel, SidebarTimelineBuckets } from "./SidebarTimeline";
 import { PROJECT_ACTIVE_WINDOW_MS, type ProjectScopePhase } from "./types";
 
-export 
-function SidebarProjectReviewPresence({
+export function SidebarProjectReviewPresence({
   phase,
   children,
 }: {
@@ -46,14 +45,13 @@ function SidebarProjectReviewPresence({
   );
 }
 
-export 
 /**
  * Project Review is a sidebar mode, not a filter banner. It hides the
  * ordinary timeline and turns projects into collapsible peers of the
  * timeline buckets, so users can keep several project drawers open
  * while monitoring running work.
  */
-function SidebarProjectReview({
+export function SidebarProjectReview({
   projects,
   sessionsByProjectId,
   activeProjectFilter,

@@ -8,8 +8,7 @@ import type { Project, Session, SessionBucket } from "@/types/session";
 import { SidebarSessionRow } from "./SidebarSessionRow";
 import type { ProjectScopePhase } from "./types";
 
-export 
-function SidebarTimelineBuckets({
+export function SidebarTimelineBuckets({
   buckets,
   activeId,
   projects,
@@ -163,8 +162,7 @@ function SidebarBucket({
   );
 }
 
-export 
-function SidebarSectionLabel({ children }: { children: React.ReactNode }) {
+export function SidebarSectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="px-4 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
       {children}
@@ -207,8 +205,7 @@ function SidebarEarlierEntry({
   );
 }
 
-export 
-function SidebarTimelinePresence({
+export function SidebarTimelinePresence({
   phase,
   children,
 }: {
