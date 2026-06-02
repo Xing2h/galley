@@ -167,7 +167,7 @@ export function SidebarProjectReview({
   return (
     <section className="pb-2 pt-1">
       {projects.length === 0 ? (
-        <div className="px-5 py-5 font-serif text-[12px] italic text-ink-muted">
+        <div className="px-5 py-5 text-[12px] italic text-ink-muted">
           {copy.sidebar.noProjects}
         </div>
       ) : (

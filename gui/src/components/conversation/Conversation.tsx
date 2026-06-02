@@ -280,7 +280,7 @@ export function TurnMarker({
       <div
         onClick={hasDetail ? () => setOpen((v) => !v) : undefined}
         className={cn(
-          "mb-2 mt-7 select-text font-serif text-[12px] italic text-ink-muted",
+          "mb-2 mt-7 select-text text-[12px] italic text-ink-muted",
           hasDetail && "cursor-pointer transition-colors hover:text-ink-soft",
         )}
       >

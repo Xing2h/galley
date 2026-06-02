@@ -86,7 +86,7 @@ export function CreateProjectDialog({
           )}
         >
           <div className="flex items-center justify-between">
-            <Dialog.Title className="font-serif text-[16px] font-medium text-ink">
+            <Dialog.Title className="text-[16px] font-semibold text-ink">
               {copy.projects.newProject}
             </Dialog.Title>
             <Dialog.Close asChild>

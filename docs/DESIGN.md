@@ -1,7 +1,7 @@
 # Galley DESIGN.md
 
 > Status: **v0.2.0 — current implementation baseline**
-> Last updated: 2026-05-31
+> Last updated: 2026-06-02
 > v0.1（dark-first / Linear 风）已被 v0.2 整体方向替换，Notion 历史稿仅作对照。
 > 本文件以当前两栏 Galley GUI 为准：旧三栏 Inspector、独立 Settings window、Project emoji tree 等历史 spec 已退役。
 > 决策叙事与 rejected alternatives 见 [docs/devlog/](./devlog/) 中 2026-05-07 / 2026-05-08 的设计相关 entry。
@@ -128,8 +128,8 @@ OLED，也不走冷灰蓝 IDE / dashboard 感。
 
 | Register | 字体（英 / 中） | 用途 |
 |---|---|---|
-| **Serif（被读）** | Newsreader / 思源宋体 | 用户消息、agent 回复、turn summary |
-| **Sans（被点）** | Inter / 苹方 / 思源黑体 | 按钮、菜单、metadata、session row |
+| **Serif（被读）** | Newsreader / 思源宋体 | agent 回复、Markdown prose、少量品牌 / origin prose |
+| **Sans（默认 UI）** | Inter / 苹方 / 思源黑体 | app chrome、按钮、菜单、metadata、session row、Settings / Dialog / Onboarding 功能标题 |
 | **Mono（技术 ID）** | JetBrains Mono | shell 命令、路径、JSON、tool 名 |
 
 字号 / 行高：
@@ -137,7 +137,17 @@ OLED，也不走冷灰蓝 IDE / dashboard 感。
 - Body: 16px / line-height 1.65–1.7
 - Subtle: 13px / line-height 1.5
 - Hint: 11px uppercase tracked
-- Heading（Newsreader medium）: 20–24px
+- Prose heading（Newsreader medium）: 20–24px
+
+2026-06-02 typography alignment:
+
+- `serif` 不再作为通用 UI 装饰字体。中文 / macOS 环境下，Newsreader / Inter
+  只覆盖 Latin，CJK 会 fallback 到系统宋体 / 黑体；如果 UI chrome 到处切换
+  register，用户会感到字体混用。
+- Settings / Dialog / Onboarding 功能标题、Tool pill、Sidebar 状态、TopBar
+  placeholder、空状态 action 等界面文本默认使用 Sans。
+- 保留 `serif` 的场景必须是被阅读的 prose 或少量品牌语气：agent answer、
+  Markdown headings / blockquote、`Galley` wordmark、About origin story。
 
 ### 2.3 Icon set
 

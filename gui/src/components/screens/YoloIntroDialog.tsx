@@ -59,7 +59,7 @@ export function YoloIntroDialog({ open, onAcknowledge }: YoloIntroDialogProps) {
             <span className="inline-flex size-8 items-center justify-center rounded-full border border-warning/30 bg-warning/10 text-warning">
               <Lightning size={16} weight="thin" />
             </span>
-            <Dialog.Title className="font-serif text-[17px] font-medium text-ink">
+            <Dialog.Title className="text-[17px] font-semibold text-ink">
               {copy.yoloIntro.title}
             </Dialog.Title>
           </div>

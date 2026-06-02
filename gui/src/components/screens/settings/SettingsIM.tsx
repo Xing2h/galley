@@ -247,7 +247,7 @@ function RestartChannelsDialog({
               weight="bold"
               className="text-warning"
             />
-            <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
+            <Dialog.Title className="text-[15px] font-semibold text-ink">
               {imCopy.restartChannelsDialogTitle}
             </Dialog.Title>
           </div>
@@ -489,7 +489,7 @@ function WeChatCard({
           >
             <div className="flex items-center gap-2">
               <WarningCircle size={18} weight="bold" className="text-warning" />
-              <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
+              <Dialog.Title className="text-[15px] font-semibold text-ink">
                 {imCopy.disconnectDialogTitle}
               </Dialog.Title>
             </div>

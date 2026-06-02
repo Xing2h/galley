@@ -154,7 +154,7 @@ export function BrowserControlSetupDialog({
                 <PuzzlePiece size={18} weight="thin" />
               </div>
               <div className="min-w-0">
-                <Dialog.Title className="font-serif text-[18px] font-medium leading-6 text-ink">
+                <Dialog.Title className="text-[18px] font-semibold leading-6 text-ink">
                   {connected
                     ? copy.connectedTitle
                     : connectedNoTabs

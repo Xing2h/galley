@@ -215,7 +215,7 @@ function YoloSection({
             )}
           />
           <div className="min-w-0 flex-1">
-            <div className="font-serif text-[14px] font-medium text-ink">
+            <div className="text-[14px] font-semibold text-ink">
               <IconTooltip text={copy.yoloTooltip}>
                 <span className="cursor-help underline decoration-line-strong decoration-dotted underline-offset-[3px]">
                   {copy.yoloMode}
@@ -275,7 +275,7 @@ function YoloActivationModal({
         >
           <div className="flex items-center gap-2">
             <Lightning size={20} weight="thin" className="text-warning" />
-            <Dialog.Title className="font-serif text-[18px] font-medium text-ink">
+            <Dialog.Title className="text-[18px] font-semibold text-ink">
               {approvalCopy.turnOnYoloTitle}
             </Dialog.Title>
           </div>

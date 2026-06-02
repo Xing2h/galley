@@ -46,7 +46,7 @@ export function TutorialModal({ tutorial, onClose }: TutorialModalProps) {
           )}
         >
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-elevated px-6 py-3.5">
-            <Dialog.Title className="font-serif text-[17px] font-medium text-ink">
+            <Dialog.Title className="text-[17px] font-semibold text-ink">
               {tutorial?.title ?? ""}
             </Dialog.Title>
             <Dialog.Close asChild>

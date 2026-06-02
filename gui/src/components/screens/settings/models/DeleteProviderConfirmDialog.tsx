@@ -44,7 +44,7 @@ export function ConfirmDeleteProviderDialog({
         >
           <div className="flex items-center gap-2">
             <WarningCircle size={18} weight="bold" className="text-error" />
-            <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
+            <Dialog.Title className="text-[15px] font-semibold text-ink">
               {copy.deleteProviderDialogTitle}
             </Dialog.Title>
           </div>

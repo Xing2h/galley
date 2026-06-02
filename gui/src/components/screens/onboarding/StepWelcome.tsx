@@ -33,7 +33,7 @@ export function StepWelcome({ onStart }: StepWelcomeProps) {
       <h1 className="m-0 font-serif text-[36px] font-medium leading-[1.1] tracking-[0.005em] text-ink">
         Galley
       </h1>
-      <p className="mb-9 mt-3 font-serif text-[18px] italic leading-[1.55] text-ink-soft">
+      <p className="mb-9 mt-3 text-[18px] italic leading-[1.55] text-ink-soft">
         {copy.onboarding.welcomeTagline}
       </p>
 
@@ -87,7 +87,7 @@ function ModeCard({ title, body, onClick, disabled }: ModeCardProps) {
       <div className="min-w-0 flex-1">
         <div
           className={cn(
-            "font-serif text-[15.5px] font-medium",
+            "text-[15.5px] font-semibold",
             disabled ? "text-ink-soft" : "text-ink",
           )}
         >

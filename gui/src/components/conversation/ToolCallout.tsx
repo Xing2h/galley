@@ -445,7 +445,7 @@ function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
               className="shrink-0 text-ink-soft"
             />
           )}
-          <span className="truncate font-serif text-[13px]">
+          <span className="truncate text-[13px]">
             {toolLabel ?? (
               // Unknown tool: surface the GA name itself as the
               // primary label (mono) so the pill still has a usable

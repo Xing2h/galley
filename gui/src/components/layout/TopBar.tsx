@@ -238,7 +238,7 @@ export function TopBar({
         ) : (
           <span
             data-tauri-drag-region
-            className="truncate font-serif italic text-ink-muted"
+            className="truncate text-[13px] italic text-ink-muted"
           >
             {copy.topbar.newConversation}
           </span>

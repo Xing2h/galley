@@ -304,7 +304,7 @@ export function Sidebar({
         {globalTimelinePhase && (
           <SidebarTimelinePresence phase={globalTimelinePhase}>
             {globalEmpty ? (
-              <div className="px-5 py-6 font-serif text-[12.5px] italic text-ink-muted">
+              <div className="px-5 py-6 text-[12.5px] italic text-ink-muted">
                 {copy.sidebar.emptySessions}
               </div>
             ) : (

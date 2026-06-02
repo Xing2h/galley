@@ -21,7 +21,7 @@
  */
 export function TurnTicker({ text }: { text: string }) {
   return (
-    <div className="-mt-1 mb-2 line-clamp-3 overflow-hidden font-serif text-[11px] italic leading-[1.5] text-ink-muted">
+    <div className="-mt-1 mb-2 line-clamp-3 overflow-hidden text-[11px] italic leading-[1.5] text-ink-muted">
       {text}
     </div>
   );

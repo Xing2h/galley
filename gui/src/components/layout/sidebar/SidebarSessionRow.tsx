@@ -219,7 +219,7 @@ export function SidebarSessionRow({
               hasPendingAsk
                 ? "font-medium text-warning"
                 : showRunningActivity
-                  ? "sidebar-step-tick font-serif italic text-brand-strong/85"
+                  ? "sidebar-step-tick italic text-brand-strong/85"
                   : "text-ink-muted",
             )}
           >

@@ -106,7 +106,7 @@ export function EditProjectDialog({
           )}
         >
           <div className="flex items-center justify-between">
-            <Dialog.Title className="font-serif text-[16px] font-medium text-ink">
+            <Dialog.Title className="text-[16px] font-semibold text-ink">
               {copy.projects.editProject}
             </Dialog.Title>
             <Dialog.Close asChild>
@@ -203,7 +203,7 @@ export function ConfirmDeleteProjectDialog({
         >
           <div className="flex items-center gap-2">
             <WarningCircle size={18} weight="bold" className="text-error" />
-            <Dialog.Title className="font-serif text-[15px] font-medium text-ink">
+            <Dialog.Title className="text-[15px] font-semibold text-ink">
               {copy.projects.deleteProjectTitle(project?.name ?? "")}
             </Dialog.Title>
           </div>

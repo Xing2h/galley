@@ -171,7 +171,7 @@ export function EmptyState({
                   type="button"
                   onClick={() => onQuickPrompt?.(p.prompt ?? p.label)}
                   className={cn(
-                    "rounded-sm font-serif text-[12.5px] italic leading-[1.55] text-ink-muted",
+                    "rounded-sm text-[12.5px] italic leading-[1.55] text-ink-muted",
                     "transition-colors hover:text-ink",
                   )}
                 >

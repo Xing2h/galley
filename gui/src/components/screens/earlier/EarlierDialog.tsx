@@ -270,7 +270,7 @@ function Header({
 
   return (
     <div className="flex items-center gap-3 border-b border-line bg-elevated px-5 py-3.5">
-      <Dialog.Title className="font-serif text-[16px] font-medium text-ink">
+      <Dialog.Title className="text-[16px] font-semibold text-ink">
         Earlier
       </Dialog.Title>
       <span className="text-[12.5px] text-ink-muted">{summary}</span>
@@ -607,7 +607,7 @@ function EmptyState({ filtered }: { filtered: boolean }) {
   const copy = useCopy();
   return (
     <div className="flex h-full items-center justify-center">
-      <p className="font-serif text-[13.5px] italic text-ink-muted">
+      <p className="text-[13.5px] italic text-ink-muted">
         {filtered
           ? copy.projects.noMatchingConversations
           : copy.projects.noEarlierEmpty}

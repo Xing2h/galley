@@ -76,10 +76,10 @@ export function StepAttach({
 
   return (
     <div className="max-w-[580px]">
-      <h1 className="m-0 font-serif text-[32px] font-medium leading-tight tracking-[0.005em] text-ink">
+      <h1 className="m-0 text-[32px] font-semibold leading-tight tracking-[0.005em] text-ink">
         {onboardingCopy.attachTitle}
       </h1>
-      <p className="mb-7 mt-2.5 font-serif text-[15.5px] italic leading-[1.55] text-ink-soft">
+      <p className="mb-7 mt-2.5 text-[15.5px] italic leading-[1.55] text-ink-soft">
         {onboardingCopy.attachSubtitle}
       </p>
 

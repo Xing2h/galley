@@ -16,10 +16,10 @@ export function SettingsPanelHeader({
     <div>
       <h2
         className={cn(
-          "m-0 font-serif text-ink",
+          "m-0 text-ink",
           wordmark
-            ? "text-[20px] font-semibold tracking-[0.005em]"
-            : "text-[18px] font-medium",
+            ? "font-serif text-[20px] font-semibold tracking-[0.005em]"
+            : "text-[18px] font-semibold",
         )}
       >
         {title}
