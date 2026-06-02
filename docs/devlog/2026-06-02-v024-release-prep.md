@@ -51,6 +51,11 @@ pressure while `v0.2.4` is prepared.
   by the Codex responses backend. The smoke build returned HTTP 400 with
   `Instructions are required` after OAuth succeeded, so the probe now sends a
   minimal `instructions` field and has a unit test for that request body.
+- ChatGPT web login and Codex CLI import must read as two different setup
+  paths. The first draft placed `Import Codex CLI login` in the same action row
+  as device-code login, which made it look like a step in the web-login flow.
+  The UI now makes web sign-in the primary path and places CLI import in a
+  separate fallback block.
 
 ## Rejected alternatives
 

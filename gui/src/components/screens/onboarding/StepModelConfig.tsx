@@ -393,60 +393,83 @@ export function StepModelConfig({
         />
 
         {providerSelected && selectedPreset && protocol && isCodexProvider && (
-          <div className="space-y-3 rounded-sm border border-line bg-elevated/80 px-3 py-3">
-            <div className="text-[12.5px] leading-5 text-ink-muted">
-              {modelCopy.chatgptCodexReadyBody}
-            </div>
-            {codexLoginStart && (
-              <CodexDeviceCodeCard
-                userCode={codexLoginStart.userCode}
-                copy={modelCopy}
-                className="py-2"
-              />
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={isBusy}
-                onClick={() => void handleCodexLogin()}
-                leadingIcon={
-                  isBusy && state.kind === "loading" ? (
-                    <span className="spin">
-                      <CircleNotch size={12} weight="thin" />
-                    </span>
-                  ) : (
-                    <SignIn size={12} weight="bold" />
-                  )
-                }
-              >
-                {modelCopy.signInWithChatGPT}
-              </Button>
+          <div className="space-y-4 rounded-sm border border-line bg-elevated/80 px-3 py-3">
+            <div className="space-y-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                  {modelCopy.chatgptCodexWebLogin}
+                </div>
+                <div className="mt-1 text-[12.5px] leading-5 text-ink-muted">
+                  {modelCopy.chatgptCodexReadyBody}
+                </div>
+              </div>
               {codexLoginStart && (
-                <>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={isBusy}
-                    onClick={() => void handleCodexOpenLoginPage()}
-                    leadingIcon={<ArrowSquareOut size={12} weight="thin" />}
-                  >
-                    {modelCopy.openChatGPTLoginPage}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={isBusy}
-                    onClick={() => void handleCodexCompleteLogin()}
-                    leadingIcon={<CheckCircle size={12} weight="thin" />}
-                  >
-                    {modelCopy.completeChatGPTLogin}
-                  </Button>
-                </>
+                <CodexDeviceCodeCard
+                  userCode={codexLoginStart.userCode}
+                  copy={modelCopy}
+                  className="py-2"
+                />
               )}
+              <div className="flex flex-wrap gap-2">
+                {!codexLoginStart ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={isBusy}
+                    onClick={() => void handleCodexLogin()}
+                    leadingIcon={
+                      isBusy && state.kind === "loading" ? (
+                        <span className="spin">
+                          <CircleNotch size={12} weight="thin" />
+                        </span>
+                      ) : (
+                        <SignIn size={12} weight="bold" />
+                      )
+                    }
+                  >
+                    {modelCopy.generateChatGPTLoginCode}
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={isBusy}
+                      onClick={() => void handleCodexOpenLoginPage()}
+                      leadingIcon={<ArrowSquareOut size={12} weight="thin" />}
+                    >
+                      {modelCopy.openChatGPTLoginPage}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={isBusy}
+                      onClick={() => void handleCodexCompleteLogin()}
+                      leadingIcon={<CheckCircle size={12} weight="thin" />}
+                    >
+                      {modelCopy.completeChatGPTLogin}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={isBusy}
+                      onClick={() => void handleCodexLogin()}
+                    >
+                      {modelCopy.regenerateChatGPTLoginCode}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-line pt-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                {modelCopy.codexCliLoginTitle}
+              </div>
               <Button
                 variant="secondary"
                 size="sm"
+                className="mt-2"
                 disabled={isBusy}
                 onClick={() => void handleCodexImport()}
                 leadingIcon={<CloudArrowDown size={12} weight="thin" />}
