@@ -102,6 +102,9 @@ ring = "0.17"
 # not need to round-trip through GUI state.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+# Decode OAuth JWT claims locally for expiry and ChatGPT account-id routing.
+base64 = "0.22"
+
 [features]
 # Enables the bridge-owner-experiment binary. Not part of any default set.
 # Use: `cargo build --features experiments --bin bridge-owner-experiment`.

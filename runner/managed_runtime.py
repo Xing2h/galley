@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 GALLEY_RUNTIME_KIND_ENV = "GALLEY_RUNTIME_KIND"
 GALLEY_MANAGED_STATE_ROOT_ENV = "GALLEY_GA_STATE_ROOT"
@@ -50,17 +51,30 @@ def managed_model_config_from_env() -> dict[str, Any]:
             key = f"native_oai_config_{idx}"
         else:
             continue
-        cfg = {
+        cfg: dict[str, Any] = {
             "name": str(model.get("displayName") or model.get("model") or key),
             "apikey": str(model.get("apiKey") or ""),
             "apibase": str(model.get("apiBase") or "").rstrip("/"),
             "model": str(model.get("model") or ""),
         }
+        auth_kind = str(model.get("authKind") or "api_key").strip().lower()
+        if auth_kind == "chatgpt_codex_oauth":
+            cfg["codex_backend"] = True
+            cfg["api_mode"] = "responses"
+            cfg["galley_api_key_ref"] = str(model.get("apiKeyRef") or "")
+            credential_ipc = model.get("credentialIpc")
+            if isinstance(credential_ipc, dict):
+                cfg["galley_credential_ipc"] = credential_ipc
         advanced = model.get("advancedOptions") or {}
         if isinstance(advanced, dict):
             cfg.update(advanced)
             if "connect_timeout" in advanced and "timeout" not in advanced:
                 cfg["timeout"] = advanced["connect_timeout"]
+        if auth_kind == "chatgpt_codex_oauth":
+            cfg["codex_backend"] = True
+            cfg["api_mode"] = "responses"
+            if str(cfg.get("reasoning_effort") or "").strip().lower() == "minimal":
+                cfg["reasoning_effort"] = "medium"
         if not cfg["apikey"] or not cfg["apibase"] or not cfg["model"]:
             continue
         out[key] = cfg

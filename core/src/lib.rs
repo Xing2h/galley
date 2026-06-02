@@ -2,6 +2,7 @@ pub mod api;
 mod app_paths;
 pub mod app_update;
 pub mod browser_control;
+pub mod codex_oauth;
 pub mod conversation_image;
 pub mod credential_store;
 pub mod db;
@@ -22,9 +23,10 @@ pub mod socket_listener;
 pub mod sop_install;
 
 use api::{
-    CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelProbeInput, Origin,
-    ProjectBrief, ProjectId, ProjectPatch, ReorderManagedModelsInput, RuntimeKind,
-    SaveManagedModelInput, SaveManagedProviderInput, SessionBrief, SessionFilter, SessionId,
+    CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelAuthKind,
+    ManagedModelProbeInput, Origin, ProjectBrief, ProjectId, ProjectPatch,
+    ReorderManagedModelsInput, RuntimeKind, SaveManagedModelInput, SaveManagedProviderInput,
+    SessionBrief, SessionFilter, SessionId,
 };
 use db::{
     MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
@@ -450,6 +452,7 @@ async fn save_managed_model_provider(
         .find(|provider| provider.id == id)
         .map(|provider| provider.api_key_ref);
     let is_existing_provider = existing_api_key_ref.is_some();
+    let auth_kind = input.auth_kind.unwrap_or(ManagedModelAuthKind::ApiKey);
     let api_key_ref =
         existing_api_key_ref.unwrap_or_else(|| credential_store::managed_provider_api_key_ref(&id));
     let api_key = input
@@ -461,7 +464,7 @@ async fn save_managed_model_provider(
         credential_store::set_secret(&galley, &api_key_ref, api_key)
             .await
             .map_err(stringify_error)?;
-    } else if !is_existing_provider {
+    } else if !is_existing_provider && auth_kind == ManagedModelAuthKind::ApiKey {
         return Err(stringify_error(error::GalleyError::InvalidArgs {
             message: "managed provider API key is required".into(),
         }));
@@ -479,6 +482,7 @@ async fn save_managed_model_provider(
             id,
             display_name,
             protocol: input.protocol,
+            auth_kind,
             api_base: input.api_base,
             api_key_ref,
         })
@@ -612,6 +616,51 @@ async fn test_managed_model_connection(
     managed_model_probe::test_connection(input)
         .await
         .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn start_chatgpt_codex_login(
+) -> std::result::Result<codex_oauth::CodexDeviceLoginStart, String> {
+    codex_oauth::start_device_login()
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn complete_chatgpt_codex_login(
+    app: tauri::AppHandle,
+    input: codex_oauth::CompleteCodexDeviceLoginInput,
+) -> std::result::Result<codex_oauth::CodexAuthSetupResult, String> {
+    let result = codex_oauth::complete_device_login(input)
+        .await
+        .map_err(stringify_error)?;
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    sync_managed_model_config(&app, &galley).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn import_chatgpt_codex_cli_login(
+    app: tauri::AppHandle,
+) -> std::result::Result<codex_oauth::CodexAuthSetupResult, String> {
+    let result = codex_oauth::import_cli_login()
+        .await
+        .map_err(stringify_error)?;
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    sync_managed_model_config(&app, &galley).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn logout_chatgpt_codex_provider(
+    app: tauri::AppHandle,
+    input: codex_oauth::CodexProviderActionInput,
+) -> std::result::Result<(), String> {
+    codex_oauth::logout_provider(input)
+        .await
+        .map_err(stringify_error)?;
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    sync_managed_model_config(&app, &galley).await
 }
 
 async fn sync_managed_model_config(
@@ -1178,6 +1227,12 @@ pub fn run() {
             sql: include_str!("../migrations/013_session_llm_key.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 14,
+            description: "add managed model provider auth kind",
+            sql: include_str!("../migrations/014_managed_model_auth_kind.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —
@@ -1238,6 +1293,10 @@ pub fn run() {
             reorder_managed_models,
             list_managed_model_options,
             test_managed_model_connection,
+            start_chatgpt_codex_login,
+            complete_chatgpt_codex_login,
+            import_chatgpt_codex_cli_login,
+            logout_chatgpt_codex_provider,
             list_sessions,
             // B3 M4a session writes
             create_session,

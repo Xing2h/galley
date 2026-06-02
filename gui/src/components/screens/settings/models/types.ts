@@ -1,6 +1,9 @@
 import type { useCopy } from "@/lib/i18n";
 import type { ManagedModelProviderPresetId } from "@/lib/managed-model-presets";
-import type { ManagedModelProtocol } from "@/types/managed-models";
+import type {
+  ManagedModelAuthKind,
+  ManagedModelProtocol,
+} from "@/types/managed-models";
 
 export type SettingsModelsCopy = ReturnType<
   typeof useCopy
@@ -20,6 +23,7 @@ export type ProviderFormState = {
   id?: string;
   providerPresetId: ManagedModelProviderPresetId | null;
   protocol: ManagedModelProtocol | null;
+  authKind: ManagedModelAuthKind;
   apiKey: string;
   apiBase: string;
   model: string;

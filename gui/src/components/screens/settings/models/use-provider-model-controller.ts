@@ -106,6 +106,7 @@ export function useProviderModelController({
       const result = await listManagedModelOptions({
         providerId: provider.id,
         protocol: provider.protocol,
+        authKind: provider.authKind,
         apiBase: provider.apiBase,
       });
       setModelOptionsByProvider((current) => ({
@@ -156,8 +157,10 @@ export function useProviderModelController({
       const result = await testManagedModelConnectionWithLatency({
         providerId: provider.id,
         protocol: provider.protocol,
+        authKind: provider.authKind,
         apiBase: provider.apiBase,
         model: draft.model,
+        advancedOptions: draft.advancedOptions,
       });
       setModelProbeStates((current) =>
         withProbeState(current, provider.id, {
@@ -240,8 +243,10 @@ export function useProviderModelController({
       const result = await testManagedModelConnectionWithLatency({
         providerId: provider.id,
         protocol: provider.protocol,
+        authKind: provider.authKind,
         apiBase: provider.apiBase,
         model: model.model,
+        advancedOptions: model.advancedOptions,
       });
       setSavedModelProbeStates((current) =>
         withProbeState(current, model.id, {

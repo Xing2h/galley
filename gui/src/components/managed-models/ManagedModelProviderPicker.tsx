@@ -28,6 +28,12 @@ export function ManagedModelProviderPicker({
 }: ManagedModelProviderPickerProps) {
   const copy = useCopy().settings.models;
   const selectedPreset = value ? getManagedModelProviderPreset(value) : null;
+  const badgeLabel =
+    selectedPreset?.id === "chatgpt-codex"
+      ? copy.chatgptCodexBadge
+      : protocol
+        ? managedModelProtocolLabel(protocol)
+        : null;
 
   return (
     <Popover.Root>
@@ -51,9 +57,9 @@ export function ManagedModelProviderPicker({
             >
               {selectedPreset?.label ?? copy.chooseProvider}
             </span>
-            {protocol && (
+            {badgeLabel && (
               <span className="mt-1 inline-flex rounded-sm bg-ink-muted/10 px-1.5 py-px text-[10.5px] text-ink-muted">
-                {managedModelProtocolLabel(protocol)}
+                {badgeLabel}
               </span>
             )}
           </span>
@@ -131,6 +137,9 @@ function providerPresetDescription(
   }
   if (presetId === "custom-anthropic") {
     return copy.anthropicPresetDescription;
+  }
+  if (presetId === "chatgpt-codex") {
+    return copy.chatgptCodexPresetDescription;
   }
   return null;
 }

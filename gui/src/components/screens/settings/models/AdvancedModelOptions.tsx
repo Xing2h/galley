@@ -4,7 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { ManagedModelProtocol } from "@/types/managed-models";
+import type {
+  ManagedModelAuthKind,
+  ManagedModelProtocol,
+} from "@/types/managed-models";
 
 import { InfoTooltip } from "./ModelPrimitives";
 
@@ -17,6 +20,7 @@ export function AdvancedModelOptions({
   open,
   onOpenChange,
   protocol,
+  authKind = "api_key",
   options,
   recommendedOptions,
   onChange,
@@ -24,6 +28,7 @@ export function AdvancedModelOptions({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   protocol: ManagedModelProtocol;
+  authKind?: ManagedModelAuthKind;
   options: Record<string, unknown>;
   recommendedOptions: Record<string, unknown>;
   onChange: (options: Record<string, unknown>) => void;
@@ -73,6 +78,7 @@ export function AdvancedModelOptions({
     null,
     "",
   ) as "" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  const isCodexOauth = authKind === "chatgpt_codex_oauth";
   const claudeReasoning = stringAdvancedOption(
     effectiveOptions.reasoning_effort,
     null,
@@ -152,16 +158,8 @@ export function AdvancedModelOptions({
               />
               <AdvancedChoiceField
                 label={copy.reasoningEffort}
-                value={openaiReasoning}
-                options={[
-                  { value: "", label: copy.reasoningDefault },
-                  { value: "none", label: copy.reasoningNone },
-                  { value: "minimal", label: copy.reasoningMinimal },
-                  { value: "low", label: copy.reasoningLow },
-                  { value: "medium", label: copy.reasoningMedium },
-                  { value: "high", label: copy.reasoningHigh },
-                  { value: "xhigh", label: copy.reasoningXHigh },
-                ]}
+                value={isCodexOauth && openaiReasoning === "minimal" ? "medium" : openaiReasoning}
+                options={openaiReasoningOptions(copy, isCodexOauth)}
                 onChange={(value) =>
                   setOption("reasoning_effort", value || null)
                 }
@@ -215,6 +213,28 @@ export function AdvancedModelOptions({
       )}
     </div>
   );
+}
+
+function openaiReasoningOptions(
+  copy: ReturnType<typeof useCopy>["settings"]["models"],
+  codexOauth: boolean,
+): AdvancedChoiceOption<
+  "" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
+>[] {
+  const options: AdvancedChoiceOption<
+    "" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
+  >[] = [
+    { value: "", label: copy.reasoningDefault },
+    { value: "none", label: copy.reasoningNone },
+    { value: "low", label: copy.reasoningLow },
+    { value: "medium", label: copy.reasoningMedium },
+    { value: "high", label: copy.reasoningHigh },
+    { value: "xhigh", label: copy.reasoningXHigh },
+  ];
+  if (!codexOauth) {
+    options.splice(2, 0, { value: "minimal", label: copy.reasoningMinimal });
+  }
+  return options;
 }
 
 function AdvancedNumberField({

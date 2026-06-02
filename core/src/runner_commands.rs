@@ -39,14 +39,15 @@
 //! parse and pattern-match on the `error` discriminant — same convention
 //! as B1's [`list_sessions`].
 
-use crate::api::{ManagedModelProtocol, RuntimeKind};
+use crate::api::{ManagedModelAuthKind, ManagedModelProtocol, RuntimeKind};
 use crate::db::SqliteGalley;
 use crate::ipc::IpcCommand;
 use crate::runner_manager::{
     BroadcastItem, RunnerManager, RunnerSpawnError, SendCommandError, ShutdownError, SpawnArgs,
 };
 use crate::{
-    credential_store, managed_model_config, managed_prompt, managed_runtime, process_command,
+    codex_oauth, credential_store, managed_model_config, managed_prompt, managed_runtime,
+    process_command,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -154,9 +155,13 @@ struct ManagedRuntimeModelConfig {
 struct ManagedRuntimeModel {
     display_name: String,
     protocol: ManagedModelProtocol,
+    auth_kind: ManagedModelAuthKind,
     api_base: String,
     model: String,
     api_key: String,
+    api_key_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    credential_ipc: Option<codex_oauth::CodexCredentialIpcConfig>,
     advanced_options: serde_json::Value,
 }
 
@@ -195,12 +200,42 @@ pub(crate) async fn prepare_managed_runtime_context(
             detail: format!("loading managed model records failed: {e}"),
         }
     })?;
+    let needs_codex_ipc = models
+        .iter()
+        .any(|model| model.auth_kind == ManagedModelAuthKind::ChatgptCodexOauth);
+    let credential_ipc = if needs_codex_ipc {
+        Some(codex_oauth::start_credential_ipc().await.map_err(|e| {
+            RunnerSpawnError::ManagedRuntimeInvalid {
+                detail: format!("starting Codex credential IPC failed: {e}"),
+            }
+        })?)
+    } else {
+        None
+    };
     let mut runtime_models = Vec::new();
     let mut requested_model_index: Option<i64> = None;
     for model in models {
-        let api_key = match credential_store::get_secret(&galley, &model.api_key_ref).await {
-            Ok(secret) if !secret.trim().is_empty() => secret,
-            _ => continue,
+        let (api_key, model_credential_ipc) = match model.auth_kind {
+            ManagedModelAuthKind::ApiKey => {
+                match credential_store::get_secret(&galley, &model.api_key_ref).await {
+                    Ok(secret) if !secret.trim().is_empty() => (secret, None),
+                    _ => continue,
+                }
+            }
+            ManagedModelAuthKind::ChatgptCodexOauth => {
+                if credential_store::get_secret(&galley, &model.api_key_ref)
+                    .await
+                    .map(|secret| !secret.trim().is_empty())
+                    .unwrap_or(false)
+                {
+                    (
+                        "galley-codex-oauth".into(),
+                        credential_ipc.clone(),
+                    )
+                } else {
+                    continue;
+                }
+            }
         };
         if requested_model_id == Some(model.id.as_str()) {
             requested_model_index = Some(runtime_models.len() as i64);
@@ -208,9 +243,12 @@ pub(crate) async fn prepare_managed_runtime_context(
         runtime_models.push(ManagedRuntimeModel {
             display_name: model.display_name,
             protocol: model.protocol,
+            auth_kind: model.auth_kind,
             api_base: model.api_base,
             model: model.model,
             api_key,
+            api_key_ref: model.api_key_ref,
+            credential_ipc: model_credential_ipc,
             advanced_options: model.advanced_options,
         });
     }

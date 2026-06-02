@@ -9,6 +9,13 @@ pub enum ManagedModelProtocol {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ManagedModelAuthKind {
+    ApiKey,
+    ChatgptCodexOauth,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ManagedModelCredentialStatus {
     /// A managed Provider has a stored local secret row.
     Present,
@@ -25,6 +32,7 @@ pub struct ManagedModelProviderRecord {
     pub id: String,
     pub display_name: String,
     pub protocol: ManagedModelProtocol,
+    pub auth_kind: ManagedModelAuthKind,
     pub api_base: String,
     pub api_key_ref: String,
     pub credential_status: ManagedModelCredentialStatus,
@@ -38,6 +46,8 @@ pub struct SaveManagedProviderInput {
     pub id: Option<String>,
     pub display_name: Option<String>,
     pub protocol: ManagedModelProtocol,
+    #[serde(default)]
+    pub auth_kind: Option<ManagedModelAuthKind>,
     pub api_base: String,
     pub api_key: Option<String>,
 }
@@ -50,6 +60,7 @@ pub struct ManagedModelRecord {
     pub provider_display_name: String,
     pub display_name: String,
     pub protocol: ManagedModelProtocol,
+    pub auth_kind: ManagedModelAuthKind,
     pub api_base: String,
     pub model: String,
     pub api_key_ref: String,
@@ -85,9 +96,13 @@ pub struct ManagedModelProbeInput {
     pub id: Option<String>,
     pub provider_id: Option<String>,
     pub protocol: ManagedModelProtocol,
+    #[serde(default)]
+    pub auth_kind: Option<ManagedModelAuthKind>,
     pub api_base: String,
     pub api_key: Option<String>,
     pub model: Option<String>,
+    #[serde(default)]
+    pub advanced_options: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]

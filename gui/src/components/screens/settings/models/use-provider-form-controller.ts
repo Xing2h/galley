@@ -1,9 +1,15 @@
 import { useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 import {
+  completeChatGptCodexLogin,
+  importChatGptCodexCliLogin,
   listManagedModelOptions,
+  logoutChatGptCodexProvider,
   managedModelProbeErrorMessage,
+  startChatGptCodexLogin,
   testManagedModelConnectionWithLatency,
+  type CodexDeviceLoginStart,
 } from "@/lib/managed-models";
 import { useCopy } from "@/lib/i18n";
 import {
@@ -30,6 +36,7 @@ export function useProviderFormController({
   saving,
   saveProvider,
   saveModel,
+  loadManagedModels,
   expandProvider,
   clearProviderProbeState,
   clearModelProbeState,
@@ -42,6 +49,7 @@ export function useProviderFormController({
   saving: boolean;
   saveProvider: ManagedModelsStore["saveProvider"];
   saveModel: ManagedModelsStore["saveModel"];
+  loadManagedModels: ManagedModelsStore["load"];
   expandProvider: (id: string) => void;
   clearProviderProbeState: (id: string) => void;
   clearModelProbeState: (id: string) => void;
@@ -63,6 +71,8 @@ export function useProviderFormController({
     string[]
   >([]);
   const [providerFormModelFilter, setProviderFormModelFilter] = useState("");
+  const [codexLoginStart, setCodexLoginStart] =
+    useState<CodexDeviceLoginStart | null>(null);
 
   const visibleProviderForm =
     providerForm ??
@@ -74,8 +84,11 @@ export function useProviderFormController({
     !!editingProvider && editingProvider.credentialStatus !== "missing";
   const isCreatingProvider = !!visibleProviderForm && !visibleProviderForm.id;
   const providerFormIsInlineEdit = !!visibleProviderForm?.id;
+  const isCodexProviderForm =
+    visibleProviderForm?.authKind === "chatgpt_codex_oauth";
   const canSaveProvider =
     !!visibleProviderForm &&
+    !isCodexProviderForm &&
     visibleProviderForm.protocol !== null &&
     visibleProviderForm.apiBase.trim() !== "" &&
     (visibleProviderForm.apiKey.trim() !== "" || providerHasSavedKey) &&
@@ -85,10 +98,13 @@ export function useProviderFormController({
     !!visibleProviderForm &&
     visibleProviderForm.protocol !== null &&
     visibleProviderForm.apiBase.trim() !== "" &&
-    (visibleProviderForm.apiKey.trim() !== "" || providerHasSavedKey) &&
+    (isCodexProviderForm ||
+      visibleProviderForm.apiKey.trim() !== "" ||
+      providerHasSavedKey) &&
     providerFormProbeState.kind !== "loading";
   const canFetchProviderFormModels =
     !!visibleProviderForm &&
+    !isCodexProviderForm &&
     visibleProviderForm.protocol !== null &&
     !visibleProviderForm.id &&
     visibleProviderForm.apiBase.trim() !== "" &&
@@ -100,6 +116,7 @@ export function useProviderFormController({
     setProviderFormModelOptions([]);
     setProviderFormModelFilter("");
     setProviderFormProbeState({ kind: "idle" });
+    setCodexLoginStart(null);
   };
 
   const updateProviderForm = (patch: Partial<ProviderFormState>) => {
@@ -109,6 +126,7 @@ export function useProviderFormController({
     }));
     if (
       "protocol" in patch ||
+      "authKind" in patch ||
       "providerPresetId" in patch ||
       "apiKey" in patch ||
       "apiBase" in patch
@@ -117,6 +135,7 @@ export function useProviderFormController({
       setProviderFormModelFilter("");
     }
     setProviderFormProbeState({ kind: "idle" });
+    setCodexLoginStart(null);
   };
 
   const selectProviderPreset = (
@@ -132,6 +151,7 @@ export function useProviderFormController({
     setProviderFormModelOptions([]);
     setProviderFormModelFilter("");
     setProviderFormProbeState({ kind: "idle" });
+    setCodexLoginStart(null);
   };
 
   const startNewProvider = () => {
@@ -139,14 +159,19 @@ export function useProviderFormController({
     setProviderFormModelOptions([]);
     setProviderFormModelFilter("");
     setProviderFormProbeState({ kind: "idle" });
+    setCodexLoginStart(null);
   };
 
   const startEditProvider = (provider: ManagedModelProviderRecord) => {
     expandProvider(provider.id);
     setProviderForm({
       id: provider.id,
-      providerPresetId: customManagedModelProviderPresetId(provider.protocol),
+      providerPresetId: customManagedModelProviderPresetId(
+        provider.protocol,
+        provider.authKind,
+      ),
       protocol: provider.protocol,
+      authKind: provider.authKind,
       apiKey: "",
       apiBase: provider.apiBase,
       model: "",
@@ -154,6 +179,7 @@ export function useProviderFormController({
     });
     setProviderFormModelOptions([]);
     setProviderFormProbeState({ kind: "idle" });
+    setCodexLoginStart(null);
   };
 
   const handleProviderFormTest = async () => {
@@ -177,9 +203,11 @@ export function useProviderFormController({
               id: visibleProviderForm.id,
               providerId: visibleProviderForm.id,
               protocol: visibleProviderForm.protocol,
+              authKind: visibleProviderForm.authKind,
               apiKey: visibleProviderForm.apiKey || undefined,
               apiBase: visibleProviderForm.apiBase,
               model: testModel,
+              advancedOptions: visibleProviderForm.advancedOptions,
             }),
             "setup-model",
             modelCopy,
@@ -189,6 +217,7 @@ export function useProviderFormController({
               id: visibleProviderForm.id,
               providerId: visibleProviderForm.id,
               protocol: visibleProviderForm.protocol,
+              authKind: visibleProviderForm.authKind,
               apiKey: visibleProviderForm.apiKey || undefined,
               apiBase: visibleProviderForm.apiBase,
             }),
@@ -223,6 +252,7 @@ export function useProviderFormController({
     try {
       const result = await listManagedModelOptions({
         protocol: visibleProviderForm.protocol,
+        authKind: visibleProviderForm.authKind,
         apiKey: visibleProviderForm.apiKey,
         apiBase: visibleProviderForm.apiBase,
       });
@@ -265,6 +295,7 @@ export function useProviderFormController({
       const saved = await saveProvider({
         id: visibleProviderForm.id,
         protocol: visibleProviderForm.protocol,
+        authKind: visibleProviderForm.authKind,
         apiKey: visibleProviderForm.apiKey || undefined,
         apiBase: visibleProviderForm.apiBase,
         displayName: visibleProviderForm.displayName,
@@ -299,10 +330,126 @@ export function useProviderFormController({
     }
   };
 
+  const handleCodexLogin = async () => {
+    if (
+      !visibleProviderForm ||
+      visibleProviderForm.authKind !== "chatgpt_codex_oauth"
+    ) {
+      return;
+    }
+    setProviderFormProbeState({ kind: "loading", action: "provider-test" });
+    try {
+      const start = await startChatGptCodexLogin();
+      setCodexLoginStart(start);
+      setProviderFormProbeState({
+        kind: "success",
+        action: "provider-test",
+        message: modelCopy.chatgptCodexCodeReady,
+      });
+    } catch (e) {
+      setProviderFormProbeState({
+        kind: "error",
+        action: "provider-test",
+        message: managedModelProbeErrorMessage(e, modelCopy),
+      });
+    }
+  };
+
+  const handleCodexOpenLoginPage = async () => {
+    if (!codexLoginStart) return;
+    try {
+      await openUrl(codexLoginStart.verificationUrl);
+    } catch (e) {
+      setProviderFormProbeState({
+        kind: "error",
+        action: "provider-test",
+        message: managedModelProbeErrorMessage(e, modelCopy),
+      });
+    }
+  };
+
+  const handleCodexCompleteLogin = async () => {
+    if (!codexLoginStart) return;
+    setProviderFormProbeState({ kind: "loading", action: "provider-test" });
+    try {
+      const result = await completeChatGptCodexLogin({
+        deviceAuthId: codexLoginStart.deviceAuthId,
+        userCode: codexLoginStart.userCode,
+        intervalSeconds: codexLoginStart.intervalSeconds,
+      });
+      await loadManagedModels();
+      expandProvider(result.provider.id);
+      resetProviderForm();
+      showModelConfigSavedToast(modelCopy.providerCreatedToastMessage);
+    } catch (e) {
+      setProviderFormProbeState({
+        kind: "error",
+        action: "provider-test",
+        message: managedModelProbeErrorMessage(e, modelCopy),
+      });
+    }
+  };
+
+  const handleCodexImport = async () => {
+    if (
+      !visibleProviderForm ||
+      visibleProviderForm.authKind !== "chatgpt_codex_oauth"
+    ) {
+      return;
+    }
+    setCodexLoginStart(null);
+    setProviderFormProbeState({ kind: "loading", action: "provider-test" });
+    try {
+      const result = await importChatGptCodexCliLogin();
+      await loadManagedModels();
+      expandProvider(result.provider.id);
+      resetProviderForm();
+      showModelConfigSavedToast(modelCopy.providerCreatedToastMessage);
+    } catch (e) {
+      setProviderFormProbeState({
+        kind: "error",
+        action: "provider-test",
+        message: managedModelProbeErrorMessage(e, modelCopy),
+      });
+    }
+  };
+
+  const handleCodexLogout = async () => {
+    if (
+      !visibleProviderForm ||
+      visibleProviderForm.authKind !== "chatgpt_codex_oauth"
+    ) {
+      return;
+    }
+    setCodexLoginStart(null);
+    setProviderFormProbeState({ kind: "loading", action: "provider-test" });
+    try {
+      await logoutChatGptCodexProvider(visibleProviderForm.id);
+      await loadManagedModels();
+      setProviderFormProbeState({
+        kind: "success",
+        action: "provider-test",
+        message: modelCopy.keyNeedsResaveShort,
+      });
+    } catch (e) {
+      setProviderFormProbeState({
+        kind: "error",
+        action: "provider-test",
+        message: managedModelProbeErrorMessage(e, modelCopy),
+      });
+    }
+  };
+
   return {
     canFetchProviderFormModels,
     canSaveProvider,
     canTestProvider,
+    codexLoginStart,
+    handleCodexCompleteLogin,
+    handleCodexImport,
+    handleCodexLogin,
+    handleCodexLogout,
+    handleCodexOpenLoginPage,
     handleProviderFormFetchModels,
     handleProviderFormTest,
     handleProviderSave,

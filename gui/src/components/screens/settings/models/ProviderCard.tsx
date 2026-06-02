@@ -374,6 +374,7 @@ export function ProviderCard({
                   <ModelDraftEditor
                     draft={modelDraft}
                     protocol={provider.protocol}
+                    authKind={provider.authKind}
                     saving={saving}
                     keyMissing={keyMissing}
                     modelProbeState={modelProbeState}

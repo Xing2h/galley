@@ -10,9 +10,11 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::api::{
+    ManagedModelAuthKind,
     ManagedModelConnectionResult, ManagedModelListResult, ManagedModelProbeInput,
     ManagedModelProtocol,
 };
+use crate::codex_oauth;
 use crate::credential_store;
 use crate::db::SqliteGalley;
 use crate::error::{GalleyError, Result};
@@ -20,6 +22,18 @@ use crate::error::{GalleyError, Result};
 const PROBE_TIMEOUT_SECS: u64 = 20;
 
 pub async fn list_models(input: ManagedModelProbeInput) -> Result<ManagedModelListResult> {
+    if input.auth_kind == Some(ManagedModelAuthKind::ChatgptCodexOauth) {
+        return Ok(ManagedModelListResult {
+            models: vec![
+                "gpt-5.5".into(),
+                "gpt-5.4".into(),
+                "gpt-5.4-mini".into(),
+                "gpt-5.3-codex".into(),
+                "gpt-5.1".into(),
+            ],
+            endpoint: format!("{}/responses", codex_oauth::CODEX_API_BASE),
+        });
+    }
     let secret = resolve_secret(&input).await?;
     let endpoint = models_endpoint(&input.api_base)?;
     let client = reqwest::Client::builder()
@@ -81,6 +95,16 @@ async fn test_model(
     input: ManagedModelProbeInput,
     model: String,
 ) -> Result<ManagedModelConnectionResult> {
+    if input.auth_kind == Some(ManagedModelAuthKind::ChatgptCodexOauth) {
+        let api_key_ref = resolve_api_key_ref(&input).await?;
+        let reasoning = input
+            .advanced_options
+            .as_ref()
+            .and_then(|value| value.get("reasoning_effort"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(codex_oauth::CODEX_DEFAULT_REASONING);
+        return codex_oauth::test_codex_connection(&api_key_ref, &model, reasoning).await;
+    }
     let secret = resolve_secret(&input).await?;
     let endpoint = inference_endpoint(&input.api_base, input.protocol)?;
     let client = reqwest::Client::builder()
@@ -125,19 +149,35 @@ async fn resolve_secret(input: &ManagedModelProbeInput) -> Result<String> {
     {
         return Ok(secret.to_string());
     }
+    let has_id = input
+        .provider_id
+        .as_deref()
+        .or(input.id.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_some();
+    if !has_id {
+        return Err(GalleyError::InvalidArgs {
+            message: "API key is required before testing this provider".into(),
+        });
+    }
+    let galley = SqliteGalley::open().await?;
+    let api_key_ref = resolve_api_key_ref(input).await?;
+    credential_store::get_secret(&galley, &api_key_ref).await
+}
+
+async fn resolve_api_key_ref(input: &ManagedModelProbeInput) -> Result<String> {
     let id = input
         .provider_id
         .as_deref()
         .or(input.id.as_deref())
         .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let Some(id) = id else {
-        return Err(GalleyError::InvalidArgs {
-            message: "API key is required before testing this provider".into(),
-        });
-    };
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| GalleyError::InvalidArgs {
+            message: "managed provider id is required before testing this provider".into(),
+        })?;
     let galley = SqliteGalley::open().await?;
-    let api_key_ref = galley
+    galley
         .list_managed_model_providers()
         .await?
         .into_iter()
@@ -145,8 +185,7 @@ async fn resolve_secret(input: &ManagedModelProbeInput) -> Result<String> {
         .map(|provider| provider.api_key_ref)
         .ok_or_else(|| GalleyError::InvalidArgs {
             message: format!("managed provider {id} not found"),
-        })?;
-    credential_store::get_secret(&galley, &api_key_ref).await
+        })
 }
 
 fn apply_auth_headers(

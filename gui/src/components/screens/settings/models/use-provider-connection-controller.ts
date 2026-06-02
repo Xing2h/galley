@@ -33,7 +33,8 @@ export function useProviderConnectionController() {
     providerModels: ManagedModelRecord[],
   ) => {
     if (provider.credentialStatus === "missing") return;
-    const providerTestModel = providerModels[0]?.model;
+    const providerTestRecord = providerModels[0];
+    const providerTestModel = providerTestRecord?.model;
     if (!providerTestModel) return;
     setProviderProbeStates((current) =>
       withProbeState(current, provider.id, {
@@ -46,8 +47,10 @@ export function useProviderConnectionController() {
         id: provider.id,
         providerId: provider.id,
         protocol: provider.protocol,
+        authKind: provider.authKind,
         apiBase: provider.apiBase,
         model: providerTestModel,
+        advancedOptions: providerTestRecord?.advancedOptions,
       });
       setProviderProbeStates((current) =>
         withProbeState(current, provider.id, {

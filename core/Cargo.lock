@@ -1481,6 +1481,7 @@ version = "0.2.3"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "directories",
  "reqwest 0.12.28",

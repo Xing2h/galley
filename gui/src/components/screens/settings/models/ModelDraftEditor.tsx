@@ -3,7 +3,10 @@ import { useState } from "react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
-import type { ManagedModelProtocol } from "@/types/managed-models";
+import type {
+  ManagedModelAuthKind,
+  ManagedModelProtocol,
+} from "@/types/managed-models";
 
 import { AdvancedModelOptions } from "./AdvancedModelOptions";
 import {
@@ -16,6 +19,7 @@ import type { ModelDraftState, ProbeState } from "./types";
 export function ModelDraftEditor({
   draft,
   protocol,
+  authKind,
   saving,
   keyMissing,
   modelProbeState,
@@ -27,6 +31,7 @@ export function ModelDraftEditor({
 }: {
   draft: ModelDraftState;
   protocol: ManagedModelProtocol;
+  authKind: ManagedModelAuthKind;
   saving: boolean;
   keyMissing: boolean;
   modelProbeState: ProbeState;
@@ -82,6 +87,7 @@ export function ModelDraftEditor({
         open={advancedOpen}
         onOpenChange={setAdvancedOpen}
         protocol={protocol}
+        authKind={authKind}
         options={draft.advancedOptions}
         recommendedOptions={draft.recommendedAdvancedOptions}
         onChange={(advancedOptions) => onChange({ advancedOptions })}

@@ -1,11 +1,14 @@
 export type ManagedModelProtocol = "anthropic" | "openai";
 
+export type ManagedModelAuthKind = "api_key" | "chatgpt_codex_oauth";
+
 export type ManagedModelCredentialStatus = "present" | "missing" | "unknown";
 
 export interface ManagedModelProviderRecord {
   id: string;
   displayName: string;
   protocol: ManagedModelProtocol;
+  authKind: ManagedModelAuthKind;
   apiBase: string;
   apiKeyRef: string;
   credentialStatus: ManagedModelCredentialStatus;
@@ -17,6 +20,7 @@ export interface SaveManagedProviderInput {
   id?: string;
   displayName?: string;
   protocol: ManagedModelProtocol;
+  authKind?: ManagedModelAuthKind;
   apiBase: string;
   apiKey?: string;
 }
@@ -27,6 +31,7 @@ export interface ManagedModelRecord {
   providerDisplayName: string;
   displayName: string;
   protocol: ManagedModelProtocol;
+  authKind: ManagedModelAuthKind;
   apiBase: string;
   model: string;
   apiKeyRef: string;
@@ -56,9 +61,11 @@ export interface ManagedModelProbeInput {
   id?: string;
   providerId?: string;
   protocol: ManagedModelProtocol;
+  authKind?: ManagedModelAuthKind;
   apiBase: string;
   apiKey?: string;
   model?: string;
+  advancedOptions?: Record<string, unknown>;
 }
 
 export interface ManagedModelListResult {

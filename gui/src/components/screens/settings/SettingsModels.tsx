@@ -94,6 +94,7 @@ export function SettingsModels({
     saving,
     saveProvider,
     saveModel,
+    loadManagedModels: load,
     expandProvider,
     clearProviderProbeState:
       providerConnectionController.clearProviderProbeState,
@@ -107,6 +108,12 @@ export function SettingsModels({
     canFetchProviderFormModels,
     canSaveProvider,
     canTestProvider,
+    codexLoginStart,
+    handleCodexCompleteLogin,
+    handleCodexImport,
+    handleCodexLogin,
+    handleCodexLogout,
+    handleCodexOpenLoginPage,
     handleProviderFormFetchModels,
     handleProviderFormTest,
     handleProviderSave,
@@ -193,11 +200,17 @@ export function SettingsModels({
               probeState={providerFormProbeState}
               modelOptions={providerFormModelOptions}
               modelFilter={providerFormModelFilter}
+              codexLoginStart={codexLoginStart}
               onChange={updateProviderForm}
               onSetModelFilter={setProviderFormModelFilter}
               onSelectProviderPreset={selectProviderPreset}
               onTest={() => void handleProviderFormTest()}
               onFetchModels={() => void handleProviderFormFetchModels()}
+              onCodexLogin={() => void handleCodexLogin()}
+              onCodexOpenLoginPage={() => void handleCodexOpenLoginPage()}
+              onCodexCompleteLogin={() => void handleCodexCompleteLogin()}
+              onCodexImport={() => void handleCodexImport()}
+              onCodexLogout={() => void handleCodexLogout()}
               onSave={() => void handleProviderSave()}
               onCancel={resetProviderForm}
             />
@@ -257,11 +270,21 @@ export function SettingsModels({
                       probeState={providerFormProbeState}
                       modelOptions={providerFormModelOptions}
                       modelFilter={providerFormModelFilter}
+                      codexLoginStart={codexLoginStart}
                       onChange={updateProviderForm}
                       onSetModelFilter={setProviderFormModelFilter}
                       onSelectProviderPreset={selectProviderPreset}
                       onTest={() => void handleProviderFormTest()}
                       onFetchModels={() => void handleProviderFormFetchModels()}
+                      onCodexLogin={() => void handleCodexLogin()}
+                      onCodexOpenLoginPage={() =>
+                        void handleCodexOpenLoginPage()
+                      }
+                      onCodexCompleteLogin={() =>
+                        void handleCodexCompleteLogin()
+                      }
+                      onCodexImport={() => void handleCodexImport()}
+                      onCodexLogout={() => void handleCodexLogout()}
                       onSave={() => void handleProviderSave()}
                       onCancel={resetProviderForm}
                     />

@@ -20,6 +20,7 @@ export function newProviderForm(): ProviderFormState {
   return {
     providerPresetId: null,
     protocol: null,
+    authKind: "api_key",
     apiKey: "",
     apiBase: "",
     model: "",
@@ -35,6 +36,7 @@ export function providerFormFromPreset(
   return {
     ...(preserved?.id ? { id: preserved.id } : {}),
     ...draft,
+    authKind: draft.authKind ?? "api_key",
     apiKey: preserved?.apiKey ?? "",
   };
 }

@@ -1,10 +1,14 @@
 import {
   CircleNotch,
+  CloudArrowDown,
   Eye,
   EyeSlash,
   ListMagnifyingGlass,
+  ArrowSquareOut,
   PlugsConnected,
   Plus,
+  SignIn,
+  SignOut,
   X,
 } from "@phosphor-icons/react";
 import { useState } from "react";
@@ -17,6 +21,7 @@ import {
   modelPlaceholderForManagedModelProviderPreset,
   type ManagedModelProviderPresetId,
 } from "@/lib/managed-model-presets";
+import type { CodexDeviceLoginStart } from "@/lib/managed-models";
 import { cn } from "@/lib/utils";
 
 import {
@@ -39,11 +44,17 @@ export function ProviderEditor({
   probeState,
   modelOptions,
   modelFilter,
+  codexLoginStart,
   onChange,
   onSetModelFilter,
   onSelectProviderPreset,
   onTest,
   onFetchModels,
+  onCodexLogin,
+  onCodexOpenLoginPage,
+  onCodexCompleteLogin,
+  onCodexImport,
+  onCodexLogout,
   onSave,
   onCancel,
   className,
@@ -58,6 +69,7 @@ export function ProviderEditor({
   probeState: ProbeState;
   modelOptions: string[];
   modelFilter: string;
+  codexLoginStart?: CodexDeviceLoginStart | null;
   onChange: (patch: Partial<ProviderFormState>) => void;
   onSetModelFilter: (value: string) => void;
   onSelectProviderPreset: (
@@ -65,6 +77,11 @@ export function ProviderEditor({
   ) => void;
   onTest: () => void;
   onFetchModels: () => void;
+  onCodexLogin: () => void;
+  onCodexOpenLoginPage: () => void;
+  onCodexCompleteLogin: () => void;
+  onCodexImport: () => void;
+  onCodexLogout: () => void;
   onSave: () => void;
   onCancel: () => void;
   className?: string;
@@ -75,6 +92,7 @@ export function ProviderEditor({
     ? getManagedModelProviderPreset(form.providerPresetId)
     : null;
   const providerSelected = Boolean(selectedPreset && form.protocol);
+  const isCodexProvider = form.authKind === "chatgpt_codex_oauth";
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const apiKeyRevealLabel = apiKeyVisible ? copy.hideApiKey : copy.showApiKey;
   const trimmedModel = form.model.trim();
@@ -158,7 +176,89 @@ export function ProviderEditor({
           />
         )}
 
-        {providerSelected && selectedPreset && form.protocol && (
+        {providerSelected && selectedPreset && form.protocol && isCodexProvider && (
+          <div className="pb-1">
+            <p className="m-0 max-w-[620px] text-[12.5px] leading-5 text-ink-muted">
+              {copy.chatgptCodexReadyBody}
+            </p>
+            {codexLoginStart && (
+              <div className="mt-4 rounded-sm border border-brand/25 bg-brand-soft px-3 py-2.5">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                  {copy.chatgptCodexDeviceCode}
+                </div>
+                <div className="mt-1 font-mono text-[20px] font-semibold tracking-[0.08em] text-ink">
+                  {codexLoginStart.userCode}
+                </div>
+              </div>
+            )}
+            <div className="mt-5 flex flex-wrap items-center gap-x-2.5 gap-y-2">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={probeState.kind === "loading"}
+                onClick={onCodexLogin}
+                leadingIcon={
+                  probeState.kind === "loading" &&
+                  probeState.action === "provider-test" ? (
+                    <span className="spin">
+                      <CircleNotch size={12} weight="thin" />
+                    </span>
+                  ) : (
+                    <SignIn size={12} weight="bold" />
+                  )
+                }
+              >
+                {copy.signInWithChatGPT}
+              </Button>
+              {codexLoginStart && (
+                <>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={probeState.kind === "loading"}
+                    onClick={onCodexOpenLoginPage}
+                    leadingIcon={<ArrowSquareOut size={12} weight="thin" />}
+                  >
+                    {copy.openChatGPTLoginPage}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={probeState.kind === "loading"}
+                    onClick={onCodexCompleteLogin}
+                    leadingIcon={<PlugsConnected size={12} weight="thin" />}
+                  >
+                    {copy.completeChatGPTLogin}
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={probeState.kind === "loading"}
+                onClick={onCodexImport}
+                leadingIcon={<CloudArrowDown size={12} weight="thin" />}
+              >
+                {copy.importCodexCliLogin}
+              </Button>
+              {form.id && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={probeState.kind === "loading"}
+                  onClick={onCodexLogout}
+                  leadingIcon={<SignOut size={12} weight="thin" />}
+                >
+                  {copy.signOutChatGPT}
+                </Button>
+              )}
+              <InlineProbeStatus state={probeState} action="provider-test" />
+            </div>
+            <ProbeErrorLine state={probeState} action="provider-test" />
+          </div>
+        )}
+
+        {providerSelected && selectedPreset && form.protocol && !isCodexProvider && (
           <>
             <SettingsInput
               label={copy.apiKey}

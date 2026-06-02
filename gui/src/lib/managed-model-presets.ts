@@ -1,4 +1,5 @@
 import type {
+  ManagedModelAuthKind,
   ManagedModelProtocol,
   ManagedModelProviderRecord,
 } from "@/types/managed-models";
@@ -6,6 +7,7 @@ import type {
 const DEFAULT_MODEL_PLACEHOLDER = "model-name";
 
 export type ManagedModelProviderPresetId =
+  | "chatgpt-codex"
   | "deepseek"
   | "kimi-coding"
   | "minimax"
@@ -20,6 +22,7 @@ export interface ManagedModelProviderPreset {
   id: ManagedModelProviderPresetId;
   label: string;
   protocol: ManagedModelProtocol;
+  authKind?: ManagedModelAuthKind;
   apiBase: string;
   model: string;
   displayName: string;
@@ -31,6 +34,7 @@ export interface ManagedModelProviderPreset {
 export interface ManagedModelProviderPresetDraft {
   providerPresetId: ManagedModelProviderPresetId;
   protocol: ManagedModelProtocol;
+  authKind?: ManagedModelAuthKind;
   apiBase: string;
   model: string;
   displayName: string;
@@ -61,6 +65,26 @@ export function managedModelProtocolAdvancedDefaults(
 }
 
 export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
+  {
+    id: "chatgpt-codex",
+    label: "ChatGPT / Codex",
+    protocol: "openai",
+    authKind: "chatgpt_codex_oauth",
+    apiBase: "https://chatgpt.com/backend-api/codex",
+    model: "gpt-5.5",
+    displayName: "ChatGPT / Codex",
+    modelPlaceholder: "gpt-5.5",
+    advancedOptions: {
+      api_mode: "responses",
+      reasoning_effort: "medium",
+      temperature: 1,
+      max_retries: 3,
+      connect_timeout: 10,
+      read_timeout: 180,
+      stream: true,
+      codex_backend: true,
+    },
+  },
   {
     id: "custom-openai",
     label: "OpenAI",
@@ -201,6 +225,7 @@ export function managedModelProviderPresetDraft(
   return {
     providerPresetId,
     protocol: preset.protocol,
+    authKind: preset.authKind,
     apiBase: preset.apiBase,
     model: preset.model,
     displayName: preset.displayName,
@@ -218,7 +243,9 @@ export function modelPlaceholderForManagedModelProviderPreset(
 
 export function customManagedModelProviderPresetId(
   protocol: ManagedModelProtocol,
+  authKind: ManagedModelAuthKind = "api_key",
 ): ManagedModelProviderPresetId {
+  if (authKind === "chatgpt_codex_oauth") return "chatgpt-codex";
   return protocol === "anthropic" ? "custom-anthropic" : "custom-openai";
 }
 
@@ -229,6 +256,7 @@ export function advancedOptionsForManagedModelProvider(
     (item) =>
       item.advancedOptions &&
       item.protocol === provider.protocol &&
+      (item.authKind ?? "api_key") === provider.authKind &&
       item.apiBase !== "" &&
       item.apiBase === provider.apiBase,
   );

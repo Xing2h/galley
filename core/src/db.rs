@@ -24,10 +24,10 @@ use sqlx::{FromRow, Sqlite, SqliteConnection, SqlitePool, Transaction};
 
 use crate::api::{
     CreateProjectInput, CreateSessionInput, GalleyApi, HealthCheck, HealthReport, HealthStatus,
-    ManagedModelCredentialStatus, ManagedModelProtocol, ManagedModelProviderRecord,
-    ManagedModelRecord, MessageBrief, MessageId, MessageRole, Origin, OriginVia, ProjectBrief,
-    ProjectId, ProjectPatch, RuntimeKind, SearchHit, SearchScope, SessionBrief, SessionFilter,
-    SessionId, SessionStatus, StatusSummary,
+    ManagedModelAuthKind, ManagedModelCredentialStatus, ManagedModelProtocol,
+    ManagedModelProviderRecord, ManagedModelRecord, MessageBrief, MessageId, MessageRole, Origin,
+    OriginVia, ProjectBrief, ProjectId, ProjectPatch, RuntimeKind, SearchHit, SearchScope,
+    SessionBrief, SessionFilter, SessionId, SessionStatus, StatusSummary,
 };
 use crate::app_paths;
 use crate::error::{GalleyError, Result};
@@ -463,7 +463,7 @@ impl SqliteGalley {
 
     pub async fn list_managed_model_providers(&self) -> Result<Vec<ManagedModelProviderRecord>> {
         let rows = sqlx::query_as::<_, ManagedModelProviderRow>(
-            "SELECT p.id, p.display_name, p.protocol, p.api_base, p.api_key_ref, \
+            "SELECT p.id, p.display_name, p.protocol, p.auth_kind, p.api_base, p.api_key_ref, \
                     CASE WHEN s.api_key_ref IS NULL THEN 0 ELSE 1 END AS has_secret, \
                     p.created_at, p.updated_at \
              FROM managed_model_providers p \
@@ -607,14 +607,16 @@ impl SqliteGalley {
         }
         let now = chrono_now_iso();
         let protocol = managed_model_protocol_sql(record.protocol);
+        let auth_kind = managed_model_auth_kind_sql(record.auth_kind);
 
         sqlx::query(
             "INSERT INTO managed_model_providers (
-               id, display_name, protocol, api_base, api_key_ref, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?)
+               id, display_name, protocol, auth_kind, api_base, api_key_ref, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                display_name = excluded.display_name,
                protocol = excluded.protocol,
+               auth_kind = excluded.auth_kind,
                api_base = excluded.api_base,
                api_key_ref = excluded.api_key_ref,
                updated_at = excluded.updated_at",
@@ -622,6 +624,7 @@ impl SqliteGalley {
         .bind(id)
         .bind(display_name)
         .bind(protocol)
+        .bind(auth_kind)
         .bind(api_base)
         .bind(&record.api_key_ref)
         .bind(&now)
@@ -902,7 +905,7 @@ impl SqliteGalley {
 
     async fn managed_model_provider_by_id(&self, id: &str) -> Result<ManagedModelProviderRecord> {
         let row = sqlx::query_as::<_, ManagedModelProviderRow>(
-            "SELECT p.id, p.display_name, p.protocol, p.api_base, p.api_key_ref, \
+            "SELECT p.id, p.display_name, p.protocol, p.auth_kind, p.api_base, p.api_key_ref, \
                     CASE WHEN s.api_key_ref IS NULL THEN 0 ELSE 1 END AS has_secret, \
                     p.created_at, p.updated_at \
              FROM managed_model_providers p \
@@ -1096,6 +1099,7 @@ pub struct UpsertManagedModelProviderMetadata {
     pub id: String,
     pub display_name: String,
     pub protocol: ManagedModelProtocol,
+    pub auth_kind: ManagedModelAuthKind,
     pub api_base: String,
     pub api_key_ref: String,
 }
@@ -1123,6 +1127,7 @@ struct ManagedModelProviderRow {
     id: String,
     display_name: String,
     protocol: String,
+    auth_kind: String,
     api_base: String,
     api_key_ref: String,
     has_secret: i64,
@@ -1136,6 +1141,7 @@ impl ManagedModelProviderRow {
             id: self.id,
             display_name: self.display_name,
             protocol: parse_managed_model_protocol(&self.protocol)?,
+            auth_kind: parse_managed_model_auth_kind(&self.auth_kind)?,
             api_base: self.api_base,
             api_key_ref: self.api_key_ref,
             credential_status: if self.has_secret != 0 {
@@ -1156,6 +1162,7 @@ struct ManagedModelRow {
     provider_display_name: String,
     display_name: String,
     protocol: String,
+    auth_kind: String,
     api_base: String,
     model: String,
     api_key_ref: String,
@@ -1180,6 +1187,7 @@ impl ManagedModelRow {
             provider_display_name: self.provider_display_name,
             display_name: self.display_name,
             protocol: parse_managed_model_protocol(&self.protocol)?,
+            auth_kind: parse_managed_model_auth_kind(&self.auth_kind)?,
             api_base: self.api_base,
             model: self.model,
             api_key_ref: self.api_key_ref,
@@ -1284,6 +1292,7 @@ fn managed_model_select_sql(suffix: &str) -> String {
            p.display_name AS provider_display_name, \
            m.display_name, \
            p.protocol, \
+           p.auth_kind, \
            p.api_base, \
            m.model, \
            p.api_key_ref, \
@@ -1383,6 +1392,25 @@ fn managed_model_protocol_sql(protocol: ManagedModelProtocol) -> &'static str {
     match protocol {
         ManagedModelProtocol::Anthropic => "anthropic",
         ManagedModelProtocol::Openai => "openai",
+    }
+}
+
+fn parse_managed_model_auth_kind(s: &str) -> Result<ManagedModelAuthKind> {
+    Ok(match s {
+        "api_key" => ManagedModelAuthKind::ApiKey,
+        "chatgpt_codex_oauth" => ManagedModelAuthKind::ChatgptCodexOauth,
+        other => {
+            return Err(GalleyError::Internal {
+                message: format!("unknown managed model auth kind: {other}"),
+            })
+        }
+    })
+}
+
+fn managed_model_auth_kind_sql(auth_kind: ManagedModelAuthKind) -> &'static str {
+    match auth_kind {
+        ManagedModelAuthKind::ApiKey => "api_key",
+        ManagedModelAuthKind::ChatgptCodexOauth => "chatgpt_codex_oauth",
     }
 }
 

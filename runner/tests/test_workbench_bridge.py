@@ -147,6 +147,46 @@ def test_managed_model_config_maps_connect_timeout_to_ga_timeout(
     assert cfg["read_timeout"] == 180
 
 
+def test_managed_model_config_maps_codex_oauth_to_ga_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "GALLEY_MANAGED_MODEL_CONFIG_JSON",
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "protocol": "openai",
+                        "authKind": "chatgpt_codex_oauth",
+                        "displayName": "ChatGPT / Codex",
+                        "apiKey": "galley-codex-oauth",
+                        "apiKeyRef": "managed-provider:mp_chatgpt_codex",
+                        "apiBase": "https://chatgpt.com/backend-api/codex",
+                        "model": "gpt-5.5",
+                        "credentialIpc": {
+                            "kind": "unix",
+                            "address": "/tmp/galley.sock",
+                            "token": "secret",
+                        },
+                        "advancedOptions": {
+                            "api_mode": "chat_completions",
+                            "reasoning_effort": "minimal",
+                        },
+                    }
+                ]
+            }
+        ),
+    )
+
+    cfg = _managed_model_config_from_env()["native_oai_config_0"]
+
+    assert cfg["codex_backend"] is True
+    assert cfg["api_mode"] == "responses"
+    assert cfg["reasoning_effort"] == "medium"
+    assert cfg["galley_api_key_ref"] == "managed-provider:mp_chatgpt_codex"
+    assert cfg["galley_credential_ipc"]["token"] == "secret"
+
+
 # ---------------- _extract_ask_user ----------------
 
 

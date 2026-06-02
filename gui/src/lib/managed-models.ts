@@ -11,6 +11,26 @@ import type {
   SaveManagedProviderInput,
 } from "@/types/managed-models";
 
+export interface CodexDeviceLoginStart {
+  deviceAuthId: string;
+  userCode: string;
+  verificationUrl: string;
+  intervalSeconds: number;
+  expiresAt?: string | null;
+}
+
+export interface CompleteCodexDeviceLoginInput {
+  deviceAuthId: string;
+  userCode: string;
+  intervalSeconds?: number;
+}
+
+export interface CodexAuthSetupResult {
+  provider: ManagedModelProviderRecord;
+  model: ManagedModelRecord;
+  status: ManagedModelConnectionResult;
+}
+
 export async function listManagedModelProviders(): Promise<
   ManagedModelProviderRecord[]
 > {
@@ -64,6 +84,30 @@ export async function testManagedModelConnection(
     "test_managed_model_connection",
     { input },
   );
+}
+
+export async function startChatGptCodexLogin(): Promise<CodexDeviceLoginStart> {
+  return invoke<CodexDeviceLoginStart>("start_chatgpt_codex_login");
+}
+
+export async function completeChatGptCodexLogin(
+  input: CompleteCodexDeviceLoginInput,
+): Promise<CodexAuthSetupResult> {
+  return invoke<CodexAuthSetupResult>("complete_chatgpt_codex_login", {
+    input,
+  });
+}
+
+export async function importChatGptCodexCliLogin(): Promise<CodexAuthSetupResult> {
+  return invoke<CodexAuthSetupResult>("import_chatgpt_codex_cli_login");
+}
+
+export async function logoutChatGptCodexProvider(
+  providerId?: string,
+): Promise<void> {
+  await invoke("logout_chatgpt_codex_provider", {
+    input: { providerId },
+  });
 }
 
 export interface TimedManagedModelConnectionResult

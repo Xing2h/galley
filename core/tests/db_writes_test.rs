@@ -8,7 +8,8 @@
 //! `tests/common/mod.rs` scaffold that adds noise for two test files.
 
 use galley_core_lib::api::{
-    CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelCredentialStatus,
+    CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelAuthKind,
+    ManagedModelCredentialStatus,
     ManagedModelProtocol, Origin, ProjectId, ProjectPatch, RuntimeKind, SessionFilter, SessionId,
     SessionStatus,
 };
@@ -34,6 +35,7 @@ const MIG_010: &str = include_str!("../migrations/010_managed_model_providers.sq
 const MIG_011: &str = include_str!("../migrations/011_managed_model_sort_order.sql");
 const MIG_012: &str = include_str!("../migrations/012_managed_model_local_secrets.sql");
 const MIG_013: &str = include_str!("../migrations/013_session_llm_key.sql");
+const MIG_014: &str = include_str!("../migrations/014_managed_model_auth_kind.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -48,7 +50,7 @@ async fn fresh_pool() -> SqlitePool {
         .expect("enable foreign keys");
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
-        MIG_011, MIG_012, MIG_013,
+        MIG_011, MIG_012, MIG_013, MIG_014,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -109,6 +111,7 @@ async fn managed_model_metadata_never_requires_plaintext_key_in_db() {
             id: "mp_test".into(),
             display_name: "Anthropic".into(),
             protocol: ManagedModelProtocol::Anthropic,
+            auth_kind: ManagedModelAuthKind::ApiKey,
             api_base: "https://api.anthropic.com".into(),
             api_key_ref: "managed-provider:mp_test".into(),
         })
@@ -167,6 +170,7 @@ async fn managed_model_secret_roundtrip_uses_encrypted_sqlite_rows() {
             id: "mp_secret".into(),
             display_name: "Secret Provider".into(),
             protocol: ManagedModelProtocol::Openai,
+            auth_kind: ManagedModelAuthKind::ApiKey,
             api_base: "https://example.test/v1".into(),
             api_key_ref: api_key_ref.into(),
         })
@@ -209,6 +213,7 @@ async fn managed_model_order_drives_default_model() {
             id: "mp_test".into(),
             display_name: "OpenAI".into(),
             protocol: ManagedModelProtocol::Openai,
+            auth_kind: ManagedModelAuthKind::ApiKey,
             api_base: "https://api.openai.com".into(),
             api_key_ref: "managed-provider:mp_test".into(),
         })

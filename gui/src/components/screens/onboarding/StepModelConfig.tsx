@@ -2,11 +2,14 @@ import {
   ArrowSquareOut,
   CheckCircle,
   CircleNotch,
+  CloudArrowDown,
   Eye,
   EyeSlash,
   ListMagnifyingGlass,
+  SignIn,
   WarningCircle,
 } from "@phosphor-icons/react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   useCallback,
   useEffect,
@@ -20,9 +23,13 @@ import { ManagedModelProviderPicker } from "@/components/managed-models/ManagedM
 import { ManagedModelOptionPicker } from "@/components/managed-models/ManagedModelOptionPicker";
 import { Button, IconButton } from "@/components/ui/button";
 import {
+  completeChatGptCodexLogin,
+  importChatGptCodexCliLogin,
   listManagedModelOptions,
   managedModelProbeErrorMessage,
+  startChatGptCodexLogin,
   testManagedModelConnectionWithLatency,
+  type CodexDeviceLoginStart,
 } from "@/lib/managed-models";
 import { useCopy } from "@/lib/i18n";
 import {
@@ -61,6 +68,7 @@ export function StepModelConfig({
   const onboardingCopy = copy.onboarding;
   const saveProvider = useManagedModelsStore((s) => s.saveProvider);
   const saveModel = useManagedModelsStore((s) => s.saveModel);
+  const loadModels = useManagedModelsStore((s) => s.load);
   const [providerPresetId, setProviderPresetId] =
     useState<ManagedModelProviderPresetId | null>(null);
   const [protocol, setProtocol] = useState<ManagedModelProtocol | null>(null);
@@ -74,6 +82,8 @@ export function StepModelConfig({
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [state, setState] = useState<SetupState>({ kind: "idle" });
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
+  const [codexLoginStart, setCodexLoginStart] =
+    useState<CodexDeviceLoginStart | null>(null);
   const [verifiedFingerprint, setVerifiedFingerprint] = useState<string | null>(
     null,
   );
@@ -85,6 +95,8 @@ export function StepModelConfig({
   const selectedPreset = providerPresetId
     ? getManagedModelProviderPreset(providerPresetId)
     : null;
+  const isCodexProvider =
+    selectedPreset?.authKind === "chatgpt_codex_oauth";
   const providerSelected = Boolean(selectedPreset && protocol);
   const apiKeyRevealLabel = apiKeyVisible
     ? modelCopy.hideApiKey
@@ -97,8 +109,9 @@ export function StepModelConfig({
         apiKey: apiKey.trim(),
         apiBase: apiBase.trim(),
         model: model.trim(),
+        authKind: selectedPreset?.authKind ?? "api_key",
       }),
-    [apiBase, apiKey, model, protocol, providerPresetId],
+    [apiBase, apiKey, model, protocol, providerPresetId, selectedPreset],
   );
 
   useEffect(() => {
@@ -108,12 +121,13 @@ export function StepModelConfig({
   const connectionInputComplete =
     providerPresetId !== null &&
     protocol !== null &&
-    apiKey.trim() !== "" &&
+    (isCodexProvider || apiKey.trim() !== "") &&
     apiBase.trim() !== "" &&
     model.trim() !== "";
   const isBusy = state.kind === "loading";
   const canFetchModels =
     protocol !== null &&
+    !isCodexProvider &&
     apiKey.trim() !== "" &&
     apiBase.trim() !== "" &&
     !isBusy;
@@ -127,12 +141,14 @@ export function StepModelConfig({
       protocol
         ? {
             protocol,
+            authKind: selectedPreset?.authKind,
             apiKey: apiKey.trim(),
             apiBase: apiBase.trim(),
             model: model.trim(),
+            advancedOptions,
           }
         : null,
-    [apiBase, apiKey, model, protocol],
+    [advancedOptions, apiBase, apiKey, model, protocol, selectedPreset],
   );
 
   const resetConnectionTest = () => {
@@ -140,6 +156,7 @@ export function StepModelConfig({
     setVerifiedFingerprint(null);
     setTestedFingerprint(null);
     setState({ kind: "idle" });
+    setCodexLoginStart(null);
   };
 
   const handleSelectProviderPreset = (
@@ -152,6 +169,7 @@ export function StepModelConfig({
     setModel(draft.model);
     setProviderDisplayNameValue(draft.displayName);
     setAdvancedOptions(draft.advancedOptions);
+    setCodexLoginStart(null);
     setModelOptions([]);
     resetConnectionTest();
   };
@@ -258,6 +276,7 @@ export function StepModelConfig({
     try {
       const provider = await saveProvider({
         protocol,
+        authKind: selectedPreset?.authKind ?? "api_key",
         apiKey: apiKey.trim(),
         apiBase: apiBase.trim(),
         displayName:
@@ -285,6 +304,76 @@ export function StepModelConfig({
     }
   };
 
+  const handleCodexLogin = async () => {
+    if (!isCodexProvider) return;
+    setState({ kind: "loading", action: "start" });
+    try {
+      const start = await startChatGptCodexLogin();
+      setCodexLoginStart(start);
+      setState({
+        kind: "success",
+        action: "start",
+        message: modelCopy.chatgptCodexCodeReady,
+      });
+    } catch (e) {
+      setState({
+        kind: "error",
+        action: "start",
+        message: managedModelProbeErrorMessage(e, modelCopy),
+      });
+    }
+  };
+
+  const handleCodexOpenLoginPage = async () => {
+    if (!codexLoginStart) return;
+    try {
+      await openUrl(codexLoginStart.verificationUrl);
+    } catch (e) {
+      setState({
+        kind: "error",
+        action: "start",
+        message: managedModelProbeErrorMessage(e, modelCopy),
+      });
+    }
+  };
+
+  const handleCodexCompleteLogin = async () => {
+    if (!codexLoginStart) return;
+    setState({ kind: "loading", action: "start" });
+    try {
+      await completeChatGptCodexLogin({
+        deviceAuthId: codexLoginStart.deviceAuthId,
+        userCode: codexLoginStart.userCode,
+        intervalSeconds: codexLoginStart.intervalSeconds,
+      });
+      await loadModels();
+      onComplete();
+    } catch (e) {
+      setState({
+        kind: "error",
+        action: "start",
+        message: managedModelProbeErrorMessage(e, modelCopy),
+      });
+    }
+  };
+
+  const handleCodexImport = async () => {
+    if (!isCodexProvider) return;
+    setCodexLoginStart(null);
+    setState({ kind: "loading", action: "start" });
+    try {
+      await importChatGptCodexCliLogin();
+      await loadModels();
+      onComplete();
+    } catch (e) {
+      setState({
+        kind: "error",
+        action: "start",
+        message: managedModelProbeErrorMessage(e, modelCopy),
+      });
+    }
+  };
+
   return (
     <div className="max-w-[580px]">
       <h1 className="m-0 text-[32px] font-semibold leading-tight tracking-[0.005em] text-ink">
@@ -302,7 +391,75 @@ export function StepModelConfig({
           className="bg-elevated"
         />
 
-        {providerSelected && selectedPreset && protocol && (
+        {providerSelected && selectedPreset && protocol && isCodexProvider && (
+          <div className="space-y-3 rounded-sm border border-line bg-elevated/80 px-3 py-3">
+            <div className="text-[12.5px] leading-5 text-ink-muted">
+              {modelCopy.chatgptCodexReadyBody}
+            </div>
+            {codexLoginStart && (
+              <div className="rounded-sm border border-brand/25 bg-brand-soft px-3 py-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                  {modelCopy.chatgptCodexDeviceCode}
+                </div>
+                <div className="mt-1 font-mono text-[20px] font-semibold tracking-[0.08em] text-ink">
+                  {codexLoginStart.userCode}
+                </div>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={isBusy}
+                onClick={() => void handleCodexLogin()}
+                leadingIcon={
+                  isBusy && state.kind === "loading" ? (
+                    <span className="spin">
+                      <CircleNotch size={12} weight="thin" />
+                    </span>
+                  ) : (
+                    <SignIn size={12} weight="bold" />
+                  )
+                }
+              >
+                {modelCopy.signInWithChatGPT}
+              </Button>
+              {codexLoginStart && (
+                <>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={isBusy}
+                    onClick={() => void handleCodexOpenLoginPage()}
+                    leadingIcon={<ArrowSquareOut size={12} weight="thin" />}
+                  >
+                    {modelCopy.openChatGPTLoginPage}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={isBusy}
+                    onClick={() => void handleCodexCompleteLogin()}
+                    leadingIcon={<CheckCircle size={12} weight="thin" />}
+                  >
+                    {modelCopy.completeChatGPTLogin}
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={isBusy}
+                onClick={() => void handleCodexImport()}
+                leadingIcon={<CloudArrowDown size={12} weight="thin" />}
+              >
+                {modelCopy.importCodexCliLogin}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {providerSelected && selectedPreset && protocol && !isCodexProvider && (
           <>
             <SetupInput
               label={modelCopy.apiKey}
@@ -426,46 +583,52 @@ export function StepModelConfig({
               {onboardingCopy.continueWithCurrentModel}
             </Button>
           )}
-          <InlineSetupStatus
-            state={state}
-            action="test"
-            loadingMessage={modelCopy.autoTestingConnection}
-          />
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={!canStart}
-            onClick={() => void handleStart()}
-            leadingIcon={
-              state.kind === "loading" && state.action === "start" ? (
-                <span className="spin">
-                  <CircleNotch size={14} weight="thin" />
-                </span>
-              ) : (
-                <CheckCircle size={14} weight="bold" />
-              )
-            }
-          >
-            {onboardingCopy.startUsingGalley}
-          </Button>
+          {!isCodexProvider && (
+            <>
+              <InlineSetupStatus
+                state={state}
+                action="test"
+                loadingMessage={modelCopy.autoTestingConnection}
+              />
+              <Button
+                variant="primary"
+                size="lg"
+                disabled={!canStart}
+                onClick={() => void handleStart()}
+                leadingIcon={
+                  state.kind === "loading" && state.action === "start" ? (
+                    <span className="spin">
+                      <CircleNotch size={14} weight="thin" />
+                    </span>
+                  ) : (
+                    <CheckCircle size={14} weight="bold" />
+                  )
+                }
+              >
+                {onboardingCopy.startUsingGalley}
+              </Button>
+            </>
+          )}
         </div>
       </div>
       <div className="mt-2 flex justify-end">
         <div className="w-full max-w-[420px] space-y-2">
-          <SetupErrorLine
-            state={state}
-            action="test"
-            actionSlot={
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={!connectionInputComplete || isBusy}
-                onClick={() => void runConnectionTest({ force: true })}
-              >
-                {modelCopy.retryConnectionTest}
-              </Button>
-            }
-          />
+          {!isCodexProvider && (
+            <SetupErrorLine
+              state={state}
+              action="test"
+              actionSlot={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!connectionInputComplete || isBusy}
+                  onClick={() => void runConnectionTest({ force: true })}
+                >
+                  {modelCopy.retryConnectionTest}
+                </Button>
+              }
+            />
+          )}
           <SetupErrorLine state={state} action="start" />
         </div>
       </div>
