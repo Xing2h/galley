@@ -3,7 +3,7 @@
 ## Date / Status / Related
 
 - Date: 2026-06-02
-- Status: Release prep for `v0.2.3`
+- Status: Published stable release `v0.2.3`
 - Related:
   - [Browser Control core](../../core/src/browser_control.rs)
   - [Browser Control setup dialog](../../gui/src/components/screens/BrowserControlSetupDialog.tsx)
@@ -23,6 +23,11 @@ The root issue was not "extension missing". It was "extension connected, but no
 scriptable `http` / `https` tab exists yet". The previous UI collapsed that
 state into a generic failure, which made a recoverable setup step look like a
 broken install.
+
+After the draft artifacts were built, JC installed the macOS DMG and did not
+find release-blocking issues. `v0.2.3` was then published as GitHub Latest and
+promoted to the beta update channel; the live beta manifest verifier passed
+with cache-busting.
 
 ## Decisions
 
@@ -61,12 +66,11 @@ broken install.
 
 ## Open questions
 
-- Final release acceptance still needs artifact smoke on macOS and Windows after
-  the `v0.2.3` draft release is built.
-- Update-channel promotion remains separate from publishing the GitHub Release.
+- No open release blockers for `v0.2.3`.
+- A separate older-installed-app update dogfood pass remains useful for future
+  release confidence, even though the live beta manifest verifier passed.
 
 ## Next
 
-Prepare the `v0.2.3` version bump, push the tag, wait for the draft GitHub
-Release, review artifacts and generated notes, then publish and promote the beta
-update channel only after smoke passes.
+Monitor Browser Control user reports after `v0.2.3`. For the next patch, keep
+GitHub Release publishing and beta update-channel promotion as separate gates.
