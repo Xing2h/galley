@@ -112,6 +112,12 @@
 
   /* --- overlay (for ⌘K palette / modals) --- */
   --color-overlay: rgba(31, 27, 23, 0.4);
+
+  /* --- opacity tokens (unified transparency system) --- */
+  --opacity-subtle: 0.04;    /* 极淡背景 tint */
+  --opacity-soft: 0.12;      /* 轻微强调 */
+  --opacity-medium: 0.20;    /* 中等强调 */
+  --opacity-strong: 0.40;    /* 强强调 */
 }
 
 html[data-theme="dark"] {

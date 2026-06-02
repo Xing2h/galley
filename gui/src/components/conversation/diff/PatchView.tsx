@@ -196,8 +196,8 @@ function DiffLine({
     <div
       className={cn(
         "flex min-h-[20px]",
-        kind === "add" && "bg-success/[0.08] text-ink",
-        kind === "del" && "bg-error/[0.07] text-ink",
+        kind === "add" && "bg-success/[var(--opacity-soft)] text-ink",
+        kind === "del" && "bg-error/[var(--opacity-soft)] text-ink",
         kind === "empty" && [
           "[background-image:repeating-linear-gradient(135deg,transparent_0_6px,var(--color-hover)_6px_7px)]",
         ],

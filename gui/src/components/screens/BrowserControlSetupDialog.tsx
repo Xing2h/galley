@@ -160,8 +160,8 @@ export function BrowserControlSetupDialog({
                 className={cn(
                   "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm border",
                   bridgeReady
-                    ? "border-success/25 bg-success/10 text-success"
-                    : "border-warning/30 bg-warning/10 text-warning",
+                    ? "border-success/[var(--opacity-medium)] bg-success/[var(--opacity-soft)] text-success"
+                    : "border-warning/[var(--opacity-strong)] bg-warning/[var(--opacity-soft)] text-warning",
                 )}
               >
                 <PuzzlePiece size={18} weight="thin" />
@@ -370,7 +370,7 @@ function TestPageActions({
         </Button>
       </div>
       {openError && (
-        <div className="mt-2 rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2 text-[12px] leading-[1.5] text-error">
+        <div className="mt-2 rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2 text-[12px] leading-[1.5] text-error">
           {openError}
         </div>
       )}
@@ -445,7 +445,7 @@ function RepairSteps({
         ) : (
           <div className="mt-2">
             {layoutError ? (
-              <div className="rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2 text-[12px] leading-[1.5] text-error">
+              <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2 text-[12px] leading-[1.5] text-error">
                 <div>{copy.stepPrepareFailed}</div>
                 <div className="mt-1 select-text break-all font-mono text-[11px] leading-[1.5] opacity-80">
                   {layoutError}
@@ -561,7 +561,7 @@ function RepairSteps({
       )}
 
       {openError && (
-        <div className="rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2 text-[12px] leading-[1.5] text-error">
+        <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2 text-[12px] leading-[1.5] text-error">
           {openError}
         </div>
       )}
@@ -604,7 +604,7 @@ function ConnectionStatusCard({
         connected
           ? "border-line-subtle bg-transparent text-ink-muted"
           : status === "error"
-            ? "border-error/20 bg-error/[0.06] text-error"
+            ? "border-error/20 bg-error/[var(--opacity-subtle)] text-error"
             : "border-line bg-elevated text-ink-muted",
       )}
     >

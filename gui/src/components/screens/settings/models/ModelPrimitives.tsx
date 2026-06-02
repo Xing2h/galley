@@ -189,8 +189,8 @@ function StatusLine({ state }: { state: ProbeState }) {
         "flex items-center gap-1.5 rounded-sm border px-3 py-2 text-[12.5px]",
         "select-text",
         state.kind === "success"
-          ? "border-success/20 bg-success/[0.06] text-success"
-          : "border-error/20 bg-error/[0.06] text-error",
+          ? "border-success/20 bg-success/[var(--opacity-subtle)] text-success"
+          : "border-error/20 bg-error/[var(--opacity-subtle)] text-error",
       )}
     >
       {state.kind === "success" ? (
@@ -205,7 +205,7 @@ function StatusLine({ state }: { state: ProbeState }) {
 
 export function ErrorLine({ message }: { message: string }) {
   return (
-    <div className="select-text rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2 text-[12.5px] text-error">
+    <div className="select-text rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2 text-[12.5px] text-error">
       {message}
     </div>
   );
@@ -249,14 +249,14 @@ export function CredentialBadge({
   if (status === "present") return null;
   if (status === "unknown") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-warning/10 px-1.5 py-px text-[10.5px] text-warning">
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-warning/[var(--opacity-soft)] px-1.5 py-px text-[10.5px] text-warning">
         <WarningCircle size={10} weight="fill" />
         {copy.keyStatusUnknownShort}
       </span>
     );
   }
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-warning/10 px-1.5 py-px text-[10.5px] text-warning">
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-warning/[var(--opacity-soft)] px-1.5 py-px text-[10.5px] text-warning">
       <WarningCircle size={10} weight="fill" />
       {copy.keyNeedsResaveShort}
     </span>

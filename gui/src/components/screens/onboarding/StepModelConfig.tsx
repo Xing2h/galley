@@ -723,7 +723,7 @@ function InlineSetupStatus({
   if (state.kind !== "success" || state.action !== action) return null;
   return (
     <span
-      className="inline-flex min-h-7 max-w-[220px] shrink items-center gap-1 rounded-sm bg-success/10 px-2 py-1 text-[11.5px] leading-none text-success"
+      className="inline-flex min-h-7 max-w-[220px] shrink items-center gap-1 rounded-sm bg-success/[var(--opacity-soft)] px-2 py-1 text-[11.5px] leading-none text-success"
       title={state.message}
     >
       <CheckCircle size={11} weight="fill" className="shrink-0" />
@@ -766,8 +766,8 @@ function StatusLine({
         "flex items-center gap-1.5 rounded-sm border px-3 py-2 text-[12.5px]",
         "select-text",
         success
-          ? "border-success/20 bg-success/[0.06] text-success"
-          : "border-error/20 bg-error/[0.06] text-error",
+          ? "border-success/20 bg-success/[var(--opacity-subtle)] text-success"
+          : "border-error/20 bg-error/[var(--opacity-subtle)] text-error",
       )}
     >
       {success ? (

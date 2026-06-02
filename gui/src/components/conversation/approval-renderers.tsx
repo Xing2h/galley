@@ -80,8 +80,8 @@ function FileWriteRenderer({ tool }: { tool: ConversationToolEvent }) {
           className={cn(
             "rounded-full px-2 py-0.5 text-[10px] font-medium tracking-[0.02em]",
             mode === "overwrite"
-              ? "bg-warning/[0.12] text-warning"
-              : "bg-info/[0.12] text-info",
+              ? "bg-warning/[var(--opacity-soft)] text-warning"
+              : "bg-info/[var(--opacity-soft)] text-info",
           )}
         >
           {FILE_WRITE_MODE_LABEL[mode] ?? mode}

@@ -163,7 +163,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   ),
   "accent-secondary": cn(
     "border border-line bg-elevated font-medium text-ink",
-    "hover:border-brand/40 hover:bg-brand-soft",
+    "hover:border-brand/[var(--opacity-strong)] hover:bg-brand-soft",
     "[&>svg]:text-brand-strong",
     RAISED_BUTTON_SURFACE,
   ),
@@ -178,8 +178,8 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
     RAISED_BUTTON_SURFACE,
   ),
   "destructive-soft": cn(
-    "border border-error/30 bg-error/[0.06] font-medium text-error",
-    "hover:bg-error/[0.12]",
+    "border border-error/30 bg-error/[var(--opacity-subtle)] font-medium text-error",
+    "hover:bg-error/[var(--opacity-soft)]",
     RAISED_BUTTON_SURFACE,
   ),
 };
@@ -202,18 +202,18 @@ const ICON_VARIANT_CLASSES: Record<IconButtonVariant, string> = {
     RAISED_BUTTON_SURFACE,
   ),
   brand: cn(
-    "border border-brand/30 bg-brand/10 text-brand-strong",
+    "border border-brand/30 bg-brand/[var(--opacity-soft)] text-brand-strong",
     "hover:bg-brand-soft hover:text-ink",
     RAISED_BUTTON_SURFACE,
   ),
   warning: cn(
-    "border border-warning/30 bg-warning/10 text-warning",
-    "hover:bg-warning/20",
+    "border border-warning/30 bg-warning/[var(--opacity-soft)] text-warning",
+    "hover:bg-warning/[var(--opacity-medium)]",
     RAISED_BUTTON_SURFACE,
   ),
   danger: cn(
     "border border-transparent text-ink-soft",
-    "hover:bg-error/10 hover:text-error active:bg-error/15",
+    "hover:bg-error/[var(--opacity-soft)] hover:text-error active:bg-error/[var(--opacity-medium)]",
     QUIET_BUTTON_PRESS,
   ),
 };
@@ -222,8 +222,8 @@ const ICON_ACTIVE_CLASSES: Record<IconButtonVariant, string> = {
   ghost: "bg-hover text-ink",
   secondary: "bg-hover text-ink",
   brand: "bg-brand-soft text-brand-strong",
-  warning: "bg-warning/20 text-warning",
-  danger: "bg-error/10 text-error",
+  warning: "bg-warning/[var(--opacity-medium)] text-warning",
+  danger: "bg-error/[var(--opacity-soft)] text-error",
 };
 
 const ICON_SIZE_CLASSES: Record<IconButtonSize, string> = {

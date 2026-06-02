@@ -243,20 +243,20 @@ const STATUS_CONFIG: Record<ToolEventStatus, StatusConfig> = {
   // Faint bar + app background = visually fades into the document
   // ("we already finished this; don't pull the eye").
   "success-historical": {
-    barClass: "bg-brand/20",
+    barClass: "bg-brand/[var(--opacity-medium)]",
     bgClass: "bg-app",
     forcedOpen: false,
     defaultOpen: false,
   },
   waiting_approval: {
     barClass: "bg-warning",
-    bgClass: "bg-warning/[0.04]",
+    bgClass: "bg-warning/[var(--opacity-subtle)]",
     forcedOpen: true,
     defaultOpen: true,
   },
   failed: {
     barClass: "bg-error",
-    bgClass: "bg-error/[0.04]",
+    bgClass: "bg-error/[var(--opacity-subtle)]",
     forcedOpen: true,
     defaultOpen: true,
   },
@@ -312,11 +312,11 @@ function StatusPill({ status }: { status: ToolEventStatus }) {
 }
 
 const STATUS_PILL_CLASS: Record<ToolEventStatus, string> = {
-  running: "bg-brand/[0.18] text-brand-strong",
-  "success-current": "bg-success/10 text-success",
-  "success-historical": "bg-success/10 text-success",
-  waiting_approval: "bg-warning/[0.12] text-warning",
-  failed: "bg-error/10 text-error",
+  running: "bg-brand/[var(--opacity-medium)] text-brand-strong",
+  "success-current": "bg-success/[var(--opacity-soft)] text-success",
+  "success-historical": "bg-success/[var(--opacity-soft)] text-success",
+  waiting_approval: "bg-warning/[var(--opacity-soft)] text-warning",
+  failed: "bg-error/[var(--opacity-soft)] text-error",
   denied: "bg-hover text-ink-muted",
 };
 

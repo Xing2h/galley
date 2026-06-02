@@ -11,7 +11,7 @@ import { useCopy } from "@/lib/i18n";
  *
  * Visual register splits by variant:
  *   - "side_question": warning (apricot-yellow) family —
- *     `border-warning + bg-warning/[0.04]`, header chip "侧问".
+ *     `border-warning + bg-warning/[var(--opacity-subtle)]`, header chip "侧问".
  *     Matches AskUserBubble's color vocabulary because both
  *     "你的提问" and "agent paused for you" sit in the same
  *     attention register.
@@ -38,7 +38,7 @@ export function SystemMessageBubble({
     return (
       <div
         data-role="system-bubble"
-        className="my-5 rounded-r-sm border-l-[3px] border-warning bg-warning/[0.04] px-4 py-2.5"
+        className="my-5 rounded-r-sm border-l-[3px] border-warning bg-warning/[var(--opacity-subtle)] px-4 py-2.5"
       >
         <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-warning">
           <ChatCircleDots size={12} weight="bold" />

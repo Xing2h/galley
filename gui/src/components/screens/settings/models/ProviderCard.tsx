@@ -607,7 +607,7 @@ function DetectedModelRow({
         {modelName}
       </div>
       {enabled ? (
-        <span className="inline-flex min-h-7 min-w-[76px] shrink-0 items-center justify-center gap-1 rounded-sm border border-transparent bg-success/[0.06] px-2.5 text-[12px] leading-none text-success">
+        <span className="inline-flex min-h-7 min-w-[76px] shrink-0 items-center justify-center gap-1 rounded-sm border border-transparent bg-success/[var(--opacity-subtle)] px-2.5 text-[12px] leading-none text-success">
           <CheckCircle size={12} weight="fill" />
           {copy.enabled}
         </span>

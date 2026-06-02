@@ -184,9 +184,9 @@ function RiskPill({ level }: { level: RiskLevel }) {
   const copy = useCopy();
   const text = copy.approval.risk;
   const cls: Record<RiskLevel, string> = {
-    low: "bg-info/10 text-info",
-    medium: "bg-warning/[0.12] text-warning",
-    high: "bg-error/[0.12] text-error",
+    low: "bg-info/[var(--opacity-soft)] text-info",
+    medium: "bg-warning/[var(--opacity-soft)] text-warning",
+    high: "bg-error/[var(--opacity-soft)] text-error",
   };
   return (
     <span
@@ -248,7 +248,7 @@ function DecisionPill({ decision }: { decision: ApprovalDecision }) {
       className={cn(
         "inline-flex items-center gap-2 rounded-callout px-3.5 py-2 text-[13px] font-medium",
         isDeny
-          ? "bg-error/[0.06] text-error"
+          ? "bg-error/[var(--opacity-subtle)] text-error"
           : "bg-brand-soft text-brand-strong",
       )}
     >

@@ -294,7 +294,7 @@ function SummaryPill({
     return (
       <span
         className={cn(
-          "rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success",
+          "rounded-full bg-success/[var(--opacity-soft)] px-2 py-0.5 text-[10px] font-medium text-success",
           className,
         )}
       >
@@ -306,7 +306,7 @@ function SummaryPill({
     return (
       <span
         className={cn(
-          "rounded-full bg-error/10 px-2 py-0.5 text-[10px] font-medium text-error",
+          "rounded-full bg-error/[var(--opacity-soft)] px-2 py-0.5 text-[10px] font-medium text-error",
           className,
         )}
       >
@@ -318,7 +318,7 @@ function SummaryPill({
     return (
       <span
         className={cn(
-          "rounded-full bg-brand/[0.18] px-2 py-0.5 text-[10px] font-medium text-brand-strong",
+          "rounded-full bg-brand/[var(--opacity-medium)] px-2 py-0.5 text-[10px] font-medium text-brand-strong",
           className,
         )}
       >

@@ -186,7 +186,7 @@ function ChannelsConfigStaleBanner({
   const copy = useCopy();
   const imCopy = copy.settings.im;
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-sm border border-warning/25 bg-warning/[0.07] px-3 py-2.5">
+    <div className="flex flex-wrap items-center gap-3 rounded-sm border border-warning/[var(--opacity-medium)] bg-warning/[var(--opacity-soft)] px-3 py-2.5">
       <WarningCircle size={16} weight="bold" className="shrink-0 text-warning" />
       <div className="min-w-[180px] flex-1">
         <div className="text-[13px] font-medium text-ink">
@@ -460,7 +460,7 @@ function WeChatCard({
             ) : null}
 
             {invokeError || status?.lastError ? (
-              <div className="rounded-sm border border-error/20 bg-error/[0.06] px-3 py-2">
+              <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2">
                 <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-error/80">
                   {imCopy.lastError}
                 </div>
@@ -769,9 +769,9 @@ function StatusBadge({ state }: { state: ImSupervisorState }) {
       className={cn(
         "inline-flex h-6 items-center gap-1.5 rounded-sm border px-2 text-[11.5px]",
         state === "running"
-          ? "border-success/30 bg-success/[0.08] text-success"
+          ? "border-success/30 bg-success/[var(--opacity-soft)] text-success"
           : state === "error" || state === "expired"
-            ? "border-error/25 bg-error/[0.06] text-error"
+            ? "border-error/25 bg-error/[var(--opacity-subtle)] text-error"
             : "border-line bg-surface text-ink-muted",
       )}
     >
