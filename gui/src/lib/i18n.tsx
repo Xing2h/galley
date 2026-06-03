@@ -238,9 +238,6 @@ const zhCopy = {
     sendWithEnter: "发送 · Enter",
     stop: "停止",
     enterHint: "Enter 发送 · Shift+Enter 换行",
-    switchKeepsContext: "切换 LLM 不会丢失上下文",
-    llmTooltip:
-      "Large Language Model · GPT / Claude / DeepSeek 等大语言模型的统称",
     cannotSwitchRunning: "运行中无法切换 LLM",
     switchCurrent: (name: string) => `切换 LLM · 当前 ${name}`,
     configureModels: "配置模型",
@@ -758,6 +755,7 @@ const zhCopy = {
     denied: "已拒绝",
     step: (index: number) => `第 ${index} 步`,
     thinking: "思考中...",
+    answering: "正在回答...",
     stillRunning: "仍在运行",
     seconds: (sec: number) => `${sec} 秒`,
     minutesSeconds: (minutes: number, sec: number) =>
@@ -1254,9 +1252,6 @@ const enCopy: AppCopy = {
     sendWithEnter: "Send · Enter",
     stop: "Stop",
     enterHint: "Enter to send · Shift+Enter for a new line",
-    switchKeepsContext: "Switching LLMs keeps the conversation context",
-    llmTooltip:
-      "Large Language Model · shorthand for models like GPT, Claude, and DeepSeek",
     cannotSwitchRunning: "Cannot switch LLMs while a run is active",
     switchCurrent: (name) => `Switch LLM · Current: ${name}`,
     configureModels: "Configure models",
@@ -1793,6 +1788,7 @@ const enCopy: AppCopy = {
     denied: "Denied",
     step: (index) => `Step ${index}`,
     thinking: "Thinking...",
+    answering: "Answering...",
     stillRunning: "Still running",
     seconds: (sec) => `${sec}s`,
     minutesSeconds: (minutes, sec) => `${minutes}m ${sec}s`,

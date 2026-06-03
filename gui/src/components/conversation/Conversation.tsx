@@ -216,6 +216,7 @@ export function TurnMarker({
   index,
   summary,
   thinking = false,
+  liveStatus,
   thinkingContent,
   preamble,
 }: {
@@ -238,20 +239,25 @@ export function TurnMarker({
    */
   summary?: string;
   /**
-   * True while this step is in flight and we have nothing else to
-   * show yet (no streaming partial, no approval card). Renders
-   * "· 思考中..." in place of the summary so the user gets a live
-   * signal during LLM TTFT / tool dispatch gaps. The whole status
-   * line renders as a single sequential opacity wave. An
-   * elapsed-seconds counter joins after 3s: immediate readout feels
-   * mechanical, but waiting longer makes a real model pause feel like
-   * a frozen UI. See useElapsedSeconds for details.
+   * True while this step is in flight. Renders a live status in place
+   * of the settled summary so the user gets a progress signal during
+   * LLM TTFT / tool dispatch / answer streaming. The whole status line
+   * renders as a single sequential opacity wave. An elapsed-seconds
+   * counter joins after 3s: immediate readout feels mechanical, but
+   * waiting longer makes a real model pause feel like a frozen UI. See
+   * useElapsedSeconds for details.
    *
    * Caller is expected to pass `key={index}` when the marker can
    * outlive multiple steps' worth of placeholder transitions, so
    * the elapsed clock resets per step.
    */
   thinking?: boolean;
+  /**
+   * Optional one-line running status. When omitted, the thinking mode
+   * falls back to the generic "思考中..." copy. Ignored when `thinking`
+   * is false.
+   */
+  liveStatus?: string;
   /**
    * `<thinking>...</thinking>` block content if the LLM emitted one.
    * Drives the DetailPanel along with `preamble`. Ignored when
@@ -280,27 +286,31 @@ export function TurnMarker({
       <div
         onClick={hasDetail ? () => setOpen((v) => !v) : undefined}
         className={cn(
-          "mb-2 mt-7 select-text text-[12px] italic text-ink-muted",
+          "mb-2 mt-7 flex min-w-0 items-baseline text-[12px] italic text-ink-muted",
           hasDetail && "cursor-pointer transition-colors hover:text-ink-soft",
         )}
       >
-        {thinking ? (
-          <ThinkingWaveText
-            index={hasStepNumber ? index : undefined}
-            elapsedLabel={elapsedLabel}
-            showStillRunning={
-              thinking && elapsedSec >= THINKING_STILL_RUNNING_VISIBLE_AFTER_SEC
-            }
-          />
-        ) : summary ? (
-          <>
-            {hasStepNumber && <>{copy.conversation.step(index)}</>}
-            {" · "}
-            <span className="text-ink-soft">{summary}</span>
-          </>
-        ) : (
-          hasStepNumber && <>{copy.conversation.step(index)}</>
-        )}
+        <span className="min-w-0 flex-1 truncate select-text">
+          {thinking ? (
+            <ThinkingWaveText
+              index={hasStepNumber ? index : undefined}
+              status={liveStatus}
+              elapsedLabel={elapsedLabel}
+              showStillRunning={
+                thinking &&
+                elapsedSec >= THINKING_STILL_RUNNING_VISIBLE_AFTER_SEC
+              }
+            />
+          ) : summary ? (
+            <>
+              {hasStepNumber && <>{copy.conversation.step(index)}</>}
+              {" · "}
+              <span className="text-ink-soft">{summary}</span>
+            </>
+          ) : (
+            hasStepNumber && <>{copy.conversation.step(index)}</>
+          )}
+        </span>
         {hasDetail && (
           <CaretDown
             size={11}
@@ -321,10 +331,12 @@ export function TurnMarker({
 
 function ThinkingWaveText({
   index,
+  status,
   elapsedLabel,
   showStillRunning,
 }: {
   index?: number;
+  status?: string;
   elapsedLabel: string | null;
   showStillRunning: boolean;
 }) {
@@ -332,7 +344,7 @@ function ThinkingWaveText({
   const WAVE_STEP_MS = 160;
   const WAVE_REST_MS = 240;
   const WAVE_MIN_DURATION_MS = 1300;
-  const statusText = `${index != null ? `${copy.conversation.step(index)} · ` : ""}${copy.conversation.thinking}`;
+  const statusText = `${index != null ? `${copy.conversation.step(index)} · ` : ""}${status?.trim() || copy.conversation.thinking}`;
   const elapsedText = elapsedLabel
     ? ` · ${elapsedLabel}${
         showStillRunning ? ` · ${copy.conversation.stillRunning}` : ""

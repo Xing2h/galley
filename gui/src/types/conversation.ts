@@ -118,8 +118,10 @@ export interface AgentTurn {
    *     TurnMarker row itself.
    *   - `preamble` is the multi-line prose reasoning that led to the
    *     tool dispatch — surfaced inline under TurnMarker via the
-   *     DetailPanel when the user clicks to expand. Also feeds the
-   *     TurnTicker during streaming so the live process is visible.
+   *     DetailPanel when the user clicks to expand. During streaming,
+   *     MainView can compact the same prose into TurnMarker's one-line
+   *     live status so the process stays visible without a separate
+   *     paragraph.
    */
   preamble?: string;
   tools: ConversationToolEvent[];

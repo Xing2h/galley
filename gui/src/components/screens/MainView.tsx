@@ -15,9 +15,7 @@ import { StreamingCursor } from "@/components/conversation/LiveIndicators";
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { SelectionCopyToolbar } from "@/components/conversation/SelectionCopyToolbar";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
-import { TurnTicker } from "@/components/conversation/TurnTicker";
 import { UserQuestionRail } from "@/components/conversation/UserQuestionRail";
-import { IconTooltip } from "@/components/ui/tooltip";
 import { useTypewriter } from "@/hooks/useTypewriter";
 import { useCopy } from "@/lib/i18n";
 import { cleanPartialContent, extractPreamble } from "@/lib/ipc-handlers";
@@ -160,12 +158,17 @@ export function MainView({
   const visiblePartial = inFlightContent
     ? cleanPartialContent(inFlightContent).trim()
     : "";
-  // Live preamble for the streaming-step TurnTicker. Read from the
+  // Live preamble for the streaming-step TurnMarker. Read from the
   // raw buffer (not visiblePartial — preamble is stripped from that
-  // path so it doesn't double-render with the answer prose).
+  // path so it doesn't double-render with the answer prose). We only
+  // surface it while no answer body is visible; once real prose starts
+  // streaming, the body itself is the progress signal.
   const livePreamble = inFlightContent
     ? extractPreamble(inFlightContent)
     : undefined;
+  const liveStepStatus = visiblePartial
+    ? copy.conversation.answering
+    : compactLiveStepStatus(livePreamble);
   // Fake-typewriter pass to smooth over GA's ~50-char chunked
   // delta pushes. See useTypewriter docs for the mitigation
   // rationale. When the GA-side throttle is eventually fixed and
@@ -579,8 +582,8 @@ export function MainView({
                   key={currentTurnIndex ?? "pending"}
                   index={currentTurnIndex ?? undefined}
                   thinking
+                  liveStatus={liveStepStatus}
                 />
-                {livePreamble && <TurnTicker text={livePreamble} />}
               </div>
             )}
 
@@ -596,10 +599,12 @@ export function MainView({
               from GA core; this is the UI-side mitigation. */}
             {isRunning && !stillWaiting && visiblePartial && (
               <div>
-                {currentTurnIndex != null && (
-                  <TurnMarker index={currentTurnIndex} />
-                )}
-                {livePreamble && <TurnTicker text={livePreamble} />}
+                <TurnMarker
+                  key={currentTurnIndex ?? "answering"}
+                  index={currentTurnIndex ?? undefined}
+                  thinking
+                  liveStatus={liveStepStatus}
+                />
                 {/* `typedPartial` is the typewriter-throttled view of
                   `visiblePartial`. The condition above gates on
                   visiblePartial (so the placeholder→partial swap
@@ -698,25 +703,28 @@ export function MainView({
             onOpenLLMSwitcher={onOpenLLMSwitcher}
           />
 
-          <div className="mt-1.5 flex items-center justify-between text-[11px] text-ink-muted">
+          <div className="mt-1.5 text-[11px] text-ink-muted">
             <span>{copy.composer.enterHint}</span>
-            <span>
-              {copy.composer.switchKeepsContext.split("LLM")[0]}
-              <IconTooltip text={copy.composer.llmTooltip}>
-                <span className="cursor-help underline decoration-line-strong decoration-dotted underline-offset-[3px]">
-                  LLM
-                </span>
-              </IconTooltip>{" "}
-              {copy.composer.switchKeepsContext
-                .split("LLM")
-                .slice(1)
-                .join("LLM")}
-            </span>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+const LIVE_STEP_STATUS_MAX_CHARS = 46;
+
+function compactLiveStepStatus(text?: string): string | undefined {
+  if (!text) return undefined;
+  const normalized = text
+    .replace(/`{3,}[\s\S]*?`{3,}/g, " ")
+    .replace(/[|*_`>#]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return undefined;
+  const chars = Array.from(normalized);
+  if (chars.length <= LIVE_STEP_STATUS_MAX_CHARS) return normalized;
+  return `${chars.slice(0, LIVE_STEP_STATUS_MAX_CHARS - 1).join("").trimEnd()}…`;
 }
 
 /**

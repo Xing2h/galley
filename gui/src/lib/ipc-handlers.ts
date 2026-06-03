@@ -849,8 +849,8 @@ function extractThinking(text: string): string | undefined {
  *     turn" so a final-answer turn's prose doesn't double-render as
  *     both preamble AND finalAnswer.
  *   - turn_progress (streaming): MainView feeds the in-flight buffer
- *     directly; the TurnTicker shows whatever's available as live
- *     process feedback.
+ *     directly; TurnMarker can show a compact one-line live status
+ *     when no answer body is streaming yet.
  */
 export function extractPreamble(text: string): string | undefined {
   if (!text) return undefined;
