@@ -1,5 +1,6 @@
 use serde::Serialize;
-use tauri::{AppHandle, Runtime};
+use std::time::Duration;
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 #[derive(Debug, Serialize)]
@@ -58,12 +59,27 @@ pub async fn install_app_update<R: Runtime>(
         version: update.version.clone(),
     };
 
-    update
-        .download_and_install(|_, _| {}, || {})
+    let bytes = update
+        .download(|_, _| {}, || {})
         .await
         .map_err(format_update_error)?;
 
+    stop_galley_child_processes(&app).await;
+
+    update.install(bytes).map_err(format_update_error)?;
+
     Ok(result)
+}
+
+async fn stop_galley_child_processes<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(im_manager) =
+        app.try_state::<std::sync::Arc<crate::im_supervisor::ImSupervisorManager>>()
+    {
+        im_manager.stop_all().await;
+    }
+
+    let manager = app.state::<std::sync::Arc<crate::runner_manager::RunnerManager>>();
+    manager.shutdown_all(Duration::from_secs(5)).await;
 }
 
 async fn check_available_update<R: Runtime>(app: &AppHandle<R>) -> Result<Option<Update>, String> {
