@@ -10,11 +10,10 @@ live in [refactor](./refactor/README.md).
 ## Current Target
 
 - Package version: `0.2.5`
-- Git tag / GitHub Release: `v0.2.5` is in release prep; `v0.2.4` is the
-  current published GitHub Latest.
+- Git tag / GitHub Release: `v0.2.5` is the current published GitHub Latest.
 - Agent API schema: `schemaVersion: 1`
-- Release tier: stable hotfix patch release candidate; beta update channel
-  remains on `v0.2.4` until `v0.2.5` installer smoke passes.
+- Release tier: stable hotfix patch release; beta update channel remains on
+  `v0.2.4` until update-channel promotion.
 - Product shape: dual-native local agent team orchestrator
 
 Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
@@ -23,35 +22,24 @@ Supervisor automation on the same machine.
 
 ## Current Release State
 
-`v0.2.5` is a narrow hotfix target for the ChatGPT / Codex provider shipped in
-`v0.2.4`. It fixes the Codex backend request shape used by Codex CLI login
-import, web login completion probes, and managed-GA conversations: request
-`input` is sent as a Responses list, streaming is forced for Codex, and
-unsupported `max_output_tokens` is omitted for the Codex backend. Dogfood
-confirmed both Codex CLI import and a managed-GA conversation after the fix.
+`v0.2.5` is the current published stable hotfix and GitHub Latest. It fixes the
+ChatGPT / Codex provider shipped in `v0.2.4`: Codex backend request `input` is
+sent as a Responses list, streaming is forced for Codex, and unsupported
+`max_output_tokens` is omitted for the Codex backend. Dogfood confirmed Codex
+CLI import, model test, a conversation through the built-in GA runtime, and
+macOS DMG installation before publish.
 
-`v0.2.4` remains the current published stable release, GitHub Latest, and beta
-update-channel target until `v0.2.5` installers pass smoke. Keep GitHub Release
-publishing and update-channel promotion as separate gates.
+`v0.2.4` remains the beta update-channel target until `v0.2.5` is promoted.
+Keep GitHub Release publishing and update-channel promotion as separate gates.
 
-For the `v0.2.5` release:
+Post-publish gates before promoting the beta update channel:
 
 1. Dogfood update from an installed `v0.2.4` build before promoting the update
    channel.
-2. Smoke ChatGPT / Codex provider setup in Settings: Codex CLI import, model
-   test, and a managed-GA conversation.
-3. Smoke ChatGPT web-login completion if time permits; it shares the same
+2. Smoke ChatGPT web-login completion if time permits; it shares the same
    request-shape probe as CLI import.
-4. Smoke one existing API-key provider enough to verify the hotfix did not
+3. Smoke one existing API-key provider enough to verify the hotfix did not
    disturb normal provider handling.
-5. Run release/update dry-run if packaging, signing, updater config, or bundled
-   Python dependencies changed.
-6. Run the standard verification set:
-   - `cargo check --workspace`
-   - `cargo test --workspace`
-   - `pnpm typecheck`
-   - `pnpm lint`
-   - `git diff --check`
 
 ## Status Dashboard
 
@@ -62,8 +50,8 @@ For the `v0.2.5` release:
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
 | Managed GA runtime | Shipped in v0.2.0; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | Backup mechanism exists; runtime identity and managed model config migrations are in dogfood | [B4 M8](./refactor/B4-M8-sub-plan.md) |
-| Release path | v0.2.5 hotfix release prep; macOS DMG + Windows NSIS + gated updater channel remain the release path | [release / update SOP](./release-update-sop.md) |
-| Windows | v0.2.5 smoke focuses on installer launch and model-provider regression sanity | [Windows checklist](./windows-build-checklist.md) |
+| Release path | v0.2.5 published as GitHub Latest; beta update channel promotion remains a separate gate | [release / update SOP](./release-update-sop.md) |
+| Windows | v0.2.5 Windows setup artifact is published; smoke Windows before broad update-channel promotion if possible | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream commit | [GA baseline](./ga-baseline.md) |
 
 ## Compact Timeline

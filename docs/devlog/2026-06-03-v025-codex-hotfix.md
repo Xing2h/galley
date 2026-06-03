@@ -3,9 +3,8 @@
 ## Date / Status / Related
 
 - Date: 2026-06-03
-- Status: Stable hotfix release prep for `v0.2.5`; `v0.2.4` is published as
-  GitHub Latest and remains the beta update-channel target until `v0.2.5`
-  installer smoke passes.
+- Status: `v0.2.5` published as the stable GitHub Latest; `v0.2.4` remains the
+  beta update-channel target until `v0.2.5` update-channel promotion.
 - Related:
   - [Project status](../project-status.md)
   - [Release / update SOP](../release-update-sop.md)
@@ -23,6 +22,8 @@ The failures were sequential and useful: first `input` had to be a list, then
 `stream` had to be `true`, then `max_output_tokens` was rejected as unsupported.
 After removing the incompatible parameter and forcing Codex streaming, local
 dogfood confirmed Codex CLI import, model test, and a managed-GA conversation.
+The macOS DMG was installed and smoke-tested before the GitHub Release was
+published.
 
 ## Decisions
 
@@ -48,6 +49,8 @@ dogfood confirmed Codex CLI import, model test, and a managed-GA conversation.
 - `git diff --check`
 - Manual dogfood: Codex CLI login import succeeded, model probe succeeded, and a
   managed-GA conversation completed using the ChatGPT / Codex provider.
+- Manual install smoke: macOS DMG install completed without reported issues
+  before publishing `v0.2.5`.
 
 ## Rejected alternatives
 
@@ -60,6 +63,5 @@ dogfood confirmed Codex CLI import, model test, and a managed-GA conversation.
 
 ## Next
 
-Bump package metadata to `0.2.5`, tag `v0.2.5`, let `release.yml` build a draft
-GitHub Release, rewrite the draft notes for review, smoke installers, then
-publish and promote the beta update channel after smoke passes.
+Promote the beta update channel after update-from-`v0.2.4` smoke passes. Keep
+GitHub Release publishing and updater-channel promotion as separate gates.
