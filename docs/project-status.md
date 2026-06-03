@@ -9,11 +9,11 @@ live in [refactor](./refactor/README.md).
 
 ## Current Target
 
-- Package version: `0.2.5`
-- Git tag / GitHub Release: `v0.2.5` is the current published GitHub Latest.
+- Package version: `0.2.6`
+- Git tag / GitHub Release: `v0.2.6` is the current published GitHub Latest.
 - Agent API schema: `schemaVersion: 1`
-- Release tier: stable hotfix patch release; default update channel points at
-  `v0.2.5`, with `beta` kept as a legacy alias for older builds.
+- Release tier: stable patch release; default update channel points at
+  `v0.2.6`, with `beta` kept as a legacy alias for older builds.
 - Product shape: dual-native local agent team orchestrator
 
 Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
@@ -22,27 +22,27 @@ Supervisor automation on the same machine.
 
 ## Current Release State
 
-`v0.2.5` is the current published stable hotfix, GitHub Latest, and default
-update-channel target. It fixes the ChatGPT / Codex provider shipped in
-`v0.2.4`: Codex backend request `input` is sent as a Responses list, streaming
-is forced for Codex, and unsupported `max_output_tokens` is omitted for the
-Codex backend. Dogfood confirmed Codex CLI import, model test, a conversation
-through the built-in GA runtime, and macOS DMG installation before publish.
+`v0.2.6` is the current published stable patch, GitHub Latest, and default
+update-channel target. It completes the bundled GA Memory/SOP seed repair,
+polishes Settings -> Models and conversation streaming progress, fixes Windows
+update file-lock handling, and lowers several transient UI affordances that
+were visually louder than their job required.
 
-The default update channel was promoted to `v0.2.5` after publish. The live
-channel verifier passed with cache-busting, and the `galley-update-channel`
-branch manifest reports version `0.2.5`. `GALLEY_UPDATER_ENDPOINT` points at
-`updates/stable/latest.json`; `updates/beta/latest.json` is kept as a legacy
-alias for builds compiled before the stable endpoint rename.
+The default update channel was promoted to `v0.2.6` after publish. The live
+channel verifier passed with cache-busting for both `stable` and the legacy
+`beta` alias, and the `galley-update-channel` branch manifest reports version
+`0.2.6`. `GALLEY_UPDATER_ENDPOINT` points at `updates/stable/latest.json`;
+`updates/beta/latest.json` is kept as a legacy alias for builds compiled before
+the stable endpoint rename.
 
 Post-promote follow-up:
 
-1. Dogfood update from an installed `v0.2.4` build if an older install is still
-   available.
-2. Smoke ChatGPT web-login completion if time permits; it shares the same
-   request-shape probe as CLI import.
-3. Smoke one existing API-key provider enough to verify the hotfix did not
-   disturb normal provider handling.
+1. Dogfood update from an installed `v0.2.5` or older build if an older install
+   is still available.
+2. On Windows, smoke in-app update while Galley has loaded bundled Python, then
+   repeat manual overwrite install over a backgrounded Galley process.
+3. On a fresh bundled-GA state, confirm Memory/SOP seed files are present; on an
+   existing state, confirm user-edited memory files are not overwritten.
 
 ## Status Dashboard
 
@@ -51,10 +51,10 @@ Post-promote follow-up:
 | Core architecture | Rust Galley Core is authoritative | [architecture demo](./architecture-demo.md) |
 | CLI / Agent API | Feature-complete for v0.2; schema frozen | [agent-api](./agent-api.md) |
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
-| Managed GA runtime | Shipped in v0.2.0; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
+| Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | Backup mechanism exists; runtime identity and managed model config migrations are in dogfood | [B4 M8](./refactor/B4-M8-sub-plan.md) |
-| Release path | v0.2.5 published as GitHub Latest and promoted to the default update channel | [release / update SOP](./release-update-sop.md) |
-| Windows | v0.2.5 Windows setup artifact is published through the release and updater manifest; monitor Windows reports | [Windows checklist](./windows-build-checklist.md) |
+| Release path | v0.2.6 published as GitHub Latest and promoted to the default update channel | [release / update SOP](./release-update-sop.md) |
+| Windows | v0.2.6 Windows setup artifact is published through the release and updater manifest; monitor updater file-lock reports | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream commit | [GA baseline](./ga-baseline.md) |
 
 ## Compact Timeline
@@ -78,7 +78,7 @@ Detailed phase narratives are intentionally not duplicated here. Use:
 
 ## Release Version Rules
 
-- Current package metadata uses `0.2.5`. For the next release, update:
+- Current package metadata uses `0.2.6`. For the next release, update:
   - `package.json`
   - `core/tauri.conf.json`
   - `core/Cargo.toml`
