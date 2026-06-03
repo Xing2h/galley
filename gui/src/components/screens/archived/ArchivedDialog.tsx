@@ -342,7 +342,7 @@ function Header({
           </>
         )}
         <Dialog.Close asChild onClick={onClose}>
-          <IconButton ariaLabel={copy.common.close}>
+          <IconButton ariaLabel={copy.common.close} tooltip={false}>
             <XIcon size={14} weight="thin" />
           </IconButton>
         </Dialog.Close>

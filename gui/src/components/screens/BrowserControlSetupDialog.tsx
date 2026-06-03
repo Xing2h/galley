@@ -148,6 +148,7 @@ export function BrowserControlSetupDialog({
           <div className="relative shrink-0 px-6 pb-3 pt-5 [@media(max-height:640px)]:pb-2 [@media(max-height:640px)]:pt-4">
             <IconButton
               ariaLabel={copy.close}
+              tooltip={false}
               className="absolute right-3 top-3"
               variant="ghost"
               onClick={() => handleOpenChange(false)}

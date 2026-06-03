@@ -147,6 +147,7 @@ export function Settings({
           <Dialog.Close asChild>
             <IconButton
               ariaLabel={copy.settings.close}
+              tooltip={false}
               variant="secondary"
               className="absolute right-3 top-3 z-20 bg-elevated/95"
             >
