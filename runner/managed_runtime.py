@@ -73,6 +73,7 @@ def managed_model_config_from_env() -> dict[str, Any]:
         if auth_kind == "chatgpt_codex_oauth":
             cfg["codex_backend"] = True
             cfg["api_mode"] = "responses"
+            cfg["stream"] = True
             if str(cfg.get("reasoning_effort") or "").strip().lower() == "minimal":
                 cfg["reasoning_effort"] = "medium"
         if not cfg["apikey"] or not cfg["apibase"] or not cfg["model"]:

@@ -519,10 +519,16 @@ fn codex_probe_payload(model: &str, reasoning_effort: &str) -> Value {
     serde_json::json!({
         "model": model,
         "instructions": CODEX_PROBE_INSTRUCTIONS,
-        "input": "ping",
-        "stream": false,
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    { "type": "input_text", "text": "ping" }
+                ]
+            }
+        ],
+        "stream": true,
         "store": false,
-        "max_output_tokens": 16,
         "reasoning": { "effort": normalize_reasoning(reasoning_effort) }
     })
 }
@@ -768,11 +774,21 @@ mod tests {
         let payload = codex_probe_payload("gpt-5.5", "high");
 
         assert_eq!(payload["model"], "gpt-5.5");
-        assert_eq!(payload["input"], "ping");
+        assert_eq!(
+            payload["input"],
+            serde_json::json!([
+                {
+                    "role": "user",
+                    "content": [
+                        { "type": "input_text", "text": "ping" }
+                    ]
+                }
+            ])
+        );
         assert_eq!(payload["instructions"], CODEX_PROBE_INSTRUCTIONS);
-        assert_eq!(payload["stream"], false);
+        assert_eq!(payload["stream"], true);
         assert_eq!(payload["store"], false);
-        assert_eq!(payload["max_output_tokens"], 16);
+        assert!(payload.get("max_output_tokens").is_none());
         assert_eq!(payload["reasoning"]["effort"], "high");
     }
 

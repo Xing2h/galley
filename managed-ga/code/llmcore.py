@@ -456,7 +456,7 @@ def _openai_stream(sess, messages):
                    "prompt_cache_key": _RESP_CACHE_KEY, "instructions": sess.system or "You are an Omnipotent Executor."}
         if getattr(sess, 'codex_backend', False): payload["store"] = False
         if sess.reasoning_effort: payload["reasoning"] = {"effort": sess.reasoning_effort}
-        if sess.max_tokens: payload["max_output_tokens"] = sess.max_tokens
+        if sess.max_tokens and not getattr(sess, 'codex_backend', False): payload["max_output_tokens"] = sess.max_tokens
     else:
         url = auto_make_url(sess.api_base, "chat/completions")
         if sess.system: messages = [{"role": "system", "content": sess.system}] + messages
@@ -584,7 +584,7 @@ class BaseSession:
         self.proxies = {"http": proxy, "https": proxy} if proxy else None
         self.max_retries = max(0, int(cfg.get('max_retries', 4)))
         self.verify = cfg.get('verify', True)
-        self.stream = cfg.get('stream', True)
+        self.stream = True if self.codex_backend else cfg.get('stream', True)
         default_ct, default_rt = (5, 30) if self.stream else (10, 240)
         self.connect_timeout = max(1, int(cfg.get('timeout', default_ct)))
         self.read_timeout = max(5, int(cfg.get('read_timeout', default_rt)))

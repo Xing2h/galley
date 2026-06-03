@@ -39,6 +39,7 @@ export function AdvancedModelOptions({
     effectiveOptions,
     recommendedOptions,
     protocol,
+    authKind,
   );
 
   const setOption = (key: string, value: string | number | boolean | null) => {
@@ -139,11 +140,13 @@ export function AdvancedModelOptions({
             />
           </div>
 
-          <AdvancedSwitchRow
-            label={copy.streamResponse}
-            checked={stream}
-            onCheckedChange={(checked) => setOption("stream", checked)}
-          />
+          {!isCodexOauth && (
+            <AdvancedSwitchRow
+              label={copy.streamResponse}
+              checked={stream}
+              onCheckedChange={(checked) => setOption("stream", checked)}
+            />
+          )}
 
           {protocol === "openai" ? (
             <>
@@ -353,10 +356,17 @@ function advancedCustomCount(
   options: Record<string, unknown>,
   recommended: Record<string, unknown>,
   protocol: ManagedModelProtocol,
+  authKind?: ManagedModelAuthKind,
 ): number {
   const keys =
     protocol === "openai"
-      ? ["max_retries", "read_timeout", "stream", "api_mode", "reasoning_effort"]
+      ? [
+          "max_retries",
+          "read_timeout",
+          ...(authKind === "chatgpt_codex_oauth" ? [] : ["stream"]),
+          "api_mode",
+          "reasoning_effort",
+        ]
       : [
           "max_retries",
           "read_timeout",

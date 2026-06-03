@@ -171,6 +171,7 @@ def test_managed_model_config_maps_codex_oauth_to_ga_config(
                         "advancedOptions": {
                             "api_mode": "chat_completions",
                             "reasoning_effort": "minimal",
+                            "stream": False,
                         },
                     }
                 ]
@@ -182,6 +183,7 @@ def test_managed_model_config_maps_codex_oauth_to_ga_config(
 
     assert cfg["codex_backend"] is True
     assert cfg["api_mode"] == "responses"
+    assert cfg["stream"] is True
     assert cfg["reasoning_effort"] == "medium"
     assert cfg["galley_api_key_ref"] == "managed-provider:mp_chatgpt_codex"
     assert cfg["galley_credential_ipc"]["token"] == "secret"
