@@ -3,8 +3,8 @@
 ## Date / Status / Related
 
 - Date: 2026-06-03
-- Status: `v0.2.5` published as the stable GitHub Latest; `v0.2.4` remains the
-  beta update-channel target until `v0.2.5` update-channel promotion.
+- Status: `v0.2.5` published as the stable GitHub Latest and promoted to the
+  beta update channel.
 - Related:
   - [Project status](../project-status.md)
   - [Release / update SOP](../release-update-sop.md)
@@ -23,7 +23,8 @@ The failures were sequential and useful: first `input` had to be a list, then
 After removing the incompatible parameter and forcing Codex streaming, local
 dogfood confirmed Codex CLI import, model test, and a managed-GA conversation.
 The macOS DMG was installed and smoke-tested before the GitHub Release was
-published.
+published. After publish, the beta update channel was promoted to `v0.2.5` and
+the live manifest verifier passed.
 
 ## Decisions
 
@@ -51,6 +52,9 @@ published.
   managed-GA conversation completed using the ChatGPT / Codex provider.
 - Manual install smoke: macOS DMG install completed without reported issues
   before publishing `v0.2.5`.
+- Update channel: `promote-update-channel.yml` completed for `v0.2.5` on the
+  beta channel, and `scripts/check-update-channel.mjs --cache-bust` confirmed
+  version `0.2.5` for macOS Apple Silicon, macOS Intel, and Windows x64.
 
 ## Rejected alternatives
 
@@ -63,5 +67,5 @@ published.
 
 ## Next
 
-Promote the beta update channel after update-from-`v0.2.4` smoke passes. Keep
-GitHub Release publishing and updater-channel promotion as separate gates.
+Monitor the app-update path from installed `v0.2.4` builds and watch for
+Windows reports after the updater manifest starts offering `v0.2.5`.
