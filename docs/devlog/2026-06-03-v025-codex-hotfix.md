@@ -23,8 +23,9 @@ The failures were sequential and useful: first `input` had to be a list, then
 After removing the incompatible parameter and forcing Codex streaming, local
 dogfood confirmed Codex CLI import, model test, and a managed-GA conversation.
 The macOS DMG was installed and smoke-tested before the GitHub Release was
-published. After publish, the update channel was promoted to `v0.2.5` and the
-live manifest verifier passed.
+published. After publish, the update channel was promoted to `v0.2.5`, the
+default endpoint was renamed to `updates/stable/latest.json`, and
+`updates/beta/latest.json` was kept as a legacy alias for older builds.
 
 ## Decisions
 
@@ -55,6 +56,8 @@ live manifest verifier passed.
 - Update channel: `promote-update-channel.yml` completed for `v0.2.5`, and
   `scripts/check-update-channel.mjs --cache-bust` confirmed version `0.2.5` for
   macOS Apple Silicon, macOS Intel, and Windows x64.
+- Endpoint rename: stable and legacy beta manifests both verify as `0.2.5`;
+  `GALLEY_UPDATER_ENDPOINT` now points at `updates/stable/latest.json`.
 
 ## Rejected alternatives
 

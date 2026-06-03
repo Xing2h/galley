@@ -31,8 +31,9 @@ through the built-in GA runtime, and macOS DMG installation before publish.
 
 The default update channel was promoted to `v0.2.5` after publish. The live
 channel verifier passed with cache-busting, and the `galley-update-channel`
-branch manifest reports version `0.2.5`. `updates/beta/latest.json` is kept as
-a legacy alias for builds compiled before the stable endpoint rename.
+branch manifest reports version `0.2.5`. `GALLEY_UPDATER_ENDPOINT` points at
+`updates/stable/latest.json`; `updates/beta/latest.json` is kept as a legacy
+alias for builds compiled before the stable endpoint rename.
 
 Post-promote follow-up:
 
