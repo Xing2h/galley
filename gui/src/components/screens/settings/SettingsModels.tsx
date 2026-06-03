@@ -1,5 +1,5 @@
 import { Info, Plus } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +46,10 @@ export function SettingsModels({
   const saveModel = useManagedModelsStore((s) => s.saveModel);
   const reorderModels = useManagedModelsStore((s) => s.reorderModels);
   const deleteModel = useManagedModelsStore((s) => s.deleteModel);
+  const modelRowRefs = useRef<Record<string, HTMLButtonElement>>({});
+  const [pendingFocusModelId, setPendingFocusModelId] = useState<string | null>(
+    null,
+  );
   const [providerDeleteCandidate, setProviderDeleteCandidate] = useState<
     (ProviderDeleteCandidate & { id: string }) | null
   >(null);
@@ -103,6 +107,30 @@ export function SettingsModels({
       providerModelController.rememberProviderModelOptions,
     showModelConfigSavedToast,
   });
+  const editingModelId = providerModelController.modelDraft?.id;
+
+  const registerModelRow = useCallback(
+    (modelId: string, node: HTMLButtonElement | null) => {
+      if (node) {
+        modelRowRefs.current[modelId] = node;
+      } else {
+        delete modelRowRefs.current[modelId];
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!pendingFocusModelId) return;
+    const handle = window.setTimeout(() => {
+      const node = modelRowRefs.current[pendingFocusModelId];
+      if (!node) return;
+      node.scrollIntoView({ block: "center", behavior: "smooth" });
+      node.focus({ preventScroll: true });
+      setPendingFocusModelId(null);
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, [editingModelId, pendingFocusModelId, providers.length]);
 
   const {
     canFetchProviderFormModels,
@@ -144,6 +172,23 @@ export function SettingsModels({
     void deleteModel(model.id).catch(() => undefined);
   };
 
+  const focusProtectedDraft = (modelId?: string) => {
+    if (modelId) {
+      setPendingFocusModelId(modelId);
+    }
+  };
+
+  const handleConfiguredModelActivate = (model: ManagedModelRecord) => {
+    const provider = providers.find((item) => item.id === model.providerId);
+    if (!provider) return;
+    const result = providerModelController.openModelDraft(provider, model);
+    if (result.kind === "blocked-dirty") {
+      focusProtectedDraft(result.modelId);
+      return;
+    }
+    setPendingFocusModelId(model.id);
+  };
+
   const confirmDeleteProvider = () => {
     const candidate = providerDeleteCandidate;
     if (!candidate) return;
@@ -164,7 +209,9 @@ export function SettingsModels({
         models={orderedModels}
         saving={saving}
         moveFeedback={modelMoveFeedback}
+        editingModelId={editingModelId}
         onMoveModel={handleMoveConfiguredModel}
+        onActivateModel={handleConfiguredModelActivate}
       />
 
       <div>
@@ -308,9 +355,32 @@ export function SettingsModels({
                     value,
                   )
                 }
-                onStartModelDraft={(model) =>
-                  providerModelController.startModelDraft(provider, model)
-                }
+                onStartModelDraft={() => {
+                  const draft = providerModelController.modelDraft;
+                  if (draft && providerModelController.isModelDraftDirty()) {
+                    focusProtectedDraft(draft.id);
+                    return;
+                  }
+                  providerModelController.startModelDraft(provider);
+                }}
+                onOpenModelDraft={(model) => {
+                  const result = providerModelController.openModelDraft(
+                    provider,
+                    model,
+                  );
+                  if (result.kind === "blocked-dirty") {
+                    focusProtectedDraft(result.modelId);
+                  }
+                }}
+                onToggleModelDraft={(model) => {
+                  const result = providerModelController.toggleModelDraft(
+                    provider,
+                    model,
+                  );
+                  if (result.kind === "blocked-dirty") {
+                    focusProtectedDraft(result.modelId);
+                  }
+                }}
                 onChangeModelDraft={(patch) =>
                   providerModelController.changeModelDraft(provider.id, patch)
                 }
@@ -338,6 +408,7 @@ export function SettingsModels({
                   providerModelController.savedModelProbeStateForModel
                 }
                 onDeleteModel={handleDeleteModel}
+                onRegisterModelRow={registerModelRow}
               />
             ))}
         </div>

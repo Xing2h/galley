@@ -27,6 +27,12 @@ import {
 } from "./probe-state";
 import type { ModelDraftState, ProbeStateMap } from "./types";
 
+type ModelDraftActivationResult =
+  | { kind: "opened"; modelId: string }
+  | { kind: "closed"; modelId: string }
+  | { kind: "kept-open"; modelId: string }
+  | { kind: "blocked-dirty"; modelId?: string };
+
 export function useProviderModelController({
   providers,
   models,
@@ -91,6 +97,79 @@ export function useProviderModelController({
       advancedOptions: recommendedAdvancedOptions,
       recommendedAdvancedOptions,
     };
+  };
+
+  const createDraftForModel = (
+    provider: ManagedModelProviderRecord,
+    model: ManagedModelRecord,
+  ): ModelDraftState => {
+    const recommendedAdvancedOptions =
+      recommendedAdvancedOptionsForManagedModelProvider(provider);
+    return {
+      providerId: provider.id,
+      id: model.id,
+      model: model.model,
+      displayName: editableDisplayNameForModel(model),
+      advancedOptions: model.advancedOptions,
+      recommendedAdvancedOptions,
+    };
+  };
+
+  const isModelDraftDirty = (draft: ModelDraftState | null = modelDraft) => {
+    if (!draft) return false;
+    const existingModel = draft.id
+      ? models.find((item) => item.id === draft.id)
+      : undefined;
+    if (!existingModel) {
+      return (
+        draft.model.trim() !== "" ||
+        draft.displayName.trim() !== "" ||
+        stableStringify(draft.advancedOptions) !==
+          stableStringify(draft.recommendedAdvancedOptions)
+      );
+    }
+    return (
+      draft.model.trim() !== existingModel.model.trim() ||
+      draft.displayName.trim() !== editableDisplayNameForModel(existingModel) ||
+      stableStringify(draft.advancedOptions) !==
+        stableStringify(existingModel.advancedOptions)
+    );
+  };
+
+  const openModelDraft = (
+    provider: ManagedModelProviderRecord,
+    model: ManagedModelRecord,
+  ): ModelDraftActivationResult => {
+    expandProvider(provider.id);
+    if (modelDraft?.id === model.id) {
+      return { kind: "kept-open", modelId: model.id };
+    }
+    if (modelDraft && isModelDraftDirty(modelDraft)) {
+      return { kind: "blocked-dirty", modelId: modelDraft.id };
+    }
+    setModelDraft(createDraftForModel(provider, model));
+    clearModelProbeState(provider.id);
+    return { kind: "opened", modelId: model.id };
+  };
+
+  const toggleModelDraft = (
+    provider: ManagedModelProviderRecord,
+    model: ManagedModelRecord,
+  ): ModelDraftActivationResult => {
+    expandProvider(provider.id);
+    if (modelDraft?.id === model.id) {
+      if (isModelDraftDirty(modelDraft)) {
+        return { kind: "blocked-dirty", modelId: model.id };
+      }
+      resetModelDraft();
+      return { kind: "closed", modelId: model.id };
+    }
+    if (modelDraft && isModelDraftDirty(modelDraft)) {
+      return { kind: "blocked-dirty", modelId: modelDraft.id };
+    }
+    setModelDraft(createDraftForModel(provider, model));
+    clearModelProbeState(provider.id);
+    return { kind: "opened", modelId: model.id };
   };
 
   const handleFetchModels = async (provider: ManagedModelProviderRecord) => {
@@ -271,26 +350,10 @@ export function useProviderModelController({
     model?: ManagedModelRecord,
   ) => {
     expandProvider(provider.id);
-    const recommendedAdvancedOptions =
-      recommendedAdvancedOptionsForManagedModelProvider(provider);
     setModelDraft(
       model
-        ? {
-            providerId: provider.id,
-            id: model.id,
-            model: model.model,
-            displayName:
-              model.displayName === model.model ? "" : model.displayName,
-            advancedOptions: model.advancedOptions,
-            recommendedAdvancedOptions,
-          }
-        : {
-            providerId: provider.id,
-            model: "",
-            displayName: "",
-            advancedOptions: recommendedAdvancedOptions,
-            recommendedAdvancedOptions,
-          },
+        ? createDraftForModel(provider, model)
+        : createDraftForProvider(provider),
     );
     clearModelProbeState(provider.id);
   };
@@ -313,6 +376,7 @@ export function useProviderModelController({
     handleSaveDraftModel,
     handleTestDraftModel,
     handleTestSavedModel,
+    isModelDraftDirty,
     modelDraft,
     modelFilterForProvider: (providerId: string) =>
       modelFilterByProvider[providerId] ?? "",
@@ -320,6 +384,7 @@ export function useProviderModelController({
       modelOptionsByProvider[providerId] ?? [],
     modelProbeStateForProvider: (providerId: string) =>
       probeStateFor(modelProbeStates, providerId),
+    openModelDraft,
     rememberProviderModelOptions,
     resetModelDraft,
     savedModelProbeStateForModel: (modelId: string) =>
@@ -331,5 +396,30 @@ export function useProviderModelController({
       }));
     },
     startModelDraft,
+    toggleModelDraft,
   };
+}
+
+function editableDisplayNameForModel(model: ManagedModelRecord): string {
+  const modelName = model.model.trim();
+  const displayName = model.displayName.trim();
+  return displayName === modelName ? "" : displayName;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(stableJsonValue(value));
+}
+
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stableJsonValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, nested]) => [key, stableJsonValue(nested)]),
+    );
+  }
+  return value;
 }

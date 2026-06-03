@@ -55,6 +55,8 @@ export function ProviderCard({
   onFetchModels,
   onSetModelFilter,
   onStartModelDraft,
+  onOpenModelDraft,
+  onToggleModelDraft,
   onChangeModelDraft,
   onCancelModelDraft,
   onTestModelDraft,
@@ -64,6 +66,7 @@ export function ProviderCard({
   onTestModel,
   modelProbeStateFor,
   onDeleteModel,
+  onRegisterModelRow,
 }: {
   provider: ManagedModelProviderRecord;
   models: ManagedModelRecord[];
@@ -84,6 +87,8 @@ export function ProviderCard({
   onFetchModels: () => void;
   onSetModelFilter: (value: string) => void;
   onStartModelDraft: (model?: ManagedModelRecord) => void;
+  onOpenModelDraft: (model: ManagedModelRecord) => void;
+  onToggleModelDraft: (model: ManagedModelRecord) => void;
   onChangeModelDraft: (patch: Partial<ModelDraftState>) => void;
   onCancelModelDraft: () => void;
   onTestModelDraft: (draft: ModelDraftState) => void;
@@ -93,6 +98,10 @@ export function ProviderCard({
   onTestModel: (model: ManagedModelRecord) => void;
   modelProbeStateFor: (modelId: string) => ProbeState;
   onDeleteModel: (model: ManagedModelRecord) => void;
+  onRegisterModelRow?: (
+    modelId: string,
+    node: HTMLButtonElement | null,
+  ) => void;
 }) {
   const copy = useCopy().settings.models;
   const keyMissing = provider.credentialStatus === "missing";
@@ -128,19 +137,20 @@ export function ProviderCard({
   return (
     <div
       className={cn(
-        "group/provider overflow-hidden rounded-sm border border-line bg-surface",
+        "settings-model-provider-card group/provider overflow-hidden rounded-sm border border-line bg-[var(--settings-model-provider-card-bg)]",
         "transition-[background-color,border-color,box-shadow,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
-        "hover:-translate-y-[0.5px] hover:border-line-strong hover:bg-hover/45 hover:shadow-card",
-        "active:translate-y-[0.5px] active:bg-hover/60 active:shadow-[var(--shadow-button-raised-active)]",
-        "focus-within:border-line-strong focus-within:bg-hover/45 focus-within:shadow-card",
-        open &&
-          "border-line-strong bg-selected/35 shadow-card hover:bg-selected/45 focus-within:bg-selected/35 active:bg-selected/50",
+        "hover:-translate-y-[0.5px] hover:border-line-strong hover:shadow-card",
+        "active:translate-y-[0.5px] active:shadow-[var(--shadow-button-raised-active)]",
+        "focus-within:border-line-strong focus-within:shadow-card",
+        open && "border-line-strong shadow-card",
       )}
     >
       <div
         className={cn(
           "flex min-w-0 items-center gap-3 px-2 py-1.5 transition-colors",
-          open && "bg-selected/35",
+          open
+            ? "bg-[var(--settings-model-provider-header-bg)]"
+            : "bg-[var(--settings-model-provider-header-idle-bg)]",
         )}
       >
         <button
@@ -156,7 +166,7 @@ export function ProviderCard({
             className={cn(
               "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm transition-colors",
               open
-                ? "bg-brand-soft text-brand-strong"
+                ? "bg-elevated text-brand-strong"
                 : "text-ink-muted group-hover/provider:bg-brand-soft group-hover/provider:text-brand-strong group-focus-within/provider:bg-brand-soft group-focus-within/provider:text-brand-strong",
             )}
           >
@@ -181,8 +191,8 @@ export function ProviderCard({
             <span
               className={cn(
                 "inline-flex shrink-0 rounded-sm border border-line bg-surface/80 px-1.5 py-px text-[10.5px] text-ink-muted transition-colors",
-                "group-hover/provider:border-line-strong group-hover/provider:bg-selected/30 group-focus-within/provider:border-line-strong group-focus-within/provider:bg-selected/30",
-                open && "border-line-strong bg-selected/30",
+                "group-hover/provider:border-line-strong group-hover/provider:bg-elevated/80 group-focus-within/provider:border-line-strong group-focus-within/provider:bg-elevated/80",
+                open && "border-line-strong bg-elevated/75",
               )}
             >
               {copy.enabledModelsCount(models.length)}
@@ -257,29 +267,56 @@ export function ProviderCard({
         className="px-4 pb-3"
       />
       {open && (
-        <div className="border-t border-line/70 bg-hover/25 px-2.5 py-1.5">
-          <div className="space-y-1.5 pl-8 pr-1">
+        <div className="border-t border-line/70 bg-[var(--settings-model-provider-body-bg)] px-2.5 py-2">
+          <div className="space-y-2 pl-8 pr-1">
             {providerEditor}
             {expanded && (
               <>
                 {keyMissing && <ErrorLine message={copy.keyNeedsResave} />}
 
                 {models.length > 0 ? (
-                  <div className="divide-y divide-line/35">
-                    {models.map((model) => (
-                      <EnabledModelRow
-                        key={model.id}
-                        model={model}
-                        isDefault={model.id === defaultModelId}
-                        saving={saving}
-                        keyMissing={keyMissing}
-                        probeState={modelProbeStateFor(model.id)}
-                        onEdit={() => onStartModelDraft(model)}
-                        onSetDefault={() => onSetDefaultModel(model)}
-                        onTest={() => onTestModel(model)}
-                        onDelete={() => onDeleteModel(model)}
-                      />
-                    ))}
+                  <div className="space-y-1.5">
+                    {models.map((model) => {
+                      const editing = modelDraft?.id === model.id;
+                      return (
+                        <div key={model.id}>
+                          <EnabledModelRow
+                            model={model}
+                            isDefault={model.id === defaultModelId}
+                            isEditing={editing}
+                            saving={saving}
+                            keyMissing={keyMissing}
+                            probeState={modelProbeStateFor(model.id)}
+                            rowRef={(node) =>
+                              onRegisterModelRow?.(model.id, node)
+                            }
+                            onActivate={() => onToggleModelDraft(model)}
+                            onEdit={() => onOpenModelDraft(model)}
+                            onSetDefault={() => onSetDefaultModel(model)}
+                            onTest={() => onTestModel(model)}
+                            onDelete={() => onDeleteModel(model)}
+                          />
+                          {editing && modelDraft && (
+                            <div className="px-2 pb-2 pt-1">
+                              <ModelDraftEditor
+                                draft={modelDraft}
+                                title={modelDisplayParts(model).title}
+                                protocol={provider.protocol}
+                                authKind={provider.authKind}
+                                saving={saving}
+                                keyMissing={keyMissing}
+                                modelProbeState={modelProbeState}
+                                allModelCount={allModelCount}
+                                onChange={onChangeModelDraft}
+                                onCancel={onCancelModelDraft}
+                                onTest={() => onTestModelDraft(modelDraft)}
+                                onSave={() => onSaveModelDraft(modelDraft)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="py-1.5 text-[12.5px] text-ink-muted">
@@ -287,11 +324,11 @@ export function ProviderCard({
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5 rounded-sm border border-line/60 bg-[var(--settings-model-toolbelt-bg)] px-2 py-1">
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="px-1.5 text-ink-muted hover:text-ink [&>svg]:text-brand-strong"
+                    className="px-1.5 text-ink-muted/80 hover:text-ink"
                     disabled={!canFetchModels}
                     onClick={onFetchModels}
                     leadingIcon={
@@ -314,7 +351,7 @@ export function ProviderCard({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="px-1.5 text-ink-muted hover:text-ink"
+                    className="px-1.5 text-ink-muted/80 hover:text-ink"
                     disabled={keyMissing || saving}
                     onClick={() => onStartModelDraft()}
                     leadingIcon={<Plus size={12} weight="bold" />}
@@ -322,6 +359,21 @@ export function ProviderCard({
                     {copy.addManually}
                   </Button>
                 </div>
+                {modelDraft && !modelDraft.id && (
+                  <ModelDraftEditor
+                    draft={modelDraft}
+                    protocol={provider.protocol}
+                    authKind={provider.authKind}
+                    saving={saving}
+                    keyMissing={keyMissing}
+                    modelProbeState={modelProbeState}
+                    allModelCount={allModelCount}
+                    onChange={onChangeModelDraft}
+                    onCancel={onCancelModelDraft}
+                    onTest={() => onTestModelDraft(modelDraft)}
+                    onSave={() => onSaveModelDraft(modelDraft)}
+                  />
+                )}
                 <ProbeErrorLine state={modelProbeState} action="model-list" />
                 {shouldShowManualModelHint && (
                   <InfoLine message={copy.modelListManualFallback} />
@@ -370,21 +422,6 @@ export function ProviderCard({
                   </div>
                 )}
 
-                {modelDraft && (
-                  <ModelDraftEditor
-                    draft={modelDraft}
-                    protocol={provider.protocol}
-                    authKind={provider.authKind}
-                    saving={saving}
-                    keyMissing={keyMissing}
-                    modelProbeState={modelProbeState}
-                    allModelCount={allModelCount}
-                    onChange={onChangeModelDraft}
-                    onCancel={onCancelModelDraft}
-                    onTest={() => onTestModelDraft(modelDraft)}
-                    onSave={() => onSaveModelDraft(modelDraft)}
-                  />
-                )}
               </>
             )}
           </div>
@@ -397,9 +434,12 @@ export function ProviderCard({
 function EnabledModelRow({
   model,
   isDefault,
+  isEditing,
   saving,
   keyMissing,
   probeState,
+  rowRef,
+  onActivate,
   onEdit,
   onSetDefault,
   onTest,
@@ -407,9 +447,12 @@ function EnabledModelRow({
 }: {
   model: ManagedModelRecord;
   isDefault: boolean;
+  isEditing: boolean;
   saving: boolean;
   keyMissing: boolean;
   probeState: ProbeState;
+  rowRef?: (node: HTMLButtonElement | null) => void;
+  onActivate: () => void;
   onEdit: () => void;
   onSetDefault: () => void;
   onTest: () => void;
@@ -424,25 +467,56 @@ function EnabledModelRow({
   const showRemoveConfirm = confirmingRemove && !isDefault;
 
   return (
-    <div className="group/model rounded-sm px-2 py-1 transition-colors hover:bg-surface/75 focus-within:bg-surface/75">
+    <div
+      className={cn(
+        "group/model rounded-sm border px-2.5 py-2 transition-[background-color,border-color]",
+        isEditing
+          ? "border-brand/30 bg-[var(--settings-model-row-editing-bg)]"
+          : "border-transparent bg-[var(--settings-model-row-bg)] hover:border-line hover:bg-[var(--settings-model-row-hover-bg)] focus-within:border-line focus-within:bg-[var(--settings-model-row-hover-bg)]",
+      )}
+    >
       <div className="flex min-w-0 items-center gap-2">
-        <div className="min-w-0 flex-1 pr-2">
+        <button
+          ref={rowRef}
+          type="button"
+          aria-expanded={isEditing}
+          aria-label={`${copy.editModel}: ${display.title}`}
+          onClick={() => {
+            setConfirmingRemove(false);
+            onActivate();
+          }}
+          className={cn(
+            "min-w-0 flex-1 rounded-sm pr-2 text-left",
+            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
+          )}
+        >
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="truncate text-[13px] font-medium text-ink">
+            <div
+              className={cn(
+                "truncate text-[13px] font-medium transition-colors",
+                isEditing ? "text-brand-strong" : "text-ink",
+              )}
+            >
               {display.title}
             </div>
+            {isDefault && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-brand/15 bg-brand-soft px-1.5 py-px text-[10.5px] leading-4 text-brand-strong">
+                <CheckCircle size={10} weight="fill" />
+                {copy.defaultModel}
+              </span>
+            )}
           </div>
           {display.subtitle && (
             <div className="mt-0.5 truncate font-mono text-[11.5px] text-ink-muted">
               {display.subtitle}
             </div>
           )}
-        </div>
+        </button>
         <div className="ml-auto flex w-[164px] shrink-0 items-center justify-end gap-1">
           <IconButton
             ariaLabel={copy.testModel}
             size="sm"
-            className="opacity-70 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
+            className="opacity-[var(--settings-model-action-opacity)] group-hover/model:opacity-100 group-focus-within/model:opacity-100"
             disabled={keyMissing || saving || testing}
             onClick={() => {
               setConfirmingRemove(false);
@@ -458,16 +532,11 @@ function EnabledModelRow({
             )}
           </IconButton>
           <InlineProbeStatus state={probeState} action="model-test" />
-          {isDefault ? (
-            <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-sm bg-brand-soft px-1.5 text-[11px] leading-none text-brand-strong">
-              <CheckCircle size={11} weight="fill" />
-              {copy.defaultModel}
-            </span>
-          ) : (
+          {!isDefault && (
             <IconButton
               ariaLabel={copy.setDefault}
               size="sm"
-              className="opacity-70 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
+              className="opacity-[var(--settings-model-action-opacity)] group-hover/model:opacity-100 group-focus-within/model:opacity-100"
               disabled={saving}
               onClick={() => {
                 setConfirmingRemove(false);
@@ -480,7 +549,7 @@ function EnabledModelRow({
           <IconButton
             ariaLabel={copy.editModel}
             size="sm"
-            className="opacity-70 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
+            className="opacity-[var(--settings-model-action-opacity)] group-hover/model:opacity-100 group-focus-within/model:opacity-100"
             onClick={() => {
               setConfirmingRemove(false);
               onEdit();
@@ -493,7 +562,7 @@ function EnabledModelRow({
               ariaLabel={copy.removeModel}
               variant="danger"
               size="sm"
-              className="opacity-70 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
+              className="opacity-[var(--settings-model-action-opacity)] group-hover/model:opacity-100 group-focus-within/model:opacity-100"
               disabled={saving}
               onClick={() => setConfirmingRemove(true)}
             >

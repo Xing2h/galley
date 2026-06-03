@@ -308,6 +308,86 @@ code {
 .model-row-swap-down {
   animation: model-row-swap-down 0.24s ease-out;
 }
+
+/* Settings Models has tighter nested hierarchy than generic cards:
+   provider group -> model row -> inline editor. Keep these layer tokens local
+   so dark-mode tuning does not disturb the global palette. */
+.settings-model-provider-card {
+  --settings-model-provider-card-bg: var(--color-surface);
+  --settings-model-provider-header-bg: color-mix(
+    in srgb,
+    var(--color-selected) 44%,
+    var(--color-surface)
+  );
+  --settings-model-provider-header-idle-bg: var(--color-surface);
+  --settings-model-provider-body-bg: color-mix(
+    in srgb,
+    var(--color-elevated) 58%,
+    var(--color-app)
+  );
+  --settings-model-row-bg: color-mix(
+    in srgb,
+    var(--color-elevated) 64%,
+    var(--color-surface)
+  );
+  --settings-model-row-hover-bg: color-mix(
+    in srgb,
+    var(--color-elevated) 88%,
+    var(--color-selected)
+  );
+  --settings-model-row-editing-bg: color-mix(
+    in srgb,
+    var(--color-selected) 72%,
+    var(--color-elevated)
+  );
+  --settings-model-toolbelt-bg: color-mix(
+    in srgb,
+    var(--color-surface) 68%,
+    var(--color-app)
+  );
+  --settings-model-editor-bg: var(--color-elevated);
+  --settings-model-action-opacity: 0.45;
+}
+
+html[data-theme="dark"] .settings-model-provider-card {
+  --settings-model-provider-header-bg: color-mix(
+    in srgb,
+    var(--color-selected) 58%,
+    var(--color-surface)
+  );
+  --settings-model-provider-body-bg: color-mix(
+    in srgb,
+    var(--color-app) 58%,
+    var(--color-surface)
+  );
+  --settings-model-row-bg: color-mix(
+    in srgb,
+    var(--color-elevated) 70%,
+    var(--color-surface)
+  );
+  --settings-model-row-hover-bg: color-mix(
+    in srgb,
+    var(--color-elevated) 76%,
+    var(--color-hover)
+  );
+  --settings-model-row-editing-bg: color-mix(
+    in srgb,
+    var(--color-selected) 78%,
+    var(--color-elevated)
+  );
+  --settings-model-toolbelt-bg: color-mix(
+    in srgb,
+    var(--color-surface) 72%,
+    var(--color-app)
+  );
+  --settings-model-editor-bg: color-mix(
+    in srgb,
+    var(--color-elevated) 92%,
+    var(--color-brand)
+  );
+  --settings-model-action-opacity: 0.6;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .model-row-swap-up,
   .model-row-swap-down {

@@ -21,12 +21,16 @@ export function ConfiguredModelsPanel({
   models,
   saving,
   moveFeedback,
+  editingModelId,
   onMoveModel,
+  onActivateModel,
 }: {
   models: ManagedModelRecord[];
   saving: boolean;
   moveFeedback: ModelMoveFeedbackState | null;
+  editingModelId?: string;
   onMoveModel: (modelId: string, direction: ModelMoveDirection) => void;
+  onActivateModel: (model: ManagedModelRecord) => void;
 }) {
   const appCopy = useCopy();
   const copy = appCopy.settings.models;
@@ -55,9 +59,11 @@ export function ConfiguredModelsPanel({
               key={model.id}
               model={model}
               isDefault={index === 0}
+              isEditing={model.id === editingModelId}
               canMoveUp={!saving && index > 0}
               canMoveDown={!saving && index < models.length - 1}
               moveFeedback={moveFeedback}
+              onActivate={() => onActivateModel(model)}
               onMoveUp={() => onMoveModel(model.id, "up")}
               onMoveDown={() => onMoveModel(model.id, "down")}
             />
@@ -109,17 +115,21 @@ function ModelScopeHint({
 function ConfiguredModelRow({
   model,
   isDefault,
+  isEditing,
   canMoveUp,
   canMoveDown,
   moveFeedback,
+  onActivate,
   onMoveUp,
   onMoveDown,
 }: {
   model: ManagedModelRecord;
   isDefault: boolean;
+  isEditing: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   moveFeedback: ModelMoveFeedbackState | null;
+  onActivate: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
 }) {
@@ -133,10 +143,21 @@ function ConfiguredModelRow({
       className={cn(
         "group flex min-w-0 items-center gap-3 px-3 py-2 transition-colors duration-150",
         "hover:bg-elevated/55 focus-within:bg-elevated/55",
+        isEditing && "bg-selected/45 hover:bg-selected/55",
         swapClass,
       )}
     >
-      <ConfiguredModelRowContent model={model} isDefault={isDefault} />
+      <button
+        type="button"
+        aria-label={`${copy.editModel}: ${modelTitle}`}
+        onClick={onActivate}
+        className={cn(
+          "min-w-0 flex-1 rounded-sm text-left transition-colors",
+          "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
+        )}
+      >
+        <ConfiguredModelRowContent model={model} isDefault={isDefault} />
+      </button>
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
         <IconButton
           ariaLabel={copy.moveUp(modelTitle)}

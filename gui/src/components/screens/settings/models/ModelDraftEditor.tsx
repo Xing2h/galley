@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import type {
   ManagedModelAuthKind,
   ManagedModelProtocol,
@@ -18,6 +19,7 @@ import type { ModelDraftState, ProbeState } from "./types";
 
 export function ModelDraftEditor({
   draft,
+  title,
   protocol,
   authKind,
   saving,
@@ -30,6 +32,7 @@ export function ModelDraftEditor({
   onSave,
 }: {
   draft: ModelDraftState;
+  title?: string;
   protocol: ManagedModelProtocol;
   authKind: ManagedModelAuthKind;
   saving: boolean;
@@ -51,12 +54,22 @@ export function ModelDraftEditor({
   const canSave = !keyMissing && draft.model.trim() !== "" && !saving;
 
   return (
-    <div className="space-y-3 border-t border-line pt-3">
+    <div
+      className={cn(
+        "space-y-3 rounded-sm border border-line-strong/70 border-l-brand",
+        "border-l-[3px] bg-[var(--settings-model-editor-bg)] px-3 py-3",
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <div className="text-[12.5px] font-medium text-ink">
             {draft.id ? copy.editModel : copy.manualAddModel}
           </div>
+          {title && (
+            <div className="mt-0.5 truncate text-[12px] text-ink-muted">
+              {title}
+            </div>
+          )}
           {!draft.id && allModelCount === 0 && (
             <div className="mt-0.5 text-[12px] text-ink-muted">
               {copy.autoDefaultHint}
