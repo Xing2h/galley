@@ -3,7 +3,7 @@ index 92a3fef..d20d66e 100644
 --- a/ga.py
 +++ b/ga.py
 @@ -59,7 +59,8 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
- 
+
      try:
          process = subprocess.Popen(
 -            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

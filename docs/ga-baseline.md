@@ -15,40 +15,41 @@ audited against.
 
 ## Current Baseline
 
-Locked commit: `5f46b43816d6298f5e1d34c7076ea31f875b7810`
+Locked commit: `5d122e20ea7e9dfd7941998acb902fbac4a2bc9a`
 
 - Source: `lsdefine/GenericAgent` upstream `main`
-- Date audited: 2026-06-02
-- Previous baseline: `1c9f141`
-- Delta: 80 commits
-- Result: no external bridge protocol break; managed runtime needed a refreshed
-  state-root patch because upstream added new writes for long prompt temp files
-  and `/continue` round-count cache; managed patch stack replayed cleanly after
-  the state-root and asset-path patches were regenerated; the managed build
-  script now normalizes two incidental upstream trailing spaces so the
-  checked-in payload stays compatible with `git diff --check`
-- Devlog: [GA upstream upgrade 1c9f141 -> 5f46b438](./devlog/2026-06-02-ga-upstream-upgrade-1c9f141-to-5f46b438.md)
+- Date audited: 2026-06-04
+- Previous baseline: `5f46b43816d6298f5e1d34c7076ea31f875b7810`
+- Delta: 5 commits
+- Result: no external bridge protocol or dependency break; managed runtime
+  needed refreshed patch contexts for upstream `agentmain.py` / `ga.py`
+  changes, and previously direct managed payload fixes for Browser Control and
+  ChatGPT / Codex were converted into explicit replay patches. The managed build
+  script now applies the manifest-declared patch list and normalizes
+  patch-touched text files before and after replay.
+- Devlog: [GA upstream upgrade 5f46b438 -> 5d122e20](./devlog/2026-06-04-ga-upstream-upgrade-5f46b438-to-5d122e20.md)
 
 Relevant compatibility notes:
 
-- `agent_loop.py`: no diff in this range. `BaseHandler.dispatch` still uses
-  `plugins.hooks` and still has the
-  `(tool_name, args, response, index=0, tool_num=1)` generator protocol.
-- `agentmain.py`: task / reflect paths now force non-stream mode and long user
-  prompts are externalized to `temp/user_prompt_*.md`. Galley's bridge still
-  receives the same display-queue shape; managed mode routes the new temp write
-  through `GALLEY_GA_STATE_ROOT`.
-- `ga.py`: `_fold_earlier()` keeps fewer folded entries (`100` -> `70`).
-  `_turn_end_hooks` remains compatible with Galley's hook registration.
-- `llmcore.py`: retryable HTTP statuses now include Cloudflare `520`-`527`;
-  `BaseSession.ask()` always returns the generator path; NativeClaude headers,
-  beta flags, and fake-Claude-Code system injection changed; `MixinSession`
-  now broadcasts `stream` and `read_timeout`. Galley's bridge already consumes
-  the generator path and managed config continues to emit both `connect_timeout`
-  and `timeout`.
-- `frontends/continue_cmd.py`: `/continue` added bounded preview/search and a
-  round-count cache. Managed mode routes both the log scan root and cache file
-  under `GALLEY_GA_STATE_ROOT`.
+- `agent_loop.py`: no diff in this range. The dispatch / hooks surface Galley
+  audits for attach mode did not move.
+- `agentmain.py`: upstream added an EXIT sentinel for the run loop, per-instance
+  `no_print` injection, and a lower-collision model-response log id. Managed
+  mode preserves those changes while routing temp/log paths through
+  `GALLEY_GA_STATE_ROOT`.
+- `ga.py`: upstream added `safe_print` / `myprint` plumbing. Managed mode keeps
+  that while preserving Galley's non-interactive `code_run` stdin close and
+  Browser Control recovery diagnostics.
+- `llmcore.py`: no upstream diff in this range. Galley's ChatGPT / Codex
+  managed backend remains a managed patch because it is a Galley credential IPC
+  contract, not upstream GA behavior.
+- `frontends/continue_cmd.py`: upstream hardened malformed-log preview fallback.
+  Managed mode keeps `/continue` log scan and cache paths under
+  `GALLEY_GA_STATE_ROOT`.
+- `TMWebDriver.py`: upstream reduced duplicate disconnect logging. Galley's
+  extension status probe remains a managed patch for user-facing no-tabs
+  diagnostics.
+- `reflect/checklist_master.py`: upstream added a checklist poll hard cap.
 - `pyproject.toml`: no dependency diff in this range; bundled Python
   dependencies did not need changes.
 

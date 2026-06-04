@@ -3,8 +3,8 @@
   "upstream": {
     "source": "lsdefine/GenericAgent",
     "branch": "main",
-    "commit": "5f46b43816d6298f5e1d34c7076ea31f875b7810",
-    "auditedAt": "2026-06-02"
+    "commit": "5d122e20ea7e9dfd7941998acb902fbac4a2bc9a",
+    "auditedAt": "2026-06-04"
   },
   "patchStack": {
     "id": "galley-managed-ga-patches-v1",
@@ -13,7 +13,9 @@
       "0002-repair-windows-path-tool-json.patch",
       "0003-normalize-asset-path-joins.patch",
       "0004-managed-wechat-state-paths.patch",
-      "0005-code-run-noninteractive-stdin.patch"
+      "0005-code-run-noninteractive-stdin.patch",
+      "0006-managed-browser-control-recovery.patch",
+      "0007-managed-codex-backend.patch"
     ]
   },
   "stateSchemaVersion": 1

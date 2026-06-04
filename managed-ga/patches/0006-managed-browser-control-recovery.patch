@@ -1,0 +1,241 @@
+diff --git a/TMWebDriver.py b/TMWebDriver.py
+index b2c4f7d..5a98d6d 100644
+--- a/TMWebDriver.py
++++ b/TMWebDriver.py
+@@ -39,6 +39,8 @@ class TMWebDriver:
+         self.sessions, self.results, self.acks = {}, {}, {}
+         self.default_session_id = None
+         self.latest_session_id = None
++        self.extension_client = None
++        self.extension_connected_at = None
+         self.is_remote = socket.socket().connect_ex((host, port+1)) == 0
+         if not self.is_remote:
+             self.start_ws_server()
+@@ -85,6 +87,7 @@ class TMWebDriver:
+         @app.route('/link', method=['GET','POST'])
+         def link():
+             data = request.json
++            if data.get('cmd') == 'get_status': return json.dumps({'r': self.get_status()}, ensure_ascii=False)
+             if data.get('cmd') == 'get_all_sessions': return json.dumps({'r': self.get_all_sessions()}, ensure_ascii=False)
+             if data.get('cmd') == 'find_session':
+                 url_pattern = data.get('url_pattern', '')
+@@ -129,6 +132,7 @@ class TMWebDriver:
+                             'connected_at': time.time(), 'type': 'ws'}
+                         driver._register_client(session_id, self, session_info)
+                     elif data.get('type') in ['ext_ready', 'tabs_update']:
++                        driver._register_extension_client(self)
+                         tabs = data.get('tabs', [])
+                         current_tab_ids = {str(tab['id']) for tab in tabs}
+                         print(f"Received tabs update: {current_tab_ids}")
+@@ -175,8 +179,14 @@ class TMWebDriver:
+
+         self.latest_session_id = session_id
+         if self.default_session_id is None: self.default_session_id = session_id
++
++    def _register_extension_client(self, client: WebSocket) -> None:
++        self.extension_client = client
++        self.extension_connected_at = time.time()
+
+     def _unregister_client(self, client: WebSocket) -> None:
++        if self.extension_client == client:
++            self.extension_client = None
+         for session in self.sessions.values():
+             if session.ws_client == client: session.mark_disconnected()
+
+@@ -253,6 +263,17 @@ class TMWebDriver:
+         return [{'id': session.id, **session.info} for session in self.sessions.values()
+                 if session.is_active()]
+
++    def get_status(self):
++        if self.is_remote:
++            try: return self._remote_cmd({"cmd": "get_status"}).get('r', {})
++            except Exception: return {'extension_connected': False, 'tab_count': len(self.get_all_sessions())}
++        sessions = self.get_all_sessions()
++        return {
++            'extension_connected': self.extension_client is not None,
++            'extension_connected_at': self.extension_connected_at,
++            'tab_count': len(sessions)
++        }
++
+     def get_session_dict(self):
+         return {session['id']: session['url'] for session in self.get_all_sessions()}
+
+diff --git a/assets/tmwd_cdp_bridge/background.js b/assets/tmwd_cdp_bridge/background.js
+index 6dbd4b7..f4e5ae0 100644
+--- a/assets/tmwd_cdp_bridge/background.js
++++ b/assets/tmwd_cdp_bridge/background.js
+@@ -16,6 +16,13 @@ chrome.runtime.onInstalled.addListener(() => {
+ });
+
+ async function handleExtMessage(msg, sender) {
++  if (msg.cmd === 'wake') {
++    connectWS();
++    if (ws && ws.readyState === WebSocket.OPEN) {
++      setTimeout(() => { void sendTabsUpdate(); }, 0);
++    }
++    return { ok: true };
++  }
+   if (msg.cmd === 'cookies') return await handleCookies(msg, sender);
+   if (msg.cmd === 'cdp') return await handleCDP(msg, sender);
+   if (msg.cmd === 'batch') return await handleBatch(msg, sender);
+@@ -219,26 +226,33 @@ function buildCdpScript(code) {
+ // --- WebSocket Client for TMWebDriver ---
+ let ws = null;
+ const WS_URL = 'ws://127.0.0.1:18765';
++const KEEPALIVE_MS = 25000;
++let keepaliveTimer = null;
+
+ function scheduleProbe() {
+-  // Use chrome.alarms to survive MV3 service worker suspension
+-  chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: 0.083 }); // ~5s
++  // Chrome MV3 alarms have a coarse floor. Use them only as a disconnected
++  // fallback; active pages and the keepalive timer do the fast path.
++  chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: 0.5 });
+ }
+
+-function scheduleKeepalive() {
+-  // Keep SW alive while WS is connected (~25s, under 30s SW timeout)
+-  chrome.alarms.create('tmwd-ws-keepalive', { delayInMinutes: 0.4 }); // ~24s
++function clearKeepaliveTimer() {
++  if (!keepaliveTimer) return;
++  clearTimeout(keepaliveTimer);
++  keepaliveTimer = null;
+ }
+
+-async function isServerAlive() {
+-  try {
+-    const ctrl = new AbortController();
+-    setTimeout(() => ctrl.abort(), 2000);
+-    await fetch('http://127.0.0.1:18765', { signal: ctrl.signal });
+-    return true; // Got HTTP response → port is listening
+-  } catch (e) {
+-    return false; // Network error (connection refused) or timeout → server not alive
+-  }
++function scheduleKeepalive() {
++  clearKeepaliveTimer();
++  keepaliveTimer = setTimeout(() => {
++    keepaliveTimer = null;
++    if (ws && ws.readyState === WebSocket.OPEN) {
++      try { ws.send('{"type":"ping"}'); } catch (_) {}
++      scheduleKeepalive();
++    } else {
++      ws = null;
++      scheduleProbe();
++    }
++  }, KEEPALIVE_MS);
+ }
+
+ chrome.alarms.onAlarm.addListener(async (alarm) => {
+@@ -254,7 +254,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
+     return;
+   }
+   if (alarm.name === 'tmwd-ws-keepalive') {
+-    // Keepalive: ping to keep SW alive + detect dead connections
+     if (ws && ws.readyState === WebSocket.OPEN) {
+       try { ws.send('{"type":"ping"}'); } catch (_) {}
+       scheduleKeepalive();
+@@ -265,12 +264,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
+   }
+   if (alarm.name === 'tmwd-ws-probe') {
+     if (ws && ws.readyState <= 1) return; // Already connected/connecting
+-    if (await isServerAlive()) {
+-      console.log('[TMWD-WS] Server detected, connecting...');
+-      connectWS();
+-    } else {
+-      scheduleProbe(); // Server not up, keep probing
+-    }
++    connectWS();
+   }
+ });
+
+@@ -342,6 +336,7 @@ function connectWS() {
+   } catch (e) {
+     console.error('[TMWD-WS] Constructor error:', e);
+     ws = null;
++    clearKeepaliveTimer();
+     scheduleProbe();
+     return;
+   }
+@@ -386,6 +381,7 @@ function connectWS() {
+   ws.onclose = () => {
+     console.log('[TMWD-WS] Disconnected');
+     ws = null;
++    clearKeepaliveTimer();
+     scheduleProbe();
+   };
+   ws.onerror = (e) => {
+diff --git a/assets/tmwd_cdp_bridge/content.js b/assets/tmwd_cdp_bridge/content.js
+index b9c337b..72d642b 100644
+--- a/assets/tmwd_cdp_bridge/content.js
++++ b/assets/tmwd_cdp_bridge/content.js
+@@ -1,5 +1,15 @@
+ ;(function(){ if (/streamlit/i.test(document.title)) return;
+
++if (window.self === window.top && /^https?:/.test(location.href)) {
++  try {
++    chrome.runtime.sendMessage({
++      cmd: 'wake',
++      url: location.href,
++      title: document.title
++    }).catch(() => {});
++  } catch (_) {}
++}
++
+ // Remove meta CSP tags
+ document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(e => e.remove());
+
+diff --git a/ga.py b/ga.py
+index 61cf1ca..42c3af9 100644
+--- a/ga.py
++++ b/ga.py
+@@ -110,14 +110,31 @@ def ask_user(question, candidates=None):
+
+ import simphtml
+ driver = None
++NO_BROWSER_TABS_MSG = "浏览器插件已连接，但没有可用网页。请在同一个 Chrome / Edge 里打开一个网页，然后重试。"
++NO_BROWSER_CONNECTION_MSG = "浏览器当前没有连接。若已安装插件，请打开同一个 Chrome / Edge 的网页后重试；首次使用请先在 Galley 顶部的浏览器控制入口完成设置。"
++
++def browser_control_empty_msg():
++    try:
++        if driver is not None and driver.get_status().get('extension_connected'):
++            return NO_BROWSER_TABS_MSG
++    except Exception:
++        pass
++    return NO_BROWSER_CONNECTION_MSG
++
+ def first_init_driver():
+     global driver
+     from TMWebDriver import TMWebDriver
+     driver = TMWebDriver()
+-    for i in range(20):
++    deadline = time.time() + 12
++    sess = []
++    while time.time() < deadline:
+         time.sleep(1)
+         sess = driver.get_all_sessions()
+         if len(sess) > 0: break
++        try:
++            if driver.get_status().get('extension_connected'): break
++        except Exception:
++            pass
+     if len(sess) == 0: return
+     if len(sess) == 1:
+         #driver.newtab()
+@@ -133,7 +151,7 @@ def web_scan(tabs_only=False, switch_tab_id=None, text_only=False, maxlen=35000)
+     try:
+         if driver is None: first_init_driver()
+         if len(driver.get_all_sessions()) == 0:
+-            return {"status": "error", "msg": "没有可用的浏览器标签页，查L3记忆分析原因。"}
++            return {"status": "error", "msg": browser_control_empty_msg()}
+         tabs = []
+         for sess in driver.get_all_sessions():
+             sess.pop('connected_at', None)
+@@ -179,7 +197,7 @@ def web_execute_js(script, switch_tab_id=None, no_monitor=False):
+     global driver
+     try:
+         if driver is None: first_init_driver()
+-        if len(driver.get_all_sessions()) == 0: return {"status": "error", "msg": "没有可用的浏览器标签页，查L3记忆分析原因。"}
++        if len(driver.get_all_sessions()) == 0: return {"status": "error", "msg": browser_control_empty_msg()}
+         if switch_tab_id: driver.default_session_id = switch_tab_id
+         result = simphtml.execute_js_rich(script, driver, no_monitor=no_monitor)
+         return result

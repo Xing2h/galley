@@ -25,8 +25,9 @@ Supervisor automation on the same machine.
 
 `v0.2.7` is the current patch candidate. It targets the Windows issue #9
 runtime hotfix set: managed `code_run` now closes child-process stdin for
-non-interactive execution, and update-check failures now show a manual download
-fallback plus copyable phase / endpoint / detail diagnostics.
+non-interactive execution, update-check failures now show a manual download
+fallback plus copyable phase / endpoint / detail diagnostics, and the bundled
+GenericAgent baseline is refreshed to audited upstream `5d122e20`.
 
 `v0.2.6` remains the current published stable patch, GitHub Latest, and default
 update-channel target until the `v0.2.7` draft release is reviewed, published,
@@ -55,11 +56,11 @@ Post-promote follow-up:
 | Core architecture | Rust Galley Core is authoritative | [architecture demo](./architecture-demo.md) |
 | CLI / Agent API | Feature-complete for v0.2; schema frozen | [agent-api](./agent-api.md) |
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
-| Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; v0.2.7 candidate closes non-interactive `code_run` stdin; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
+| Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; v0.2.7 candidate closes non-interactive `code_run` stdin and refreshes the bundled GA baseline to audited upstream `5d122e20`; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | Backup mechanism exists; runtime identity and managed model config migrations are in dogfood | [B4 M8](./refactor/B4-M8-sub-plan.md) |
 | Release path | v0.2.7 is a local patch candidate; v0.2.6 remains GitHub Latest and the live update-channel target | [release / update SOP](./release-update-sop.md) |
 | Windows | v0.2.7 candidate targets issue #9 `code_run` stdin and update-check diagnostics; v0.2.6 Windows setup remains the published artifact | [Windows checklist](./windows-build-checklist.md) |
-| GA baseline | Locked to audited upstream commit | [GA baseline](./ga-baseline.md) |
+| GA baseline | Locked to audited upstream `5d122e20` | [GA baseline](./ga-baseline.md) |
 
 ## Compact Timeline
 

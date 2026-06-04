@@ -15,7 +15,11 @@ def asset_path(*parts):
     return os.path.join(script_dir, 'assets', *parts)
 
 
-def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000):
+def safe_print(*args, **kwargs):
+    try: print(*args, **kwargs)
+    except: pass
+
+def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop_signal=None, maxlen=10000, myprint=safe_print):
     """代码执行器
     python: 运行复杂的 .py 脚本（文件模式）
     powershell/bash: 运行单行指令（命令模式）
@@ -30,7 +34,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
         tmp_file.write(code)
         tmp_path = tmp_file.name
         tmp_file.close()
-        cmd = [sys.executable, "-X", "utf8", "-u", tmp_path]   
+        cmd = [sys.executable, "-X", "utf8", "-u", tmp_path]
     elif code_type in ["powershell", "bash", "sh", "shell", "ps1", "pwsh"]:
         if os.name == 'nt':
             _ps = "pwsh" if shutil.which("pwsh") else "powershell"
@@ -39,7 +43,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
         else: cmd = ["bash", "-c", code]
     else:
         return {"status": "error", "msg": f"不支持的类型: {code_type}"}
-    print("code run output:") 
+    myprint("code run output:")
     startupinfo = None
     if os.name == 'nt':
         startupinfo = subprocess.STARTUPINFO()
@@ -53,8 +57,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
                 try: line = line_bytes.decode('utf-8')
                 except UnicodeDecodeError: line = line_bytes.decode('gbk', errors='ignore')
                 logs.append(line)
-                try: print(line, end="") 
-                except: pass
+                myprint(line, end="")
         except: pass
 
     try:
@@ -72,7 +75,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
             istimeout = time.time() - start_t > timeout
             if istimeout or stop_signal:
                 process.kill()
-                print("[Debug] Process killed due to timeout or stop signal.")
+                myprint("[Debug] Process killed due to timeout or stop signal.")
                 if istimeout: full_stdout.append("\n[Timeout Error] 超时强制终止")
                 else: full_stdout.append("\n[Stopped] 用户强制终止")
                 break
@@ -84,7 +87,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
         stdout_str = "".join(full_stdout)
         status = "success" if exit_code == 0 else "error"
         status_icon = "✅" if exit_code == 0 else "❌"
-        if exit_code is None: status_icon = "⏳" 
+        if exit_code is None: status_icon = "⏳"
         output_snippet = smart_format(stdout_str, max_str_len=600, omit_str='\n\n[omitted long output]\n\n')
         output_snippet = re.sub(r'`{4,}', lambda m: m.group(0)[:3] + '\u200b' + m.group(0)[3:], output_snippet)
         yield f"[Status] {status_icon} Exit Code: {exit_code}\n[Stdout]\n{output_snippet}\n"
@@ -133,8 +136,8 @@ def first_init_driver():
             if driver.get_status().get('extension_connected'): break
         except Exception:
             pass
-    if len(sess) == 0: return 
-    if len(sess) == 1: 
+    if len(sess) == 0: return
+    if len(sess) == 1:
         #driver.newtab()
         time.sleep(3)
 
@@ -149,7 +152,7 @@ def web_scan(tabs_only=False, switch_tab_id=None, text_only=False, maxlen=35000)
         if len(driver.get_all_sessions()) == 0:
             return {"status": "error", "msg": browser_control_empty_msg()}
         tabs = []
-        for sess in driver.get_all_sessions(): 
+        for sess in driver.get_all_sessions():
             sess.pop('connected_at', None)
             sess.pop('type', None)
             sess['url'] = sess.get('url', '')[:50] + ("..." if len(sess.get('url', '')) > 50 else "")
@@ -162,13 +165,13 @@ def web_scan(tabs_only=False, switch_tab_id=None, text_only=False, maxlen=35000)
                 "active_tab": driver.default_session_id
             }
         }
-        if not tabs_only: 
+        if not tabs_only:
             importlib.reload(simphtml); result["content"] = simphtml.get_html(driver, cutlist=True, maxchars=maxlen, text_only=text_only)
             if text_only: result['content'] = smart_format(result['content'], max_str_len=maxlen//3, omit_str='\n\n[omitted long content]\n\n')
         return result
     except Exception as e:
         return {"status": "error", "msg": format_error(e)}
-    
+
 def format_error(e):
     exc_type, exc_value, exc_traceback = sys.exc_info()
     tb = traceback.extract_tb(exc_traceback)
@@ -212,7 +215,7 @@ def expand_file_refs(text, base_dir=None):
         if start < 1 or end > len(lines) or start > end: raise ValueError(f"行号越界: {path} 共{len(lines)}行, 请求{start}-{end}")
         return ''.join(lines[start-1:end])
     return re.sub(pattern, replacer, text)
-    
+
 def file_patch(path: str, old_content: str, new_content: str):
     """在文件中寻找唯一的 old_content 块并替换为 new_content"""
     path = str(Path(path).resolve())
@@ -281,7 +284,7 @@ def smart_format(data, max_str_len=100, omit_str=' ... '):
     return f"{data[:max_str_len//2]}{omit_str}{data[-max_str_len//2:]}"
 
 def consume_file(dr, file):
-    if dr and os.path.exists(os.path.join(dr, file)): 
+    if dr and os.path.exists(os.path.join(dr, file)):
         with open(os.path.join(dr, file), encoding='utf-8', errors='replace') as f: content = f.read()
         os.remove(os.path.join(dr, file))
         return content
@@ -295,10 +298,11 @@ class GenericAgentHandler(BaseHandler):
         self.history_info = last_history if last_history else []
         self.code_stop_signal = []
         self._done_hooks = []
+        self.print = safe_print
 
     def _get_abs_path(self, path):
         if not path: return ""
-        return os.path.abspath(os.path.join(self.cwd, path))   
+        return os.path.abspath(os.path.join(self.cwd, path))
 
     def _extract_code_block(self, response, code_type):
         code_type = {'python':'python|py', 'powershell':'powershell|ps1|pwsh', 'bash':'bash|sh|shell'}.get(code_type, re.escape(code_type))
@@ -328,17 +332,17 @@ class GenericAgentHandler(BaseHandler):
                     except SyntaxError: exec(code, ns); result = ns.get('_r', 'OK')
                 except Exception as e: result = f'Error: {e}'
             finally: os.chdir(old_cwd)
-        else: result = yield from code_run(code, code_type, timeout, cwd, code_cwd=code_cwd, stop_signal=self.code_stop_signal, maxlen=maxlen)
+        else: result = yield from code_run(code, code_type, timeout, cwd, code_cwd=code_cwd, stop_signal=self.code_stop_signal, maxlen=maxlen, myprint=self.print)
         next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
         return StepOutcome(result, next_prompt=next_prompt)
-    
+
     def do_ask_user(self, args, response):
         question = args.get("question", "请提供输入：")
         candidates = args.get("candidates", [])
         result = ask_user(question, candidates)
         yield f"Waiting for your answer ...\n"
         return StepOutcome(result, next_prompt="", should_exit=True)
-    
+
     def do_web_scan(self, args, response):
         '''获取当前页面内容和标签页列表。也可用于切换标签页。
         注意：HTML经过简化，边栏/浮动元素等可能被过滤。如需查看被过滤的内容请用execute_js。
@@ -353,7 +357,7 @@ class GenericAgentHandler(BaseHandler):
         if content: result = json.dumps(result, ensure_ascii=False, default=json_default) + f"\n```html\n{content}\n```"
         next_prompt = "\n"
         return StepOutcome(result, next_prompt=next_prompt)
-    
+
     def do_web_execute_js(self, args, response):
         '''web情况下的优先使用工具，执行任何js达成对浏览器的*完全*控制。支持将结果保存到文件供后续读取分析。'''
         script = args.get("script", "") or self._extract_code_block(response, "javascript")
@@ -374,14 +378,13 @@ class GenericAgentHandler(BaseHandler):
                 result["js_return"] += f"\n\n[已保存完整内容到 {abs_path}]"
             except: result['js_return'] += f"\n\n[保存失败，无法写入文件 {abs_path}]"
         show = smart_format(json.dumps(result, ensure_ascii=False, indent=2, default=json_default), max_str_len=300)
-        try: print("Web Execute JS Result:", show)
-        except: pass
+        self.print("Web Execute JS Result:", show)
         yield f"JS 执行结果:\n{show}\n"
         next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
         result = json.dumps(result, ensure_ascii=False, default=json_default)
         maxlen = 8000 // args.get('_tool_num', 1)
         return StepOutcome(smart_format(result, max_str_len=maxlen), next_prompt=next_prompt)
-    
+
     def do_file_patch(self, args, response):
         path = self._get_abs_path(args.get("path", ""))
         yield f"[Action] Patching file: {path}\n"
@@ -395,7 +398,7 @@ class GenericAgentHandler(BaseHandler):
         yield f"\n{str(result)}\n"
         next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
         return StepOutcome(result, next_prompt=next_prompt)
-    
+
     def do_file_write(self, args, response):
         '''用于对整个文件的大量处理，精细修改要用file_patch。
         需要将要写入的内容放在<file_content>标签内，或者放在代码块中'''
@@ -410,7 +413,7 @@ class GenericAgentHandler(BaseHandler):
             blocks = re.findall(r"```[^\n]*\n([\s\S]*?)```", text)
             if blocks: return blocks[-1].strip()
             return None
-        
+
         content = args.get('content') or extract_robust_content(response.content)
         if not content:
             yield f"[Status] ❌ 失败: 未在回复中找到<file_content>代码块内容\n"
@@ -428,7 +431,7 @@ class GenericAgentHandler(BaseHandler):
         except Exception as e:
             yield f"[Status] ❌ 写入异常: {str(e)}\n"
             return StepOutcome({"status": "error", "msg": str(e)}, next_prompt="\n")
-        
+
     def do_file_read(self, args, response):
         '''读取文件内容。从第start行开始读取。如有keyword则返回第一个keyword(忽略大小写)周边内容'''
         path = self._get_abs_path(args.get("path", ""))
@@ -439,26 +442,27 @@ class GenericAgentHandler(BaseHandler):
         show_linenos = args.get("show_linenos", True)
         result = file_read(path, start=start, keyword=keyword,
                            count=count, show_linenos=show_linenos)
-        if show_linenos and not result.startswith("Error:"): result = '由于设置了show_linenos，以下返回信息为：(行号|)内容 。\n' + result 
+        if show_linenos and not result.startswith("Error:"): result = '由于设置了show_linenos，以下返回信息为：(行号|)内容 。\n' + result
         if ' ... [TRUNCATED]' in result: result += '\n\n（某些行被截断，如需完整内容可改用 code_run 读取）'
         maxlen = 15000 // args.get('_tool_num', 1)
         result = smart_format(result, max_str_len=maxlen, omit_str='\n\n[omitted long content]\n\n')
         next_prompt = self._get_anchor_prompt(skip=args.get('_index', 0) > 0)
         log_memory_access(path)
-        if 'memory' in path or 'sop' in path: 
+        if 'memory' in path or 'sop' in path:
             next_prompt += "\n[SYSTEM TIPS] 正在读取记忆或SOP文件，若决定按sop执行请提取sop中的关键点（特别是靠后的）update working memory."
         return StepOutcome(result, next_prompt=next_prompt)
-    
+
     def _in_plan_mode(self): return self.working.get('in_plan_mode')
     def _exit_plan_mode(self): self.working.pop('in_plan_mode', None)
-    def enter_plan_mode(self, plan_path): 
+    def enter_plan_mode(self, plan_path):
         self.working['in_plan_mode'] = plan_path; self.max_turns = 100
-        print(f"[Info] Entered plan mode with plan file: {plan_path}"); return plan_path
+        self.print(f"[Info] Entered plan mode with plan file: {plan_path}")
+        return plan_path
     def _check_plan_completion(self):
         if not os.path.isfile(p:=self._in_plan_mode() or ''): return None
         try: return len(re.findall(r'\[ \]', open(p, encoding='utf-8', errors='replace').read()))
         except: return None
-    
+
     def do_update_working_checkpoint(self, args, response):
         '''为整个任务设定后续需要临时记忆的重点。'''
         key_info = args.get("key_info", "")
@@ -489,12 +493,12 @@ class GenericAgentHandler(BaseHandler):
             return self._retry_or_exit("[System] Incomplete response. Regenerate and tooluse.")
         if 'max_tokens !!!]' in content[-100:]:
             return self._retry_or_exit("[System] max_tokens limit reached. Use multi small steps to do it.")
-        
+
         if self._in_plan_mode() and any(kw in content for kw in ['任务完成', '全部完成', '已完成所有', '🏁']):
             if 'VERDICT' not in content and '[VERIFY]' not in content and '验证subagent' not in content:
                 yield "[Warn] Plan模式完成声明拦截。\n"
                 return StepOutcome({}, next_prompt="⛔ [验证拦截] 检测到你在plan模式下声称完成，但未执行[VERIFY]验证步骤。请先按plan_sop §四启动验证subagent，获得VERDICT后才能声称完成。")
-            
+
         # 2. 检测"包含较大代码块但未调用工具"的情况
         # 关键特征：恰好1个大代码块 + 代码块直接结尾（后面只有空白）
         code_block_pattern = r"```[a-zA-Z0-9_]*\n[\s\S]{50,}?```"
@@ -517,15 +521,15 @@ class GenericAgentHandler(BaseHandler):
                         "并明确是否还需要额外的实际操作。"
                     )
                     return StepOutcome({}, next_prompt=next_prompt)
-                
+
         if self._in_plan_mode():
             remaining = self._check_plan_completion()
             if remaining == 0:
                 self._exit_plan_mode(); yield "[Info] Plan完成：plan.md中0个[ ]残留，退出plan模式。\n"
-        
+
         yield "[Info] Final response to user.\n"
         return StepOutcome(response, next_prompt=None)
-    
+
     def do_start_long_term_update(self, args, response):
         '''Agent觉得当前任务完成后有重要信息需要记忆时调用此工具。'''
         prompt = '''### [总结提炼经验] 既然你觉得当前任务有重要信息需要记忆，请提取最近一次任务中【事实验证成功且长期有效】的环境事实、用户偏好、重要步骤，更新记忆。
@@ -566,11 +570,9 @@ class GenericAgentHandler(BaseHandler):
         prompt += f"\nCurrent turn: {self.current_turn}\n"
         if self.working.get('key_info'): prompt += f"\n<key_info>{self.working.get('key_info')}</key_info>"
         if self.working.get('related_sop'): prompt += f"\n有不清晰的地方请再次读取{self.working.get('related_sop')}"
-        if getattr(self.parent, 'verbose', False):
-            try: print(prompt)
-            except: pass
+        if getattr(self.parent, 'verbose', False): self.print(prompt)
         return prompt
-    
+
     def turn_end_callback(self, response, tool_calls, tool_results, turn, next_prompt, exit_reason):
         _c = re.sub(r'```.*?```|<thinking>.*?</thinking>', '', response.content, flags=re.DOTALL)
         rsumm = re.search(r"<summary>(.*?)</summary>", _c, re.DOTALL)

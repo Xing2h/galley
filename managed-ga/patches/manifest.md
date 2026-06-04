@@ -2,8 +2,8 @@
 
 Patch stack id: `galley-managed-ga-patches-v1`
 
-Last replay verified: `2026-06-02` against upstream
-`5f46b43816d6298f5e1d34c7076ea31f875b7810`.
+Last replay verified: `2026-06-04` against upstream
+`5d122e20ea7e9dfd7941998acb902fbac4a2bc9a`.
 
 Current patches:
 
@@ -14,6 +14,8 @@ Current patches:
 | `0003-normalize-asset-path-joins.patch` | `agentmain.py`, `ga.py` | Join managed GA bundled asset paths with platform path segments so Windows verbatim paths never mix `\\?\` with `/`. | Low: only wraps existing `assets` reads behind an `asset_path` helper. | Remove when upstream stops using slash-containing asset path strings under `script_dir`. |
 | `0004-managed-wechat-state-paths.patch` | `frontends/wechatapp.py` | Let Galley's managed IM launcher keep WeChat token and temp files under Galley managed state instead of `~/.wxbot` / bundled code paths. | Low: two path constants near module startup. | Remove when upstream WeChat frontend supports explicit token/temp paths. |
 | `0005-code-run-noninteractive-stdin.patch` | `ga.py` | Keep managed `code_run` non-interactive by closing child-process stdin, avoiding inherited runner IPC stdin handles that can block Python subprocesses on Windows. | Low: touches only `code_run` subprocess creation. | Remove when GenericAgent upstream closes stdin for non-interactive tool execution. |
+| `0006-managed-browser-control-recovery.patch` | `TMWebDriver.py`, `ga.py`, `assets/tmwd_cdp_bridge/background.js`, `assets/tmwd_cdp_bridge/content.js` | Preserve Galley's managed Browser Control recovery semantics: extension-connected/no-tabs diagnostics, page wake-up messages, and MV3 service-worker keepalive behavior. | Medium: upstream frequently touches the browser bridge service-worker loop. | Remove when upstream exposes equivalent extension status and recovery hints. |
+| `0007-managed-codex-backend.patch` | `llmcore.py` | Preserve Galley's ChatGPT / Codex managed model backend, including credential IPC refresh, account header propagation, Codex-specific Responses payload shape, and forced streaming. | Medium: upstream OpenAI request assembly changes can alter nearby contexts. | Remove when upstream supports Galley's Codex credential and request contract directly. |
 
 Rules:
 

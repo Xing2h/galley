@@ -15,6 +15,16 @@ with open(sys.argv[1], encoding="utf-8") as f:
     print(json.load(f)["upstream"]["commit"])
 PY
 )"
+MANAGED_PATCHES=()
+while IFS= read -r patch_name; do
+  MANAGED_PATCHES+=("$patch_name")
+done < <(python3 - "$ROOT/managed-ga/manifest.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    for patch in json.load(f)["patchStack"]["patches"]:
+        print(patch)
+PY
+)
 
 if [[ ! -d "$SOURCE/.git" ]]; then
   echo "Source is not a git checkout: $SOURCE" >&2
@@ -59,21 +69,43 @@ rsync -a \
   --exclude 'model_responses' \
   "$SOURCE"/ "$DEST"/
 
+NORMALIZE_FILES=(
+  "$DEST/TMWebDriver.py"
+  "$DEST/agentmain.py"
+  "$DEST/ga.py"
+  "$DEST/llmcore.py"
+  "$DEST/frontends/continue_cmd.py"
+  "$DEST/assets/tmwd_cdp_bridge/background.js"
+  "$DEST/assets/tmwd_cdp_bridge/content.js"
+)
+
+# Normalize incidental upstream trailing spaces before patch replay so patch
+# contexts do not need to encode whitespace-only upstream artifacts.
+for file in "${NORMALIZE_FILES[@]}"; do
+  [[ -f "$file" ]] && perl -0pi -e 's/[ \t]+$//mg; s/\n*\z/\n/' "$file"
+done
+
 rm -rf "$MEMORY_SEED_DEST"
 mkdir -p "$STATE_SEED_ROOT"
 git -C "$SOURCE" archive "$EXPECTED_COMMIT" memory | tar -x -C "$STATE_SEED_ROOT"
 find "$MEMORY_SEED_DEST" -type f -print0 | xargs -0 perl -0pi -e 's/[ \t]+$//mg; s/\n+\z/\n/'
 
-shopt -s nullglob
-for patch in "$ROOT"/managed-ga/patches/*.patch; do
+for patch_name in "${MANAGED_PATCHES[@]}"; do
+  patch="$ROOT/managed-ga/patches/$patch_name"
+  if [[ ! -f "$patch" ]]; then
+    echo "Managed GA patch listed in manifest is missing: $patch_name" >&2
+    exit 2
+  fi
   (cd "$ROOT" && git apply --whitespace=nowarn --directory=managed-ga/code "$patch")
-  echo "Applied managed GA patch: $(basename "$patch")"
+  echo "Applied managed GA patch: $patch_name"
 done
 
 # Upstream sometimes ships incidental trailing spaces. Keep the generated
 # checked-in payload compatible with Galley's `git diff --check` gate without
 # baking whitespace-only removals into patch files that would fail that same gate.
-perl -0pi -e 's/[ \t]+$//mg' "$DEST/agentmain.py" "$DEST/llmcore.py"
+for file in "${NORMALIZE_FILES[@]}"; do
+  [[ -f "$file" ]] && perl -0pi -e 's/[ \t]+$//mg; s/\n*\z/\n/' "$file"
+done
 
 echo "Managed GA code copied to $DEST"
 echo "Managed GA memory seed copied to $MEMORY_SEED_DEST"

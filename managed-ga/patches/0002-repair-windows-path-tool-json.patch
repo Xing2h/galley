@@ -5,7 +5,7 @@ index 60cebca..ee39636 100644
 @@ -892,16 +892,68 @@ def _write_llm_log(label, content, log_path=None):
      with open(log_path, 'a', encoding='utf-8', errors='replace') as f:
          f.write(f"=== {label} === {ts}\n{content}\n\n")
- 
+
 +_WINDOWS_PATH_KEYS = {'path', 'file_path', 'filepath'}
 +_WINDOWS_PATH_FIELD_RE = re.compile(
 +    r'("(?P<key>path|file_path|filepath)"\s*:\s*)"{1,2}'
@@ -72,6 +72,6 @@ index 60cebca..ee39636 100644
 +    return _normalize_windows_path_values(
 +        json.loads(_repair_windows_path_fields_in_jsonish(json_str))
 +    )
- 
+
  class MixinSession:
      """Multi-session fallback with spring-back to primary."""
