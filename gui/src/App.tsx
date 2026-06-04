@@ -25,6 +25,12 @@ import {
 import { CopyProvider, copyForLanguage } from "@/lib/i18n";
 import { useImSupervisorStatus } from "@/hooks/useImSupervisorStatus";
 import { pushCloseHintCopy } from "@/lib/close-hint";
+import {
+  getGoalStatus,
+  listActiveGoals,
+  startDesktopGoal,
+  stopGoal,
+} from "@/lib/goals";
 import { restartEnabledImSupervisors } from "@/lib/im-supervisor";
 import { ensureHistoryReplayComplete } from "@/lib/ipc-handlers";
 import { resolveLanguagePreference } from "@/lib/language";
@@ -55,6 +61,7 @@ import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
 import { hydrateApp } from "@/lib/hydrate";
 import { makeAppError } from "@/types/app-error";
+import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
 
 /**
  * V0.1 Stage 2 #8 — App entry.
@@ -104,6 +111,7 @@ function App() {
   const togglePinSession = useSessionsStore((s) => s.togglePinSession);
   const renameSession = useSessionsStore((s) => s.renameSession);
   const projects = useSessionsStore((s) => s.projects);
+  const [activeGoals, setActiveGoals] = useState<GoalBrief[]>([]);
   const activeProjectFilter = useSessionsStore((s) => s.activeProjectFilter);
   const createProject = useSessionsStore((s) => s.createProject);
   const setActiveProjectFilter = useSessionsStore(
@@ -418,6 +426,49 @@ function App() {
   // Onboarding routing OR warmup.
   useEffect(() => {
     void hydrateApp();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const hydrateGoalProjects = async (goals: GoalBrief[]) => {
+      const knownProjectIds = new Set(
+        useSessionsStore.getState().projects.map((project) => project.id),
+      );
+      await Promise.all(
+        goals
+          .filter((goal) => !knownProjectIds.has(goal.projectId))
+          .map(async (goal) => {
+            try {
+              const snapshot = await getGoalStatus(goal.id);
+              if (snapshot.project) {
+                useSessionsStore
+                  .getState()
+                  .applyExternalProjectCreated(snapshot.project);
+              }
+            } catch (e) {
+              console.debug("[goals] hydrate project failed.", e);
+            }
+          }),
+      );
+    };
+    const refreshGoals = async () => {
+      try {
+        const goals = await listActiveGoals();
+        if (cancelled) return;
+        setActiveGoals(goals);
+        void hydrateGoalProjects(goals);
+      } catch (e) {
+        console.debug("[goals] list_active_goals failed.", e);
+      }
+    };
+    void refreshGoals();
+    const timer = window.setInterval(() => {
+      void refreshGoals();
+    }, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => subscribeSystemTheme(setSystemTheme), []);
@@ -777,9 +828,97 @@ function App() {
   const activeProject = activeProjectFilter
     ? projects.find((p) => p.id === activeProjectFilter)
     : undefined;
+  const activeGoalProjectIds = useMemo(
+    () => new Set(activeGoals.map((goal) => goal.projectId)),
+    [activeGoals],
+  );
+  const activeSessionGoal = activeSession?.projectId
+    ? activeGoals.find((goal) => goal.projectId === activeSession.projectId)
+    : undefined;
   const activeSessionBusy =
     screen === "main" &&
     (isRunning || pendingApprovals.length > 0 || pendingAskUser !== null);
+  const startGoalFromComposer = async (
+    objective: string,
+    config: GoalLaunchConfig,
+  ) => {
+    if (requiresManagedModelConfig) {
+      openModelsForMissingConfig();
+      return;
+    }
+    const projectId = activeSession?.projectId ?? activeProjectFilter;
+    const sessionIdToAttach =
+      activeSessionId && activeSession && !activeSession.projectId
+        ? activeSessionId
+        : undefined;
+    try {
+      const goal = await startDesktopGoal({
+        objective,
+        projectId: projectId ?? undefined,
+        runtimeKind: activeRuntimeKind,
+        workerLimit: config.workerLimit,
+        budgetSeconds: config.budgetSeconds,
+      });
+      setActiveGoals((goals) => {
+        const withoutCurrent = goals.filter(
+          (candidate) => candidate.id !== goal.id,
+        );
+        return [...withoutCurrent, goal].sort(
+          (a, b) => Date.parse(a.deadlineAt) - Date.parse(b.deadlineAt),
+        );
+      });
+      if (sessionIdToAttach) {
+        void assignSessionToProject(sessionIdToAttach, goal.projectId);
+      }
+      void getGoalStatus(goal.id)
+        .then((snapshot) => {
+          if (snapshot.project) {
+            useSessionsStore
+              .getState()
+              .applyExternalProjectCreated(snapshot.project);
+          }
+        })
+        .catch((e) => {
+          console.debug("[goals] hydrate started goal project failed.", e);
+        });
+      pushToast(
+        makeAppError({
+          category: "business",
+          severity: "info",
+          title: copy.toasts.goalStarted,
+          message: copy.toasts.goalStartedMessage(
+            goal.workerLimit,
+            Math.round(goal.budgetSeconds / 60),
+          ),
+          hint: null,
+          retryable: false,
+          context: "start_desktop_goal",
+          traceback: null,
+          action: {
+            kind: "view_project",
+            label: copy.toasts.viewProject,
+            projectId: goal.projectId,
+          },
+          autoDismissMs: 4200,
+        }),
+      );
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      pushToast(
+        makeAppError({
+          category: "business",
+          severity: "error",
+          title: copy.toasts.goalStartFailed,
+          message,
+          hint: null,
+          retryable: true,
+          context: "start_desktop_goal",
+          traceback: null,
+        }),
+      );
+      throw e;
+    }
+  };
 
   // Archived dialog open state — local UI state, no need to live in
   // the global store. Persisting across reloads would be confusing
@@ -812,6 +951,38 @@ function App() {
     setExpandedProjectIds((ids) =>
       ids.includes(projectId) ? ids : [...ids, projectId],
     );
+  };
+  const openGoalProject = (projectId: string) => {
+    openProjectInSidebar(projectId);
+  };
+  const openGoalLatestSession = async (goalId: string) => {
+    try {
+      const snapshot = await getGoalStatus(goalId);
+      const latestSession = [...snapshot.sessions].sort(
+        (a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt),
+      )[0];
+      if (latestSession) {
+        setActiveProjectFilter(undefined);
+        void activateSession(latestSession.id);
+        setScreen("main");
+        return;
+      }
+      openGoalProject(snapshot.goal.projectId);
+    } catch (e) {
+      console.warn("[goals] open latest session failed.", e);
+      const goal = activeGoals.find((candidate) => candidate.id === goalId);
+      if (goal) openGoalProject(goal.projectId);
+    }
+  };
+  const stopGoalFromTopbar = async (goalId: string) => {
+    try {
+      const next = await stopGoal(goalId);
+      setActiveGoals((goals) =>
+        goals.map((goal) => (goal.id === goalId ? next : goal)),
+      );
+    } catch (e) {
+      console.warn("[goals] stop failed.", e);
+    }
   };
   const toggleProjectExpanded = (projectId: string) => {
     if (!projectViewOpen) {
@@ -1058,6 +1229,17 @@ function App() {
                 ? () => openSettings("im")
                 : undefined
             }
+            activeGoals={activeGoals}
+            getGoalProjectName={(projectId) =>
+              projects.find((project) => project.id === projectId)?.name
+            }
+            onOpenGoalProject={openGoalProject}
+            onOpenGoalLatestSession={(goalId) => {
+              void openGoalLatestSession(goalId);
+            }}
+            onStopGoal={(goalId) => {
+              void stopGoalFromTopbar(goalId);
+            }}
             conversationWidth={conversationWidth}
             onToggleConversationWidth={() => {
               void setConversationWidth(
@@ -1162,6 +1344,7 @@ function App() {
             activeProjectFilter={activeProjectFilter}
             projectViewOpen={projectViewOpen}
             expandedProjectIds={expandedProjectIds}
+            activeGoalProjectIds={activeGoalProjectIds}
             projectReviewNowMs={projectReviewNowMs || undefined}
             onNewProject={() => setCreateProjectOpen(true)}
             onToggleProjectView={toggleProjectView}
@@ -1203,6 +1386,7 @@ function App() {
                     selectLLMForNewSession(idx);
                   }}
                   onOpenLLMSwitcher={openLLMSwitcherFallback}
+                  onGoalSubmit={startGoalFromComposer}
                   onSubmit={(t) => {
                     if (requiresManagedModelConfig) {
                       openModelsForMissingConfig();
@@ -1257,6 +1441,8 @@ function App() {
                     }
                   }}
                   onOpenLLMSwitcher={openLLMSwitcherFallback}
+                  goal={activeSessionGoal}
+                  onGoalSubmit={startGoalFromComposer}
                   pendingApprovals={pendingApprovals}
                   approvalDecisions={approvalDecisions}
                   onSubmit={(t) => {

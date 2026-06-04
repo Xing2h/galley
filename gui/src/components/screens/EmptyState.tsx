@@ -9,10 +9,15 @@ import {
 import { Epigraph } from "@/components/screens/Epigraph";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import type { GoalLaunchConfig } from "@/types/goal";
 
 export interface EmptyStateProps {
   llmDisplayName: string;
   onSubmit?: (text: string) => void;
+  onGoalSubmit?: (
+    text: string,
+    config: GoalLaunchConfig,
+  ) => void | Promise<void>;
   /** LLM list for the Composer's inline picker. Drives the popover
    * under the model pill — see Composer's LLMPill. */
   llms?: ComposerLLMOption[];
@@ -56,6 +61,7 @@ export interface EmptyStateProps {
 export function EmptyState({
   llmDisplayName,
   onSubmit,
+  onGoalSubmit,
   llms,
   onSelectLLM,
   llmConfigHint,
@@ -91,6 +97,7 @@ export function EmptyState({
           llmDisplayName={llmDisplayName}
           placeholder={composerPlaceholder}
           onSubmit={onSubmit}
+          onGoalSubmit={onGoalSubmit}
           autoFocus
           llms={llms}
           onSelectLLM={onSelectLLM}

@@ -32,6 +32,8 @@ const MIG_010: &str = include_str!("../../core/migrations/010_managed_model_prov
 const MIG_011: &str = include_str!("../../core/migrations/011_managed_model_sort_order.sql");
 const MIG_012: &str = include_str!("../../core/migrations/012_managed_model_local_secrets.sql");
 const MIG_013: &str = include_str!("../../core/migrations/013_session_llm_key.sql");
+const MIG_014: &str = include_str!("../../core/migrations/014_managed_model_auth_kind.sql");
+const MIG_015: &str = include_str!("../../core/migrations/015_goal_v1.sql");
 
 /// Build a temp .db file with all migrations applied + (optionally)
 /// seed rows. Returns the path; caller stashes it for the spawned
@@ -43,8 +45,8 @@ async fn seeded_db_at(path: &std::path::Path) -> SqlitePool {
         .create_if_missing(true);
     let pool = SqlitePool::connect_with(opts).await.expect("open db");
     for sql in [
-        MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008,
-        MIG_009, MIG_010, MIG_011, MIG_012, MIG_013,
+        MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
+        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -146,10 +148,7 @@ fn search_session_ids(stdout: &str) -> Vec<String> {
 }
 
 fn assert_search_session_ids(stdout: &str, expected: &[&str]) {
-    let expected = expected
-        .iter()
-        .map(|id| id.to_string())
-        .collect::<Vec<_>>();
+    let expected = expected.iter().map(|id| id.to_string()).collect::<Vec<_>>();
     assert_eq!(search_session_ids(stdout), expected);
 }
 
@@ -306,13 +305,7 @@ async fn sessions_search_defaults_to_current_runtime() {
 
     let (stdout, code) = run_galley(
         &db,
-        &[
-            "sessions",
-            "search",
-            "sharedtoken",
-            "--runtime",
-            "external",
-        ],
+        &["sessions", "search", "sharedtoken", "--runtime", "external"],
     );
     assert_eq!(code, Some(0), "stdout: {stdout}");
     assert_search_session_ids(&stdout, &["external"]);

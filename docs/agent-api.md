@@ -975,6 +975,111 @@ Exit codes: `0` success / `2 invalid_args` (unknown LLM name; empty
 cache) / `3 not_found` (session id) / `4 db_unavailable` /
 `5 runner_error` (live bridge present but stdin write failed).
 
+### 5.19 · `galley goal ...`
+
+**Goal V1** is Galley's headless autonomous Hive surface. Galley Core owns the
+Goal state, Project binding, task board, and event stream. Managed and external
+GenericAgent runtimes participate only as ordinary Galley child sessions; this
+surface does **not** call GA native `/hive`, start GA BBS, or write external GA
+`memory/`, SOP, config, or `temp/goal_state.json`.
+
+Goal commands are additive inside `schemaVersion: 1`. V1 intentionally has no
+full task-board UI; the CLI and the TopBar Goal indicator are the control
+surface.
+
+#### `galley goal propose "<objective>" [--project=<id>] [--budget-minutes=30] [--workers=3] [--runtime=current|managed|external] [--write-mode=autonomous|read-only] [--expires-minutes=10] [--supervisor=<x>] [--reason=<y>]`
+
+Creates a pending conversational-confirmation proposal. It does **not** start
+work.
+
+```bash
+$ galley goal propose "review and fix flaky release checks" \
+  --supervisor=ga-wechat-bot \
+  --reason="user asked to start a long Goal"
+{"id":"gprop_...","objective":"review and fix flaky release checks",
+ "budgetSeconds":1800,"workerLimit":3,"runtimeKind":"managed",
+ "writeMode":"autonomous","status":"awaiting_confirmation",
+ "internalConfirmToken":"gtok_...","confirmationPhrase":"确认启动 Goal",
+ "expiresAt":"2026-06-04T12:34:56Z",...}
+```
+
+The `internalConfirmToken` is for the trusted local Supervisor only. Do not show
+it to the user. The user-facing confirmation phrase is always
+`确认启动 Goal`.
+
+#### `galley goal run --proposal <proposal-id> --confirm-token <internal-token>` / `galley goal run <goal-id> --resume`
+
+Starts or resumes the blocking Goal controller. Starting from a proposal
+validates the proposal status, internal token, and expiry. If the proposal did
+not specify a Project, Core creates one and binds the Goal to it.
+
+The controller starts `workerLimit` child sessions in the Goal Project, injects
+the Goal worker protocol, follows the Project with `project follow --until-idle
+--final-show`, then summarizes the task board. If incomplete tasks remain and
+the Goal deadline has not passed, it starts another worker wave. Otherwise it
+writes a synthesis event and ends as `completed`, `stopped`, or `failed`.
+
+`goal run` emits NDJSON frames:
+
+```json
+{"schemaVersion":1,"stream":"goal","phase":"started","goal":{...}}
+{"schemaVersion":1,"stream":"goal","phase":"worker_started","sessionId":"sess_...","goal":{...}}
+{"schemaVersion":1,"stream":"goal","phase":"finished","goal":{...}}
+```
+
+Known `phase` values: `started`, `worker_started`, `continuing`, `stopped`,
+`finished`.
+
+#### `galley goal status <goal-id>`
+
+Returns a snapshot containing the Goal, its Project if still present, current
+task board, recent events, and non-archived Project sessions:
+
+```json
+{"goal":{...},"project":{...},"tasks":[...],"events":[...],"sessions":[...]}
+```
+
+#### `galley goal stop <goal-id> [--supervisor=<x>] [--reason=<y>]`
+
+Requests a graceful stop. Core sets `stopRequested=true` and moves a running
+Goal into `wrapping`; the controller observes that flag after the current
+Project wave and finalizes as `stopped`.
+
+#### `galley goal task create|claim|update|complete ...`
+
+Task-board commands are the worker coordination primitive. `claim` is atomic in
+Core: it succeeds only when the task is still `open` and has no owner.
+
+```bash
+galley goal task create <goal-id> "Audit release docs" \
+  --description="Check update-channel docs" \
+  --owner-session=sess_a \
+  --scope="docs/"
+
+galley goal task claim <task-id> \
+  --owner-session=sess_b \
+  --scope="cli/tests/"
+
+galley goal task update <task-id> --status=running
+galley goal task complete <task-id> --result-summary="No blocker found."
+```
+
+Task statuses: `open`, `claimed`, `running`, `completed`, `blocked`,
+`cancelled`.
+
+#### `galley goal event post <goal-id> --event-type=<type> "<body>" [--task=<task-id>] [--author-session=<session-id>]`
+
+Appends to the Goal audit stream. Event types: `plan`, `claim`, `progress`,
+`result`, `conflict`, `synthesis`, `system`.
+
+Goal task/event commands use `ownerSessionId` / `authorSessionId` as their
+worker authorship. They do not write the ordinary `Origin` record used by
+human/Supervisor session and project commands.
+
+Exit codes: `0` success / `2 invalid_args` (empty objective/title/body, token
+mismatch, expired proposal, unclaimable task) / `3 not_found` / `4
+db_unavailable` / `5 runner_error` (controller child-session dispatch failed).
+
 ## 6 · Error envelope
 
 ### CLI error envelope
@@ -1025,9 +1130,11 @@ rename existing ones.
 
 ### `Origin`
 
-Records the source of a write. Required on every write command;
-optional on read responses (older rows from before migration 006
-omit it).
+Records the source of ordinary human/Supervisor writes. Goal task/event writes
+are the current protocol exception: they use `ownerSessionId` /
+`authorSessionId` because the actor is a child session on a Goal board, not a
+human-facing command origin. Older rows from before migration 006 may also omit
+Origin on read responses.
 
 | Field         | Type            | Notes                                                                  |
 | ------------- | --------------- | ---------------------------------------------------------------------- |
@@ -1134,6 +1241,16 @@ Trait signatures (Rust types):
 | `create_project` | `CreateProjectInput`, `Origin` | `ProjectBrief` |
 | `update_project` | `ProjectId`, `ProjectPatch`, `Origin` | `ProjectBrief` |
 | `delete_project` | `ProjectId`, `Origin` | `()` |
+| `create_goal_proposal` | `CreateGoalProposalInput`, `Origin` | `GoalProposalBrief` |
+| `start_goal_from_proposal` | `GoalProposalId`, `internalConfirmToken`, `Origin` | `GoalBrief` |
+| `goal_status` | `GoalId` | `GoalStatusSnapshot` |
+| `list_active_goals` | — | `Vec<GoalBrief>` |
+| `request_goal_stop` | `GoalId`, `Origin` | `GoalBrief` |
+| `update_goal_state` | `GoalId`, `GoalStatus`, `latestSummary?` | `GoalBrief` |
+| `create_goal_task` | `CreateGoalTaskInput` | `GoalTaskBrief` |
+| `claim_goal_task` | `ClaimGoalTaskInput` | `GoalTaskBrief` |
+| `update_goal_task` | `UpdateGoalTaskInput` | `GoalTaskBrief` |
+| `create_goal_event` | `CreateGoalEventInput` | `GoalEventBrief` |
 
 Input types (camelCase on the JSON wire):
 

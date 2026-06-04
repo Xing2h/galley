@@ -10,9 +10,8 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::api::{
-    ManagedModelAuthKind,
-    ManagedModelConnectionResult, ManagedModelListResult, ManagedModelProbeInput,
-    ManagedModelProtocol,
+    ManagedModelAuthKind, ManagedModelConnectionResult, ManagedModelListResult,
+    ManagedModelProbeInput, ManagedModelProtocol,
 };
 use crate::codex_oauth;
 use crate::credential_store;

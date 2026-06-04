@@ -23,11 +23,15 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{FromRow, Sqlite, SqliteConnection, SqlitePool, Transaction};
 
 use crate::api::{
-    CreateProjectInput, CreateSessionInput, GalleyApi, HealthCheck, HealthReport, HealthStatus,
-    ManagedModelAuthKind, ManagedModelCredentialStatus, ManagedModelProtocol,
+    ClaimGoalTaskInput, CreateGoalEventInput, CreateGoalProposalInput, CreateGoalTaskInput,
+    CreateProjectInput, CreateSessionInput, GalleyApi, GoalBrief, GoalEventBrief, GoalEventType,
+    GoalId, GoalProposalBrief, GoalProposalId, GoalProposalStatus, GoalStatus, GoalStatusSnapshot,
+    GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode, HealthCheck, HealthReport,
+    HealthStatus, ManagedModelAuthKind, ManagedModelCredentialStatus, ManagedModelProtocol,
     ManagedModelProviderRecord, ManagedModelRecord, MessageBrief, MessageId, MessageRole, Origin,
     OriginVia, ProjectBrief, ProjectId, ProjectPatch, RuntimeKind, SearchHit, SearchScope,
-    SessionBrief, SessionFilter, SessionId, SessionStatus, StatusSummary,
+    SessionBrief, SessionFilter, SessionId, SessionStatus, StatusSummary, UpdateGoalTaskInput,
+    DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE,
 };
 use crate::app_paths;
 use crate::error::{GalleyError, Result};
@@ -1284,6 +1288,141 @@ impl ProjectRow {
     }
 }
 
+#[derive(Debug, FromRow)]
+struct GoalProposalRow {
+    id: String,
+    objective: String,
+    project_id: Option<String>,
+    budget_seconds: i64,
+    worker_limit: i64,
+    runtime_kind: String,
+    write_mode: String,
+    status: String,
+    internal_confirm_token: String,
+    expires_at: String,
+    created_at: String,
+    updated_at: String,
+}
+
+impl GoalProposalRow {
+    fn into_brief(self) -> Result<GoalProposalBrief> {
+        Ok(GoalProposalBrief {
+            id: GoalProposalId(self.id),
+            objective: self.objective,
+            project_id: self.project_id.map(ProjectId),
+            budget_seconds: self.budget_seconds.max(0) as u32,
+            worker_limit: self.worker_limit.max(0) as u32,
+            runtime_kind: parse_runtime_kind(&self.runtime_kind)?,
+            write_mode: parse_goal_write_mode(&self.write_mode)?,
+            status: parse_goal_proposal_status(&self.status)?,
+            internal_confirm_token: self.internal_confirm_token,
+            confirmation_phrase: GOAL_CONFIRMATION_PHRASE.to_string(),
+            expires_at: self.expires_at,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        })
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct GoalRow {
+    id: String,
+    proposal_id: Option<String>,
+    project_id: String,
+    objective: String,
+    status: String,
+    budget_seconds: i64,
+    worker_limit: i64,
+    runtime_kind: String,
+    write_mode: String,
+    started_at: String,
+    deadline_at: String,
+    ended_at: Option<String>,
+    latest_summary: Option<String>,
+    stop_requested: i64,
+    created_at: String,
+    updated_at: String,
+}
+
+impl GoalRow {
+    fn into_brief(self) -> Result<GoalBrief> {
+        Ok(GoalBrief {
+            id: GoalId(self.id),
+            proposal_id: self.proposal_id.map(GoalProposalId),
+            project_id: ProjectId(self.project_id),
+            objective: self.objective,
+            status: parse_goal_status(&self.status)?,
+            budget_seconds: self.budget_seconds.max(0) as u32,
+            worker_limit: self.worker_limit.max(0) as u32,
+            runtime_kind: parse_runtime_kind(&self.runtime_kind)?,
+            write_mode: parse_goal_write_mode(&self.write_mode)?,
+            started_at: self.started_at,
+            deadline_at: self.deadline_at,
+            ended_at: self.ended_at,
+            latest_summary: self.latest_summary,
+            stop_requested: self.stop_requested != 0,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        })
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct GoalTaskRow {
+    id: String,
+    goal_id: String,
+    title: String,
+    description: Option<String>,
+    status: String,
+    owner_session_id: Option<String>,
+    scope: Option<String>,
+    result_summary: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl GoalTaskRow {
+    fn into_brief(self) -> Result<GoalTaskBrief> {
+        Ok(GoalTaskBrief {
+            id: GoalTaskId(self.id),
+            goal_id: GoalId(self.goal_id),
+            title: self.title,
+            description: self.description,
+            status: parse_goal_task_status(&self.status)?,
+            owner_session_id: self.owner_session_id.map(SessionId),
+            scope: self.scope,
+            result_summary: self.result_summary,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        })
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct GoalEventRow {
+    id: i64,
+    goal_id: String,
+    task_id: Option<String>,
+    author_session_id: Option<String>,
+    event_type: String,
+    body: String,
+    created_at: String,
+}
+
+impl GoalEventRow {
+    fn into_brief(self) -> Result<GoalEventBrief> {
+        Ok(GoalEventBrief {
+            id: self.id,
+            goal_id: GoalId(self.goal_id),
+            task_id: self.task_id.map(GoalTaskId),
+            author_session_id: self.author_session_id.map(SessionId),
+            event_type: parse_goal_event_type(&self.event_type)?,
+            body: self.body,
+            created_at: self.created_at,
+        })
+    }
+}
+
 fn managed_model_select_sql(suffix: &str) -> String {
     format!(
         "SELECT \
@@ -1373,6 +1512,127 @@ fn runtime_kind_sql(kind: RuntimeKind) -> &'static str {
     match kind {
         RuntimeKind::Managed => "managed",
         RuntimeKind::External => "external",
+    }
+}
+
+fn parse_goal_proposal_status(s: &str) -> Result<GoalProposalStatus> {
+    Ok(match s {
+        "awaiting_confirmation" => GoalProposalStatus::AwaitingConfirmation,
+        "started" => GoalProposalStatus::Started,
+        "cancelled" => GoalProposalStatus::Cancelled,
+        other => {
+            return Err(GalleyError::Internal {
+                message: format!("unknown goal proposal status: {other}"),
+            })
+        }
+    })
+}
+
+fn goal_proposal_status_sql(s: GoalProposalStatus) -> &'static str {
+    match s {
+        GoalProposalStatus::AwaitingConfirmation => "awaiting_confirmation",
+        GoalProposalStatus::Started => "started",
+        GoalProposalStatus::Cancelled => "cancelled",
+    }
+}
+
+fn parse_goal_status(s: &str) -> Result<GoalStatus> {
+    Ok(match s {
+        "running" => GoalStatus::Running,
+        "wrapping" => GoalStatus::Wrapping,
+        "completed" => GoalStatus::Completed,
+        "stopped" => GoalStatus::Stopped,
+        "failed" => GoalStatus::Failed,
+        other => {
+            return Err(GalleyError::Internal {
+                message: format!("unknown goal status: {other}"),
+            })
+        }
+    })
+}
+
+fn goal_status_sql(s: GoalStatus) -> &'static str {
+    match s {
+        GoalStatus::Running => "running",
+        GoalStatus::Wrapping => "wrapping",
+        GoalStatus::Completed => "completed",
+        GoalStatus::Stopped => "stopped",
+        GoalStatus::Failed => "failed",
+    }
+}
+
+fn parse_goal_write_mode(s: &str) -> Result<GoalWriteMode> {
+    Ok(match s {
+        "autonomous" => GoalWriteMode::Autonomous,
+        "read_only" => GoalWriteMode::ReadOnly,
+        other => {
+            return Err(GalleyError::Internal {
+                message: format!("unknown goal write mode: {other}"),
+            })
+        }
+    })
+}
+
+fn goal_write_mode_sql(mode: GoalWriteMode) -> &'static str {
+    match mode {
+        GoalWriteMode::Autonomous => "autonomous",
+        GoalWriteMode::ReadOnly => "read_only",
+    }
+}
+
+fn parse_goal_task_status(s: &str) -> Result<GoalTaskStatus> {
+    Ok(match s {
+        "open" => GoalTaskStatus::Open,
+        "claimed" => GoalTaskStatus::Claimed,
+        "running" => GoalTaskStatus::Running,
+        "completed" => GoalTaskStatus::Completed,
+        "blocked" => GoalTaskStatus::Blocked,
+        "cancelled" => GoalTaskStatus::Cancelled,
+        other => {
+            return Err(GalleyError::Internal {
+                message: format!("unknown goal task status: {other}"),
+            })
+        }
+    })
+}
+
+fn goal_task_status_sql(s: GoalTaskStatus) -> &'static str {
+    match s {
+        GoalTaskStatus::Open => "open",
+        GoalTaskStatus::Claimed => "claimed",
+        GoalTaskStatus::Running => "running",
+        GoalTaskStatus::Completed => "completed",
+        GoalTaskStatus::Blocked => "blocked",
+        GoalTaskStatus::Cancelled => "cancelled",
+    }
+}
+
+fn parse_goal_event_type(s: &str) -> Result<GoalEventType> {
+    Ok(match s {
+        "plan" => GoalEventType::Plan,
+        "claim" => GoalEventType::Claim,
+        "progress" => GoalEventType::Progress,
+        "result" => GoalEventType::Result,
+        "conflict" => GoalEventType::Conflict,
+        "synthesis" => GoalEventType::Synthesis,
+        "system" => GoalEventType::System,
+        other => {
+            return Err(GalleyError::Internal {
+                message: format!("unknown goal event type: {other}"),
+            })
+        }
+    })
+}
+
+fn goal_event_type_sql(t: GoalEventType) -> &'static str {
+    match t {
+        GoalEventType::Plan => "plan",
+        GoalEventType::Claim => "claim",
+        GoalEventType::Progress => "progress",
+        GoalEventType::Result => "result",
+        GoalEventType::Conflict => "conflict",
+        GoalEventType::Synthesis => "synthesis",
+        GoalEventType::System => "system",
     }
 }
 
@@ -1735,11 +1995,104 @@ fn project_nullable_patch(field: &Option<Option<String>>) -> (bool, Option<Strin
     }
 }
 
+fn goal_project_name(objective: &str) -> String {
+    let trimmed = objective.trim();
+    let short: String = trimmed.chars().take(48).collect();
+    if short.is_empty() {
+        "Goal".to_string()
+    } else if trimmed.chars().count() > 48 {
+        format!("Goal · {short}…")
+    } else {
+        format!("Goal · {short}")
+    }
+}
+
 // ---------------- trait impl ----------------
 
 const SESSIONS_SELECT_COLS: &str = "id, project_id, title, status, summary, turn_count, \
     pinned, has_unread, last_activity_at, created_at, updated_at, \
     llm_index, llm_key, llm_display_name, ga_runtime_kind, ga_runtime_id, prompt_profile";
+
+impl SqliteGalley {
+    async fn fetch_goal_proposal(&self, id: &str) -> Result<GoalProposalBrief> {
+        let row = sqlx::query_as::<_, GoalProposalRow>(
+            "SELECT id, objective, project_id, budget_seconds, worker_limit, \
+                    runtime_kind, write_mode, status, internal_confirm_token, \
+                    expires_at, created_at, updated_at \
+             FROM goal_proposals WHERE id = ? LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?
+        .ok_or_else(|| GalleyError::NotFound {
+            message: format!("goal proposal {id} not found"),
+        })?;
+        row.into_brief()
+    }
+
+    async fn fetch_goal(&self, id: &str) -> Result<GoalBrief> {
+        let row = sqlx::query_as::<_, GoalRow>(
+            "SELECT id, proposal_id, project_id, objective, status, budget_seconds, \
+                    worker_limit, runtime_kind, write_mode, started_at, deadline_at, \
+                    ended_at, latest_summary, stop_requested, created_at, updated_at \
+             FROM goals WHERE id = ? LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?
+        .ok_or_else(|| GalleyError::NotFound {
+            message: format!("goal {id} not found"),
+        })?;
+        row.into_brief()
+    }
+
+    async fn fetch_goal_task(&self, id: &str) -> Result<GoalTaskBrief> {
+        let row = sqlx::query_as::<_, GoalTaskRow>(
+            "SELECT id, goal_id, title, description, status, owner_session_id, \
+                    scope, result_summary, created_at, updated_at \
+             FROM goal_tasks WHERE id = ? LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?
+        .ok_or_else(|| GalleyError::NotFound {
+            message: format!("goal task {id} not found"),
+        })?;
+        row.into_brief()
+    }
+
+    async fn goal_tasks_for(&self, goal_id: &str) -> Result<Vec<GoalTaskBrief>> {
+        let rows = sqlx::query_as::<_, GoalTaskRow>(
+            "SELECT id, goal_id, title, description, status, owner_session_id, \
+                    scope, result_summary, created_at, updated_at \
+             FROM goal_tasks WHERE goal_id = ? \
+             ORDER BY updated_at DESC, created_at DESC",
+        )
+        .bind(goal_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        rows.into_iter().map(GoalTaskRow::into_brief).collect()
+    }
+
+    async fn goal_events_for(&self, goal_id: &str, limit: i64) -> Result<Vec<GoalEventBrief>> {
+        let mut rows = sqlx::query_as::<_, GoalEventRow>(
+            "SELECT id, goal_id, task_id, author_session_id, event_type, body, created_at \
+             FROM goal_events WHERE goal_id = ? \
+             ORDER BY id DESC LIMIT ?",
+        )
+        .bind(goal_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        rows.reverse();
+        rows.into_iter().map(GoalEventRow::into_brief).collect()
+    }
+}
 
 #[async_trait]
 impl GalleyApi for SqliteGalley {
@@ -2558,6 +2911,417 @@ impl GalleyApi for SqliteGalley {
         Ok(())
     }
 
+    async fn create_goal_proposal(
+        &self,
+        input: CreateGoalProposalInput,
+        _origin: Origin,
+    ) -> Result<GoalProposalBrief> {
+        let objective = input.objective.trim();
+        if objective.is_empty() {
+            return Err(GalleyError::InvalidArgs {
+                message: "goal.propose: objective must not be empty".into(),
+            });
+        }
+        let budget_seconds = input
+            .budget_seconds
+            .unwrap_or(DEFAULT_GOAL_BUDGET_SECONDS)
+            .max(60);
+        let worker_limit = input
+            .worker_limit
+            .unwrap_or(DEFAULT_GOAL_WORKER_LIMIT)
+            .clamp(1, 8);
+        let runtime_kind = input.runtime_kind.unwrap_or(RuntimeKind::Managed);
+        let write_mode = input.write_mode.unwrap_or(GoalWriteMode::Autonomous);
+        let expires_in_seconds = input.expires_in_seconds.unwrap_or(10 * 60).max(60);
+        let id = mint_goal_id("gprop");
+        let token = mint_goal_id("gtok");
+        let now = chrono_now_iso();
+        let expires_at = chrono_after_seconds_iso(expires_in_seconds);
+
+        sqlx::query(
+            "INSERT INTO goal_proposals (
+                id, objective, project_id, budget_seconds, worker_limit,
+                runtime_kind, write_mode, status, internal_confirm_token,
+                expires_at, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(objective)
+        .bind(input.project_id.as_ref().map(ProjectId::as_str))
+        .bind(i64::from(budget_seconds))
+        .bind(i64::from(worker_limit))
+        .bind(runtime_kind_sql(runtime_kind))
+        .bind(goal_write_mode_sql(write_mode))
+        .bind(goal_proposal_status_sql(
+            GoalProposalStatus::AwaitingConfirmation,
+        ))
+        .bind(&token)
+        .bind(&expires_at)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| map_constraint_err("goal.propose", e))?;
+
+        self.fetch_goal_proposal(&id).await
+    }
+
+    async fn start_goal_from_proposal(
+        &self,
+        proposal_id: GoalProposalId,
+        internal_confirm_token: String,
+        _origin: Origin,
+    ) -> Result<GoalBrief> {
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
+        let proposal_row = sqlx::query_as::<_, GoalProposalRow>(
+            "SELECT id, objective, project_id, budget_seconds, worker_limit, \
+                    runtime_kind, write_mode, status, internal_confirm_token, \
+                    expires_at, created_at, updated_at \
+             FROM goal_proposals WHERE id = ? LIMIT 1",
+        )
+        .bind(proposal_id.as_str())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_sqlx_err)?
+        .ok_or_else(|| GalleyError::NotFound {
+            message: format!("goal proposal {proposal_id} not found"),
+        })?;
+        let proposal = proposal_row.into_brief()?;
+        if proposal.status != GoalProposalStatus::AwaitingConfirmation {
+            return Err(GalleyError::InvalidArgs {
+                message: format!("goal proposal {proposal_id} is not awaiting confirmation"),
+            });
+        }
+        if proposal.internal_confirm_token != internal_confirm_token {
+            return Err(GalleyError::InvalidArgs {
+                message: "goal.run: confirm token mismatch".into(),
+            });
+        }
+        let now = chrono_now_iso();
+        if proposal.expires_at <= now {
+            return Err(GalleyError::InvalidArgs {
+                message: format!(
+                    "goal proposal {proposal_id} expired at {}",
+                    proposal.expires_at
+                ),
+            });
+        }
+
+        let project_id = match proposal.project_id.as_ref() {
+            Some(id) => id.0.clone(),
+            None => {
+                let project_id = mint_goal_id("proj");
+                let project_name = goal_project_name(&proposal.objective);
+                sqlx::query(
+                    "INSERT INTO projects (id, name, root_path, icon, color, pinned, \
+                        last_activity_at, created_at, updated_at) \
+                     VALUES (?, ?, NULL, NULL, NULL, 0, ?, ?, ?)",
+                )
+                .bind(&project_id)
+                .bind(&project_name)
+                .bind(&now)
+                .bind(&now)
+                .bind(&now)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| map_constraint_err("goal.run create project", e))?;
+                project_id
+            }
+        };
+
+        let goal_id = mint_goal_id("goal");
+        let deadline_at = chrono_after_seconds_iso(proposal.budget_seconds);
+        sqlx::query(
+            "INSERT INTO goals (
+                id, proposal_id, project_id, objective, status, budget_seconds,
+                worker_limit, runtime_kind, write_mode, started_at, deadline_at,
+                ended_at, latest_summary, stop_requested, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?)",
+        )
+        .bind(&goal_id)
+        .bind(proposal.id.as_str())
+        .bind(&project_id)
+        .bind(&proposal.objective)
+        .bind(goal_status_sql(GoalStatus::Running))
+        .bind(i64::from(proposal.budget_seconds))
+        .bind(i64::from(proposal.worker_limit))
+        .bind(runtime_kind_sql(proposal.runtime_kind))
+        .bind(goal_write_mode_sql(proposal.write_mode))
+        .bind(&now)
+        .bind(&deadline_at)
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| map_constraint_err("goal.run create goal", e))?;
+
+        sqlx::query("UPDATE goal_proposals SET status = 'started', updated_at = ? WHERE id = ?")
+            .bind(&now)
+            .bind(proposal.id.as_str())
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_err)?;
+
+        sqlx::query(
+            "INSERT INTO goal_events (goal_id, task_id, author_session_id, event_type, body, created_at) \
+             VALUES (?, NULL, NULL, 'system', ?, ?)",
+        )
+        .bind(&goal_id)
+        .bind(format!(
+            "Goal started. Confirmation phrase: {GOAL_CONFIRMATION_PHRASE}. Workers: {}. Budget: {}m. Write mode: {:?}.",
+            proposal.worker_limit,
+            proposal.budget_seconds / 60,
+            proposal.write_mode
+        ))
+        .bind(&now)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx_err)?;
+
+        tx.commit().await.map_err(map_sqlx_err)?;
+        self.fetch_goal(&goal_id).await
+    }
+
+    async fn goal_status(&self, id: GoalId) -> Result<GoalStatusSnapshot> {
+        let goal = self.fetch_goal(id.as_str()).await?;
+        let project = self.fetch_project(goal.project_id.as_str()).await.ok();
+        let tasks = self.goal_tasks_for(id.as_str()).await?;
+        let events = self.goal_events_for(id.as_str(), 50).await?;
+        let sessions = self
+            .list_sessions(SessionFilter {
+                project_id: Some(goal.project_id.0.clone()),
+                status: None,
+                archived: Some(false),
+                runtime_kind: None,
+            })
+            .await?;
+        Ok(GoalStatusSnapshot {
+            goal,
+            project,
+            tasks,
+            events,
+            sessions,
+        })
+    }
+
+    async fn list_active_goals(&self) -> Result<Vec<GoalBrief>> {
+        let rows = sqlx::query_as::<_, GoalRow>(
+            "SELECT id, proposal_id, project_id, objective, status, budget_seconds, \
+                    worker_limit, runtime_kind, write_mode, started_at, deadline_at, \
+                    ended_at, latest_summary, stop_requested, created_at, updated_at \
+             FROM goals WHERE status IN ('running','wrapping') \
+             ORDER BY deadline_at ASC, started_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        rows.into_iter().map(GoalRow::into_brief).collect()
+    }
+
+    async fn request_goal_stop(&self, id: GoalId, _origin: Origin) -> Result<GoalBrief> {
+        let now = chrono_now_iso();
+        let res = sqlx::query(
+            "UPDATE goals SET stop_requested = 1, status = CASE \
+                WHEN status = 'running' THEN 'wrapping' ELSE status END, updated_at = ? \
+             WHERE id = ?",
+        )
+        .bind(&now)
+        .bind(id.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        if res.rows_affected() == 0 {
+            return Err(GalleyError::NotFound {
+                message: format!("goal {id} not found"),
+            });
+        }
+        self.fetch_goal(id.as_str()).await
+    }
+
+    async fn update_goal_state(
+        &self,
+        id: GoalId,
+        status: GoalStatus,
+        latest_summary: Option<String>,
+    ) -> Result<GoalBrief> {
+        let now = chrono_now_iso();
+        let ended_at = matches!(
+            status,
+            GoalStatus::Completed | GoalStatus::Stopped | GoalStatus::Failed
+        )
+        .then_some(now.clone());
+        let res = sqlx::query(
+            "UPDATE goals SET status = ?, latest_summary = COALESCE(?, latest_summary), \
+                ended_at = COALESCE(?, ended_at), updated_at = ? WHERE id = ?",
+        )
+        .bind(goal_status_sql(status))
+        .bind(
+            latest_summary
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty()),
+        )
+        .bind(&ended_at)
+        .bind(&now)
+        .bind(id.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        if res.rows_affected() == 0 {
+            return Err(GalleyError::NotFound {
+                message: format!("goal {id} not found"),
+            });
+        }
+        self.fetch_goal(id.as_str()).await
+    }
+
+    async fn create_goal_task(&self, input: CreateGoalTaskInput) -> Result<GoalTaskBrief> {
+        let title = input.title.trim();
+        if title.is_empty() {
+            return Err(GalleyError::InvalidArgs {
+                message: "goal.task.create: title must not be empty".into(),
+            });
+        }
+        let id = mint_goal_id("gtask");
+        let now = chrono_now_iso();
+        let status = if input.owner_session_id.is_some() {
+            GoalTaskStatus::Claimed
+        } else {
+            GoalTaskStatus::Open
+        };
+        sqlx::query(
+            "INSERT INTO goal_tasks (
+                id, goal_id, title, description, status, owner_session_id,
+                scope, result_summary, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+        )
+        .bind(&id)
+        .bind(input.goal_id.as_str())
+        .bind(title)
+        .bind(
+            input
+                .description
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty()),
+        )
+        .bind(goal_task_status_sql(status))
+        .bind(input.owner_session_id.as_ref().map(SessionId::as_str))
+        .bind(
+            input
+                .scope
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty()),
+        )
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| map_constraint_err("goal.task.create", e))?;
+        self.fetch_goal_task(&id).await
+    }
+
+    async fn claim_goal_task(&self, input: ClaimGoalTaskInput) -> Result<GoalTaskBrief> {
+        let now = chrono_now_iso();
+        let res = sqlx::query(
+            "UPDATE goal_tasks SET status = 'claimed', owner_session_id = ?, \
+                scope = COALESCE(?, scope), updated_at = ? \
+             WHERE id = ? AND status = 'open' AND owner_session_id IS NULL",
+        )
+        .bind(input.owner_session_id.as_str())
+        .bind(
+            input
+                .scope
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty()),
+        )
+        .bind(&now)
+        .bind(input.task_id.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| map_constraint_err("goal.task.claim", e))?;
+        if res.rows_affected() == 0 {
+            let existing = self.fetch_goal_task(input.task_id.as_str()).await?;
+            return Err(GalleyError::InvalidArgs {
+                message: format!(
+                    "goal task {} is not claimable (status={:?}, owner={:?})",
+                    existing.id, existing.status, existing.owner_session_id
+                ),
+            });
+        }
+        self.fetch_goal_task(input.task_id.as_str()).await
+    }
+
+    async fn update_goal_task(&self, input: UpdateGoalTaskInput) -> Result<GoalTaskBrief> {
+        let existing = self.fetch_goal_task(input.task_id.as_str()).await?;
+        let status = input.status.unwrap_or(existing.status);
+        let owner = input
+            .owner_session_id
+            .unwrap_or(existing.owner_session_id)
+            .map(|s| s.0);
+        let scope = input
+            .scope
+            .unwrap_or(existing.scope)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let result_summary = input
+            .result_summary
+            .unwrap_or(existing.result_summary)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let now = chrono_now_iso();
+        sqlx::query(
+            "UPDATE goal_tasks SET status = ?, owner_session_id = ?, scope = ?, \
+                result_summary = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(goal_task_status_sql(status))
+        .bind(&owner)
+        .bind(&scope)
+        .bind(&result_summary)
+        .bind(&now)
+        .bind(input.task_id.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| map_constraint_err("goal.task.update", e))?;
+        self.fetch_goal_task(input.task_id.as_str()).await
+    }
+
+    async fn create_goal_event(&self, input: CreateGoalEventInput) -> Result<GoalEventBrief> {
+        let body = input.body.trim();
+        if body.is_empty() {
+            return Err(GalleyError::InvalidArgs {
+                message: "goal.event.post: body must not be empty".into(),
+            });
+        }
+        let now = chrono_now_iso();
+        let res = sqlx::query(
+            "INSERT INTO goal_events (
+                goal_id, task_id, author_session_id, event_type, body, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(input.goal_id.as_str())
+        .bind(input.task_id.as_ref().map(GoalTaskId::as_str))
+        .bind(input.author_session_id.as_ref().map(SessionId::as_str))
+        .bind(goal_event_type_sql(input.event_type))
+        .bind(body)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| map_constraint_err("goal.event.post", e))?;
+        let id = res.last_insert_rowid();
+        let row = sqlx::query_as::<_, GoalEventRow>(
+            "SELECT id, goal_id, task_id, author_session_id, event_type, body, created_at \
+             FROM goal_events WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        row.into_brief()
+    }
+
     // ---------------- B4 M1 · transaction-aware variants ----------------
 
     async fn create_session_in_tx<'c>(
@@ -2651,7 +3415,18 @@ fn chrono_now_iso() -> String {
     let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
-    let total_secs = dur.as_secs() as i64;
+    iso_from_unix_secs(dur.as_secs() as i64)
+}
+
+fn chrono_after_seconds_iso(seconds: u32) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let dur = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    iso_from_unix_secs(dur.as_secs() as i64 + i64::from(seconds))
+}
+
+fn iso_from_unix_secs(total_secs: i64) -> String {
     let days = total_secs / 86_400;
     let rem = total_secs % 86_400;
     let hour = rem / 3600;
@@ -2672,6 +3447,24 @@ fn chrono_now_iso() -> String {
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}+00:00",
         y, m, d, hour, min, sec
     )
+}
+
+fn mint_goal_id(prefix: &str) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    static GOAL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let dur = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let counter = GOAL_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut x = (dur.as_nanos() as u64)
+        ^ counter.rotate_left(21)
+        ^ (u64::from(std::process::id())).rotate_left(32);
+    x ^= x.wrapping_mul(0x9E3779B97F4A7C15);
+    x ^= x >> 33;
+    x ^= x.wrapping_mul(0xC4CEB9FE1A85EC53);
+    format!("{prefix}_{x:016x}")
 }
 
 fn into_search_hit(r: SearchHitRow) -> SearchHit {

@@ -23,16 +23,17 @@ pub mod socket_listener;
 pub mod sop_install;
 
 use api::{
-    CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelAuthKind,
-    ManagedModelProbeInput, Origin, ProjectBrief, ProjectId, ProjectPatch,
-    ReorderManagedModelsInput, RuntimeKind, SaveManagedModelInput, SaveManagedProviderInput,
-    SessionBrief, SessionFilter, SessionId,
+    CreateGoalProposalInput, CreateProjectInput, CreateSessionInput, GalleyApi, GoalBrief, GoalId,
+    GoalStatus, GoalStatusSnapshot, GoalWriteMode, ManagedModelAuthKind, ManagedModelProbeInput,
+    Origin, ProjectBrief, ProjectId, ProjectPatch, ReorderManagedModelsInput, RuntimeKind,
+    SaveManagedModelInput, SaveManagedProviderInput, SessionBrief, SessionFilter, SessionId,
 };
 use db::{
     MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
     SqliteGalley, ToolEventRow, UpsertManagedModelMetadata, UpsertManagedModelProviderMetadata,
 };
 use serde::Deserialize;
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -81,6 +82,20 @@ struct TrayMenuState {
 struct CloseHintCopy {
     title: Mutex<String>,
     body: Mutex<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StartDesktopGoalInput {
+    objective: String,
+    #[serde(default)]
+    project_id: Option<ProjectId>,
+    #[serde(default)]
+    runtime_kind: Option<RuntimeKind>,
+    #[serde(default)]
+    budget_seconds: Option<u32>,
+    #[serde(default)]
+    worker_limit: Option<u32>,
 }
 
 impl Default for CloseHintCopy {
@@ -1146,6 +1161,85 @@ async fn delete_project(id: ProjectId, origin: Origin) -> std::result::Result<()
         .map_err(stringify_error)
 }
 
+#[tauri::command]
+async fn list_active_goals() -> std::result::Result<Vec<GoalBrief>, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley.list_active_goals().await.map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn goal_status(id: GoalId) -> std::result::Result<GoalStatusSnapshot, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley.goal_status(id).await.map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn request_goal_stop(id: GoalId) -> std::result::Result<GoalBrief, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .request_goal_stop(id, Origin::gui())
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn start_desktop_goal(
+    input: StartDesktopGoalInput,
+) -> std::result::Result<GoalBrief, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    let proposal = galley
+        .create_goal_proposal(
+            CreateGoalProposalInput {
+                objective: input.objective,
+                project_id: input.project_id,
+                budget_seconds: input.budget_seconds,
+                worker_limit: input.worker_limit,
+                runtime_kind: input.runtime_kind.or(Some(RuntimeKind::Managed)),
+                write_mode: Some(GoalWriteMode::Autonomous),
+                expires_in_seconds: None,
+            },
+            Origin::gui(),
+        )
+        .await
+        .map_err(stringify_error)?;
+    let goal = galley
+        .start_goal_from_proposal(proposal.id, proposal.internal_confirm_token, Origin::gui())
+        .await
+        .map_err(stringify_error)?;
+
+    if let Err(message) = spawn_goal_controller(&goal) {
+        let _ = galley
+            .update_goal_state(goal.id.clone(), GoalStatus::Failed, Some(message.clone()))
+            .await;
+        return Err(message);
+    }
+
+    Ok(goal)
+}
+
+fn spawn_goal_controller(goal: &GoalBrief) -> std::result::Result<(), String> {
+    let cli = discovery::locate_cli_binary().ok_or_else(|| {
+        "Galley CLI binary was not found next to the desktop app; cannot start Goal controller."
+            .to_string()
+    })?;
+    let mut cmd = tokio::process::Command::new(cli);
+    cmd.arg("goal")
+        .arg("run")
+        .arg(goal.id.as_str())
+        .arg("--resume")
+        .arg("--supervisor")
+        .arg("galley-desktop")
+        .arg("--reason")
+        .arg("desktop Goal Send")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    process_command::configure_background(&mut cmd);
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Could not start Galley Goal controller: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -1232,6 +1326,12 @@ pub fn run() {
             version: 14,
             description: "add managed model provider auth kind",
             sql: include_str!("../migrations/014_managed_model_auth_kind.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 15,
+            description: "add Galley Goal V1 state",
+            sql: include_str!("../migrations/015_goal_v1.sql"),
             kind: MigrationKind::Up,
         },
     ];
@@ -1331,6 +1431,10 @@ pub fn run() {
             create_project,
             update_project,
             delete_project,
+            list_active_goals,
+            goal_status,
+            request_goal_stop,
+            start_desktop_goal,
             // B2 runner commands
             runner_commands::spawn_runner,
             runner_commands::send_to_runner,

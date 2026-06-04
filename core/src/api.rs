@@ -11,6 +11,7 @@
 //! `create_session`, `archive_session`, …) land in B2 once runner
 //! ownership migrates into Rust.
 
+pub mod goal;
 pub mod health;
 pub mod message;
 pub mod model;
@@ -20,6 +21,13 @@ pub mod search;
 pub mod session;
 pub mod status;
 
+pub use goal::{
+    ClaimGoalTaskInput, CreateGoalEventInput, CreateGoalProposalInput, CreateGoalTaskInput,
+    GoalBrief, GoalEventBrief, GoalEventType, GoalId, GoalProposalBrief, GoalProposalId,
+    GoalProposalStatus, GoalStatus, GoalStatusSnapshot, GoalTaskBrief, GoalTaskId, GoalTaskStatus,
+    GoalWriteMode, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT,
+    GOAL_CONFIRMATION_PHRASE,
+};
 pub use health::{HealthCheck, HealthReport, HealthStatus};
 pub use message::{MessageBrief, MessageId, MessageRole};
 pub use model::{
@@ -270,6 +278,42 @@ pub trait GalleyApi: Send + Sync {
     ///
     /// **Errors**: `not_found`.
     async fn delete_project(&self, id: ProjectId, origin: Origin) -> Result<()>;
+
+    // ---------------- goals ----------------
+
+    async fn create_goal_proposal(
+        &self,
+        input: CreateGoalProposalInput,
+        origin: Origin,
+    ) -> Result<GoalProposalBrief>;
+
+    async fn start_goal_from_proposal(
+        &self,
+        proposal_id: GoalProposalId,
+        internal_confirm_token: String,
+        origin: Origin,
+    ) -> Result<GoalBrief>;
+
+    async fn goal_status(&self, id: GoalId) -> Result<GoalStatusSnapshot>;
+
+    async fn list_active_goals(&self) -> Result<Vec<GoalBrief>>;
+
+    async fn request_goal_stop(&self, id: GoalId, origin: Origin) -> Result<GoalBrief>;
+
+    async fn update_goal_state(
+        &self,
+        id: GoalId,
+        status: GoalStatus,
+        latest_summary: Option<String>,
+    ) -> Result<GoalBrief>;
+
+    async fn create_goal_task(&self, input: CreateGoalTaskInput) -> Result<GoalTaskBrief>;
+
+    async fn claim_goal_task(&self, input: ClaimGoalTaskInput) -> Result<GoalTaskBrief>;
+
+    async fn update_goal_task(&self, input: UpdateGoalTaskInput) -> Result<GoalTaskBrief>;
+
+    async fn create_goal_event(&self, input: CreateGoalEventInput) -> Result<GoalEventBrief>;
 
     // ---------------- B4 M1 · transaction-aware variants ----------------
     //

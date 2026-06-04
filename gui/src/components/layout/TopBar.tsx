@@ -13,6 +13,7 @@ import {
   Lightning,
   PencilSimple,
   PuzzlePiece,
+  Target,
   Warning,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
@@ -29,6 +30,7 @@ import type { ResolvedTheme, ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { BrowserControlStatus } from "@/lib/browser-control";
 import type { ImSupervisorState } from "@/lib/im-supervisor";
+import type { GoalBrief } from "@/types/goal";
 
 import { WindowControls } from "./WindowControls";
 
@@ -56,6 +58,11 @@ export interface TopBarProps {
   channelsState?: ImSupervisorState | null;
   channelsLoadError?: string | null;
   onOpenChannelsSettings?: () => void;
+  activeGoals?: GoalBrief[];
+  getGoalProjectName?: (projectId: string) => string | undefined;
+  onOpenGoalProject?: (projectId: string) => void;
+  onOpenGoalLatestSession?: (goalId: string) => void;
+  onStopGoal?: (goalId: string) => void;
   /**
    * Conversation column width mode. "compact" = 760px (default), "wide"
    * = 1400px. Renders an icon button next to Settings that flips
@@ -160,6 +167,11 @@ export function TopBar({
   channelsState = null,
   channelsLoadError = null,
   onOpenChannelsSettings,
+  activeGoals = [],
+  getGoalProjectName,
+  onOpenGoalProject,
+  onOpenGoalLatestSession,
+  onStopGoal,
   conversationWidth = "compact",
   onToggleConversationWidth,
   themePreference = "system",
@@ -250,6 +262,15 @@ export function TopBar({
           are auto-excluded from drag region by Tauri so they remain
           clickable. */}
       <div className="flex shrink-0 items-center gap-2">
+        {activeGoals.length > 0 && (
+          <GoalIndicator
+            goals={activeGoals}
+            getProjectName={getGoalProjectName}
+            onOpenProject={onOpenGoalProject}
+            onOpenLatestSession={onOpenGoalLatestSession}
+            onStopGoal={onStopGoal}
+          />
+        )}
         {yoloMode && (
           <YoloIndicator
             onDisable={onDisableYolo}
@@ -304,6 +325,142 @@ export function TopBar({
       </div>
     </div>
   );
+}
+
+function GoalIndicator({
+  goals,
+  getProjectName,
+  onOpenProject,
+  onOpenLatestSession,
+  onStopGoal,
+}: {
+  goals: GoalBrief[];
+  getProjectName?: (projectId: string) => string | undefined;
+  onOpenProject?: (projectId: string) => void;
+  onOpenLatestSession?: (goalId: string) => void;
+  onStopGoal?: (goalId: string) => void;
+}) {
+  const primary = goals[0];
+  const label =
+    goals.length > 1 ? `Goals · ${goals.length}` : goalTopbarLabel(primary);
+  return (
+    <Popover.Root>
+      <TooltipLabel text="Active Galley Goal" side="bottom">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            aria-label="Active Galley Goal"
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border border-brand/30 bg-brand-soft px-2 py-1",
+              "text-[12px] font-medium text-ink transition-colors hover:bg-brand-soft/80",
+            )}
+          >
+            <Target size={14} weight="thin" />
+            <span>{label}</span>
+          </button>
+        </Popover.Trigger>
+      </TooltipLabel>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={8}
+          className="z-50 w-[320px] rounded-md border border-line bg-elevated p-3 shadow-elevated"
+        >
+          <div className="space-y-3">
+            {goals.map((goal) => {
+              const projectName = getProjectName?.(goal.projectId);
+              return (
+                <div
+                  key={goal.id}
+                  className="border-b border-line/70 pb-3 last:border-0 last:pb-0"
+                >
+                  <div className="flex items-start gap-2">
+                    <Target
+                      size={15}
+                      weight="thin"
+                      className="mt-0.5 text-brand-strong"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-medium text-ink">
+                        {goal.objective}
+                      </div>
+                      <div className="mt-0.5 text-[12px] text-ink-muted">
+                        {projectName ?? goal.projectId} · {goalStatusText(goal)}
+                      </div>
+                      {goal.latestSummary && (
+                        <div className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-ink-soft">
+                          {goal.latestSummary}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => onOpenProject?.(goal.projectId)}
+                    >
+                      Open Project
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => onOpenLatestSession?.(goal.id)}
+                    >
+                      Open latest session
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => copyGoalStatusCommand(goal.id)}
+                    >
+                      Copy status
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => onStopGoal?.(goal.id)}
+                    >
+                      Stop
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function goalTopbarLabel(goal: GoalBrief) {
+  if (goal.status === "wrapping") return "Goal · wrapping";
+  const remaining = remainingMinutes(goal.deadlineAt);
+  if (remaining !== null) return `Goal · ${remaining}m`;
+  return "Goal · running";
+}
+
+function goalStatusText(goal: GoalBrief) {
+  const remaining = remainingMinutes(goal.deadlineAt);
+  const pieces = [
+    goal.status,
+    remaining !== null ? `${remaining}m left` : null,
+    `${goal.workerLimit} workers`,
+    goal.writeMode === "autonomous" ? "autonomous write" : "read-only",
+  ].filter(Boolean);
+  return pieces.join(" · ");
+}
+
+function remainingMinutes(deadlineAt: string) {
+  const deadline = Date.parse(deadlineAt);
+  if (!Number.isFinite(deadline)) return null;
+  return Math.max(0, Math.ceil((deadline - Date.now()) / 60_000));
+}
+
+function copyGoalStatusCommand(goalId: string) {
+  const text = `galley goal status ${goalId}`;
+  void navigator.clipboard?.writeText(text).catch(() => undefined);
 }
 
 function ChannelsIndicator({
@@ -380,9 +537,9 @@ function BrowserControlIndicator({
       ? copy.browserControlNoTabsTitle
       : offline
         ? copy.browserControlOfflineTitle
-      : error
-        ? copy.browserControlErrorTitle
-        : copy.browserControlPendingTitle;
+        : error
+          ? copy.browserControlErrorTitle
+          : copy.browserControlPendingTitle;
   if (bridgeReady || offline) {
     return (
       <TooltipLabel text={title}>

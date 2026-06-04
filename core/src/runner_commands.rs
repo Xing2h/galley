@@ -228,10 +228,7 @@ pub(crate) async fn prepare_managed_runtime_context(
                     .map(|secret| !secret.trim().is_empty())
                     .unwrap_or(false)
                 {
-                    (
-                        "galley-codex-oauth".into(),
-                        credential_ipc.clone(),
-                    )
+                    ("galley-codex-oauth".into(), credential_ipc.clone())
                 } else {
                     continue;
                 }

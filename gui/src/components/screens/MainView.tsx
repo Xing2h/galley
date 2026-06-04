@@ -30,6 +30,7 @@ import type {
   PendingAskUser,
   Turn,
 } from "@/types/conversation";
+import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
 import type { ApprovalDecision } from "@/types/ipc";
 
 export interface MainViewProps {
@@ -47,6 +48,10 @@ export interface MainViewProps {
    * change as the trigger. Undefined during pre-session screens. */
   activeSessionId?: string;
   onSubmit?: (text: string) => void;
+  onGoalSubmit?: (
+    text: string,
+    config: GoalLaunchConfig,
+  ) => void | Promise<void>;
   onApprove?: (approvalId: string, decision: ApprovalDecision) => void;
   onStop?: () => void;
   /** When true, the agent is mid-run; the Composer hides Submit and
@@ -84,6 +89,8 @@ export interface MainViewProps {
   requiresModelConfig?: boolean;
   /** Fallback for pre-bridge / dev when `llms` is empty. */
   onOpenLLMSwitcher?: () => void;
+  /** Active Goal for this session's Project context, if any. */
+  goal?: GoalBrief;
   /**
    * GA-initiated question waiting for a user reply. When non-null,
    * the AskUserBubble renders at the conversation tail (with chip
@@ -135,6 +142,7 @@ export function MainView({
   projectName,
   activeSessionId,
   onSubmit,
+  onGoalSubmit,
   onApprove,
   onStop,
   isRunning = false,
@@ -147,6 +155,7 @@ export function MainView({
   onConfigureModels,
   requiresModelConfig = false,
   onOpenLLMSwitcher,
+  goal,
   pendingAskUser,
   conversationWidth = "compact",
 }: MainViewProps) {
@@ -688,6 +697,7 @@ export function MainView({
           />
 
           <Composer
+            key={activeSessionId ?? "main-composer"}
             llmDisplayName={llmDisplayName}
             placeholder={
               copy.composer[
@@ -700,6 +710,7 @@ export function MainView({
               ]
             }
             onSubmit={onSubmit}
+            onGoalSubmit={onGoalSubmit}
             stopMode={isRunning}
             onStop={onStop}
             submitAckTick={userSubmitTick}
@@ -710,6 +721,7 @@ export function MainView({
             onConfigureModels={onConfigureModels}
             requiresModelConfig={requiresModelConfig}
             onOpenLLMSwitcher={onOpenLLMSwitcher}
+            goal={goal}
           />
 
           <div className="mt-1.5 text-[11px] text-ink-muted">
@@ -733,7 +745,10 @@ function compactLiveStepStatus(text?: string): string | undefined {
   if (!normalized) return undefined;
   const chars = Array.from(normalized);
   if (chars.length <= LIVE_STEP_STATUS_MAX_CHARS) return normalized;
-  return `${chars.slice(0, LIVE_STEP_STATUS_MAX_CHARS - 1).join("").trimEnd()}…`;
+  return `${chars
+    .slice(0, LIVE_STEP_STATUS_MAX_CHARS - 1)
+    .join("")
+    .trimEnd()}…`;
 }
 
 /**

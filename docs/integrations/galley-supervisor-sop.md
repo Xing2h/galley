@@ -48,7 +48,7 @@ creating sessions.
 1. Resolve the Galley CLI path from the discovery file.
 2. Inspect current Galley state.
 3. Choose the orchestration mode: direct read, existing-session follow-up,
-   single new session, or Project-backed session group.
+   single new session, Project-backed session group, or Galley Goal.
 4. For complex goals, create a faithful first split and adapt after results.
 5. Confirm destructive or ambiguous actions.
 6. Run the CLI command with origin fields.
@@ -65,6 +65,7 @@ important work.
 | Add one requirement to one known thread | Existing-session follow-up | Preserves context and avoids duplicate work. |
 | One bounded task with one obvious owner | Single new session | Lower coordination cost than a group. |
 | Complex goal with independent angles, evidence gathering, review, or synthesis | Project-backed session group | A Project is the visible container users can inspect later. |
+| Sustained autonomous goal where the user wants Galley to keep working after the immediate chat turn | Galley Goal | Core owns a visible Project, task board, audit stream, worker sessions, and stop/status controls. |
 | User explicitly asked for implementation or fixes | Single-writer Project-backed group | One session may write; other sessions review, test, or verify. |
 | Unclear split, same-file edits by multiple agents, external sending, payment, deletion, or credential changes | Ask or narrow first | These fail badly when parallelized blindly. |
 
@@ -72,11 +73,70 @@ Do not expose "Project batch" as a user-facing product term. Say "I will split
 this into a few Galley sessions under one Project" when the user needs to know
 what will happen.
 
-This SOP uses Galley Projects as the orchestration surface. Do not launch GA
-Goal, GA Hive, or another agent runtime's long-running workflow mode from this
-SOP. If the user explicitly asks for those modes, explain that this Galley SOP
-does not operate them directly and ask whether to continue with Galley Project
-orchestration instead.
+This SOP uses Galley Core as the orchestration authority. Use Galley Projects
+and Galley Goal; do not launch GenericAgent native `/hive`, GA BBS, or another
+runtime's own extended workflow mode from this SOP.
+
+### Galley Goal V1
+
+Galley Goal is for a longer autonomous run, not a normal one-shot split. Use it
+when the user wants Galley to keep working while they leave, asks for an
+ongoing objective, or explicitly says "Goal". Do not use it just because a task
+has two obvious subtasks; a Project-backed session group is cheaper and clearer
+for bounded work.
+
+Goal V1 is conversationally confirmed:
+
+1. Create a proposal with defaults unless the user specified otherwise:
+
+   ```bash
+   "$GALLEY" goal propose "<objective>" \
+     --supervisor=my-agent/v1 \
+     --reason="user asked to prepare a Goal"
+   ```
+
+2. Show the user a short confirmation summary: objective, Project, runtime,
+   `3 workers`, `30m`, `writeMode=autonomous`, and the safety boundary.
+   Do not show `internalConfirmToken`.
+3. Wait for the exact reply `确认启动 Goal`.
+4. Start the controller from the proposal returned in this same conversation:
+
+   ```bash
+   "$GALLEY" goal run --proposal=<proposal-id> \
+     --confirm-token=<internalConfirmToken> \
+     --supervisor=my-agent/v1 \
+     --reason="user replied 确认启动 Goal"
+   ```
+
+If you have more than one pending proposal in the same conversation, do not
+guess. Ask the user which human-readable proposal summary they want to start.
+
+While a Goal is running:
+
+- Use `"$GALLEY" goal status <goal-id>` to answer progress questions.
+- Use `"$GALLEY" goal stop <goal-id> --supervisor=<id> --reason=<why>` after the
+  user asks to stop it.
+- Tell the user they can find the active Goal from Galley's top bar, then open
+  the Project or latest session from there.
+
+Goal worker protocol is Core-owned. Workers coordinate through:
+
+```bash
+"$GALLEY" goal status <goal-id>
+"$GALLEY" goal task create <goal-id> "<title>" --owner-session=<session-id>
+"$GALLEY" goal task claim <task-id> --owner-session=<session-id>
+"$GALLEY" goal task complete <task-id> --result-summary="<summary>"
+"$GALLEY" goal event post <goal-id> --event-type=progress "<body>"
+```
+
+The default Goal write mode is autonomous, but it is not a blanket approval.
+Destructive actions, external sends, credential changes, payment, deletion,
+commit, and push still require separate confirmation.
+
+Attach/external GA safety is strict: do not call GA native `/hive`, do not start
+`agent_bbs.py`, and do not write external GA `memory/`, SOP, config, or
+`temp/goal_state.json`. External GA only participates through ordinary Galley
+child-session prompts and the Galley Goal CLI protocol.
 
 ### Project-Backed Session Groups
 
@@ -318,6 +378,7 @@ All commands support `--help`.
 | `"$GALLEY" project brief <id>` | Project status counts and running sessions |
 | `"$GALLEY" project show <id> --tail=20` | Project sessions plus transcript tails |
 | `"$GALLEY" project follow <id> --tail=10 --until-idle --final-show` | Follow a Project-backed session group until all child sessions are idle, then emit final context |
+| `"$GALLEY" goal status <id>` | Goal state, task board, events, and Project sessions |
 | `"$GALLEY" llm list` | Available LLMs |
 | `"$GALLEY" health` | Troubleshooting |
 
@@ -333,6 +394,9 @@ All commands support `--help`.
 | `"$GALLEY" session restore <id> --supervisor=<id> --reason=<why>` | Restore archived session |
 | `"$GALLEY" session move <id> --to=<project-id> --supervisor=<id> --reason=<why>` | Move session to project; omit `--to` to unassign |
 | `"$GALLEY" project create "<name>" --supervisor=<id> --reason=<why>` | Create a project |
+| `"$GALLEY" goal propose "<objective>" --supervisor=<id> --reason=<why>` | Prepare a pending Goal; does not start work |
+| `"$GALLEY" goal run --proposal=<id> --confirm-token=<token> --supervisor=<id> --reason=<why>` | Start the blocking Goal controller after the user replies `确认启动 Goal` |
+| `"$GALLEY" goal stop <id> --supervisor=<id> --reason=<why>` | Request a graceful Goal stop |
 | `"$GALLEY" llm set <session-id> "<llm-name>"` | Switch a session's LLM |
 | `"$GALLEY" project delete <id> --supervisor=<id> --reason=<why>` | Delete project; sessions survive but become unassigned |
 
@@ -464,6 +528,39 @@ sessions created, and next actions. Do not delete the Project after finishing;
 users can inspect the group history in Galley. Archiving sessions or deleting
 the Project requires confirmation.
 
+### "Start a Goal"
+
+Use Goal only for a long autonomous objective:
+
+```bash
+"$GALLEY" goal propose "<objective>" \
+  --supervisor=my-agent/v1 \
+  --reason="prepare Goal for user confirmation"
+```
+
+Reply to the user with a short summary, for example:
+
+> Goal 准备好了：目标是 `<objective>`，默认 `3 workers / 30m`，
+> `writeMode=autonomous`。它会在 Galley Project 里开 worker sessions，并通过
+> Galley task board 协作。删除、付款、发外部消息、提交和 push 仍会单独确认。
+> 回复 `确认启动 Goal` 后我会启动。
+
+After the exact confirmation:
+
+```bash
+"$GALLEY" goal run --proposal=<proposal-id> \
+  --confirm-token=<internalConfirmToken> \
+  --supervisor=my-agent/v1 \
+  --reason="user replied 确认启动 Goal"
+```
+
+Keep the blocking controller attached until it finishes or the user asks you to
+stop. If you need to report while it is still active, use:
+
+```bash
+"$GALLEY" goal status <goal-id>
+```
+
 ### "Implement or fix X with multiple sessions"
 
 Use one writer and one or more read-only reviewers:
@@ -524,6 +621,7 @@ cache can warm up.
 | "看看现在跑啥" | Read directly |
 | "开一个 session" | Search for duplicates, then create |
 | "把这个复杂任务跑一下" | Use a Project-backed session group with 2-4 bounded child sessions |
+| "开一个 Goal / 持续推进一下 / 我先走你继续做" | Create a Goal proposal, show the summary, wait for exact `确认启动 Goal`, then run it |
 | "实现/修复这个复杂问题" | Use one writer session plus read-only review or verification sessions |
 | "继续那个 session" | Brief/show, then send follow-up |
 | "看进度/盯一下" | Use `session follow`; use `project follow` for a Project group |
@@ -580,7 +678,8 @@ Do not:
 - Pretend to inspect a session without running `brief` or `show`.
 - Create many sessions without a clear split.
 - Create multiple writer sessions for the same files.
-- Launch GA Goal, GA Hive, or another workflow runtime from this SOP.
+- Launch GA native Goal/Hive/BBS, `agent_bbs.py`, or another runtime's workflow
+  engine from this SOP.
 - Expand the user's request beyond what they asked.
 - Manage another machine's Galley. Galley is local-only.
 
@@ -589,6 +688,7 @@ You may:
 - Write clear task prompts for Galley sessions.
 - Split work into parallel sessions.
 - Create small Project-backed session groups and synthesize their results.
+- Create and run Galley Goal after conversational confirmation.
 - Ask clarifying questions when the split is uncertain.
 - Summarize and merge results for the user.
 
@@ -601,6 +701,7 @@ Before acting, ask yourself:
 - Am I preserving the user's actual goal?
 - Did I choose the lightest orchestration mode that can work?
 - Does this action need confirmation?
+- If this is a Goal, did the user reply exactly `确认启动 Goal` before I ran it?
 - If there is a writer, is there only one writer for each file/module?
 - Did I include `--supervisor` and `--reason` when the command supports them?
 - Did I distinguish `dispatched`, `persisted_only`, and `already_stopped`?

@@ -40,6 +40,7 @@ export interface SidebarProps {
   /** Project ids currently expanded inside Project Review. Multiple
    * ids are allowed so users can monitor work across projects. */
   expandedProjectIds?: string[];
+  activeGoalProjectIds?: Set<string>;
   /** Timestamp captured when Project Review opens. Passed from an
    * event handler so "recent within 7 days" stays React-render pure. */
   projectReviewNowMs?: number;
@@ -130,6 +131,7 @@ export function Sidebar({
   activeProjectFilter,
   projectViewOpen = false,
   expandedProjectIds = [],
+  activeGoalProjectIds = new Set<string>(),
   projectReviewNowMs = PROJECT_REVIEW_FALLBACK_NOW_MS,
   runtimeIndicator = "hidden",
   onSelectSession,
@@ -276,6 +278,7 @@ export function Sidebar({
               sessionsByProjectId={projectSessionsById}
               activeProjectFilter={activeProjectFilter}
               expandedProjectIds={expandedProjectIdSet}
+              activeGoalProjectIds={activeGoalProjectIds}
               reviewNowMs={projectReviewNowMs}
               activeId={activeId}
               petAttachedSessionId={petAttachedSessionId}

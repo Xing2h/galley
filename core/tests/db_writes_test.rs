@@ -8,10 +8,11 @@
 //! `tests/common/mod.rs` scaffold that adds noise for two test files.
 
 use galley_core_lib::api::{
-    CreateProjectInput, CreateSessionInput, GalleyApi, ManagedModelAuthKind,
-    ManagedModelCredentialStatus,
-    ManagedModelProtocol, Origin, ProjectId, ProjectPatch, RuntimeKind, SessionFilter, SessionId,
-    SessionStatus,
+    ClaimGoalTaskInput, CreateGoalEventInput, CreateGoalProposalInput, CreateGoalTaskInput,
+    CreateProjectInput, CreateSessionInput, GalleyApi, GoalEventType, GoalStatus, GoalTaskStatus,
+    GoalWriteMode, ManagedModelAuthKind, ManagedModelCredentialStatus, ManagedModelProtocol,
+    Origin, ProjectId, ProjectPatch, RuntimeKind, SessionFilter, SessionId, SessionStatus,
+    DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT,
 };
 use galley_core_lib::credential_store;
 use galley_core_lib::db::{
@@ -36,6 +37,7 @@ const MIG_011: &str = include_str!("../migrations/011_managed_model_sort_order.s
 const MIG_012: &str = include_str!("../migrations/012_managed_model_local_secrets.sql");
 const MIG_013: &str = include_str!("../migrations/013_session_llm_key.sql");
 const MIG_014: &str = include_str!("../migrations/014_managed_model_auth_kind.sql");
+const MIG_015: &str = include_str!("../migrations/015_goal_v1.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -50,7 +52,7 @@ async fn fresh_pool() -> SqlitePool {
         .expect("enable foreign keys");
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
-        MIG_011, MIG_012, MIG_013, MIG_014,
+        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -97,6 +99,167 @@ async fn seed_project(pool: &SqlitePool, id: &str, name: &str) {
     .execute(pool)
     .await
     .expect("seed project");
+}
+
+// ---------------- Goal V1 ----------------
+
+#[tokio::test]
+async fn goal_lifecycle_defaults_task_event_and_stop() {
+    let pool = fresh_pool().await;
+    let galley = SqliteGalley::from_pool(pool.clone());
+
+    let proposal = galley
+        .create_goal_proposal(
+            CreateGoalProposalInput {
+                objective: "Ship Goal V1".into(),
+                project_id: None,
+                budget_seconds: None,
+                worker_limit: None,
+                runtime_kind: Some(RuntimeKind::Managed),
+                write_mode: None,
+                expires_in_seconds: None,
+            },
+            Origin::cli(None, Some("test proposal".into())),
+        )
+        .await
+        .expect("create goal proposal");
+
+    assert_eq!(proposal.budget_seconds, DEFAULT_GOAL_BUDGET_SECONDS);
+    assert_eq!(proposal.worker_limit, DEFAULT_GOAL_WORKER_LIMIT);
+    assert_eq!(proposal.write_mode, GoalWriteMode::Autonomous);
+    assert_eq!(proposal.confirmation_phrase, "确认启动 Goal");
+
+    let goal = galley
+        .start_goal_from_proposal(
+            proposal.id.clone(),
+            proposal.internal_confirm_token.clone(),
+            Origin::cli(None, Some("confirmed".into())),
+        )
+        .await
+        .expect("start goal");
+
+    assert_eq!(goal.objective, "Ship Goal V1");
+    assert_eq!(goal.status, GoalStatus::Running);
+    assert_eq!(goal.budget_seconds, DEFAULT_GOAL_BUDGET_SECONDS);
+    assert_eq!(goal.worker_limit, DEFAULT_GOAL_WORKER_LIMIT);
+    assert_eq!(goal.runtime_kind, RuntimeKind::Managed);
+
+    let active = galley.list_active_goals().await.expect("list active goals");
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, goal.id);
+
+    seed_session_idle(&pool, "sess_worker").await;
+
+    let task = galley
+        .create_goal_task(CreateGoalTaskInput {
+            goal_id: goal.id.clone(),
+            title: "Audit API docs".into(),
+            description: Some("Check Goal section".into()),
+            scope: Some("docs/agent-api.md".into()),
+            owner_session_id: None,
+        })
+        .await
+        .expect("create task");
+    assert_eq!(task.status, GoalTaskStatus::Open);
+
+    let claimed = galley
+        .claim_goal_task(ClaimGoalTaskInput {
+            task_id: task.id.clone(),
+            owner_session_id: sid("sess_worker"),
+            scope: Some("docs/".into()),
+        })
+        .await
+        .expect("claim task");
+    assert_eq!(claimed.status, GoalTaskStatus::Claimed);
+    assert_eq!(claimed.owner_session_id, Some(sid("sess_worker")));
+
+    let event = galley
+        .create_goal_event(CreateGoalEventInput {
+            goal_id: goal.id.clone(),
+            task_id: Some(task.id.clone()),
+            author_session_id: Some(sid("sess_worker")),
+            event_type: GoalEventType::Progress,
+            body: "Docs checked".into(),
+        })
+        .await
+        .expect("create event");
+    assert_eq!(event.event_type, GoalEventType::Progress);
+
+    let snapshot = galley
+        .goal_status(goal.id.clone())
+        .await
+        .expect("goal status");
+    assert_eq!(snapshot.tasks.len(), 1);
+    assert_eq!(snapshot.events.len(), 2);
+    assert_eq!(snapshot.project.expect("project").id, goal.project_id);
+
+    let stopping = galley
+        .request_goal_stop(goal.id.clone(), Origin::cli(None, Some("stop".into())))
+        .await
+        .expect("request stop");
+    assert_eq!(stopping.status, GoalStatus::Wrapping);
+    assert!(stopping.stop_requested);
+
+    let stopped = galley
+        .update_goal_state(
+            goal.id.clone(),
+            GoalStatus::Stopped,
+            Some("Stopped in test".into()),
+        )
+        .await
+        .expect("mark stopped");
+    assert_eq!(stopped.status, GoalStatus::Stopped);
+    assert_eq!(stopped.latest_summary.as_deref(), Some("Stopped in test"));
+    assert!(galley.list_active_goals().await.expect("active").is_empty());
+}
+
+#[tokio::test]
+async fn goal_start_rejects_token_mismatch_and_expired_proposal() {
+    let pool = fresh_pool().await;
+    let galley = SqliteGalley::from_pool(pool.clone());
+
+    let proposal = galley
+        .create_goal_proposal(
+            CreateGoalProposalInput {
+                objective: "Do not start with the wrong token".into(),
+                project_id: None,
+                budget_seconds: None,
+                worker_limit: None,
+                runtime_kind: Some(RuntimeKind::Managed),
+                write_mode: None,
+                expires_in_seconds: None,
+            },
+            Origin::cli(None, None),
+        )
+        .await
+        .expect("create proposal");
+
+    let wrong = galley
+        .start_goal_from_proposal(
+            proposal.id.clone(),
+            "not-the-token".into(),
+            Origin::cli(None, None),
+        )
+        .await
+        .expect_err("wrong token should fail");
+    assert!(matches!(wrong, GalleyError::InvalidArgs { .. }));
+
+    sqlx::query("UPDATE goal_proposals SET expires_at = ? WHERE id = ?")
+        .bind("2000-01-01T00:00:00Z")
+        .bind(proposal.id.as_str())
+        .execute(&pool)
+        .await
+        .expect("expire proposal");
+
+    let expired = galley
+        .start_goal_from_proposal(
+            proposal.id,
+            proposal.internal_confirm_token,
+            Origin::cli(None, None),
+        )
+        .await
+        .expect_err("expired proposal should fail");
+    assert!(matches!(expired, GalleyError::InvalidArgs { .. }));
 }
 
 // ---------------- managed model metadata ----------------
