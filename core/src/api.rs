@@ -26,7 +26,7 @@ pub use goal::{
     GoalBrief, GoalEventBrief, GoalEventType, GoalId, GoalProposalBrief, GoalProposalId,
     GoalProposalStatus, GoalStatus, GoalStatusSnapshot, GoalTaskBrief, GoalTaskId, GoalTaskStatus,
     GoalWriteMode, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT,
-    GOAL_CONFIRMATION_PHRASE,
+    GOAL_CONFIRMATION_PHRASE, MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT,
 };
 pub use health::{HealthCheck, HealthReport, HealthStatus};
 pub use message::{MessageBrief, MessageId, MessageRole};

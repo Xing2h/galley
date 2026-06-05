@@ -995,7 +995,7 @@ work.
 ```bash
 $ galley goal propose "review and fix flaky release checks" \
   --supervisor=ga-wechat-bot \
-  --reason="user asked to start a long Goal"
+  --reason="user asked to start a Goal"
 {"id":"gprop_...","objective":"review and fix flaky release checks",
  "budgetSeconds":1800,"workerLimit":3,"runtimeKind":"managed",
  "writeMode":"autonomous","status":"awaiting_confirmation",
@@ -1006,6 +1006,12 @@ $ galley goal propose "review and fix flaky release checks" \
 The `internalConfirmToken` is for the trusted local Supervisor only. Do not show
 it to the user. The user-facing confirmation phrase is always
 `确认启动 Goal`.
+
+`--workers` defaults to `3`. Desktop presents `2`, `3`, `4`, and `5` to match
+the official GA Hive guidance that ordinary Hive work usually fits in `2-4`
+workers and should not exceed `5`. Core keeps the lower-level CLI/API value
+within `1-5` so supervisors can still request a single-agent Goal when needed
+without allowing oversized hives.
 
 #### `galley goal run --proposal <proposal-id> --confirm-token <internal-token>` / `galley goal run <goal-id> --resume`
 

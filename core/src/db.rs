@@ -32,6 +32,7 @@ use crate::api::{
     OriginVia, ProjectBrief, ProjectId, ProjectPatch, RuntimeKind, SearchHit, SearchScope,
     SessionBrief, SessionFilter, SessionId, SessionStatus, StatusSummary, UpdateGoalTaskInput,
     DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE,
+    MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT,
 };
 use crate::app_paths;
 use crate::error::{GalleyError, Result};
@@ -2929,7 +2930,7 @@ impl GalleyApi for SqliteGalley {
         let worker_limit = input
             .worker_limit
             .unwrap_or(DEFAULT_GOAL_WORKER_LIMIT)
-            .clamp(1, 8);
+            .clamp(MIN_GOAL_WORKER_LIMIT, MAX_GOAL_WORKER_LIMIT);
         let runtime_kind = input.runtime_kind.unwrap_or(RuntimeKind::Managed);
         let write_mode = input.write_mode.unwrap_or(GoalWriteMode::Autonomous);
         let expires_in_seconds = input.expires_in_seconds.unwrap_or(10 * 60).max(60);

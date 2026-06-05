@@ -633,6 +633,28 @@ async fn goal_propose_defaults_to_3_workers_30_minutes() {
 }
 
 #[tokio::test]
+async fn goal_propose_caps_workers_to_official_hive_max() {
+    let td = tempdir();
+    let db = td.path().join("test.db");
+    drop(seeded_db_at(&db).await);
+
+    let (stdout, code) = run_galley_isolated(
+        &db,
+        td.path(),
+        &[
+            "goal",
+            "propose",
+            "Scale Galley Goal safely",
+            "--workers",
+            "9",
+        ],
+    );
+    assert_eq!(code, Some(0), "stdout: {stdout}");
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+    assert_eq!(parsed["workerLimit"], 5);
+}
+
+#[tokio::test]
 async fn goal_task_claim_is_atomic_at_cli_surface() {
     let td = tempdir();
     let db = td.path().join("test.db");

@@ -12,7 +12,7 @@ use galley_core_lib::api::{
     CreateProjectInput, CreateSessionInput, GalleyApi, GoalEventType, GoalStatus, GoalTaskStatus,
     GoalWriteMode, ManagedModelAuthKind, ManagedModelCredentialStatus, ManagedModelProtocol,
     Origin, ProjectId, ProjectPatch, RuntimeKind, SessionFilter, SessionId, SessionStatus,
-    DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT,
+    DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT, MAX_GOAL_WORKER_LIMIT,
 };
 use galley_core_lib::credential_store;
 use galley_core_lib::db::{
@@ -211,6 +211,30 @@ async fn goal_lifecycle_defaults_task_event_and_stop() {
     assert_eq!(stopped.status, GoalStatus::Stopped);
     assert_eq!(stopped.latest_summary.as_deref(), Some("Stopped in test"));
     assert!(galley.list_active_goals().await.expect("active").is_empty());
+}
+
+#[tokio::test]
+async fn goal_proposal_worker_limit_is_capped_at_official_hive_max() {
+    let pool = fresh_pool().await;
+    let galley = SqliteGalley::from_pool(pool);
+
+    let proposal = galley
+        .create_goal_proposal(
+            CreateGoalProposalInput {
+                objective: "Scale Goal safely".into(),
+                project_id: None,
+                budget_seconds: None,
+                worker_limit: Some(9),
+                runtime_kind: Some(RuntimeKind::Managed),
+                write_mode: None,
+                expires_in_seconds: None,
+            },
+            Origin::cli(None, Some("test worker cap".into())),
+        )
+        .await
+        .expect("create goal proposal");
+
+    assert_eq!(proposal.worker_limit, MAX_GOAL_WORKER_LIMIT);
 }
 
 #[tokio::test]

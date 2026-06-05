@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use super::{ProjectBrief, ProjectId, RuntimeKind, SessionBrief, SessionId};
 
 pub const DEFAULT_GOAL_BUDGET_SECONDS: u32 = 30 * 60;
+pub const MIN_GOAL_WORKER_LIMIT: u32 = 1;
 pub const DEFAULT_GOAL_WORKER_LIMIT: u32 = 3;
+pub const MAX_GOAL_WORKER_LIMIT: u32 = 5;
 pub const GOAL_CONFIRMATION_PHRASE: &str = "确认启动 Goal";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

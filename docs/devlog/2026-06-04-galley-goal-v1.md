@@ -13,7 +13,8 @@ wrapper around GenericAgent native `/hive`.
   see the internal token returned by `goal propose`, but the user only sees the
   summary and replies `确认启动 Goal`.
 - The default scale is `3 workers / 30m`; desktop confirmation lets the user
-  adjust this one launch within a bounded range.
+  choose `2-5` Agents for one launch, matching GA's "2-4 usually enough,
+  max 5" Hive guidance.
 - Managed and attach runtimes use the same Galley Goal protocol. Attach mode
   stays read-only toward external GA state and must not call GA native `/hive`,
   start GA BBS, or write external GA memory/SOP/config.

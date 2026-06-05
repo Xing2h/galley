@@ -61,10 +61,8 @@ const DEFAULT_GOAL_BUDGET_MINUTES = 30;
 const MIN_CUSTOM_GOAL_BUDGET_MINUTES = 5;
 const MAX_CUSTOM_GOAL_BUDGET_MINUTES = 120;
 const DEFAULT_GOAL_AGENT_COUNT = 3;
-const MIN_CUSTOM_GOAL_AGENT_COUNT = 3;
-const MAX_CUSTOM_GOAL_AGENT_COUNT = 9;
 type GoalBudgetPreset = "15" | "30" | "60" | "custom";
-type GoalAgentCountPreset = "3" | "5" | "8" | "custom";
+type GoalAgentCountPreset = "2" | "3" | "4" | "5";
 
 /**
  * Line-count threshold above which a single paste is folded into a
@@ -687,9 +685,6 @@ function GoalConfirmDialog({
   const [customBudgetMinutes, setCustomBudgetMinutes] = useState(
     String(DEFAULT_GOAL_BUDGET_MINUTES),
   );
-  const [customAgentCount, setCustomAgentCount] = useState(
-    String(DEFAULT_GOAL_AGENT_COUNT),
-  );
 
   const customBudgetNumber = Number.parseInt(customBudgetMinutes, 10);
   const customBudgetValid =
@@ -703,18 +698,7 @@ function GoalConfirmDialog({
         ? customBudgetNumber
         : DEFAULT_GOAL_BUDGET_MINUTES
       : Number.parseInt(budgetPreset, 10);
-  const customAgentCountNumber = Number.parseInt(customAgentCount, 10);
-  const customAgentCountValid =
-    agentCountPreset !== "custom" ||
-    (Number.isInteger(customAgentCountNumber) &&
-      customAgentCountNumber >= MIN_CUSTOM_GOAL_AGENT_COUNT &&
-      customAgentCountNumber <= MAX_CUSTOM_GOAL_AGENT_COUNT);
-  const workerLimit =
-    agentCountPreset === "custom"
-      ? customAgentCountValid
-        ? customAgentCountNumber
-        : DEFAULT_GOAL_AGENT_COUNT
-      : Number.parseInt(agentCountPreset, 10);
+  const workerLimit = Number.parseInt(agentCountPreset, 10);
   const disabledDurationOptions: {
     value: GoalBudgetPreset;
     label: string;
@@ -747,23 +731,23 @@ function GoalConfirmDialog({
     disabled: boolean;
   }[] = [
     {
+      value: "2",
+      label: "2",
+      disabled: submitting,
+    },
+    {
       value: "3",
       label: "3",
       disabled: submitting,
     },
     {
+      value: "4",
+      label: "4",
+      disabled: submitting,
+    },
+    {
       value: "5",
       label: "5",
-      disabled: submitting,
-    },
-    {
-      value: "8",
-      label: "8",
-      disabled: submitting,
-    },
-    {
-      value: "custom",
-      label: copy.composer.goalAgentCountCustom,
       disabled: submitting,
     },
   ];
@@ -849,34 +833,6 @@ function GoalConfirmDialog({
                 size="md"
                 className="max-w-full"
               />
-              {agentCountPreset === "custom" && (
-                <label className="flex items-center gap-2 text-[12.5px] text-ink-soft">
-                  <input
-                    type="number"
-                    min={MIN_CUSTOM_GOAL_AGENT_COUNT}
-                    max={MAX_CUSTOM_GOAL_AGENT_COUNT}
-                    step={1}
-                    value={customAgentCount}
-                    onChange={(e) =>
-                      setCustomAgentCount(
-                        e.target.value.replace(/[^\d]/g, "").slice(0, 1),
-                      )
-                    }
-                    disabled={submitting}
-                    aria-label={copy.composer.goalAgentCountCustomInput}
-                    className={cn(
-                      "h-8 w-16 rounded-sm border bg-elevated px-2 text-[12.5px] font-medium text-ink outline-none transition-colors focus:border-brand",
-                      customAgentCountValid ? "border-line" : "border-error/40",
-                    )}
-                  />
-                  <span>{copy.composer.goalAgentCountUnit}</span>
-                  {!customAgentCountValid && (
-                    <span className="text-[11px] text-error">
-                      {copy.composer.goalAgentCountRange}
-                    </span>
-                  )}
-                </label>
-              )}
             </section>
           </div>
 
@@ -899,8 +855,7 @@ function GoalConfirmDialog({
               disabled={
                 submitting ||
                 !objective ||
-                !customBudgetValid ||
-                !customAgentCountValid
+                !customBudgetValid
               }
               leadingIcon={<Target size={13} weight="fill" />}
             >
