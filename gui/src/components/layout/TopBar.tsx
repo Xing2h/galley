@@ -8,6 +8,7 @@ import {
   CaretDown,
   Cat,
   ChatCircleText,
+  CheckCircle,
   CircleNotch,
   Gear,
   Lightning,
@@ -59,9 +60,8 @@ export interface TopBarProps {
   channelsLoadError?: string | null;
   onOpenChannelsSettings?: () => void;
   activeGoals?: GoalBrief[];
-  getGoalProjectName?: (projectId: string) => string | undefined;
   onOpenGoalProject?: (projectId: string) => void;
-  onOpenGoalLatestSession?: (goalId: string) => void;
+  onOpenGoal?: (goalId: string) => void;
   onStopGoal?: (goalId: string) => void;
   /**
    * Conversation column width mode. "compact" = 760px (default), "wide"
@@ -168,9 +168,8 @@ export function TopBar({
   channelsLoadError = null,
   onOpenChannelsSettings,
   activeGoals = [],
-  getGoalProjectName,
   onOpenGoalProject,
-  onOpenGoalLatestSession,
+  onOpenGoal,
   onStopGoal,
   conversationWidth = "compact",
   onToggleConversationWidth,
@@ -265,9 +264,8 @@ export function TopBar({
         {activeGoals.length > 0 && (
           <GoalIndicator
             goals={activeGoals}
-            getProjectName={getGoalProjectName}
             onOpenProject={onOpenGoalProject}
-            onOpenLatestSession={onOpenGoalLatestSession}
+            onOpenGoal={onOpenGoal}
             onStopGoal={onStopGoal}
           />
         )}
@@ -329,33 +327,40 @@ export function TopBar({
 
 function GoalIndicator({
   goals,
-  getProjectName,
   onOpenProject,
-  onOpenLatestSession,
+  onOpenGoal,
   onStopGoal,
 }: {
   goals: GoalBrief[];
-  getProjectName?: (projectId: string) => string | undefined;
   onOpenProject?: (projectId: string) => void;
-  onOpenLatestSession?: (goalId: string) => void;
+  onOpenGoal?: (goalId: string) => void;
   onStopGoal?: (goalId: string) => void;
 }) {
+  const copy = useCopy().topbar;
   const primary = goals[0];
   const label =
     goals.length > 1 ? `Goals · ${goals.length}` : goalTopbarLabel(primary);
+  const style = goalIndicatorStyle(primary);
+  const Icon =
+    primary.status === "completed"
+      ? CheckCircle
+      : primary.status === "failed"
+        ? Warning
+        : Target;
   return (
     <Popover.Root>
-      <TooltipLabel text="Active Galley Goal" side="bottom">
+      <TooltipLabel text={copy.goalTooltip} side="bottom">
         <Popover.Trigger asChild>
           <button
             type="button"
-            aria-label="Active Galley Goal"
+            aria-label={copy.goalTooltip}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md border border-brand/30 bg-brand-soft px-2 py-1",
-              "text-[12px] font-medium text-ink transition-colors hover:bg-brand-soft/80",
+              "inline-flex items-center gap-1.5 rounded-md border px-2 py-1",
+              "text-[12px] font-medium transition-colors",
+              style.trigger,
             )}
           >
-            <Target size={14} weight="thin" />
+            <Icon size={14} weight="thin" />
             <span>{label}</span>
           </button>
         </Popover.Trigger>
@@ -368,7 +373,7 @@ function GoalIndicator({
         >
           <div className="space-y-3">
             {goals.map((goal) => {
-              const projectName = getProjectName?.(goal.projectId);
+              const statusChips = goalStatusChips(goal, copy);
               return (
                 <div
                   key={goal.id}
@@ -384,45 +389,63 @@ function GoalIndicator({
                       <div className="truncate text-[13px] font-medium text-ink">
                         {goal.objective}
                       </div>
-                      <div className="mt-0.5 text-[12px] text-ink-muted">
-                        {projectName ?? goal.projectId} · {goalStatusText(goal)}
+                      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                        {statusChips.map((chip, index) => (
+                          <span
+                            key={`${goal.id}-${chip}`}
+                            className={cn(
+                              "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] leading-none",
+                              index === 0
+                                ? goalStatusChipClass(goal)
+                                : "border-line/70 bg-hover/60 text-ink-muted",
+                            )}
+                          >
+                            {chip}
+                          </span>
+                        ))}
                       </div>
-                      {goal.latestSummary && (
-                        <div className="mt-1.5 line-clamp-2 text-[12px] leading-snug text-ink-soft">
-                          {goal.latestSummary}
-                        </div>
-                      )}
                     </div>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  <div className="mt-3 flex flex-col gap-2">
                     <Button
                       size="sm"
-                      variant="secondary"
-                      onClick={() => onOpenProject?.(goal.projectId)}
+                      variant="brand-soft"
+                      className="w-full justify-center"
+                      onClick={() => onOpenGoal?.(goal.id)}
                     >
-                      Open Project
+                      {goalPrimaryActionLabel(goal, copy)}
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => onOpenLatestSession?.(goal.id)}
-                    >
-                      Open latest session
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => copyGoalStatusCommand(goal.id)}
-                    >
-                      Copy status
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => onStopGoal?.(goal.id)}
-                    >
-                      Stop
-                    </Button>
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <div className="flex min-w-0 items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-[12px]"
+                          onClick={() => onOpenProject?.(goal.projectId)}
+                        >
+                          {copy.openGoalProject}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-[12px]"
+                          onClick={() => copyGoalStatusCommand(goal.id)}
+                        >
+                          {copy.copyGoalStatus}
+                        </Button>
+                      </div>
+                      {(goal.status === "running" ||
+                        goal.status === "wrapping") && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 border border-error/25 px-2.5 font-medium text-error hover:bg-error/[var(--opacity-soft)] hover:text-error"
+                          onClick={() => onStopGoal?.(goal.id)}
+                        >
+                          {copy.stopGoal}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -435,21 +458,80 @@ function GoalIndicator({
 }
 
 function goalTopbarLabel(goal: GoalBrief) {
+  if (goal.status === "completed") return "Goal · ready";
+  if (goal.status === "failed") return "Goal · failed";
   if (goal.status === "wrapping") return "Goal · wrapping";
   const remaining = remainingMinutes(goal.deadlineAt);
   if (remaining !== null) return `Goal · ${remaining}m`;
   return "Goal · running";
 }
 
-function goalStatusText(goal: GoalBrief) {
+function goalPrimaryActionLabel(
+  goal: GoalBrief,
+  copy: ReturnType<typeof useCopy>["topbar"],
+) {
+  if (goal.status === "completed") return copy.openGoalResult;
+  if (goal.status === "failed") return copy.viewGoalDetails;
+  return copy.openGoal;
+}
+
+function goalIndicatorStyle(goal: GoalBrief) {
+  if (goal.status === "failed") {
+    return {
+      trigger:
+        "border-error/35 bg-error/[var(--opacity-soft)] text-error hover:bg-error/[var(--opacity-medium)]",
+    };
+  }
+  if (goal.status === "completed") {
+    return {
+      trigger:
+        "border-success/35 bg-success/[var(--opacity-soft)] text-success hover:bg-success/[var(--opacity-medium)]",
+    };
+  }
+  return {
+    trigger:
+      "border-brand/30 bg-brand-soft text-brand-strong hover:bg-brand-soft/80",
+  };
+}
+
+function goalStatusText(
+  goal: GoalBrief,
+  copy: ReturnType<typeof useCopy>["topbar"],
+) {
   const remaining = remainingMinutes(goal.deadlineAt);
-  const pieces = [
-    goal.status,
-    remaining !== null ? `${remaining}m left` : null,
-    `${goal.workerLimit} workers`,
-    goal.writeMode === "autonomous" ? "autonomous write" : "read-only",
-  ].filter(Boolean);
-  return pieces.join(" · ");
+  if (goal.status === "completed") {
+    return copy.goalStatusReady(goal.workerLimit);
+  }
+  if (goal.status === "failed") {
+    return copy.goalStatusFailed(goal.workerLimit);
+  }
+  if (goal.status === "wrapping") {
+    return copy.goalStatusWrapping(goal.workerLimit);
+  }
+  if (goal.status === "stopped") {
+    return copy.goalStatusStopped(goal.workerLimit);
+  }
+  return copy.goalStatusRunning(remaining, goal.workerLimit);
+}
+
+function goalStatusChips(
+  goal: GoalBrief,
+  copy: ReturnType<typeof useCopy>["topbar"],
+) {
+  return goalStatusText(goal, copy)
+    .split(" · ")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function goalStatusChipClass(goal: GoalBrief) {
+  if (goal.status === "completed") {
+    return "border-success/25 bg-success/[var(--opacity-soft)] text-success";
+  }
+  if (goal.status === "failed") {
+    return "border-error/25 bg-error/[var(--opacity-soft)] text-error";
+  }
+  return "border-brand/25 bg-brand-soft text-brand-strong";
 }
 
 function remainingMinutes(deadlineAt: string) {

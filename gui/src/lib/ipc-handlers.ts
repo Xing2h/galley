@@ -13,6 +13,7 @@ import type { MessageRow } from "@/types/db";
 import type {
   ConversationMessage,
   IPCEvent,
+  MessageVisibility,
   ToolCall as IPCToolCall,
   ToolResult as IPCToolResult,
 } from "@/types/ipc";
@@ -35,6 +36,10 @@ type HistoryReplaySendResult = "sent" | "skipped" | "failed";
 const HISTORY_REPLAY_TIMEOUT_MS = 8_000;
 const _historyReplayPending = new Map<string, HistoryReplayState>();
 const _historyReplayReady = new Set<string>();
+
+function eventVisibility(event: { visibility?: MessageVisibility }): MessageVisibility {
+  return event.visibility ?? "visible";
+}
 
 function currentCopy() {
   return copyForLanguage(
@@ -189,6 +194,7 @@ export function dispatchIPCEvent(event: IPCEvent): void {
     }
 
     case "turn_end": {
+      const visibility = eventVisibility(event);
       // GA's agent_runner_loop resets turn=1 on every put_task
       // (per-message), so event.turnIndex is the per-message
       // step (the value users want to see in "第 N 步"). For
@@ -198,11 +204,13 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       // across user messages otherwise. See messages.ts
       // appendUserTurn for the `turnIndexOffset` rationale.
       const offset = messages.byId[event.sessionId]?.turnIndexOffset ?? 0;
-      const absoluteTurnIndex = event.turnIndex + offset;
+      const absoluteTurnIndex =
+        event.absoluteTurnIndex ?? event.turnIndex + offset;
       console.info("[ipc] turn_end", {
         gaTurnIndex: event.turnIndex,
         absoluteTurnIndex,
         offset,
+        visibility,
         toolCallCount: event.toolCalls?.length ?? 0,
         hasFinalAnswer: !!event.responseContent,
       });
@@ -210,8 +218,10 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       // TurnMarker renders "第 N 步" against this — resetting to 1
       // on every new user message is GA's native semantic and what
       // the user expects.
-      const turn = turnFromTurnEnd(event);
-      messages.appendAgentTurn(event.sessionId, turn);
+      if (visibility === "visible") {
+        const turn = turnFromTurnEnd(event);
+        messages.appendAgentTurn(event.sessionId, turn);
+      }
       // No setAgentRunning(false) here — turn_end is per-step inside
       // GA's agent_runner_loop, not the run terminus. agentRunning
       // stays true until `run_complete` / `error` / bridge close so
@@ -228,23 +238,31 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       // Unread is a completed-reply signal, not an intermediate-step
       // signal. GA emits turn_end for every loop step; only the final
       // one carries exitReason and is followed by run_complete.
-      useSessionsStore
-        .getState()
-        .bumpSessionAfterTurn(
-          event.sessionId,
-          event.summary,
-          event.turnIndex,
-          event.exitReason != null,
-        );
+      if (visibility === "visible") {
+        useSessionsStore
+          .getState()
+          .bumpSessionAfterTurn(
+            event.sessionId,
+            event.summary,
+            event.turnIndex,
+            event.exitReason != null,
+          );
+      }
       // SQLite: persist under the ABSOLUTE turn index. rowsToTurns
       // reconstructs the per-message step at restore by tracking
       // the latest user row's turn_index as a per-message base.
-      void persistTurnEndToMessages({ ...event, turnIndex: absoluteTurnIndex });
+      void persistTurnEndToMessages({
+        ...event,
+        turnIndex: absoluteTurnIndex,
+        visibility,
+      });
       return;
     }
 
     case "tool_call_pending": {
       const offset = messages.byId[event.sessionId]?.turnIndexOffset ?? 0;
+      const absoluteTurnIndex =
+        event.absoluteTurnIndex ?? event.turnIndex + offset;
       const target = pickTarget(event.args);
       const pending: PendingApproval = {
         approvalId: event.approvalId,
@@ -259,7 +277,7 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       // absolute turn index so the join works after restore.
       void persistToolEventPendingFromIPC({
         ...event,
-        turnIndex: event.turnIndex + offset,
+        turnIndex: absoluteTurnIndex,
       });
       return;
     }
@@ -273,6 +291,9 @@ export function dispatchIPCEvent(event: IPCEvent): void {
 
     case "run_complete": {
       console.debug("[ipc] run_complete", event);
+      if (eventVisibility(event) === "internal") {
+        return;
+      }
       // Last-resort clear: turn_end already cleared agentRunning for
       // the normal happy path; this catches ABORTED / DENIED exits
       // where turn_end_callback didn't fire on the GA side.
@@ -290,6 +311,9 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       // completed TurnMarkers show, what the Sidebar preview
       // shows. No offset applied; raw GA value is the display.
       console.debug("[ipc] turn_start", event);
+      if (eventVisibility(event) === "internal") {
+        return;
+      }
       messages.setCurrentTurnIndex(event.sessionId, event.turnIndex);
       // New turn starts → drop whatever streaming buffer the previous
       // turn left, so the in-flight render doesn't bleed across turns.
@@ -301,6 +325,9 @@ export function dispatchIPCEvent(event: IPCEvent): void {
       // Streaming partial. Append delta; MainView re-renders the
       // in-flight reply with cleanPartialContent stripping GA's
       // internal tags.
+      if (eventVisibility(event) === "internal") {
+        return;
+      }
       messages.appendInFlightDelta(event.sessionId, event.delta);
       return;
     }
@@ -929,6 +956,7 @@ async function persistTurnEndToMessages(event: {
   toolResults: IPCToolResult[];
   responseContent: string;
   summary: string;
+  visibility?: MessageVisibility;
 }): Promise<void> {
   try {
     const trimmedSummary = event.summary?.trim() ?? "";
@@ -959,6 +987,7 @@ async function persistTurnEndToMessages(event: {
         // LLM pre-tool reasoning prose for DetailPanel restore. See
         // isFinalTurn gate above — final answers don't persist here.
         preamble: persistedPreamble,
+        visibility: event.visibility ?? "visible",
       },
     });
   } catch (e) {

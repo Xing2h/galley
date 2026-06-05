@@ -46,6 +46,7 @@ class ReadyEvent:
 class TurnStartEvent:
     sessionId: str
     turnIndex: int
+    visibility: str = "visible"
     timestamp: str = field(default_factory=_now_iso)
     kind: str = "turn_start"
 
@@ -60,6 +61,7 @@ class ToolCallPendingEvent:
     argsPreview: str
     riskLevel: str  # "low" | "medium" | "high"
     reason: str
+    absoluteTurnIndex: int | None = None
     timestamp: str = field(default_factory=_now_iso)
     kind: str = "tool_call_pending"
 
@@ -72,6 +74,7 @@ class ToolCallStartEvent:
     toolName: str
     args: dict[str, Any]
     argsPreview: str
+    absoluteTurnIndex: int | None = None
     timestamp: str = field(default_factory=_now_iso)
     kind: str = "tool_call_start"
 
@@ -105,6 +108,8 @@ class TurnEndEvent:
     toolResults: list[dict[str, Any]]
     responseContent: str
     exitReason: dict[str, Any] | None = None
+    visibility: str = "visible"
+    absoluteTurnIndex: int | None = None
     timestamp: str = field(default_factory=_now_iso)
     kind: str = "turn_end"
 
@@ -130,6 +135,7 @@ class TurnProgressEvent:
     sessionId: str
     delta: str
     source: str  # GA's source field: "workbench" / "system" / etc
+    visibility: str = "visible"
     timestamp: str = field(default_factory=_now_iso)
     kind: str = "turn_progress"
 
@@ -149,6 +155,7 @@ class RunCompleteEvent:
     exitReason: dict[str, Any]
     finalContent: str
     totalTurns: int
+    visibility: str = "visible"
     timestamp: str = field(default_factory=_now_iso)
     kind: str = "run_complete"
 
@@ -166,6 +173,7 @@ class ErrorEvent:
     hint: str | None = None  # "check_llm_config" | "network" | "quota_exceeded" | None
     context: str | None = None
     traceback: str | None = None
+    visibility: str = "visible"
     timestamp: str = field(default_factory=_now_iso)
     kind: str = "error"
 
@@ -283,6 +291,8 @@ Event = (
 class UserMessageCommand:
     text: str
     images: list[str] = field(default_factory=list)
+    visibility: str = "visible"
+    absoluteTurnIndex: int | None = None
     kind: str = "user_message"
 
 

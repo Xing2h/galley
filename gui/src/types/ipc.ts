@@ -13,6 +13,8 @@ export const PROTOCOL_VERSION = "0.1";
 
 // ---------------- Shared shapes ----------------
 
+export type MessageVisibility = "visible" | "internal";
+
 export interface LLMInfo {
   index: number;
   /** Raw "ClassName/model" from GA */
@@ -76,6 +78,7 @@ export interface TurnStartEvent {
   kind: "turn_start";
   sessionId: string;
   turnIndex: number;
+  visibility?: MessageVisibility;
   timestamp: string;
 }
 
@@ -84,6 +87,7 @@ export interface ToolCallPendingEvent {
   sessionId: string;
   approvalId: string;
   turnIndex: number;
+  absoluteTurnIndex?: number | null;
   toolName: string;
   args: Record<string, unknown>;
   argsPreview: string;
@@ -97,6 +101,7 @@ export interface ToolCallStartEvent {
   sessionId: string;
   toolCallId: string;
   turnIndex: number;
+  absoluteTurnIndex?: number | null;
   toolName: string;
   args: Record<string, unknown>;
   argsPreview: string;
@@ -130,6 +135,8 @@ export interface TurnEndEvent {
   toolResults: ToolResult[];
   responseContent: string;
   exitReason: ExitReason | null;
+  visibility?: MessageVisibility;
+  absoluteTurnIndex?: number | null;
   timestamp: string;
 }
 
@@ -147,6 +154,7 @@ export interface TurnProgressEvent {
   sessionId: string;
   delta: string;
   source: string;
+  visibility?: MessageVisibility;
   timestamp: string;
 }
 
@@ -164,6 +172,7 @@ export interface RunCompleteEvent {
   exitReason: ExitReason;
   finalContent: string;
   totalTurns: number;
+  visibility?: MessageVisibility;
   timestamp: string;
 }
 
@@ -191,6 +200,7 @@ export interface ErrorEvent {
   hint: "check_llm_config" | "network" | "quota_exceeded" | null;
   context: string | null;
   traceback: string | null;
+  visibility?: MessageVisibility;
   timestamp: string;
 }
 
@@ -292,6 +302,8 @@ export interface UserMessageCommand {
   kind: "user_message";
   text: string;
   images?: string[];
+  visibility?: MessageVisibility;
+  absoluteTurnIndex?: number | null;
 }
 
 export type ApprovalDecision =

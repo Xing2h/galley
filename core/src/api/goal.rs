@@ -111,6 +111,8 @@ pub struct GoalProposalBrief {
     pub objective: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<ProjectId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub master_session_id: Option<SessionId>,
     pub budget_seconds: u32,
     pub worker_limit: u32,
     pub runtime_kind: RuntimeKind,
@@ -132,6 +134,8 @@ pub struct GoalBrief {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proposal_id: Option<GoalProposalId>,
     pub project_id: ProjectId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub master_session_id: Option<SessionId>,
     pub objective: String,
     pub status: GoalStatus,
     pub budget_seconds: u32,
@@ -144,6 +148,8 @@ pub struct GoalBrief {
     pub ended_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_seen_at: Option<String>,
     pub stop_requested: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -199,6 +205,8 @@ pub struct CreateGoalProposalInput {
     pub objective: String,
     #[serde(default)]
     pub project_id: Option<ProjectId>,
+    #[serde(default)]
+    pub master_session_id: Option<SessionId>,
     #[serde(default)]
     pub budget_seconds: Option<u32>,
     #[serde(default)]

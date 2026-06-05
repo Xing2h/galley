@@ -404,6 +404,8 @@ class Bridge:
         self.shutdown_event = threading.Event()
         self.run_in_progress = threading.Event()
         self.current_turn: int = 0
+        self._current_message_visibility: str = "visible"
+        self._current_message_turn_base: int | None = None
         # turn_start dedupe state. Two emitters share this:
         #   1. WorkbenchHandler dispatch wrapper (real-time, fires when
         #      GA enters tool dispatch for the current turn).
@@ -426,6 +428,11 @@ class Bridge:
         # one is already running first detaches the old.
         self._pet_process: Any = None
         self._pet_port: int = 0
+
+    def _current_absolute_turn_index(self, turn_index: int) -> int | None:
+        if self._current_message_turn_base is None:
+            return None
+        return self._current_message_turn_base + max(0, turn_index - 1)
 
     # ---------------- Lifecycle ----------------
 
@@ -619,6 +626,7 @@ class Bridge:
             TurnStartEvent(
                 sessionId=self.session_id,
                 turnIndex=turn_index,
+                visibility=self._current_message_visibility,
             )
         )
 
@@ -736,6 +744,7 @@ class Bridge:
                                 sessionId=self.session_id,
                                 delta=filtered,
                                 source=str(item.get("source", "")),
+                                visibility=self._current_message_visibility,
                             )
                         )
             except Exception as e:
@@ -772,17 +781,18 @@ class Bridge:
         """
         hint, retryable = _classify_error(message, category)
         self._emit(
-            ErrorEvent(
-                sessionId=self.session_id,
-                message=message,
-                category=category,
-                severity=severity,
-                retryable=retryable,
-                hint=hint,
-                context=context,
-                traceback=tb,
+                ErrorEvent(
+                    sessionId=self.session_id,
+                    message=message,
+                    category=category,
+                    severity=severity,
+                    retryable=retryable,
+                    hint=hint,
+                    context=context,
+                    traceback=tb,
+                    visibility=self._current_message_visibility,
+                )
             )
-        )
 
     # ---------------- Turn end hook ----------------
 
@@ -817,6 +827,8 @@ class Bridge:
                     ],
                     responseContent=response_content,
                     exitReason=safe_exit,
+                    visibility=self._current_message_visibility,
+                    absoluteTurnIndex=self._current_absolute_turn_index(turn),
                 )
             )
 
@@ -840,9 +852,12 @@ class Bridge:
                         exitReason=safe_exit or {},
                         finalContent=_clean_response_for_display(response_content),
                         totalTurns=turn,
+                        visibility=self._current_message_visibility,
                     )
                 )
                 self.run_in_progress.clear()
+                self._current_message_visibility = "visible"
+                self._current_message_turn_base = None
             else:
                 # Predict-emit turn_start(turn+1): GA is going to keep
                 # looping, but the real dispatch-wrapper signal for the
@@ -891,6 +906,7 @@ class Bridge:
                 sessionId=self.session_id,
                 approvalId=approval_id,
                 turnIndex=self.current_turn,
+                absoluteTurnIndex=self._current_absolute_turn_index(self.current_turn),
                 toolName=tool_name,
                 args=args,
                 argsPreview=_compact_args(args),
@@ -934,6 +950,8 @@ class Bridge:
             # run isn't suppressed when the previous run also ended at
             # turn 1.
             self._last_emitted_turn = 0
+            self._current_message_visibility = cmd.visibility or "visible"
+            self._current_message_turn_base = cmd.absoluteTurnIndex
             self.run_in_progress.set()
             display_queue = self.agent.put_task(
                 cmd.text, source="workbench", images=cmd.images
@@ -966,9 +984,12 @@ class Bridge:
                         exitReason={"result": "ABORTED", "data": None},
                         finalContent="",
                         totalTurns=self.current_turn,
+                        visibility=self._current_message_visibility,
                     )
                 )
                 self.run_in_progress.clear()
+                self._current_message_visibility = "visible"
+                self._current_message_turn_base = None
         elif isinstance(cmd, LoadHistoryCommand):
             try:
                 self._load_history(cmd.messages)

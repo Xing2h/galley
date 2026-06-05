@@ -13,6 +13,7 @@ export interface GoalBrief {
   id: string;
   proposalId?: string;
   projectId: string;
+  masterSessionId?: string;
   objective: string;
   status: GoalStatus;
   budgetSeconds: number;
@@ -23,6 +24,7 @@ export interface GoalBrief {
   deadlineAt: string;
   endedAt?: string;
   latestSummary?: string;
+  resultSeenAt?: string;
   stopRequested: boolean;
   createdAt: string;
   updatedAt: string;
@@ -31,9 +33,30 @@ export interface GoalBrief {
 export interface StartDesktopGoalInput {
   objective: string;
   projectId?: string;
+  masterSessionId: string;
   runtimeKind?: RuntimeKind;
   budgetSeconds?: number;
   workerLimit?: number;
+}
+
+export interface GoalMasterMessage {
+  id: string;
+  sessionId: string;
+  role: "user" | "agent" | "system";
+  content: string;
+  createdAt: string;
+  summary?: string;
+  turnIndex?: number;
+  origin?: {
+    via: "gui" | "cli" | "supervisor" | "system";
+    supervisor?: string;
+    reason?: string;
+  };
+}
+
+export interface StartDesktopGoalResult {
+  goal: GoalBrief;
+  masterMessage: GoalMasterMessage;
 }
 
 export interface GoalLaunchConfig {

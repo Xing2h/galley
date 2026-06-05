@@ -414,10 +414,12 @@ Conversation messages for a session, oldest first. NDJSON, one
 | `sessionId`   | string          | parent session id                                                     |
 | `role`        | string enum     | `user / agent / system`. `tool` rows surface as `agent`               |
 | `content`     | string          | raw markdown body                                                     |
+| `finalAnswer` | string?         | final assistant answer when the runner has produced one; omitted for intermediate steps and user rows |
 | `createdAt`   | string (ISO8601)|                                                                       |
 | `summary`     | string?         | agent-supplied one-line digest of this turn (assistant rows only)     |
 | `turnIndex`   | int?            | which user-message-turn this message belongs to                       |
 | `origin`      | `Origin`?       | source of this message (B2+; omitted on rows from before migration 006) |
+| `visibility`  | `visible/internal`? | additive field for internal controller/audit turns; ordinary session reads and GUI rendering return `visible` rows only |
 
 ### 5.5a · `galley session send <id> "<content>" [--supervisor=<x>] [--reason=<y>]`
 
@@ -1019,22 +1021,84 @@ Starts or resumes the blocking Goal controller. Starting from a proposal
 validates the proposal status, internal token, and expiry. If the proposal did
 not specify a Project, Core creates one and binds the Goal to it.
 
-The controller starts `workerLimit` child sessions in the Goal Project, injects
-the Goal worker protocol, follows the Project with `project follow --until-idle
---final-show`, then summarizes the task board. If incomplete tasks remain and
-the Goal deadline has not passed, it starts another worker wave. Otherwise it
-writes a synthesis event and ends as `completed`, `stopped`, or `failed`.
+For desktop Goals with a master session, the controller first dispatches an
+internal Goal Master planning turn to that master session. The Master acts as a
+scheduler/editor, not a production worker: it must read
+`galley goal status <goalId>`, then write executable work only through
+`galley goal task ...` and `galley goal event ...`. It must not call GA native
+`/hive`, start GA BBS, write external GA state, or write the Goal state outside
+Galley Core. Managed GA may use its normal memory/SOP self-evolution mechanism
+for durable, reusable learnings, but Goal protocol state must not become
+memory/SOP: Goal ids, task ids, worker session ids, rounds/waves, temporary
+coordination logs, and transient task-board state stay in Galley Core. Master
+planning user/assistant/tool turns are persisted as `visibility: "internal"` for
+audit and context, but ordinary session reads, GUI rendering, and search exclude
+them by default.
+
+`workerLimit` is a maximum concurrency limit, not "start this many sessions
+immediately." Worker sessions are created lazily only when the Core task board
+contains an open task assigned to that slot, with a scope such as
+`goal-worker-2:master-round-1:fact-check`. The Master may create fewer tasks
+than `workerLimit` when the work does not need full parallelism, but it must not
+create more executable worker-slot tasks than the configured limit. If Master
+planning fails, times out, or repeatedly creates no executable task, the
+controller falls back to a conservative deterministic task round so the Goal does
+not empty-spin.
+
+The controller then wakes only the worker sessions that have concrete assigned
+tasks, injects the Goal worker protocol, follows the Project with
+`project follow --until-idle --final-show`, then evaluates the task board,
+events, and worker output. Goal run time is a sustained work budget: while the
+deadline has not passed, Galley asks the Master to create concrete follow-up
+tasks when prior results reveal something to verify, refine, structure, or
+challenge. Worker identity is Galley-bound: Core mints the child session id
+before the first worker prompt is persisted and injects that exact id into the
+prompt. Workers must use that id for `ownerSessionId` / `authorSessionId`; they
+must not infer their identity from Project session titles, `goal status`, or
+another worker's events.
+
+Worker wake is task-board driven, not a generic continuation prompt. A worker
+slot must complete/block/cancel an owned task or post a result event before the
+controller can assign that same slot another concrete task. The slot must also
+be idle; terminal task/result signals from a still-live worker are not enough to
+wake it again. Other unfinished slots do not block a slot that already produced
+its terminal signal. Claimed/running tasks, worker progress events, and worker
+output count as in-progress material, so the controller keeps waiting inside
+that slot instead of failing before the deadline. If a worker becomes idle
+without any progress signal, the controller waits through a grace window, sends
+one protocol reminder for that slot, then continues waiting without stacking
+more prompts.
+
+Once the deadline is reached, the controller stops creating new tasks and stops
+waking workers. If the current worker wave is still live, the controller waits
+for it to finish naturally up to a bounded drain window. Before master synthesis
+starts, Galley shuts down worker runners so queued work cannot keep running
+after the result is delivered. Worker sessions remain in the Project as audit
+history. The Goal then enters `wrapping`, runs master synthesis when a desktop
+master session exists, waits for a non-empty master `finalAnswer`, and only then
+ends as `completed`, `stopped`, or `failed`. `latestSummary` is derived from that
+final answer rather than the master's intermediate step summaries.
+
+For desktop Goals, the master session is the user-visible control and delivery
+location. The controller may persist short Galley-owned checkpoints there
+(`agents started`, `initial progress`, `run time reached`) through an internal
+socket write path that does not dispatch those checkpoint messages to the
+master runner. Worker prompts, Goal ids, task ids, and protocol logs remain in
+worker sessions and the Goal audit stream.
 
 `goal run` emits NDJSON frames:
 
 ```json
 {"schemaVersion":1,"stream":"goal","phase":"started","goal":{...}}
 {"schemaVersion":1,"stream":"goal","phase":"worker_started","sessionId":"sess_...","goal":{...}}
+{"schemaVersion":1,"stream":"goal","phase":"waiting","goal":{...}}
+{"schemaVersion":1,"stream":"goal","phase":"continuing","goal":{...}}
+{"schemaVersion":1,"stream":"goal","phase":"wrapping","goal":{...}}
 {"schemaVersion":1,"stream":"goal","phase":"finished","goal":{...}}
 ```
 
-Known `phase` values: `started`, `worker_started`, `continuing`, `stopped`,
-`finished`.
+Known `phase` values: `started`, `worker_started`, `waiting`, `continuing`,
+`wrapping`, `failed`, `stopped`, `finished`.
 
 #### `galley goal status <goal-id>`
 

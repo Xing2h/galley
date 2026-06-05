@@ -74,6 +74,9 @@ export interface MessageRow {
   /** Free-text rationale ("user said tldr"). NULL when supervisor
    * didn't supply one. Added in migration 007. */
   origin_note: string | null;
+  /** visible by default; internal rows are retained for audit but hidden
+   * from normal conversation rendering/search. Added in migration 017. */
+  visibility: "visible" | "internal";
   created_at: string;
 }
 

@@ -38,6 +38,8 @@ const MIG_012: &str = include_str!("../migrations/012_managed_model_local_secret
 const MIG_013: &str = include_str!("../migrations/013_session_llm_key.sql");
 const MIG_014: &str = include_str!("../migrations/014_managed_model_auth_kind.sql");
 const MIG_015: &str = include_str!("../migrations/015_goal_v1.sql");
+const MIG_016: &str = include_str!("../migrations/016_goal_master_session.sql");
+const MIG_017: &str = include_str!("../migrations/017_message_visibility.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -52,7 +54,7 @@ async fn fresh_pool() -> SqlitePool {
         .expect("enable foreign keys");
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
-        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015,
+        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -113,6 +115,7 @@ async fn goal_lifecycle_defaults_task_event_and_stop() {
             CreateGoalProposalInput {
                 objective: "Ship Goal V1".into(),
                 project_id: None,
+                master_session_id: None,
                 budget_seconds: None,
                 worker_limit: None,
                 runtime_kind: Some(RuntimeKind::Managed),
@@ -223,6 +226,7 @@ async fn goal_proposal_worker_limit_is_capped_at_official_hive_max() {
             CreateGoalProposalInput {
                 objective: "Scale Goal safely".into(),
                 project_id: None,
+                master_session_id: None,
                 budget_seconds: None,
                 worker_limit: Some(9),
                 runtime_kind: Some(RuntimeKind::Managed),
@@ -238,6 +242,78 @@ async fn goal_proposal_worker_limit_is_capped_at_official_hive_max() {
 }
 
 #[tokio::test]
+async fn goal_master_session_visible_until_result_seen() {
+    let pool = fresh_pool().await;
+    let galley = SqliteGalley::from_pool(pool.clone());
+    seed_session_idle(&pool, "sess_master").await;
+
+    let proposal = galley
+        .create_goal_proposal(
+            CreateGoalProposalInput {
+                objective: "Research a launch plan".into(),
+                project_id: None,
+                master_session_id: Some(sid("sess_master")),
+                budget_seconds: None,
+                worker_limit: Some(3),
+                runtime_kind: Some(RuntimeKind::Managed),
+                write_mode: None,
+                expires_in_seconds: None,
+            },
+            Origin::gui(),
+        )
+        .await
+        .expect("create goal proposal");
+
+    let goal = galley
+        .start_goal_from_proposal(
+            proposal.id.clone(),
+            proposal.internal_confirm_token.clone(),
+            Origin::gui(),
+        )
+        .await
+        .expect("start goal");
+
+    assert_eq!(goal.master_session_id, Some(sid("sess_master")));
+    let master = galley
+        .session_brief(sid("sess_master"))
+        .await
+        .expect("master session");
+    assert_eq!(master.project_id.as_deref(), Some(goal.project_id.as_str()));
+
+    let visible = galley.list_visible_goals().await.expect("visible goals");
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].id, goal.id);
+
+    let completed = galley
+        .update_goal_state(goal.id.clone(), GoalStatus::Completed, Some("Done".into()))
+        .await
+        .expect("mark completed");
+    assert!(completed.result_seen_at.is_none());
+    let visible = galley
+        .list_visible_goals()
+        .await
+        .expect("visible completed");
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].status, GoalStatus::Completed);
+
+    let seen = galley
+        .mark_goal_result_seen(goal.id.clone(), Origin::gui())
+        .await
+        .expect("mark seen");
+    assert!(seen.result_seen_at.is_some());
+    let seen_again = galley
+        .mark_goal_result_seen(goal.id.clone(), Origin::gui())
+        .await
+        .expect("mark seen again");
+    assert_eq!(seen_again.result_seen_at, seen.result_seen_at);
+    assert!(galley
+        .list_visible_goals()
+        .await
+        .expect("visible after seen")
+        .is_empty());
+}
+
+#[tokio::test]
 async fn goal_start_rejects_token_mismatch_and_expired_proposal() {
     let pool = fresh_pool().await;
     let galley = SqliteGalley::from_pool(pool.clone());
@@ -247,6 +323,7 @@ async fn goal_start_rejects_token_mismatch_and_expired_proposal() {
             CreateGoalProposalInput {
                 objective: "Do not start with the wrong token".into(),
                 project_id: None,
+                master_session_id: None,
                 budget_seconds: None,
                 worker_limit: None,
                 runtime_kind: Some(RuntimeKind::Managed),

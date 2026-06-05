@@ -296,6 +296,9 @@ interface SessionsActions {
   /** Synchronous create — returns the new id for chaining. Rust write
    * happens fire-and-forget; in-memory state updates immediately. */
   createSession: (projectId?: string) => string;
+  /** Create and await the Rust row. Used when another Core command must
+   * reference the session immediately, such as desktop Goal master launch. */
+  createSessionPersisted: (projectId?: string, title?: string) => Promise<string>;
   archiveSession: (sessionId: string) => void;
   unarchiveSession: (sessionId: string) => void;
   renameSession: (sessionId: string, newTitle: string) => void;
@@ -592,6 +595,56 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     }).catch((e) => {
       console.debug("[sessions] create_session invoke failed.", e);
     });
+    return id;
+  },
+
+  createSessionPersisted: async (projectId, title) => {
+    const id = `s-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 6)}`;
+    const now = new Date().toISOString();
+    const gaRuntimeKind = usePrefsStore.getState().activeRuntimeKind;
+    const promptProfile =
+      gaRuntimeKind === "managed" ? MANAGED_PROMPT_PROFILE : undefined;
+    const sessionTitle = title?.trim() || DEFAULT_NEW_SESSION_TITLE;
+    const newSession: Session = {
+      id,
+      title: sessionTitle,
+      status: "idle",
+      projectId,
+      pendingApprovalCount: 0,
+      errorCount: 0,
+      lastActivityAt: now,
+      createdAt: now,
+      updatedAt: now,
+      runtimeKind: gaRuntimeKind,
+      runtimeLabel: gaRuntimeKind === "managed" ? "内置 GA" : "外部 GA",
+      gaRuntimeKind,
+      promptProfile,
+    };
+    set((state) => ({
+      sessions: [newSession, ...state.sessions],
+      activeSessionId: id,
+    }));
+    try {
+      await invoke("create_session", {
+        input: {
+          id,
+          title: sessionTitle,
+          projectId,
+          gaRuntimeKind,
+          promptProfile,
+        } as CreateSessionInputWire,
+        origin: GUI_ORIGIN,
+      });
+    } catch (e) {
+      set((state) => ({
+        sessions: state.sessions.filter((session) => session.id !== id),
+        activeSessionId:
+          state.activeSessionId === id ? undefined : state.activeSessionId,
+      }));
+      throw e;
+    }
     return id;
   },
 

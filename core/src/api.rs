@@ -29,7 +29,7 @@ pub use goal::{
     GOAL_CONFIRMATION_PHRASE, MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT,
 };
 pub use health::{HealthCheck, HealthReport, HealthStatus};
-pub use message::{MessageBrief, MessageId, MessageRole};
+pub use message::{MessageBrief, MessageId, MessageRole, MessageVisibility};
 pub use model::{
     ManagedModelAuthKind, ManagedModelConnectionResult, ManagedModelCredentialStatus,
     ManagedModelListResult, ManagedModelProbeInput, ManagedModelProtocol,
@@ -97,6 +97,14 @@ pub trait GalleyApi: Send + Sync {
         session_id: SessionId,
         content: String,
         origin: Origin,
+    ) -> Result<MessageBrief>;
+
+    async fn send_message_with_visibility(
+        &self,
+        session_id: SessionId,
+        content: String,
+        origin: Origin,
+        visibility: MessageVisibility,
     ) -> Result<MessageBrief>;
 
     // ---------------- session writes (B3 M4a) ----------------
@@ -297,6 +305,10 @@ pub trait GalleyApi: Send + Sync {
     async fn goal_status(&self, id: GoalId) -> Result<GoalStatusSnapshot>;
 
     async fn list_active_goals(&self) -> Result<Vec<GoalBrief>>;
+
+    async fn list_visible_goals(&self) -> Result<Vec<GoalBrief>>;
+
+    async fn mark_goal_result_seen(&self, id: GoalId, origin: Origin) -> Result<GoalBrief>;
 
     async fn request_goal_stop(&self, id: GoalId, origin: Origin) -> Result<GoalBrief>;
 

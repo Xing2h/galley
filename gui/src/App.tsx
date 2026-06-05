@@ -27,7 +27,8 @@ import { useImSupervisorStatus } from "@/hooks/useImSupervisorStatus";
 import { pushCloseHintCopy } from "@/lib/close-hint";
 import {
   getGoalStatus,
-  listActiveGoals,
+  listVisibleGoals,
+  markGoalResultSeen,
   startDesktopGoal,
   stopGoal,
 } from "@/lib/goals";
@@ -62,6 +63,14 @@ import { useUiStore } from "@/stores/ui";
 import { hydrateApp } from "@/lib/hydrate";
 import { makeAppError } from "@/types/app-error";
 import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
+
+function goalMasterSessionTitle(objective: string): string {
+  const normalized = objective.replace(/\s+/g, " ").trim();
+  if (!normalized) return "Goal";
+  const limit = 44;
+  if (normalized.length <= limit) return `Goal · ${normalized}`;
+  return `Goal · ${normalized.slice(0, limit)}…`;
+}
 
 /**
  * V0.1 Stage 2 #8 — App entry.
@@ -102,6 +111,9 @@ function App() {
   const sessions = useSessionsStore((s) => s.sessions);
   const activeSessionId = useSessionsStore((s) => s.activeSessionId);
   const createSession = useSessionsStore((s) => s.createSession);
+  const createSessionPersisted = useSessionsStore(
+    (s) => s.createSessionPersisted,
+  );
   // activateSession is the orchestrator — moved to sessionsStore in
   // B3 M5 so it sits next to active id ownership.
   const activateSession = useSessionsStore((s) => s.activateSession);
@@ -453,12 +465,12 @@ function App() {
     };
     const refreshGoals = async () => {
       try {
-        const goals = await listActiveGoals();
+        const goals = await listVisibleGoals();
         if (cancelled) return;
         setActiveGoals(goals);
         void hydrateGoalProjects(goals);
       } catch (e) {
-        console.debug("[goals] list_active_goals failed.", e);
+        console.debug("[goals] list_visible_goals failed.", e);
       }
     };
     void refreshGoals();
@@ -472,6 +484,34 @@ function App() {
   }, []);
 
   useEffect(() => subscribeSystemTheme(setSystemTheme), []);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const visibleResultGoal = activeGoals.find(
+      (goal) =>
+        goal.masterSessionId === activeSessionId &&
+        (goal.status === "completed" || goal.status === "failed") &&
+        !goal.resultSeenAt,
+    );
+    if (!visibleResultGoal) return;
+    void markGoalResultSeen(visibleResultGoal.id)
+      .then((next) => {
+        setActiveGoals((goals) =>
+          goals
+            .map((goal) => (goal.id === next.id ? next : goal))
+            .filter(
+              (goal) =>
+                !(
+                  goal.id === next.id &&
+                  (goal.status === "completed" || goal.status === "failed")
+                ),
+            ),
+        );
+      })
+      .catch((e) => {
+        console.debug("[goals] mark result seen failed.", e);
+      });
+  }, [activeGoals, activeSessionId]);
 
   const themeAppliedRef = useRef(false);
   useEffect(() => {
@@ -832,8 +872,11 @@ function App() {
     () => new Set(activeGoals.map((goal) => goal.projectId)),
     [activeGoals],
   );
-  const activeSessionGoal = activeSession?.projectId
-    ? activeGoals.find((goal) => goal.projectId === activeSession.projectId)
+  const activeSessionGoal = activeSession
+    ? (activeGoals.find((goal) => goal.masterSessionId === activeSession.id) ??
+      (activeSession.projectId
+        ? activeGoals.find((goal) => goal.projectId === activeSession.projectId)
+        : undefined))
     : undefined;
   const activeSessionBusy =
     screen === "main" &&
@@ -846,19 +889,35 @@ function App() {
       openModelsForMissingConfig();
       return;
     }
-    const projectId = activeSession?.projectId ?? activeProjectFilter;
-    const sessionIdToAttach =
-      activeSessionId && activeSession && !activeSession.projectId
-        ? activeSessionId
-        : undefined;
     try {
-      const goal = await startDesktopGoal({
+      let masterSessionId = activeSession?.id;
+      const createdMasterSession = masterSessionId === undefined;
+      if (!masterSessionId) {
+        masterSessionId = await createSessionPersisted(
+          activeProjectFilter,
+          goalMasterSessionTitle(objective),
+        );
+        setScreen("main");
+      }
+      const projectId = activeSession?.projectId ?? activeProjectFilter;
+      const shouldMirrorMasterProject =
+        masterSessionId && (!activeSession || !activeSession.projectId);
+      const result = await startDesktopGoal({
         objective,
         projectId: projectId ?? undefined,
+        masterSessionId,
         runtimeKind: activeRuntimeKind,
         workerLimit: config.workerLimit,
         budgetSeconds: config.budgetSeconds,
       });
+      const { goal, masterMessage } = result;
+      appendUserTurnExternal(
+        masterSessionId,
+        masterMessage.content,
+        masterMessage.origin,
+        masterMessage.createdAt,
+        false,
+      );
       setActiveGoals((goals) => {
         const withoutCurrent = goals.filter(
           (candidate) => candidate.id !== goal.id,
@@ -867,8 +926,8 @@ function App() {
           (a, b) => Date.parse(a.deadlineAt) - Date.parse(b.deadlineAt),
         );
       });
-      if (sessionIdToAttach) {
-        void assignSessionToProject(sessionIdToAttach, goal.projectId);
+      if (shouldMirrorMasterProject) {
+        void assignSessionToProject(masterSessionId, goal.projectId);
       }
       void getGoalStatus(goal.id)
         .then((snapshot) => {
@@ -877,10 +936,20 @@ function App() {
               .getState()
               .applyExternalProjectCreated(snapshot.project);
           }
+          const master = snapshot.sessions.find(
+            (session) => session.id === masterSessionId,
+          );
+          if (master) {
+            useSessionsStore.getState().applyExternalSessionUpdated(master);
+          }
         })
         .catch((e) => {
           console.debug("[goals] hydrate started goal project failed.", e);
         });
+      setActiveProjectFilter(undefined);
+      if (createdMasterSession) {
+        setScreen("main");
+      }
       pushToast(
         makeAppError({
           category: "business",
@@ -955,21 +1024,35 @@ function App() {
   const openGoalProject = (projectId: string) => {
     openProjectInSidebar(projectId);
   };
-  const openGoalLatestSession = async (goalId: string) => {
+  const openGoal = async (goalId: string) => {
     try {
       const snapshot = await getGoalStatus(goalId);
-      const latestSession = [...snapshot.sessions].sort(
-        (a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt),
-      )[0];
-      if (latestSession) {
+      const masterSessionId = snapshot.goal.masterSessionId;
+      if (masterSessionId) {
         setActiveProjectFilter(undefined);
-        void activateSession(latestSession.id);
+        void activateSession(masterSessionId);
         setScreen("main");
+        if (
+          snapshot.goal.status === "completed" ||
+          snapshot.goal.status === "failed"
+        ) {
+          void markGoalResultSeen(snapshot.goal.id)
+            .then((next) => {
+              setActiveGoals((goals) =>
+                goals
+                  .map((goal) => (goal.id === next.id ? next : goal))
+                  .filter((goal) => goal.id !== next.id),
+              );
+            })
+            .catch((e) => {
+              console.debug("[goals] mark result seen failed.", e);
+            });
+        }
         return;
       }
       openGoalProject(snapshot.goal.projectId);
     } catch (e) {
-      console.warn("[goals] open latest session failed.", e);
+      console.warn("[goals] open goal failed.", e);
       const goal = activeGoals.find((candidate) => candidate.id === goalId);
       if (goal) openGoalProject(goal.projectId);
     }
@@ -1230,12 +1313,9 @@ function App() {
                 : undefined
             }
             activeGoals={activeGoals}
-            getGoalProjectName={(projectId) =>
-              projects.find((project) => project.id === projectId)?.name
-            }
             onOpenGoalProject={openGoalProject}
-            onOpenGoalLatestSession={(goalId) => {
-              void openGoalLatestSession(goalId);
+            onOpenGoal={(goalId) => {
+              void openGoal(goalId);
             }}
             onStopGoal={(goalId) => {
               void stopGoalFromTopbar(goalId);

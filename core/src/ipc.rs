@@ -124,6 +124,8 @@ pub struct ReadyEvent {
 pub struct TurnStartEvent {
     pub session_id: String,
     pub turn_index: i64,
+    #[serde(default)]
+    pub visibility: Option<String>,
     pub timestamp: String,
 }
 
@@ -133,6 +135,8 @@ pub struct ToolCallPendingEvent {
     pub session_id: String,
     pub approval_id: String,
     pub turn_index: i64,
+    #[serde(default)]
+    pub absolute_turn_index: Option<i64>,
     pub tool_name: String,
     pub args: Value,
     pub args_preview: String,
@@ -148,6 +152,8 @@ pub struct ToolCallStartEvent {
     pub session_id: String,
     pub tool_call_id: String,
     pub turn_index: i64,
+    #[serde(default)]
+    pub absolute_turn_index: Option<i64>,
     pub tool_name: String,
     pub args: Value,
     pub args_preview: String,
@@ -186,6 +192,10 @@ pub struct TurnEndEvent {
     pub response_content: String,
     #[serde(default)]
     pub exit_reason: Option<Value>,
+    #[serde(default)]
+    pub visibility: Option<String>,
+    #[serde(default)]
+    pub absolute_turn_index: Option<i64>,
     pub timestamp: String,
 }
 
@@ -195,6 +205,8 @@ pub struct TurnProgressEvent {
     pub session_id: String,
     pub delta: String,
     pub source: String,
+    #[serde(default)]
+    pub visibility: Option<String>,
     pub timestamp: String,
 }
 
@@ -214,6 +226,8 @@ pub struct RunCompleteEvent {
     pub exit_reason: Value,
     pub final_content: String,
     pub total_turns: i64,
+    #[serde(default)]
+    pub visibility: Option<String>,
     pub timestamp: String,
 }
 
@@ -236,6 +250,8 @@ pub struct ErrorEvent {
     pub context: Option<String>,
     #[serde(default)]
     pub traceback: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<String>,
     pub timestamp: String,
 }
 
@@ -327,6 +343,10 @@ pub struct UserMessageCommand {
     pub text: String,
     #[serde(default)]
     pub images: Vec<String>,
+    #[serde(default)]
+    pub visibility: Option<String>,
+    #[serde(default)]
+    pub absolute_turn_index: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -473,6 +493,8 @@ mod tests {
         let cmd = IpcCommand::UserMessage(UserMessageCommand {
             text: "hello".to_string(),
             images: vec![],
+            visibility: None,
+            absolute_turn_index: None,
         });
         let s = serde_json::to_string(&cmd).unwrap();
         // The wire format uses "kind" tag + snake_case variants.

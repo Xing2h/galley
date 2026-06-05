@@ -51,7 +51,7 @@
 //! the residual narrow race window between try-connect and the next
 //! process's bind (~ms; OS-level atomic bind would close this fully).
 
-use crate::api::message::MessageBrief;
+use crate::api::message::{MessageBrief, MessageVisibility};
 use crate::api::project::{CreateProjectInput, ProjectBrief, ProjectId};
 use crate::api::session::{CreateSessionInput, SessionBrief};
 use crate::api::{
@@ -65,7 +65,7 @@ use crate::runner_commands::{
     normalize_external_ga_path, prepare_managed_spawn_args, spawn_emit_task,
 };
 use crate::runner_manager::{
-    BroadcastItem, RunnerManager, RunnerSpawnError, SendCommandError, SpawnArgs,
+    BroadcastItem, RunnerManager, RunnerSpawnError, SendCommandError, ShutdownError, SpawnArgs,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -92,6 +92,8 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// breathing room; long-running watch subscriptions don't count as idle
 /// because they push data continuously.
 pub const CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+
+const GOAL_WORKER_SESSION_ID_PLACEHOLDER: &str = "{{GALLEY_SESSION_ID}}";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -586,17 +588,32 @@ async fn dispatch_line(
         "session.send" => {
             DispatchResult::Unary(dispatch_session_send(request_id, req.args, app, manager).await)
         }
+        "session.checkpoint" => {
+            DispatchResult::Unary(dispatch_session_checkpoint(request_id, req.args, app).await)
+        }
+        "session.goal_synthesize" => DispatchResult::Unary(
+            dispatch_session_goal_synthesize(request_id, req.args, app, manager).await,
+        ),
+        "session.goal_master_plan" => DispatchResult::Unary(
+            dispatch_session_goal_master_plan(request_id, req.args, app, manager).await,
+        ),
         "session.watch" => dispatch_session_watch(request_id, req.args, manager).await,
         // ---- B4 M1 session write commands ----
         "session.new" => {
             DispatchResult::Unary(dispatch_session_new(request_id, req.args, app, manager).await)
         }
+        "session.new_goal_worker" => DispatchResult::Unary(
+            dispatch_session_new_goal_worker(request_id, req.args, app, manager).await,
+        ),
         "session.btw" => {
             DispatchResult::Unary(dispatch_session_btw(request_id, req.args, manager).await)
         }
         "session.stop" => {
             DispatchResult::Unary(dispatch_session_stop(request_id, req.args, manager).await)
         }
+        "session.shutdown_runner" => DispatchResult::Unary(
+            dispatch_session_shutdown_runner(request_id, req.args, manager).await,
+        ),
         "session.archive" => {
             DispatchResult::Unary(dispatch_session_archive(request_id, req.args, app).await)
         }
@@ -629,6 +646,40 @@ async fn dispatch_line(
 struct SessionSendArgs {
     session_id: String,
     content: String,
+    #[serde(default)]
+    supervisor: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionCheckpointArgs {
+    session_id: String,
+    content: String,
+    #[serde(default)]
+    supervisor: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionGoalSynthesizeArgs {
+    session_id: String,
+    visible_content: String,
+    dispatch_content: String,
+    #[serde(default)]
+    supervisor: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionGoalMasterPlanArgs {
+    session_id: String,
+    dispatch_content: String,
     #[serde(default)]
     supervisor: Option<String>,
     #[serde(default)]
@@ -718,6 +769,8 @@ async fn dispatch_session_send(
             &IpcCommand::UserMessage(UserMessageCommand {
                 text: parsed.content,
                 images: vec![],
+                visibility: None,
+                absolute_turn_index: None,
             }),
         )
         .await
@@ -745,6 +798,288 @@ async fn dispatch_session_send(
         "dispatch": dispatch_status,
     });
     SocketResponse::ok(request_id, result)
+}
+
+async fn dispatch_session_checkpoint(
+    request_id: Option<String>,
+    args: Value,
+    app: Option<&AppHandle>,
+) -> SocketResponse {
+    let parsed: SessionCheckpointArgs = match serde_json::from_value(args) {
+        Ok(a) => a,
+        Err(e) => {
+            return SocketResponse::err(
+                request_id,
+                "invalid_args",
+                format!("session.checkpoint args: {e}"),
+            );
+        }
+    };
+    let content = parsed.content.trim().to_string();
+    if content.is_empty() {
+        return SocketResponse::err(
+            request_id,
+            "invalid_args",
+            "session.checkpoint: content is empty",
+        );
+    }
+
+    let galley = match SqliteGalley::open().await {
+        Ok(g) => g,
+        Err(e) => {
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
+        }
+    };
+    let origin = origin_from_args(parsed.supervisor.clone(), parsed.reason.clone());
+    let session_id = SessionId(parsed.session_id.clone());
+    let brief = match galley.send_message(session_id, content, origin).await {
+        Ok(b) => b,
+        Err(e) => return map_galley_err(request_id, e),
+    };
+
+    emit_user_message_persisted(app, &parsed.session_id, &brief, "persisted_only");
+    SocketResponse::ok(
+        request_id,
+        serde_json::json!({
+            "message": brief,
+            "dispatch": "persisted_only",
+        }),
+    )
+}
+
+async fn dispatch_session_goal_synthesize(
+    request_id: Option<String>,
+    args: Value,
+    app: Option<&AppHandle>,
+    manager: &RunnerManager,
+) -> SocketResponse {
+    let parsed: SessionGoalSynthesizeArgs = match serde_json::from_value(args) {
+        Ok(a) => a,
+        Err(e) => {
+            return SocketResponse::err(
+                request_id,
+                "invalid_args",
+                format!("session.goal_synthesize args: {e}"),
+            );
+        }
+    };
+    let visible_content = parsed.visible_content.trim().to_string();
+    if visible_content.is_empty() {
+        return SocketResponse::err(
+            request_id,
+            "invalid_args",
+            "session.goal_synthesize: visibleContent is empty",
+        );
+    }
+    let dispatch_content = parsed.dispatch_content.trim().to_string();
+    if dispatch_content.is_empty() {
+        return SocketResponse::err(
+            request_id,
+            "invalid_args",
+            "session.goal_synthesize: dispatchContent is empty",
+        );
+    }
+
+    let galley = match SqliteGalley::open().await {
+        Ok(g) => g,
+        Err(e) => {
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
+        }
+    };
+    let origin = origin_from_args(parsed.supervisor.clone(), parsed.reason.clone());
+    let session_id = SessionId(parsed.session_id.clone());
+    let brief = match galley
+        .send_message(session_id, visible_content.clone(), origin)
+        .await
+    {
+        Ok(b) => b,
+        Err(e) => return map_galley_err(request_id, e),
+    };
+
+    if let Err(e) = ensure_goal_synthesis_runner(
+        &galley,
+        app,
+        manager,
+        &parsed.session_id,
+        "session.goal_synthesize",
+    )
+    .await
+    {
+        emit_user_message_persisted(app, &parsed.session_id, &brief, "persisted_only");
+        return e.with_request_id(request_id);
+    }
+
+    match manager
+        .send_command(
+            &parsed.session_id,
+            &IpcCommand::UserMessage(UserMessageCommand {
+                text: dispatch_content,
+                images: vec![],
+                visibility: None,
+                absolute_turn_index: None,
+            }),
+        )
+        .await
+    {
+        Ok(()) => {
+            emit_user_message_persisted(app, &parsed.session_id, &brief, "dispatched");
+            SocketResponse::ok(
+                request_id,
+                serde_json::json!({
+                    "message": brief,
+                    "dispatch": "dispatched",
+                }),
+            )
+        }
+        Err(e) => {
+            emit_user_message_persisted(app, &parsed.session_id, &brief, "persisted_only");
+            SocketResponse::err(
+                request_id,
+                "runner_error",
+                format!("session.goal_synthesize runner dispatch: {e}"),
+            )
+        }
+    }
+}
+
+async fn dispatch_session_goal_master_plan(
+    request_id: Option<String>,
+    args: Value,
+    app: Option<&AppHandle>,
+    manager: &RunnerManager,
+) -> SocketResponse {
+    let parsed: SessionGoalMasterPlanArgs = match serde_json::from_value(args) {
+        Ok(a) => a,
+        Err(e) => {
+            return SocketResponse::err(
+                request_id,
+                "invalid_args",
+                format!("session.goal_master_plan args: {e}"),
+            );
+        }
+    };
+    let dispatch_content = parsed.dispatch_content.trim().to_string();
+    if dispatch_content.is_empty() {
+        return SocketResponse::err(
+            request_id,
+            "invalid_args",
+            "session.goal_master_plan: dispatchContent is empty",
+        );
+    }
+
+    let galley = match SqliteGalley::open().await {
+        Ok(g) => g,
+        Err(e) => {
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
+        }
+    };
+    let origin = origin_from_args(parsed.supervisor.clone(), parsed.reason.clone());
+    let session_id = SessionId(parsed.session_id.clone());
+    let brief = match galley
+        .send_message_with_visibility(
+            session_id,
+            dispatch_content.clone(),
+            origin,
+            MessageVisibility::Internal,
+        )
+        .await
+    {
+        Ok(b) => b,
+        Err(e) => return map_galley_err(request_id, e),
+    };
+
+    if let Err(e) = ensure_goal_synthesis_runner(
+        &galley,
+        app,
+        manager,
+        &parsed.session_id,
+        "session.goal_master_plan",
+    )
+    .await
+    {
+        return e.with_request_id(request_id);
+    }
+
+    let absolute_turn_index = brief.turn_index.map(i64::from).ok_or_else(|| {
+        SocketResponseLite::runner_error("session.goal_master_plan missing turn_index")
+    });
+    let absolute_turn_index = match absolute_turn_index {
+        Ok(v) => v,
+        Err(e) => return e.with_request_id(request_id),
+    };
+
+    match manager
+        .send_command(
+            &parsed.session_id,
+            &IpcCommand::UserMessage(UserMessageCommand {
+                text: dispatch_content,
+                images: vec![],
+                visibility: Some("internal".to_string()),
+                absolute_turn_index: Some(absolute_turn_index),
+            }),
+        )
+        .await
+    {
+        Ok(()) => SocketResponse::ok(
+            request_id,
+            serde_json::json!({
+                "message": brief,
+                "dispatch": "dispatched",
+            }),
+        ),
+        Err(e) => SocketResponse::err(
+            request_id,
+            "runner_error",
+            format!("session.goal_master_plan runner dispatch: {e}"),
+        ),
+    }
+}
+
+async fn ensure_goal_synthesis_runner(
+    galley: &SqliteGalley,
+    app: Option<&AppHandle>,
+    manager: &RunnerManager,
+    session_id: &str,
+    via: &'static str,
+) -> Result<(), SocketResponseLite> {
+    if manager.pid(session_id).await.is_some() {
+        return Ok(());
+    }
+
+    let session = galley
+        .session_brief(SessionId(session_id.to_string()))
+        .await
+        .map_err(SocketResponseLite::from_err)?;
+    let spawn_args = spawn_args_for_session_new(
+        galley,
+        app,
+        session_id,
+        session.selected_llm_index,
+        session.selected_llm_key.clone(),
+        session.ga_runtime_kind,
+    )
+    .await?;
+    let pid = manager
+        .spawn(spawn_args, Some(session_id))
+        .await
+        .map_err(SocketResponseLite::runner_spawn_error)?;
+    let rx = manager.subscribe(session_id).await.ok_or_else(|| {
+        SocketResponseLite::runner_error(
+            "session.goal_synthesize runner subscribe failed after spawn",
+        )
+    })?;
+    if let Some(app) = app {
+        let _ = app.emit(
+            "runner-spawned-external",
+            RunnerSpawnedExternalPayload {
+                session_id: session_id.to_string(),
+                pid,
+                via,
+            },
+        );
+        spawn_emit_task(app.clone(), session_id.to_string(), rx);
+    }
+    Ok(())
 }
 
 async fn dispatch_session_watch(
@@ -814,6 +1149,59 @@ struct SessionNewArgs {
     supervisor: Option<String>,
     #[serde(default)]
     reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionNewGoalWorkerArgs {
+    task_template: String,
+    #[serde(default)]
+    project_id: Option<String>,
+    #[serde(default)]
+    llm_name: Option<String>,
+    #[serde(default)]
+    runtime_kind: Option<RuntimeKind>,
+    #[serde(default)]
+    supervisor: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug)]
+enum SessionNewTaskSource {
+    Literal(String),
+    GoalWorkerTemplate(String),
+}
+
+impl SessionNewTaskSource {
+    fn render(self, session_id: &str) -> Result<String, String> {
+        match self {
+            SessionNewTaskSource::Literal(task) => Ok(task),
+            SessionNewTaskSource::GoalWorkerTemplate(template) => {
+                render_goal_worker_task_template(&template, session_id)
+            }
+        }
+    }
+}
+
+fn render_goal_worker_task_template(template: &str, session_id: &str) -> Result<String, String> {
+    let placeholder_count = template.matches(GOAL_WORKER_SESSION_ID_PLACEHOLDER).count();
+    if placeholder_count != 1 {
+        return Err(format!(
+            "session.new_goal_worker: taskTemplate must contain exactly one {GOAL_WORKER_SESSION_ID_PLACEHOLDER} placeholder"
+        ));
+    }
+    Ok(template.replace(GOAL_WORKER_SESSION_ID_PLACEHOLDER, session_id))
+}
+
+struct SessionNewRequest {
+    task_source: SessionNewTaskSource,
+    project_id: Option<String>,
+    llm_name: Option<String>,
+    runtime_kind: Option<RuntimeKind>,
+    supervisor: Option<String>,
+    reason: Option<String>,
+    command_name: &'static str,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -1036,7 +1424,82 @@ async fn dispatch_session_new(
     if task.is_empty() {
         return SocketResponse::err(request_id, "invalid_args", "session.new: task is empty");
     }
+    dispatch_session_new_inner(
+        request_id,
+        SessionNewRequest {
+            task_source: SessionNewTaskSource::Literal(task),
+            project_id: parsed.project_id,
+            llm_name: parsed.llm_name,
+            runtime_kind: parsed.runtime_kind,
+            supervisor: parsed.supervisor,
+            reason: parsed.reason,
+            command_name: "session.new",
+        },
+        app,
+        manager,
+    )
+    .await
+}
 
+async fn dispatch_session_new_goal_worker(
+    request_id: Option<String>,
+    args: Value,
+    app: Option<&AppHandle>,
+    manager: &RunnerManager,
+) -> SocketResponse {
+    let parsed: SessionNewGoalWorkerArgs = match serde_json::from_value(args) {
+        Ok(a) => a,
+        Err(e) => {
+            return SocketResponse::err(
+                request_id,
+                "invalid_args",
+                format!("session.new_goal_worker args: {e}"),
+            );
+        }
+    };
+    let template = parsed.task_template.trim().to_string();
+    if template.is_empty() {
+        return SocketResponse::err(
+            request_id,
+            "invalid_args",
+            "session.new_goal_worker: taskTemplate is empty",
+        );
+    }
+    if let Err(message) = render_goal_worker_task_template(&template, "s-validation") {
+        return SocketResponse::err(request_id, "invalid_args", message);
+    }
+    dispatch_session_new_inner(
+        request_id,
+        SessionNewRequest {
+            task_source: SessionNewTaskSource::GoalWorkerTemplate(template),
+            project_id: parsed.project_id,
+            llm_name: parsed.llm_name,
+            runtime_kind: parsed.runtime_kind,
+            supervisor: parsed.supervisor,
+            reason: parsed.reason,
+            command_name: "session.new_goal_worker",
+        },
+        app,
+        manager,
+    )
+    .await
+}
+
+async fn dispatch_session_new_inner(
+    request_id: Option<String>,
+    request: SessionNewRequest,
+    app: Option<&AppHandle>,
+    manager: &RunnerManager,
+) -> SocketResponse {
+    let SessionNewRequest {
+        task_source,
+        project_id,
+        llm_name,
+        runtime_kind,
+        supervisor,
+        reason,
+        command_name,
+    } = request;
     let galley = match SqliteGalley::open().await {
         Ok(g) => g,
         Err(e) => {
@@ -1048,9 +1511,8 @@ async fn dispatch_session_new(
         Ok(kind) => kind,
         Err(e) => return map_galley_err(request_id, e),
     };
-    let target_runtime_kind = parsed.runtime_kind.unwrap_or(active_runtime_kind);
-    let runtime_warning = parsed
-        .runtime_kind
+    let target_runtime_kind = runtime_kind.unwrap_or(active_runtime_kind);
+    let runtime_warning = runtime_kind
         .filter(|requested| *requested != active_runtime_kind)
         .map(|requested| {
             serde_json::json!({
@@ -1064,13 +1526,23 @@ async fn dispatch_session_new(
     // Resolve --llm=<name> against the selected runtime's current model
     // source. Managed runtime resolves Galley model records; external
     // runtime resolves the cached raw GA LLM list.
-    let llm_selection =
-        match resolve_llm_selection(&galley, parsed.llm_name, target_runtime_kind).await {
-            Ok(selection) => selection,
-            Err(resp) => return resp.with_request_id(request_id),
-        };
+    let llm_selection = match resolve_llm_selection(&galley, llm_name, target_runtime_kind).await {
+        Ok(selection) => selection,
+        Err(resp) => return resp.with_request_id(request_id),
+    };
 
     let id = mint_session_id();
+    let task = match task_source.render(&id) {
+        Ok(task) => task.trim().to_string(),
+        Err(message) => return SocketResponse::err(request_id, "invalid_args", message),
+    };
+    if task.is_empty() {
+        return SocketResponse::err(
+            request_id,
+            "invalid_args",
+            format!("{command_name}: rendered task is empty"),
+        );
+    }
     let spawn_args = match spawn_args_for_session_new(
         &galley,
         app,
@@ -1088,7 +1560,7 @@ async fn dispatch_session_new(
     let input = CreateSessionInput {
         id: id.clone(),
         title: DEFAULT_NEW_SESSION_TITLE.to_string(),
-        project_id: parsed.project_id,
+        project_id,
         selected_llm_index: llm_selection.index,
         selected_llm_key: llm_selection.key,
         selected_llm_display_name: llm_selection.display_name,
@@ -1096,7 +1568,7 @@ async fn dispatch_session_new(
         ga_runtime_id: None,
         prompt_profile: None,
     };
-    let origin = origin_from_args(parsed.supervisor.clone(), parsed.reason.clone());
+    let origin = origin_from_args(supervisor.clone(), reason.clone());
 
     // BEGIN — create + send_message in one transaction (sub-plan O1).
     let mut tx = match galley.begin_tx().await {
@@ -1118,7 +1590,11 @@ async fn dispatch_session_new(
         Err(e) => return map_galley_err(request_id, e),
     };
     if let Err(e) = tx.commit().await {
-        return SocketResponse::err(request_id, "internal", format!("session.new commit: {e}"));
+        return SocketResponse::err(
+            request_id,
+            "internal",
+            format!("{command_name} commit: {e}"),
+        );
     }
 
     // Notify GUI early so the sidebar can show the session while we
@@ -1127,7 +1603,7 @@ async fn dispatch_session_new(
     if let Some(app) = app {
         let payload = SessionExternalPayload {
             session: brief.clone(),
-            via: "session.new",
+            via: command_name,
         };
         let _ = app.emit("session-created-external", payload);
     }
@@ -1139,7 +1615,7 @@ async fn dispatch_session_new(
             return SocketResponse::err(
                 request_id,
                 "runner_error",
-                format!("session.new runner spawn: {e}"),
+                format!("{command_name} runner spawn: {e}"),
             );
         }
     };
@@ -1149,7 +1625,7 @@ async fn dispatch_session_new(
         return SocketResponse::err(
             request_id,
             "runner_error",
-            "session.new runner subscribe failed after spawn",
+            format!("{command_name} runner subscribe failed after spawn"),
         );
     };
     if let Some(app) = app {
@@ -1158,7 +1634,7 @@ async fn dispatch_session_new(
             RunnerSpawnedExternalPayload {
                 session_id: brief.id.0.clone(),
                 pid,
-                via: "session.new",
+                via: command_name,
             },
         );
         spawn_emit_task(app.clone(), brief.id.0.clone(), rx);
@@ -1170,6 +1646,8 @@ async fn dispatch_session_new(
             &IpcCommand::UserMessage(UserMessageCommand {
                 text: task,
                 images: vec![],
+                visibility: None,
+                absolute_turn_index: None,
             }),
         )
         .await
@@ -1180,7 +1658,7 @@ async fn dispatch_session_new(
             return SocketResponse::err(
                 request_id,
                 "runner_error",
-                format!("session.new runner dispatch: {e}"),
+                format!("{command_name} runner dispatch: {e}"),
             );
         }
     }
@@ -1260,6 +1738,8 @@ async fn dispatch_session_btw(
     let cmd = IpcCommand::UserMessage(UserMessageCommand {
         text: format!("/btw {question}"),
         images: vec![],
+        visibility: None,
+        absolute_turn_index: None,
     });
     match manager.send_command(&parsed.session_id, &cmd).await {
         Ok(()) => SocketResponse::ok(request_id, serde_json::json!({ "dispatch": "dispatched" })),
@@ -1341,6 +1821,52 @@ async fn dispatch_session_stop(
         // we got the command out. Treat as already_stopped — the
         // observable end state is the same.
         Err(SendCommandError::ProcessGone { .. }) => SocketResponse::ok(
+            request_id,
+            serde_json::json!({ "dispatch": "already_stopped" }),
+        ),
+        Err(e) => SocketResponse::err(request_id, "runner_error", e.to_string()),
+    }
+}
+
+async fn dispatch_session_shutdown_runner(
+    request_id: Option<String>,
+    args: Value,
+    manager: &RunnerManager,
+) -> SocketResponse {
+    let parsed: SessionStopArgs = match serde_json::from_value(args) {
+        Ok(a) => a,
+        Err(e) => {
+            return SocketResponse::err(
+                request_id,
+                "invalid_args",
+                format!("session.shutdown_runner args: {e}"),
+            );
+        }
+    };
+
+    let galley = match SqliteGalley::open().await {
+        Ok(g) => g,
+        Err(e) => {
+            return SocketResponse::err(request_id, "db_unavailable", format!("open: {e}"));
+        }
+    };
+    if let Err(e) = galley
+        .session_brief(SessionId(parsed.session_id.clone()))
+        .await
+    {
+        return map_galley_err(request_id, e);
+    }
+    drop(galley);
+
+    match manager
+        .shutdown(&parsed.session_id, Some(Duration::from_millis(1500)))
+        .await
+    {
+        Ok(()) => SocketResponse::ok(
+            request_id,
+            serde_json::json!({ "dispatch": "shutdown_sent" }),
+        ),
+        Err(ShutdownError::NotFound { .. }) => SocketResponse::ok(
             request_id,
             serde_json::json!({ "dispatch": "already_stopped" }),
         ),
@@ -2165,6 +2691,26 @@ mod tests {
     }
 
     #[test]
+    fn goal_worker_task_template_requires_exactly_one_session_placeholder() {
+        let missing = render_goal_worker_task_template("hello", "s-real");
+        assert!(missing.is_err());
+
+        let multiple = render_goal_worker_task_template(
+            "{{GALLEY_SESSION_ID}} and {{GALLEY_SESSION_ID}}",
+            "s-real",
+        );
+        assert!(multiple.is_err());
+    }
+
+    #[test]
+    fn goal_worker_task_template_renders_real_session_id() {
+        let rendered =
+            render_goal_worker_task_template("Your session id: {{GALLEY_SESSION_ID}}", "s-real")
+                .unwrap();
+        assert_eq!(rendered, "Your session id: s-real");
+    }
+
+    #[test]
     fn parse_socket_request_minimal() {
         let line = r#"{"command":"ping"}"#;
         let req: SocketRequest = serde_json::from_str(line).unwrap();
@@ -2269,6 +2815,25 @@ mod tests {
         let resp = expect_unary(dispatch_line(line, None, &mgr).await);
         assert!(!resp.ok);
         assert_eq!(resp.error.as_deref(), Some("not_found"));
+    }
+
+    #[tokio::test]
+    async fn dispatch_session_shutdown_runner_rejects_bad_args() {
+        let mgr = RunnerManager::new();
+        let line = r#"{"command":"session.shutdown_runner","args":{"sessionId":123}}"#;
+        let resp = expect_unary(dispatch_line(line, None, &mgr).await);
+        assert!(!resp.ok);
+        assert_eq!(resp.error.as_deref(), Some("invalid_args"));
+    }
+
+    #[tokio::test]
+    async fn dispatch_session_checkpoint_rejects_empty_content() {
+        let mgr = RunnerManager::new();
+        let line =
+            r#"{"command":"session.checkpoint","args":{"sessionId":"s-test","content":"   "}}"#;
+        let resp = expect_unary(dispatch_line(line, None, &mgr).await);
+        assert!(!resp.ok);
+        assert_eq!(resp.error.as_deref(), Some("invalid_args"));
     }
 
     #[test]

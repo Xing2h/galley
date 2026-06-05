@@ -25,14 +25,15 @@ pub mod sop_install;
 use api::{
     CreateGoalProposalInput, CreateProjectInput, CreateSessionInput, GalleyApi, GoalBrief, GoalId,
     GoalStatus, GoalStatusSnapshot, GoalWriteMode, ManagedModelAuthKind, ManagedModelProbeInput,
-    Origin, ProjectBrief, ProjectId, ProjectPatch, ReorderManagedModelsInput, RuntimeKind,
-    SaveManagedModelInput, SaveManagedProviderInput, SessionBrief, SessionFilter, SessionId,
+    MessageBrief, MessageVisibility, Origin, ProjectBrief, ProjectId, ProjectPatch,
+    ReorderManagedModelsInput, RuntimeKind, SaveManagedModelInput, SaveManagedProviderInput,
+    SessionBrief, SessionFilter, SessionId,
 };
 use db::{
     MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
     SqliteGalley, ToolEventRow, UpsertManagedModelMetadata, UpsertManagedModelProviderMetadata,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -90,12 +91,20 @@ struct StartDesktopGoalInput {
     objective: String,
     #[serde(default)]
     project_id: Option<ProjectId>,
+    master_session_id: SessionId,
     #[serde(default)]
     runtime_kind: Option<RuntimeKind>,
     #[serde(default)]
     budget_seconds: Option<u32>,
     #[serde(default)]
     worker_limit: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StartDesktopGoalResult {
+    goal: GoalBrief,
+    master_message: MessageBrief,
 }
 
 impl Default for CloseHintCopy {
@@ -932,6 +941,7 @@ struct PersistAssistantMessageInput {
     final_answer: Option<String>,
     summary: Option<String>,
     preamble: Option<String>,
+    visibility: Option<MessageVisibility>,
 }
 
 #[tauri::command]
@@ -950,6 +960,7 @@ async fn persist_assistant_message(
             final_answer: input.final_answer,
             summary: input.summary,
             preamble: input.preamble,
+            visibility: input.visibility.unwrap_or(MessageVisibility::Visible),
         })
         .await
         .map_err(stringify_error)
@@ -1168,9 +1179,24 @@ async fn list_active_goals() -> std::result::Result<Vec<GoalBrief>, String> {
 }
 
 #[tauri::command]
+async fn list_visible_goals() -> std::result::Result<Vec<GoalBrief>, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley.list_visible_goals().await.map_err(stringify_error)
+}
+
+#[tauri::command]
 async fn goal_status(id: GoalId) -> std::result::Result<GoalStatusSnapshot, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley.goal_status(id).await.map_err(stringify_error)
+}
+
+#[tauri::command]
+async fn mark_goal_result_seen(id: GoalId) -> std::result::Result<GoalBrief, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .mark_goal_result_seen(id, Origin::gui())
+        .await
+        .map_err(stringify_error)
 }
 
 #[tauri::command]
@@ -1185,13 +1211,15 @@ async fn request_goal_stop(id: GoalId) -> std::result::Result<GoalBrief, String>
 #[tauri::command]
 async fn start_desktop_goal(
     input: StartDesktopGoalInput,
-) -> std::result::Result<GoalBrief, String> {
+) -> std::result::Result<StartDesktopGoalResult, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    let master_session_id = input.master_session_id.clone();
     let proposal = galley
         .create_goal_proposal(
             CreateGoalProposalInput {
-                objective: input.objective,
+                objective: input.objective.clone(),
                 project_id: input.project_id,
+                master_session_id: Some(master_session_id.clone()),
                 budget_seconds: input.budget_seconds,
                 worker_limit: input.worker_limit,
                 runtime_kind: input.runtime_kind.or(Some(RuntimeKind::Managed)),
@@ -1206,6 +1234,17 @@ async fn start_desktop_goal(
         .start_goal_from_proposal(proposal.id, proposal.internal_confirm_token, Origin::gui())
         .await
         .map_err(stringify_error)?;
+    let master_message = galley
+        .send_message(
+            master_session_id,
+            format!(
+                "Goal 已启动：{}\n\nGalley 正在后台推进这个目标，完成后会在这里汇总。",
+                input.objective.trim()
+            ),
+            Origin::gui(),
+        )
+        .await
+        .map_err(stringify_error)?;
 
     if let Err(message) = spawn_goal_controller(&goal) {
         let _ = galley
@@ -1214,7 +1253,10 @@ async fn start_desktop_goal(
         return Err(message);
     }
 
-    Ok(goal)
+    Ok(StartDesktopGoalResult {
+        goal,
+        master_message,
+    })
 }
 
 fn spawn_goal_controller(goal: &GoalBrief) -> std::result::Result<(), String> {
@@ -1334,6 +1376,18 @@ pub fn run() {
             sql: include_str!("../migrations/015_goal_v1.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 16,
+            description: "add Goal master session delivery state",
+            sql: include_str!("../migrations/016_goal_master_session.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 17,
+            description: "add message visibility",
+            sql: include_str!("../migrations/017_message_visibility.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —
@@ -1432,7 +1486,9 @@ pub fn run() {
             update_project,
             delete_project,
             list_active_goals,
+            list_visible_goals,
             goal_status,
+            mark_goal_result_seen,
             request_goal_stop,
             start_desktop_goal,
             // B2 runner commands

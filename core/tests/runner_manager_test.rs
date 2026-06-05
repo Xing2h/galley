@@ -311,6 +311,8 @@ async fn send_command_reaches_subprocess() {
         &IpcCommand::UserMessage(galley_core_lib::ipc::UserMessageCommand {
             text: "hello".into(),
             images: vec![],
+            visibility: None,
+            absolute_turn_index: None,
         }),
     )
     .await
@@ -353,6 +355,8 @@ async fn agent_running_toggles_with_turn_lifecycle() {
         &IpcCommand::UserMessage(galley_core_lib::ipc::UserMessageCommand {
             text: "go".into(),
             images: vec![],
+            visibility: None,
+            absolute_turn_index: None,
         }),
     )
     .await

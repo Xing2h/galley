@@ -23,10 +23,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand, ValueEnum};
 use galley_core_lib::api::{
     ClaimGoalTaskInput, CreateGoalEventInput, CreateGoalProposalInput, CreateGoalTaskInput,
-    GalleyApi, GoalBrief, GoalEventType, GoalId, GoalProposalId, GoalStatus, GoalStatusSnapshot,
-    GoalTaskId, GoalTaskStatus, GoalWriteMode, MessageBrief, Origin, ProjectBrief, RuntimeKind,
-    SearchScope, SessionBrief, SessionFilter, SessionId, SessionStatus, UpdateGoalTaskInput,
-    DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE,
+    GalleyApi, GoalBrief, GoalEventBrief, GoalEventType, GoalId, GoalProposalId, GoalStatus,
+    GoalStatusSnapshot, GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode, MessageBrief,
+    MessageRole, Origin, ProjectBrief, RuntimeKind, SearchScope, SessionBrief, SessionFilter,
+    SessionId, SessionStatus, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS,
+    DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE,
 };
 use galley_core_lib::db::SqliteGalley;
 use galley_core_lib::error::GalleyError;
@@ -36,6 +37,15 @@ use serde_json::Value;
 
 const SCHEMA_VERSION: u32 = 1;
 const PROJECT_FOLLOW_IDLE_QUIET_WINDOW: Duration = Duration::from_millis(1500);
+const GOAL_CONTROLLER_MAX_WAVES: u32 = 50;
+const GOAL_WORKER_SIGNAL_GRACE_SECONDS: u64 = 60;
+const GOAL_CONTROLLER_MIN_DRAIN_SECONDS: u64 = 300;
+const GOAL_CONTROLLER_MAX_DRAIN_SECONDS: u64 = 900;
+const GOAL_WORKER_SESSION_ID_PLACEHOLDER: &str = "{{GALLEY_SESSION_ID}}";
+const GOAL_SEED_TASK_MARKER: &str = "[galley-seed-tasks:v1]";
+const GOAL_MASTER_PLANNING_MARKER: &str = "[galley-master-planning:v1]";
+const GOAL_CONTROLLER_TASK_SCOPE_PREFIX: &str = "goal-worker-";
+const GOAL_MASTER_PLANNING_TIMEOUT_SECONDS: u64 = 180;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -1403,6 +1413,17 @@ async fn session_send(
     supervisor: Option<String>,
     reason: Option<String>,
 ) -> Result<(), GalleyError> {
+    let result = session_send_value(id, content, supervisor, reason).await?;
+    println!("{result}");
+    Ok(())
+}
+
+async fn session_send_value(
+    id: String,
+    content: String,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<serde_json::Value, GalleyError> {
     let req = serde_json::json!({
         "command": "session.send",
         "args": {
@@ -1414,17 +1435,12 @@ async fn session_send(
         "schemaVersion": SCHEMA_VERSION,
     });
     let resp_line = socket_send_recv(req).await?;
-    // Parse + decide whether to surface as success (exit 0) or map to
-    // a CLI error (exit code based on the `error` discriminant).
     let parsed: serde_json::Value =
         serde_json::from_str(&resp_line).map_err(|e| GalleyError::Internal {
             message: format!("malformed socket response: {e}"),
         })?;
     if parsed["ok"] == serde_json::Value::Bool(true) {
-        // Pass the result through as-is so agents can parse the
-        // assigned message id + dispatch status.
-        println!("{}", parsed["result"]);
-        Ok(())
+        Ok(parsed["result"].clone())
     } else {
         let tag = parsed["error"].as_str().unwrap_or("internal");
         let msg = parsed["message"].as_str().unwrap_or("").to_string();
@@ -1565,8 +1581,8 @@ async fn session_new(
     unary_command(req).await
 }
 
-async fn session_new_value(
-    task: String,
+async fn session_new_goal_worker_value(
+    task_template: String,
     project: Option<String>,
     llm: Option<String>,
     runtime: RuntimeArg,
@@ -1575,12 +1591,71 @@ async fn session_new_value(
 ) -> Result<serde_json::Value, GalleyError> {
     let runtime_kind = runtime_arg_for_session_new(runtime)?;
     let req = serde_json::json!({
-        "command": "session.new",
+        "command": "session.new_goal_worker",
         "args": {
-            "task": task,
+            "taskTemplate": task_template,
             "projectId": project,
             "llmName": llm,
             "runtimeKind": runtime_kind,
+            "supervisor": supervisor,
+            "reason": reason,
+        },
+        "schemaVersion": SCHEMA_VERSION,
+    });
+    unary_command_value(req).await
+}
+
+async fn session_goal_synthesize_value(
+    id: String,
+    visible_content: String,
+    dispatch_content: String,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<serde_json::Value, GalleyError> {
+    let req = serde_json::json!({
+        "command": "session.goal_synthesize",
+        "args": {
+            "sessionId": id,
+            "visibleContent": visible_content,
+            "dispatchContent": dispatch_content,
+            "supervisor": supervisor,
+            "reason": reason,
+        },
+        "schemaVersion": SCHEMA_VERSION,
+    });
+    unary_command_value(req).await
+}
+
+async fn session_goal_master_plan_value(
+    id: String,
+    dispatch_content: String,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<serde_json::Value, GalleyError> {
+    let req = serde_json::json!({
+        "command": "session.goal_master_plan",
+        "args": {
+            "sessionId": id,
+            "dispatchContent": dispatch_content,
+            "supervisor": supervisor,
+            "reason": reason,
+        },
+        "schemaVersion": SCHEMA_VERSION,
+    });
+    unary_command_value(req).await
+}
+
+async fn session_checkpoint_value(
+    id: String,
+    content: String,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<serde_json::Value, GalleyError> {
+    let req = serde_json::json!({
+        "command": "session.checkpoint",
+        "args": {
+            "sessionId": id,
+            "content": content,
             "supervisor": supervisor,
             "reason": reason,
         },
@@ -1623,6 +1698,23 @@ async fn session_stop(
         "schemaVersion": SCHEMA_VERSION,
     });
     unary_command(req).await
+}
+
+async fn session_shutdown_runner_value(
+    id: String,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<serde_json::Value, GalleyError> {
+    let req = serde_json::json!({
+        "command": "session.shutdown_runner",
+        "args": {
+            "sessionId": id,
+            "supervisor": supervisor,
+            "reason": reason,
+        },
+        "schemaVersion": SCHEMA_VERSION,
+    });
+    unary_command_value(req).await
 }
 
 async fn session_archive(
@@ -2013,6 +2105,7 @@ async fn goal_propose(
             CreateGoalProposalInput {
                 objective,
                 project_id: project.map(galley_core_lib::api::ProjectId),
+                master_session_id: None,
                 budget_seconds: Some(budget_minutes.saturating_mul(60)),
                 worker_limit: Some(workers),
                 runtime_kind: Some(runtime_kind),
@@ -2114,56 +2207,225 @@ async fn run_goal_controller(
 
     let runtime = runtime_arg_from_kind(goal.runtime_kind);
     let controller_started = Instant::now();
-    let mut wave = 1_u32;
+    let mut worker_session_ids: Vec<SessionId> = Vec::new();
+    let mut worker_slots: Vec<GoalWorkerSlot> = Vec::new();
     loop {
-        for worker_index in 1..=goal.worker_limit {
-            let prompt = goal_worker_prompt(&goal, wave, worker_index);
-            let result = session_new_value(
-                prompt,
-                Some(goal.project_id.0.clone()),
-                None,
-                runtime,
+        if goal.status == GoalStatus::Wrapping && !goal.stop_requested {
+            let snapshot = galley.goal_status(goal.id.clone()).await?;
+            finish_goal_with_master(
+                galley,
+                snapshot,
+                &worker_session_ids,
                 supervisor.clone(),
-                Some(reason.clone().unwrap_or_else(|| {
-                    format!("goal {} wave {wave} worker {worker_index}", goal.id)
-                })),
+                reason.clone(),
             )
             .await?;
-            let session_id = result
-                .get("session")
-                .and_then(|s| s.get("id"))
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            if let Some(sid) = session_id.as_ref() {
-                let _ = galley
-                    .create_goal_event(CreateGoalEventInput {
-                        goal_id: goal.id.clone(),
-                        task_id: None,
-                        author_session_id: Some(SessionId(sid.clone())),
-                        event_type: GoalEventType::System,
-                        body: format!("Wave {wave} worker {worker_index} session started."),
-                    })
-                    .await;
-            }
+            return Ok(());
+        }
+
+        let wave_start_snapshot = galley.goal_status(goal.id.clone()).await?;
+        goal = wave_start_snapshot.goal.clone();
+        if goal.stop_requested {
+            let summary = "Goal stopped before starting the next worker wave.".to_string();
+            shutdown_goal_worker_runners(
+                galley,
+                &wave_start_snapshot,
+                &worker_session_ids,
+                supervisor.clone(),
+                reason
+                    .clone()
+                    .or_else(|| Some(format!("goal {} stopped", goal.id))),
+            )
+            .await?;
+            galley
+                .create_goal_event(CreateGoalEventInput {
+                    goal_id: goal.id.clone(),
+                    task_id: None,
+                    author_session_id: None,
+                    event_type: GoalEventType::Synthesis,
+                    body: summary.clone(),
+                })
+                .await?;
+            let final_goal = galley
+                .update_goal_state(goal.id.clone(), GoalStatus::Stopped, Some(summary))
+                .await?;
             emit_json(&GoalRunFrame {
                 schema_version: SCHEMA_VERSION,
                 stream: "goal",
-                phase: "worker_started",
-                goal: &goal,
-                session_id,
-                note: Some(format!(
-                    "wave {wave}; worker {worker_index}/{}",
-                    goal.worker_limit
-                )),
+                phase: "finished",
+                goal: &final_goal,
+                session_id: None,
+                note: None,
             })?;
+            return Ok(());
+        }
+        if !goal_budget_left(&goal, controller_started) {
+            let incomplete_tasks = goal_has_incomplete_tasks(&wave_start_snapshot);
+            let protocol_result_signal = goal_has_result_signal(&wave_start_snapshot);
+            let accumulated_worker_output_signal = if protocol_result_signal {
+                false
+            } else {
+                goal_worker_sessions_have_output(galley, &worker_session_ids).await?
+            };
+            let has_synthesis_material = protocol_result_signal
+                || accumulated_worker_output_signal
+                || goal_has_worker_material_signal(&wave_start_snapshot);
+            if has_synthesis_material {
+                post_goal_master_checkpoint(
+                    galley,
+                    &wave_start_snapshot,
+                    GoalMasterCheckpointKind::FirstMaterial,
+                    "已有初步进展，正在继续核对和整理。".to_string(),
+                    supervisor.clone(),
+                    reason.clone(),
+                )
+                .await?;
+            }
+            post_goal_master_checkpoint(
+                galley,
+                &wave_start_snapshot,
+                GoalMasterCheckpointKind::DeadlineReached,
+                "运行时间已到，正在等待当前任务收尾并整理结果。".to_string(),
+                supervisor.clone(),
+                reason.clone(),
+            )
+            .await?;
+            match goal_controller_decision(
+                false,
+                has_synthesis_material,
+                goal_worker_slots_all_capped(&worker_slots),
+            ) {
+                GoalControllerDecision::Wrap(wrap_reason) => {
+                    let summary = goal_wrapping_summary(wrap_reason, incomplete_tasks);
+                    galley
+                        .create_goal_event(CreateGoalEventInput {
+                            goal_id: goal.id.clone(),
+                            task_id: None,
+                            author_session_id: None,
+                            event_type: GoalEventType::Synthesis,
+                            body: summary.clone(),
+                        })
+                        .await?;
+                    let wrapping_goal = galley
+                        .update_goal_state(goal.id.clone(), GoalStatus::Wrapping, Some(summary))
+                        .await?;
+                    emit_json(&GoalRunFrame {
+                        schema_version: SCHEMA_VERSION,
+                        stream: "goal",
+                        phase: "wrapping",
+                        goal: &wrapping_goal,
+                        session_id: None,
+                        note: wrapping_goal.latest_summary.clone(),
+                    })?;
+                    finish_goal_with_master(
+                        galley,
+                        galley.goal_status(wrapping_goal.id.clone()).await?,
+                        &worker_session_ids,
+                        supervisor.clone(),
+                        reason.clone().or_else(|| {
+                            Some(format!("goal master synthesis after {wrap_reason:?}"))
+                        }),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                GoalControllerDecision::Fail(reason) => {
+                    let summary = goal_failure_summary(reason);
+                    shutdown_goal_worker_runners(
+                        galley,
+                        &wave_start_snapshot,
+                        &worker_session_ids,
+                        supervisor.clone(),
+                        Some(format!("goal {} failed before next wave", goal.id)),
+                    )
+                    .await?;
+                    galley
+                        .create_goal_event(CreateGoalEventInput {
+                            goal_id: goal.id.clone(),
+                            task_id: None,
+                            author_session_id: None,
+                            event_type: GoalEventType::Synthesis,
+                            body: summary.clone(),
+                        })
+                        .await?;
+                    let final_goal = galley
+                        .update_goal_state(goal.id.clone(), GoalStatus::Failed, Some(summary))
+                        .await?;
+                    emit_json(&GoalRunFrame {
+                        schema_version: SCHEMA_VERSION,
+                        stream: "goal",
+                        phase: "failed",
+                        goal: &final_goal,
+                        session_id: None,
+                        note: final_goal.latest_summary.clone(),
+                    })?;
+                    return Ok(());
+                }
+                GoalControllerDecision::Continue => {}
+                GoalControllerDecision::WaitForSignal => {}
+            }
+        }
+        let wave_start_activity = goal_activity_counts(&wave_start_snapshot);
+
+        if worker_slots.is_empty() {
+            let worker_start_snapshot = ensure_goal_master_planned_or_fallback(
+                galley,
+                &wave_start_snapshot,
+                supervisor.clone(),
+                reason.clone(),
+            )
+            .await?;
+            let new_slots = start_goal_worker_slots(
+                galley,
+                &worker_start_snapshot,
+                &goal,
+                &worker_slots,
+                runtime,
+                supervisor.clone(),
+                reason.clone(),
+            )
+            .await?;
+            worker_slots.extend(new_slots);
+            worker_session_ids = goal_worker_slot_session_ids(&worker_slots);
+            if !worker_slots.is_empty() {
+                let checkpoint_snapshot = galley.goal_status(goal.id.clone()).await?;
+                post_goal_master_checkpoint(
+                    galley,
+                    &checkpoint_snapshot,
+                    GoalMasterCheckpointKind::WorkersStarted,
+                    format!("已启动 {} 个 Agent，正在执行已分配任务。", worker_slots.len()),
+                    supervisor.clone(),
+                    reason.clone(),
+                )
+                .await?;
+            }
         }
 
         project_follow(goal.project_id.0.clone(), 80, false, true, true).await?;
+        let wait_outcome = wait_goal_worker_sessions(
+            galley,
+            &mut worker_slots,
+            &goal,
+            controller_started,
+            supervisor.clone(),
+            reason.clone(),
+        )
+        .await?;
 
-        let snapshot = galley.goal_status(goal.id.clone()).await?;
+        let mut snapshot = galley.goal_status(goal.id.clone()).await?;
         let refreshed = snapshot.goal.clone();
         if refreshed.stop_requested {
             let summary = "Worker wave finished after stop request; Goal stopped.".to_string();
+            shutdown_goal_worker_runners(
+                galley,
+                &snapshot,
+                &worker_session_ids,
+                supervisor.clone(),
+                reason
+                    .clone()
+                    .or_else(|| Some(format!("goal {} stopped", refreshed.id))),
+            )
+            .await?;
             galley
                 .create_goal_event(CreateGoalEventInput {
                     goal_id: refreshed.id.clone(),
@@ -2189,58 +2451,1086 @@ async fn run_goal_controller(
 
         let incomplete_tasks = goal_has_incomplete_tasks(&snapshot);
         let budget_left = goal_budget_left(&refreshed, controller_started);
-        if incomplete_tasks && budget_left {
-            let summary =
-                format!("Wave {wave} finished; incomplete tasks remain, continuing within budget.");
-            galley
-                .create_goal_event(CreateGoalEventInput {
-                    goal_id: refreshed.id.clone(),
-                    task_id: None,
-                    author_session_id: None,
-                    event_type: GoalEventType::Synthesis,
-                    body: summary.clone(),
-                })
+        let protocol_result_signal = goal_has_result_signal(&snapshot);
+        let accumulated_worker_output_signal = if protocol_result_signal {
+            false
+        } else {
+            goal_worker_sessions_have_output(galley, &worker_session_ids).await?
+        };
+        let has_result_signal = protocol_result_signal || accumulated_worker_output_signal;
+        let has_synthesis_material =
+            has_result_signal || goal_has_worker_material_signal(&snapshot);
+        if has_synthesis_material {
+            post_goal_master_checkpoint(
+                galley,
+                &snapshot,
+                GoalMasterCheckpointKind::FirstMaterial,
+                "已有初步进展，正在继续核对和整理。".to_string(),
+                supervisor.clone(),
+                reason.clone(),
+            )
+            .await?;
+        }
+        if !budget_left {
+            post_goal_master_checkpoint(
+                galley,
+                &snapshot,
+                GoalMasterCheckpointKind::DeadlineReached,
+                "运行时间已到，正在等待当前任务收尾并整理结果。".to_string(),
+                supervisor.clone(),
+                reason.clone(),
+            )
+            .await?;
+        }
+        let wave_protocol_activity =
+            goal_activity_increased(wave_start_activity, goal_activity_counts(&snapshot));
+        let mut decision_wait_outcome = wait_outcome.clone();
+
+        if let GoalWorkerWaitOutcome::ReadySlots(ready_slot_indices) = wait_outcome.clone() {
+            if budget_left {
+                snapshot = ensure_goal_master_planned_or_fallback(
+                    galley,
+                    &snapshot,
+                    supervisor.clone(),
+                    reason.clone(),
+                )
                 .await?;
-            emit_json(&GoalRunFrame {
-                schema_version: SCHEMA_VERSION,
-                stream: "goal",
-                phase: "continuing",
-                goal: &refreshed,
-                session_id: None,
-                note: Some(summary),
-            })?;
-            goal = refreshed;
-            wave = wave.saturating_add(1);
-            continue;
+                let new_slots = start_goal_worker_slots(
+                    galley,
+                    &snapshot,
+                    &refreshed,
+                    &worker_slots,
+                    runtime,
+                    supervisor.clone(),
+                    reason.clone(),
+                )
+                .await?;
+                worker_slots.extend(new_slots);
+                let mut continued_workers = Vec::new();
+                for slot_index in ready_slot_indices {
+                    if let Some(slot) = worker_slots.get_mut(slot_index) {
+                        let worker_index = slot.worker_index;
+                        if continue_goal_worker_slot(
+                            galley,
+                            &snapshot,
+                            &refreshed,
+                            slot,
+                            supervisor.clone(),
+                            reason.clone(),
+                        )
+                        .await?
+                        {
+                            continued_workers.push(worker_index);
+                        }
+                    }
+                }
+                worker_session_ids = goal_worker_slot_session_ids(&worker_slots);
+                if !continued_workers.is_empty() {
+                    let summary = goal_slot_wake_summary(
+                        &continued_workers,
+                        has_result_signal,
+                        incomplete_tasks,
+                    );
+                    galley
+                        .create_goal_event(CreateGoalEventInput {
+                            goal_id: refreshed.id.clone(),
+                            task_id: None,
+                            author_session_id: None,
+                            event_type: GoalEventType::Synthesis,
+                            body: summary.clone(),
+                        })
+                        .await?;
+                    let continuing_goal = galley
+                        .update_goal_state(refreshed.id.clone(), GoalStatus::Running, Some(summary))
+                        .await?;
+                    emit_json(&GoalRunFrame {
+                        schema_version: SCHEMA_VERSION,
+                        stream: "goal",
+                        phase: "continuing",
+                        goal: &continuing_goal,
+                        session_id: None,
+                        note: continuing_goal.latest_summary.clone(),
+                    })?;
+                    goal = continuing_goal;
+                    continue;
+                }
+                decision_wait_outcome = GoalWorkerWaitOutcome::IdleWithoutSignal;
+            }
         }
 
-        let summary = if incomplete_tasks {
-            "Budget reached with incomplete tasks; Goal controller completed this V1 run."
-                .to_string()
-        } else {
-            "Worker wave finished; no incomplete Goal tasks remain.".to_string()
-        };
+        match goal_controller_decision_after_wait(
+            decision_wait_outcome.clone(),
+            budget_left,
+            has_synthesis_material,
+            goal_worker_slots_all_capped(&worker_slots),
+        ) {
+            GoalControllerDecision::WaitForSignal => {
+                let summary = goal_waiting_for_worker_signal_summary(
+                    goal_worker_max_wave(&worker_slots),
+                    wave_protocol_activity,
+                );
+                galley
+                    .create_goal_event(CreateGoalEventInput {
+                        goal_id: refreshed.id.clone(),
+                        task_id: None,
+                        author_session_id: None,
+                        event_type: GoalEventType::Synthesis,
+                        body: summary.clone(),
+                    })
+                    .await?;
+                let waiting_goal = galley
+                    .update_goal_state(refreshed.id.clone(), GoalStatus::Running, Some(summary))
+                    .await?;
+                emit_json(&GoalRunFrame {
+                    schema_version: SCHEMA_VERSION,
+                    stream: "goal",
+                    phase: "waiting",
+                    goal: &waiting_goal,
+                    session_id: None,
+                    note: waiting_goal.latest_summary.clone(),
+                })?;
+                goal = waiting_goal;
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                continue;
+            }
+            GoalControllerDecision::Continue => {
+                let summary = goal_waiting_for_worker_signal_summary(
+                    goal_worker_max_wave(&worker_slots),
+                    wave_protocol_activity,
+                );
+                galley
+                    .create_goal_event(CreateGoalEventInput {
+                        goal_id: refreshed.id.clone(),
+                        task_id: None,
+                        author_session_id: None,
+                        event_type: GoalEventType::Synthesis,
+                        body: summary.clone(),
+                    })
+                    .await?;
+                let continuing_goal = galley
+                    .update_goal_state(refreshed.id.clone(), GoalStatus::Running, Some(summary))
+                    .await?;
+                emit_json(&GoalRunFrame {
+                    schema_version: SCHEMA_VERSION,
+                    stream: "goal",
+                    phase: "continuing",
+                    goal: &continuing_goal,
+                    session_id: None,
+                    note: continuing_goal.latest_summary.clone(),
+                })?;
+                goal = continuing_goal;
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                continue;
+            }
+            GoalControllerDecision::Fail(reason) => {
+                let summary = goal_failure_summary(reason);
+                shutdown_goal_worker_runners(
+                    galley,
+                    &snapshot,
+                    &worker_session_ids,
+                    supervisor.clone(),
+                    Some(format!("goal {} failed after worker wave", refreshed.id)),
+                )
+                .await?;
+                galley
+                    .create_goal_event(CreateGoalEventInput {
+                        goal_id: refreshed.id.clone(),
+                        task_id: None,
+                        author_session_id: None,
+                        event_type: GoalEventType::Synthesis,
+                        body: summary.clone(),
+                    })
+                    .await?;
+                let final_goal = galley
+                    .update_goal_state(refreshed.id.clone(), GoalStatus::Failed, Some(summary))
+                    .await?;
+                emit_json(&GoalRunFrame {
+                    schema_version: SCHEMA_VERSION,
+                    stream: "goal",
+                    phase: "failed",
+                    goal: &final_goal,
+                    session_id: None,
+                    note: final_goal.latest_summary.clone(),
+                })?;
+                return Ok(());
+            }
+            GoalControllerDecision::Wrap(wrap_reason) => {
+                let wrap_reason = match (wrap_reason, decision_wait_outcome) {
+                    (GoalWrapReason::Deadline, GoalWorkerWaitOutcome::DrainCapReached) => {
+                        GoalWrapReason::DrainCap
+                    }
+                    _ => wrap_reason,
+                };
+                let summary = goal_wrapping_summary(wrap_reason, incomplete_tasks);
+                galley
+                    .create_goal_event(CreateGoalEventInput {
+                        goal_id: refreshed.id.clone(),
+                        task_id: None,
+                        author_session_id: None,
+                        event_type: GoalEventType::Synthesis,
+                        body: summary.clone(),
+                    })
+                    .await?;
+                let wrapping_goal = galley
+                    .update_goal_state(refreshed.id.clone(), GoalStatus::Wrapping, Some(summary))
+                    .await?;
+                emit_json(&GoalRunFrame {
+                    schema_version: SCHEMA_VERSION,
+                    stream: "goal",
+                    phase: "wrapping",
+                    goal: &wrapping_goal,
+                    session_id: None,
+                    note: wrapping_goal.latest_summary.clone(),
+                })?;
+                finish_goal_with_master(
+                    galley,
+                    galley.goal_status(wrapping_goal.id.clone()).await?,
+                    &worker_session_ids,
+                    supervisor.clone(),
+                    reason
+                        .clone()
+                        .or_else(|| Some(format!("goal master synthesis after {wrap_reason:?}"))),
+                )
+                .await?;
+                return Ok(());
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct GoalWorkerWaveBaseline {
+    session_id: SessionId,
+    terminal_counts: GoalWorkerTerminalCounts,
+    progress_counts: GoalWorkerProgressCounts,
+    reminder_sent: bool,
+}
+
+#[derive(Debug, Clone)]
+struct GoalWorkerSlot {
+    worker_index: u32,
+    wave: u32,
+    baseline: GoalWorkerWaveBaseline,
+    capped: bool,
+}
+
+impl GoalWorkerSlot {
+    fn session_id(&self) -> &SessionId {
+        &self.baseline.session_id
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GoalTaskSpec {
+    title: String,
+    description: String,
+    scope: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GoalMasterCheckpointKind {
+    PlanningStarted,
+    WorkersStarted,
+    FirstMaterial,
+    DeadlineReached,
+}
+
+impl GoalMasterCheckpointKind {
+    fn marker(self) -> &'static str {
+        match self {
+            GoalMasterCheckpointKind::PlanningStarted => {
+                "[galley-master-checkpoint:planning_started]"
+            }
+            GoalMasterCheckpointKind::WorkersStarted => {
+                "[galley-master-checkpoint:workers_started]"
+            }
+            GoalMasterCheckpointKind::FirstMaterial => "[galley-master-checkpoint:first_material]",
+            GoalMasterCheckpointKind::DeadlineReached => {
+                "[galley-master-checkpoint:deadline_reached]"
+            }
+        }
+    }
+
+    fn reason_label(self) -> &'static str {
+        match self {
+            GoalMasterCheckpointKind::PlanningStarted => "planning started",
+            GoalMasterCheckpointKind::WorkersStarted => "workers started",
+            GoalMasterCheckpointKind::FirstMaterial => "first material",
+            GoalMasterCheckpointKind::DeadlineReached => "deadline reached",
+        }
+    }
+}
+
+async fn post_goal_master_checkpoint(
+    galley: &SqliteGalley,
+    snapshot: &GoalStatusSnapshot,
+    kind: GoalMasterCheckpointKind,
+    content: String,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<bool, GalleyError> {
+    let Some(master_session_id) = snapshot.goal.master_session_id.clone() else {
+        return Ok(false);
+    };
+    if goal_master_checkpoint_seen(snapshot, kind) {
+        return Ok(false);
+    }
+    session_checkpoint_value(
+        master_session_id.0.clone(),
+        content.clone(),
+        supervisor.clone(),
+        reason.clone().or_else(|| {
+            Some(format!(
+                "goal {} master checkpoint: {}",
+                snapshot.goal.id,
+                kind.reason_label()
+            ))
+        }),
+    )
+    .await?;
+    galley
+        .create_goal_event(CreateGoalEventInput {
+            goal_id: snapshot.goal.id.clone(),
+            task_id: None,
+            author_session_id: Some(master_session_id),
+            event_type: GoalEventType::System,
+            body: goal_master_checkpoint_event_body(kind, &content),
+        })
+        .await?;
+    Ok(true)
+}
+
+fn goal_master_checkpoint_seen(
+    snapshot: &GoalStatusSnapshot,
+    kind: GoalMasterCheckpointKind,
+) -> bool {
+    let marker = kind.marker();
+    snapshot.events.iter().any(|event| {
+        event.event_type == GoalEventType::System
+            && event.author_session_id.as_ref() == snapshot.goal.master_session_id.as_ref()
+            && event.body.starts_with(marker)
+    })
+}
+
+fn goal_master_checkpoint_event_body(kind: GoalMasterCheckpointKind, content: &str) -> String {
+    format!("{} {}", kind.marker(), content)
+}
+
+async fn ensure_goal_master_planned_or_fallback(
+    galley: &SqliteGalley,
+    snapshot: &GoalStatusSnapshot,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<GoalStatusSnapshot, GalleyError> {
+    if goal_has_open_assigned_task(snapshot) {
+        return Ok(snapshot.clone());
+    }
+
+    let planned = match run_goal_master_planning_turn(
+        galley,
+        snapshot,
+        supervisor.clone(),
+        reason.clone(),
+    )
+    .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = galley
+                .create_goal_event(CreateGoalEventInput {
+                    goal_id: snapshot.goal.id.clone(),
+                    task_id: None,
+                    author_session_id: snapshot.goal.master_session_id.clone(),
+                    event_type: GoalEventType::System,
+                    body: format!("{GOAL_MASTER_PLANNING_MARKER} failed: {e}"),
+                })
+                .await;
+            snapshot.clone()
+        }
+    };
+
+    if goal_has_open_assigned_task(&planned) {
+        return Ok(planned);
+    }
+    if planned.tasks.is_empty() {
+        ensure_goal_seed_tasks(galley, &planned).await
+    } else {
+        ensure_goal_fallback_followup_tasks(galley, &planned).await
+    }
+}
+
+async fn run_goal_master_planning_turn(
+    galley: &SqliteGalley,
+    snapshot: &GoalStatusSnapshot,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<GoalStatusSnapshot, GalleyError> {
+    let Some(master_session_id) = snapshot.goal.master_session_id.clone() else {
+        return Ok(snapshot.clone());
+    };
+    post_goal_master_checkpoint(
+        galley,
+        snapshot,
+        GoalMasterCheckpointKind::PlanningStarted,
+        "Galley 正在拆分任务。".to_string(),
+        supervisor.clone(),
+        reason.clone(),
+    )
+    .await?;
+
+    let round = goal_master_planning_next_round(snapshot);
+    galley
+        .create_goal_event(CreateGoalEventInput {
+            goal_id: snapshot.goal.id.clone(),
+            task_id: None,
+            author_session_id: Some(master_session_id.clone()),
+            event_type: GoalEventType::System,
+            body: format!("{GOAL_MASTER_PLANNING_MARKER} round {round} dispatched."),
+        })
+        .await?;
+
+    let dispatch_content = goal_master_planning_prompt(snapshot, round);
+    session_goal_master_plan_value(
+        master_session_id.0.clone(),
+        dispatch_content,
+        supervisor,
+        reason.or_else(|| Some(format!("goal {} master planning round {round}", snapshot.goal.id))),
+    )
+    .await?;
+
+    wait_goal_master_planning_result(galley, &snapshot.goal.id, snapshot.tasks.len()).await
+}
+
+async fn wait_goal_master_planning_result(
+    galley: &SqliteGalley,
+    goal_id: &GoalId,
+    before_task_count: usize,
+) -> Result<GoalStatusSnapshot, GalleyError> {
+    let started = Instant::now();
+    loop {
+        let snapshot = galley.goal_status(goal_id.clone()).await?;
+        if goal_has_open_assigned_task(&snapshot) || snapshot.tasks.len() > before_task_count {
+            return Ok(snapshot);
+        }
+        if !matches!(snapshot.goal.status, GoalStatus::Running) || snapshot.goal.stop_requested {
+            return Ok(snapshot);
+        }
+        if started.elapsed() >= Duration::from_secs(GOAL_MASTER_PLANNING_TIMEOUT_SECONDS) {
+            return Ok(snapshot);
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+fn goal_master_planning_next_round(snapshot: &GoalStatusSnapshot) -> u32 {
+    snapshot
+        .events
+        .iter()
+        .filter(|event| {
+            event.event_type == GoalEventType::System
+                && event.body.starts_with(GOAL_MASTER_PLANNING_MARKER)
+                && event.body.contains(" dispatched.")
+        })
+        .count()
+        .saturating_add(1) as u32
+}
+
+fn goal_master_planning_prompt(snapshot: &GoalStatusSnapshot, round: u32) -> String {
+    let goal = &snapshot.goal;
+    let memory_policy = goal_memory_policy_prompt(goal.runtime_kind);
+    let task_lines = if snapshot.tasks.is_empty() {
+        "No tasks exist yet.".to_string()
+    } else {
+        snapshot
+            .tasks
+            .iter()
+            .map(|task| {
+                format!(
+                    "- id={} status={:?} scope={} owner={} title={}",
+                    task.id,
+                    task.status,
+                    task.scope.as_deref().unwrap_or("-"),
+                    task.owner_session_id
+                        .as_ref()
+                        .map(SessionId::as_str)
+                        .unwrap_or("-"),
+                    task.title
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let event_lines = snapshot
+        .events
+        .iter()
+        .rev()
+        .take(12)
+        .map(|event| {
+            format!(
+                "- {:?} author={} task={} body={}",
+                event.event_type,
+                event
+                    .author_session_id
+                    .as_ref()
+                    .map(SessionId::as_str)
+                    .unwrap_or("-"),
+                event.task_id.as_ref().map(GoalTaskId::as_str).unwrap_or("-"),
+                event.body.replace('\n', " ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        r#"[Galley Goal Master Planner]
+
+You are the hidden Master planner for a Galley Native Goal. You are a scheduler/editor, not a worker.
+
+Goal id: {goal_id}
+Objective: {objective}
+Round: {round}
+Max concurrent workers: {worker_limit}
+Deadline: {deadline_at}
+
+Rules:
+1. First read the current state with: galley goal status {goal_id}
+2. Create at most {worker_limit} open tasks for this round. Creating fewer is allowed.
+3. Use only Galley CLI/Core writes: galley goal task create|update|complete and galley goal event post.
+4. Do not call GA native /hive. Do not start agent_bbs.py. Do not write Goal state outside Galley Core.
+{memory_policy}
+5. Task scopes must be idempotent and slot-bound: goal-worker-N:master-round-{round}:short-kind, where N is 1..{worker_limit}.
+6. Before creating a task, inspect existing task scopes and do not duplicate an existing scope.
+7. Each task needs a concrete title, clear acceptance criteria in --description, and one slot scope.
+8. If useful results already exist and budget remains, create validation, gap-fill, structure, or risk-check tasks instead of declaring done early.
+9. If Goal status is wrapping/completed/failed/stopped, stop without creating tasks.
+10. End with a short hidden final answer: MASTER_PLAN_DONE round={round} tasks=<number_created>.
+
+Current tasks:
+{task_lines}
+
+Recent events:
+{event_lines}
+
+Suggested CLI examples:
+galley goal task create {goal_id} "Produce first complete deliverable" --description "Acceptance: ..." --scope "goal-worker-1:master-round-{round}:first-pass"
+galley goal task create {goal_id} "Independent verification and gap check" --description "Acceptance: ..." --scope "goal-worker-2:master-round-{round}:verify-gaps"
+"#,
+        goal_id = goal.id,
+        objective = goal.objective,
+        worker_limit = goal.worker_limit,
+        deadline_at = goal.deadline_at,
+        memory_policy = memory_policy,
+    )
+}
+
+async fn ensure_goal_seed_tasks(
+    galley: &SqliteGalley,
+    snapshot: &GoalStatusSnapshot,
+) -> Result<GoalStatusSnapshot, GalleyError> {
+    if !snapshot.tasks.is_empty() || goal_seed_task_marker_seen(snapshot) {
+        return Ok(snapshot.clone());
+    }
+
+    for (worker_index, spec) in goal_seed_task_specs(&snapshot.goal) {
         galley
-            .create_goal_event(CreateGoalEventInput {
-                goal_id: refreshed.id.clone(),
-                task_id: None,
-                author_session_id: None,
-                event_type: GoalEventType::Synthesis,
-                body: summary.clone(),
+            .create_goal_task(CreateGoalTaskInput {
+                goal_id: snapshot.goal.id.clone(),
+                title: spec.title,
+                description: Some(spec.description),
+                scope: Some(spec.scope),
+                owner_session_id: None,
             })
             .await?;
-        let final_goal = galley
-            .update_goal_state(refreshed.id.clone(), GoalStatus::Completed, Some(summary))
+        galley
+            .create_goal_event(CreateGoalEventInput {
+                goal_id: snapshot.goal.id.clone(),
+                task_id: None,
+                author_session_id: None,
+                event_type: GoalEventType::System,
+                body: format!(
+                    "{GOAL_SEED_TASK_MARKER} created seed task for worker {worker_index}."
+                ),
+            })
             .await?;
+    }
+
+    galley
+        .create_goal_event(CreateGoalEventInput {
+            goal_id: snapshot.goal.id.clone(),
+            task_id: None,
+            author_session_id: None,
+            event_type: GoalEventType::System,
+            body: format!(
+                "{GOAL_SEED_TASK_MARKER} seeded {} worker tasks.",
+                snapshot.goal.worker_limit
+            ),
+        })
+        .await?;
+    galley.goal_status(snapshot.goal.id.clone()).await
+}
+
+async fn ensure_goal_fallback_followup_tasks(
+    galley: &SqliteGalley,
+    snapshot: &GoalStatusSnapshot,
+) -> Result<GoalStatusSnapshot, GalleyError> {
+    let round = goal_master_planning_next_round(snapshot);
+    let existing_scopes = snapshot
+        .tasks
+        .iter()
+        .filter_map(|task| task.scope.as_deref())
+        .collect::<Vec<_>>();
+    for worker_index in 1..=snapshot.goal.worker_limit {
+        let scope =
+            format!("{GOAL_CONTROLLER_TASK_SCOPE_PREFIX}{worker_index}:master-fallback-round-{round}:validate");
+        if existing_scopes.iter().any(|existing| *existing == scope) {
+            continue;
+        }
+        galley
+            .create_goal_task(CreateGoalTaskInput {
+                goal_id: snapshot.goal.id.clone(),
+                title: "验证、补缺和改进当前结果".to_string(),
+                description: Some(format!(
+                    "基于目标「{}」和已有结果，找出最需要补齐、核对或改进的地方；完成时写清新增结论、证据、风险和仍未解决的问题。",
+                    snapshot.goal.objective
+                )),
+                scope: Some(scope),
+                owner_session_id: None,
+            })
+            .await?;
+    }
+    galley
+        .create_goal_event(CreateGoalEventInput {
+            goal_id: snapshot.goal.id.clone(),
+            task_id: None,
+            author_session_id: snapshot.goal.master_session_id.clone(),
+            event_type: GoalEventType::System,
+            body: format!("{GOAL_MASTER_PLANNING_MARKER} fallback follow-up tasks created."),
+        })
+        .await?;
+    galley.goal_status(snapshot.goal.id.clone()).await
+}
+
+fn goal_seed_task_marker_seen(snapshot: &GoalStatusSnapshot) -> bool {
+    snapshot.events.iter().any(|event| {
+        event.event_type == GoalEventType::System && event.body.starts_with(GOAL_SEED_TASK_MARKER)
+    })
+}
+
+fn goal_seed_task_specs(goal: &GoalBrief) -> Vec<(u32, GoalTaskSpec)> {
+    let worker_limit = goal.worker_limit.max(1);
+    let mut specs = Vec::new();
+    specs.push((
+        1,
+        goal_task_spec(
+            1,
+            "first-pass",
+            "第一版完整结果",
+            format!(
+                "围绕目标「{}」产出第一版可交付结果，写清主要结论、依据、假设和仍需补齐的缺口。",
+                goal.objective
+            ),
+        ),
+    ));
+    if worker_limit >= 2 {
+        specs.push((
+            2,
+            goal_task_spec(
+                2,
+                "independent-review",
+                "独立核对与补缺",
+                format!(
+                    "独立检查目标「{}」的事实、约束、风险和遗漏，优先找出第一版结果最需要改进的地方。",
+                    goal.objective
+                ),
+            ),
+        ));
+    }
+    if worker_limit >= 3 {
+        specs.push((
+            3,
+            goal_task_spec(
+                3,
+                "synthesis-polish",
+                "结构整理与下一步建议",
+                format!(
+                    "把围绕目标「{}」的已有发现整理成用户容易理解的结构，并补充可执行的下一步建议。",
+                    goal.objective
+                ),
+            ),
+        ));
+    }
+    if worker_limit >= 4 {
+        specs.push((
+            4,
+            goal_task_spec(
+                4,
+                "alternatives-edge-cases",
+                "替代方案、边界和反例检查",
+                format!(
+                    "从替代路径、边界情况和反例角度检查目标「{}」，指出可能被忽略的选择或风险。",
+                    goal.objective
+                ),
+            ),
+        ));
+    }
+    if worker_limit >= 5 {
+        specs.push((
+            5,
+            goal_task_spec(
+                5,
+                "final-quality-review",
+                "最终质量、风险和交付检查",
+                format!(
+                    "对目标「{}」的最终交付做质量检查，确认结论、风险、缺口和下一步都可直接交给用户。",
+                    goal.objective
+                ),
+            ),
+        ));
+    }
+    specs
+}
+
+fn goal_task_spec(
+    worker_index: u32,
+    kind: &str,
+    title: impl Into<String>,
+    description: impl Into<String>,
+) -> GoalTaskSpec {
+    GoalTaskSpec {
+        title: title.into(),
+        description: description.into(),
+        scope: format!("{GOAL_CONTROLLER_TASK_SCOPE_PREFIX}{worker_index}:{kind}"),
+    }
+}
+
+fn goal_open_assigned_task_for_worker<'a>(
+    snapshot: &'a GoalStatusSnapshot,
+    worker_index: u32,
+) -> Option<&'a GoalTaskBrief> {
+    let prefix = format!("{GOAL_CONTROLLER_TASK_SCOPE_PREFIX}{worker_index}:");
+    snapshot.tasks.iter().find(|task| {
+        task.status == GoalTaskStatus::Open
+            && task
+                .scope
+                .as_deref()
+                .is_some_and(|scope| scope.starts_with(&prefix))
+    })
+}
+
+fn goal_has_open_assigned_task(snapshot: &GoalStatusSnapshot) -> bool {
+    snapshot.tasks.iter().any(|task| {
+        task.status == GoalTaskStatus::Open
+            && task
+                .scope
+                .as_deref()
+                .is_some_and(|scope| scope.starts_with(GOAL_CONTROLLER_TASK_SCOPE_PREFIX))
+    })
+}
+
+fn goal_worker_slot_exists(slots: &[GoalWorkerSlot], worker_index: u32) -> bool {
+    slots.iter().any(|slot| slot.worker_index == worker_index)
+}
+
+fn goal_task_is_controller_assigned(task: &GoalTaskBrief) -> bool {
+    task.scope
+        .as_deref()
+        .is_some_and(|scope| scope.starts_with(GOAL_CONTROLLER_TASK_SCOPE_PREFIX))
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct GoalWorkerTerminalCounts {
+    terminal_task_count: usize,
+    result_event_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct GoalWorkerProgressCounts {
+    task_count: usize,
+    worker_event_count: usize,
+}
+
+async fn start_goal_worker_slots(
+    galley: &SqliteGalley,
+    wave_start_snapshot: &GoalStatusSnapshot,
+    goal: &GoalBrief,
+    existing_slots: &[GoalWorkerSlot],
+    runtime: RuntimeArg,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<Vec<GoalWorkerSlot>, GalleyError> {
+    let wave = 1_u32;
+    let mut slots = Vec::new();
+    for worker_index in 1..=goal.worker_limit {
+        if goal_worker_slot_exists(existing_slots, worker_index) {
+            continue;
+        }
+        let Some(assigned_task) = goal_open_assigned_task_for_worker(wave_start_snapshot, worker_index) else {
+            continue;
+        };
+        let prompt = goal_worker_prompt_template(goal, wave, worker_index, Some(assigned_task));
+        let result =
+            session_new_goal_worker_value(
+                prompt,
+                Some(goal.project_id.0.clone()),
+                None,
+                runtime,
+                supervisor.clone(),
+                Some(reason.clone().unwrap_or_else(|| {
+                    format!("goal {} wave {wave} worker {worker_index}", goal.id)
+                })),
+            )
+            .await?;
+        let session_id = result
+            .get("session")
+            .and_then(|s| s.get("id"))
+            .and_then(Value::as_str)
+            .map(|sid| SessionId(sid.to_string()))
+            .ok_or_else(|| GalleyError::Internal {
+                message: "session.new_goal_worker response missing session.id".to_string(),
+            })?;
+        let baseline = goal_worker_wave_baseline(wave_start_snapshot, session_id.clone());
+        let _ = galley
+            .create_goal_event(CreateGoalEventInput {
+                goal_id: goal.id.clone(),
+                task_id: None,
+                author_session_id: Some(session_id.clone()),
+                event_type: GoalEventType::System,
+                body: format!("Wave {wave} worker {worker_index} session started."),
+            })
+            .await;
         emit_json(&GoalRunFrame {
             schema_version: SCHEMA_VERSION,
             stream: "goal",
-            phase: "finished",
-            goal: &final_goal,
-            session_id: None,
-            note: None,
+            phase: "worker_started",
+            goal,
+            session_id: Some(session_id.0.clone()),
+            note: Some(format!(
+                "wave {wave}; worker {worker_index}/{}",
+                goal.worker_limit
+            )),
         })?;
-        return Ok(());
+        slots.push(GoalWorkerSlot {
+            worker_index,
+            wave,
+            baseline,
+            capped: false,
+        });
+    }
+    Ok(slots)
+}
+
+async fn continue_goal_worker_slot(
+    galley: &SqliteGalley,
+    snapshot_before_continue: &GoalStatusSnapshot,
+    goal: &GoalBrief,
+    slot: &mut GoalWorkerSlot,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<bool, GalleyError> {
+    if slot.capped {
+        return Ok(false);
+    }
+    if slot.wave >= GOAL_CONTROLLER_MAX_WAVES {
+        slot.capped = true;
+        let _ = galley
+            .create_goal_event(CreateGoalEventInput {
+                goal_id: goal.id.clone(),
+                task_id: None,
+                author_session_id: Some(slot.session_id().clone()),
+                event_type: GoalEventType::System,
+                body: format!(
+                    "Worker {} reached the per-slot wave cap at wave {}; no more task wakes will be dispatched for this slot.",
+                    slot.worker_index, slot.wave
+                ),
+            })
+            .await;
+        return Ok(false);
+    }
+
+    let next_wave = slot.wave.saturating_add(1);
+    let session_id = slot.session_id().clone();
+    let Some(task) = goal_open_assigned_task_for_worker(snapshot_before_continue, slot.worker_index)
+    else {
+        return Ok(false);
+    };
+    let task = task.clone();
+    let prompt = goal_worker_wake_prompt(goal, next_wave, slot.worker_index, &session_id, &task);
+    session_send_value(
+        session_id.0.clone(),
+        prompt,
+        supervisor.clone(),
+        Some(reason.clone().unwrap_or_else(|| {
+            format!(
+                "goal {} wave {next_wave} worker {}",
+                goal.id, slot.worker_index
+            )
+        })),
+    )
+    .await?;
+    slot.wave = next_wave;
+    slot.baseline = goal_worker_wave_baseline(snapshot_before_continue, session_id.clone());
+    let _ = galley
+        .create_goal_event(CreateGoalEventInput {
+            goal_id: goal.id.clone(),
+            task_id: Some(task.id.clone()),
+            author_session_id: Some(session_id.clone()),
+            event_type: GoalEventType::System,
+            body: format!(
+                "Wave {next_wave} worker {} wake task {} dispatched in existing session.",
+                slot.worker_index, task.id
+            ),
+        })
+        .await;
+    emit_json(&GoalRunFrame {
+        schema_version: SCHEMA_VERSION,
+        stream: "goal",
+        phase: "worker_started",
+        goal,
+        session_id: Some(session_id.0),
+        note: Some(format!(
+            "wave {next_wave}; worker {}/{}",
+            slot.worker_index, goal.worker_limit
+        )),
+    })?;
+    Ok(true)
+}
+
+fn goal_worker_wave_baseline(
+    snapshot: &GoalStatusSnapshot,
+    session_id: SessionId,
+) -> GoalWorkerWaveBaseline {
+    GoalWorkerWaveBaseline {
+        terminal_counts: goal_worker_terminal_counts(snapshot, &session_id),
+        progress_counts: goal_worker_progress_counts(snapshot, &session_id),
+        session_id,
+        reminder_sent: false,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GoalControllerDecision {
+    Continue,
+    WaitForSignal,
+    Wrap(GoalWrapReason),
+    Fail(GoalFailReason),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GoalWrapReason {
+    Deadline,
+    DrainCap,
+    WaveCap,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GoalFailReason {
+    NoResultByDeadline,
+    NoResultByWaveCap,
+}
+
+fn goal_controller_decision(
+    budget_left: bool,
+    has_synthesis_material: bool,
+    all_worker_slots_capped: bool,
+) -> GoalControllerDecision {
+    if budget_left && all_worker_slots_capped {
+        return if has_synthesis_material {
+            GoalControllerDecision::Wrap(GoalWrapReason::WaveCap)
+        } else {
+            GoalControllerDecision::Fail(GoalFailReason::NoResultByWaveCap)
+        };
+    }
+    if budget_left {
+        return GoalControllerDecision::Continue;
+    }
+    if has_synthesis_material {
+        GoalControllerDecision::Wrap(GoalWrapReason::Deadline)
+    } else {
+        GoalControllerDecision::Fail(GoalFailReason::NoResultByDeadline)
+    }
+}
+
+fn goal_controller_decision_after_wait(
+    wait_outcome: GoalWorkerWaitOutcome,
+    budget_left: bool,
+    has_synthesis_material: bool,
+    all_worker_slots_capped: bool,
+) -> GoalControllerDecision {
+    if wait_outcome == GoalWorkerWaitOutcome::DrainCapReached {
+        return GoalControllerDecision::Wrap(GoalWrapReason::DrainCap);
+    }
+    if wait_outcome == GoalWorkerWaitOutcome::IdleWithoutSignal && budget_left {
+        return GoalControllerDecision::WaitForSignal;
+    }
+    goal_controller_decision(budget_left, has_synthesis_material, all_worker_slots_capped)
+}
+
+fn goal_waiting_for_worker_signal_summary(wave: u32, had_protocol_activity: bool) -> String {
+    if had_protocol_activity {
+        return format!(
+            "Wave {wave} has worker activity but no terminal task/result yet; waiting until the Goal deadline without assigning another task."
+        );
+    }
+    format!(
+        "Wave {wave} has no terminal task/result yet; waiting until the Goal deadline without assigning another task."
+    )
+}
+
+fn goal_slot_wake_summary(
+    worker_indices: &[u32],
+    has_result_signal: bool,
+    incomplete_tasks: bool,
+) -> String {
+    let workers = worker_indices
+        .iter()
+        .map(|index| format!("worker {index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if has_result_signal && incomplete_tasks {
+        return format!(
+            "{workers} produced terminal results while tasks remain; budget remains, assigning concrete follow-up tasks."
+        );
+    }
+    if has_result_signal {
+        return format!(
+            "{workers} produced a terminal result signal; budget remains, assigning concrete review, validation, and refinement tasks."
+        );
+    }
+    format!(
+        "{workers} produced a terminal task signal without a result; budget remains, assigning concrete follow-up tasks."
+    )
+}
+
+fn goal_wrapping_summary(reason: GoalWrapReason, incomplete_tasks: bool) -> String {
+    match (reason, incomplete_tasks) {
+        (GoalWrapReason::Deadline, true) => {
+            "Goal budget reached with unfinished tasks; starting master synthesis with the best available results.".to_string()
+        }
+        (GoalWrapReason::Deadline, false) => {
+            "Goal budget reached; starting master synthesis.".to_string()
+        }
+        (GoalWrapReason::DrainCap, true) => {
+            "Goal drain cap reached while some workers may still be active; synthesizing available results with unfinished tasks noted.".to_string()
+        }
+        (GoalWrapReason::DrainCap, false) => {
+            "Goal drain cap reached while some workers may still be active; synthesizing available results.".to_string()
+        }
+        (GoalWrapReason::WaveCap, true) => {
+            "Goal wave cap reached with unfinished tasks; starting master synthesis with accumulated results.".to_string()
+        }
+        (GoalWrapReason::WaveCap, false) => {
+            "Goal wave cap reached; starting master synthesis with accumulated results.".to_string()
+        }
+    }
+}
+
+fn goal_failure_summary(reason: GoalFailReason) -> String {
+    match reason {
+        GoalFailReason::NoResultByDeadline => {
+            "Goal failed: budget ended without worker activity or available output.".to_string()
+        }
+        GoalFailReason::NoResultByWaveCap => {
+            "Goal failed: wave cap reached without worker activity or available output.".to_string()
+        }
     }
 }
 
@@ -2254,6 +3544,749 @@ fn goal_has_incomplete_tasks(snapshot: &GoalStatusSnapshot) -> bool {
                 | GoalTaskStatus::Blocked
         )
     })
+}
+
+fn goal_has_result_signal(snapshot: &GoalStatusSnapshot) -> bool {
+    snapshot
+        .tasks
+        .iter()
+        .any(|task| task.status == GoalTaskStatus::Completed)
+        || snapshot
+            .events
+            .iter()
+            .any(|event| event.event_type == GoalEventType::Result)
+}
+
+fn goal_has_worker_material_signal(snapshot: &GoalStatusSnapshot) -> bool {
+    snapshot.tasks.iter().any(|task| {
+        task.owner_session_id.is_some()
+            || task.status != GoalTaskStatus::Open
+            || !goal_task_is_controller_assigned(task)
+    }) || snapshot.events.iter().any(|event| {
+        matches!(
+            event.event_type,
+            GoalEventType::Plan
+                | GoalEventType::Claim
+                | GoalEventType::Progress
+                | GoalEventType::Result
+                | GoalEventType::Conflict
+        )
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GoalActivityCounts {
+    task_count: usize,
+    completed_task_count: usize,
+    worker_event_count: usize,
+    result_event_count: usize,
+}
+
+fn goal_activity_counts(snapshot: &GoalStatusSnapshot) -> GoalActivityCounts {
+    GoalActivityCounts {
+        task_count: snapshot
+            .tasks
+            .iter()
+            .filter(|task| {
+                task.owner_session_id.is_some()
+                    || task.status != GoalTaskStatus::Open
+                    || !goal_task_is_controller_assigned(task)
+            })
+            .count(),
+        completed_task_count: snapshot
+            .tasks
+            .iter()
+            .filter(|task| task.status == GoalTaskStatus::Completed)
+            .count(),
+        worker_event_count: snapshot
+            .events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.event_type,
+                    GoalEventType::Plan
+                        | GoalEventType::Claim
+                        | GoalEventType::Progress
+                        | GoalEventType::Result
+                        | GoalEventType::Conflict
+                )
+            })
+            .count(),
+        result_event_count: snapshot
+            .events
+            .iter()
+            .filter(|event| event.event_type == GoalEventType::Result)
+            .count(),
+    }
+}
+
+fn goal_activity_increased(before: GoalActivityCounts, after: GoalActivityCounts) -> bool {
+    after.task_count > before.task_count
+        || after.completed_task_count > before.completed_task_count
+        || after.worker_event_count > before.worker_event_count
+        || after.result_event_count > before.result_event_count
+}
+
+fn goal_worker_slot_session_ids(slots: &[GoalWorkerSlot]) -> Vec<SessionId> {
+    slots.iter().map(|slot| slot.session_id().clone()).collect()
+}
+
+fn goal_worker_slots_all_capped(slots: &[GoalWorkerSlot]) -> bool {
+    !slots.is_empty() && slots.iter().all(|slot| slot.capped)
+}
+
+fn goal_worker_max_wave(slots: &[GoalWorkerSlot]) -> u32 {
+    slots.iter().map(|slot| slot.wave).max().unwrap_or(1)
+}
+
+fn goal_ready_worker_slot_indices(
+    snapshot: &GoalStatusSnapshot,
+    slots: &[GoalWorkerSlot],
+) -> Vec<usize> {
+    slots
+        .iter()
+        .enumerate()
+        .filter_map(|(index, slot)| {
+            if slot.capped || !goal_worker_has_terminal_signal(snapshot, &slot.baseline) {
+                None
+            } else {
+                Some(index)
+            }
+        })
+        .collect()
+}
+
+fn goal_ready_idle_worker_slot_indices(
+    snapshot: &GoalStatusSnapshot,
+    slots: &[GoalWorkerSlot],
+    live_session_ids: &[SessionId],
+) -> Vec<usize> {
+    goal_ready_worker_slot_indices(snapshot, slots)
+        .into_iter()
+        .filter(|index| {
+            slots.get(*index).is_some_and(|slot| {
+                !live_session_ids
+                    .iter()
+                    .any(|live| live == slot.session_id())
+            })
+        })
+        .collect()
+}
+
+fn goal_any_worker_slot_has_progress_signal(
+    snapshot: &GoalStatusSnapshot,
+    slots: &[GoalWorkerSlot],
+) -> bool {
+    slots
+        .iter()
+        .filter(|slot| !slot.capped)
+        .any(|slot| goal_worker_has_progress_signal(snapshot, &slot.baseline))
+}
+
+async fn goal_worker_sessions_have_output(
+    galley: &SqliteGalley,
+    worker_session_ids: &[SessionId],
+) -> Result<bool, GalleyError> {
+    for session_id in worker_session_ids {
+        let messages = galley
+            .session_messages(session_id.clone(), Some(12))
+            .await?;
+        if messages
+            .iter()
+            .any(|message| message.role == MessageRole::Agent && !message.content.trim().is_empty())
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+async fn wait_goal_worker_sessions(
+    galley: &SqliteGalley,
+    worker_slots: &mut [GoalWorkerSlot],
+    goal: &GoalBrief,
+    controller_started: Instant,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<GoalWorkerWaitOutcome, GalleyError> {
+    if worker_slots.is_empty() {
+        return Ok(GoalWorkerWaitOutcome::IdleWithoutSignal);
+    }
+
+    let started_wait = Instant::now();
+    let drain_cap = Duration::from_secs(goal_drain_cap_seconds(goal.budget_seconds));
+    let mut drain_started: Option<Instant> = None;
+    loop {
+        if goal_stop_requested(galley, goal).await? {
+            return Ok(GoalWorkerWaitOutcome::IdleWithoutSignal);
+        }
+        let snapshot = galley.goal_status(goal.id.clone()).await?;
+        if goal_has_result_signal(&snapshot) || goal_has_worker_material_signal(&snapshot) {
+            post_goal_master_checkpoint(
+                galley,
+                &snapshot,
+                GoalMasterCheckpointKind::FirstMaterial,
+                "已有初步进展，正在继续核对和整理。".to_string(),
+                supervisor.clone(),
+                reason.clone(),
+            )
+            .await?;
+        }
+        let mut live_session_ids = Vec::new();
+        for slot in worker_slots.iter() {
+            let session = galley.session_brief(slot.session_id().clone()).await?;
+            if is_live_candidate(session.status) {
+                live_session_ids.push(slot.session_id().clone());
+            }
+        }
+        if goal_budget_left(goal, controller_started) {
+            let ready_slots =
+                goal_ready_idle_worker_slot_indices(&snapshot, worker_slots, &live_session_ids);
+            if !ready_slots.is_empty() {
+                return Ok(GoalWorkerWaitOutcome::ReadySlots(ready_slots));
+            }
+        }
+        let has_progress_signal = goal_any_worker_slot_has_progress_signal(&snapshot, worker_slots);
+        let any_live = !live_session_ids.is_empty();
+        if !any_live {
+            if goal_budget_left(goal, controller_started) {
+                if has_progress_signal {
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                    continue;
+                }
+                if started_wait.elapsed() < Duration::from_secs(GOAL_WORKER_SIGNAL_GRACE_SECONDS) {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+                if send_goal_worker_protocol_reminders(
+                    galley,
+                    goal,
+                    worker_slots,
+                    &snapshot,
+                    supervisor.clone(),
+                    reason.clone(),
+                )
+                .await?
+                {
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                    continue;
+                }
+            }
+            return Ok(GoalWorkerWaitOutcome::IdleWithoutSignal);
+        }
+        if goal_budget_left(goal, controller_started) {
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+            continue;
+        }
+        if drain_started.is_none() {
+            post_goal_master_checkpoint(
+                galley,
+                &snapshot,
+                GoalMasterCheckpointKind::DeadlineReached,
+                "运行时间已到，正在等待当前任务收尾并整理结果。".to_string(),
+                supervisor.clone(),
+                reason.clone(),
+            )
+            .await?;
+            let summary = format!(
+                "Goal deadline reached; waiting up to {}s for active workers to finish before master synthesis.",
+                drain_cap.as_secs()
+            );
+            galley
+                .create_goal_event(CreateGoalEventInput {
+                    goal_id: goal.id.clone(),
+                    task_id: None,
+                    author_session_id: None,
+                    event_type: GoalEventType::Synthesis,
+                    body: summary,
+                })
+                .await?;
+            drain_started = Some(Instant::now());
+        }
+        if drain_started
+            .map(|started| started.elapsed() >= drain_cap)
+            .unwrap_or(false)
+        {
+            return Ok(GoalWorkerWaitOutcome::DrainCapReached);
+        }
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GoalWorkerWaitOutcome {
+    ReadySlots(Vec<usize>),
+    IdleWithoutSignal,
+    DrainCapReached,
+}
+
+async fn send_goal_worker_protocol_reminders(
+    galley: &SqliteGalley,
+    goal: &GoalBrief,
+    worker_slots: &mut [GoalWorkerSlot],
+    snapshot: &GoalStatusSnapshot,
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<bool, GalleyError> {
+    let mut sent = false;
+    for slot in worker_slots.iter_mut() {
+        if slot.capped
+            || slot.baseline.reminder_sent
+            || goal_worker_has_terminal_signal(snapshot, &slot.baseline)
+        {
+            continue;
+        }
+        let wave = slot.wave;
+        let session_id = slot.session_id().clone();
+        let prompt = goal_worker_protocol_reminder_prompt(goal, wave, &session_id);
+        session_send_value(
+            session_id.0.clone(),
+            prompt,
+            supervisor.clone(),
+            Some(reason.clone().unwrap_or_else(|| {
+                format!(
+                    "goal {} wave {wave} worker {} protocol reminder",
+                    goal.id, slot.worker_index
+                )
+            })),
+        )
+        .await?;
+        slot.baseline.reminder_sent = true;
+        sent = true;
+        let _ = galley
+            .create_goal_event(CreateGoalEventInput {
+                goal_id: goal.id.clone(),
+                task_id: None,
+                author_session_id: Some(session_id),
+                event_type: GoalEventType::System,
+                body: format!(
+                    "Wave {wave} worker {} protocol reminder sent; waiting for terminal task/result signal.",
+                    slot.worker_index
+                ),
+            })
+            .await;
+    }
+    Ok(sent)
+}
+
+fn goal_worker_has_terminal_signal(
+    snapshot: &GoalStatusSnapshot,
+    baseline: &GoalWorkerWaveBaseline,
+) -> bool {
+    let current = goal_worker_terminal_counts(snapshot, &baseline.session_id);
+    current.terminal_task_count > baseline.terminal_counts.terminal_task_count
+        || current.result_event_count > baseline.terminal_counts.result_event_count
+}
+
+fn goal_worker_has_progress_signal(
+    snapshot: &GoalStatusSnapshot,
+    baseline: &GoalWorkerWaveBaseline,
+) -> bool {
+    if goal_worker_has_terminal_signal(snapshot, baseline) {
+        return true;
+    }
+    let current = goal_worker_progress_counts(snapshot, &baseline.session_id);
+    current.task_count > baseline.progress_counts.task_count
+        || current.worker_event_count > baseline.progress_counts.worker_event_count
+}
+
+fn goal_worker_terminal_counts(
+    snapshot: &GoalStatusSnapshot,
+    session_id: &SessionId,
+) -> GoalWorkerTerminalCounts {
+    let terminal_task_count = snapshot
+        .tasks
+        .iter()
+        .filter(|task| {
+            task.owner_session_id.as_ref() == Some(session_id)
+                && goal_task_status_is_terminal(task.status)
+        })
+        .count();
+    let result_event_count = snapshot
+        .events
+        .iter()
+        .filter(|event| goal_result_event_belongs_to_worker(snapshot, event, session_id))
+        .count();
+    GoalWorkerTerminalCounts {
+        terminal_task_count,
+        result_event_count,
+    }
+}
+
+fn goal_worker_progress_counts(
+    snapshot: &GoalStatusSnapshot,
+    session_id: &SessionId,
+) -> GoalWorkerProgressCounts {
+    let task_count = snapshot
+        .tasks
+        .iter()
+        .filter(|task| task.owner_session_id.as_ref() == Some(session_id))
+        .count();
+    let worker_event_count = snapshot
+        .events
+        .iter()
+        .filter(|event| {
+            event.author_session_id.as_ref() == Some(session_id)
+                && matches!(
+                    event.event_type,
+                    GoalEventType::Plan
+                        | GoalEventType::Claim
+                        | GoalEventType::Progress
+                        | GoalEventType::Result
+                        | GoalEventType::Conflict
+                )
+        })
+        .count();
+    GoalWorkerProgressCounts {
+        task_count,
+        worker_event_count,
+    }
+}
+
+fn goal_task_status_is_terminal(status: GoalTaskStatus) -> bool {
+    matches!(
+        status,
+        GoalTaskStatus::Completed | GoalTaskStatus::Blocked | GoalTaskStatus::Cancelled
+    )
+}
+
+fn goal_result_event_belongs_to_worker(
+    snapshot: &GoalStatusSnapshot,
+    event: &GoalEventBrief,
+    session_id: &SessionId,
+) -> bool {
+    if event.event_type != GoalEventType::Result {
+        return false;
+    }
+    if event.author_session_id.as_ref() == Some(session_id) {
+        return true;
+    }
+    let Some(task_id) = event.task_id.as_ref() else {
+        return false;
+    };
+    snapshot
+        .tasks
+        .iter()
+        .any(|task| task.id == *task_id && task.owner_session_id.as_ref() == Some(session_id))
+}
+
+fn goal_drain_cap_seconds(budget_seconds: u32) -> u64 {
+    let quarter_budget = u64::from(budget_seconds).saturating_div(4);
+    quarter_budget
+        .max(GOAL_CONTROLLER_MIN_DRAIN_SECONDS)
+        .min(GOAL_CONTROLLER_MAX_DRAIN_SECONDS)
+}
+
+async fn goal_stop_requested(galley: &SqliteGalley, goal: &GoalBrief) -> Result<bool, GalleyError> {
+    Ok(galley
+        .goal_status(goal.id.clone())
+        .await?
+        .goal
+        .stop_requested)
+}
+
+async fn shutdown_goal_worker_runners(
+    _galley: &SqliteGalley,
+    snapshot: &GoalStatusSnapshot,
+    worker_session_ids: &[SessionId],
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<(), GalleyError> {
+    let worker_ids = goal_worker_session_ids(snapshot, worker_session_ids);
+    for session_id in worker_ids {
+        session_shutdown_runner_value(
+            session_id.0,
+            supervisor.clone(),
+            reason
+                .clone()
+                .or_else(|| Some(format!("goal {} worker runner cleanup", snapshot.goal.id))),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+fn goal_worker_session_ids(
+    snapshot: &GoalStatusSnapshot,
+    worker_session_ids: &[SessionId],
+) -> Vec<SessionId> {
+    let mut out = Vec::new();
+    let event_worker_ids = snapshot
+        .events
+        .iter()
+        .filter_map(|event| event.author_session_id.clone())
+        .filter(|session_id| Some(session_id) != snapshot.goal.master_session_id.as_ref())
+        .collect::<Vec<_>>();
+    let source: Vec<SessionId> = if !worker_session_ids.is_empty() {
+        worker_session_ids.to_vec()
+    } else if !event_worker_ids.is_empty() {
+        event_worker_ids
+    } else {
+        snapshot
+            .sessions
+            .iter()
+            .filter(|session| Some(&session.id) != snapshot.goal.master_session_id.as_ref())
+            .map(|session| session.id.clone())
+            .collect()
+    };
+    for session_id in source {
+        if !out.iter().any(|existing| existing == &session_id) {
+            out.push(session_id);
+        }
+    }
+    out
+}
+
+async fn wait_master_final_answer(
+    galley: &SqliteGalley,
+    session_id: &SessionId,
+    previous_turn_count: u32,
+) -> Result<MessageBrief, GalleyError> {
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(300) {
+        let session = galley.session_brief(session_id.clone()).await?;
+        let messages = galley
+            .session_messages(session_id.clone(), Some(12))
+            .await?;
+        let final_answer = messages
+            .iter()
+            .rev()
+            .find(|message| {
+                message.role == MessageRole::Agent
+                    && message.turn_index.unwrap_or(0) >= previous_turn_count
+                    && message
+                        .final_answer
+                        .as_deref()
+                        .is_some_and(|answer| !answer.trim().is_empty())
+            })
+            .cloned();
+        if let Some(message) = final_answer {
+            if !is_live_candidate(session.status) {
+                return Ok(message);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
+    Err(GalleyError::RunnerError {
+        message: format!("master session {session_id} did not produce a final answer within 300s"),
+    })
+}
+
+async fn finish_goal_with_master(
+    galley: &SqliteGalley,
+    snapshot: GoalStatusSnapshot,
+    worker_session_ids: &[SessionId],
+    supervisor: Option<String>,
+    reason: Option<String>,
+) -> Result<(), GalleyError> {
+    let goal = snapshot.goal.clone();
+    shutdown_goal_worker_runners(
+        galley,
+        &snapshot,
+        worker_session_ids,
+        supervisor.clone(),
+        reason
+            .clone()
+            .or_else(|| Some(format!("goal {} entering master synthesis", goal.id))),
+    )
+    .await?;
+    let Some(master_session_id) = goal.master_session_id.clone() else {
+        let summary = goal
+            .latest_summary
+            .clone()
+            .unwrap_or_else(|| "Goal completed without a desktop master session.".to_string());
+        galley
+            .create_goal_event(CreateGoalEventInput {
+                goal_id: goal.id.clone(),
+                task_id: None,
+                author_session_id: None,
+                event_type: GoalEventType::Synthesis,
+                body: summary.clone(),
+            })
+            .await?;
+        let final_goal = galley
+            .update_goal_state(goal.id.clone(), GoalStatus::Completed, Some(summary))
+            .await?;
+        emit_json(&GoalRunFrame {
+            schema_version: SCHEMA_VERSION,
+            stream: "goal",
+            phase: "finished",
+            goal: &final_goal,
+            session_id: None,
+            note: None,
+        })?;
+        return Ok(());
+    };
+
+    let before_turn_count = galley
+        .session_brief(master_session_id.clone())
+        .await?
+        .turn_count
+        .unwrap_or(0);
+    let dispatch_content =
+        build_goal_synthesis_prompt(galley, &snapshot, worker_session_ids).await?;
+    session_goal_synthesize_value(
+        master_session_id.0.clone(),
+        "正在生成最终汇总。".to_string(),
+        dispatch_content,
+        supervisor.clone(),
+        reason
+            .clone()
+            .or_else(|| Some(format!("goal {} master synthesis", goal.id))),
+    )
+    .await?;
+    let final_answer_message =
+        wait_master_final_answer(galley, &master_session_id, before_turn_count).await?;
+
+    let summary = final_answer_message
+        .final_answer
+        .as_deref()
+        .and_then(first_non_empty_line)
+        .or_else(|| first_non_empty_line(&final_answer_message.content))
+        .or_else(|| final_answer_message.summary.clone())
+        .unwrap_or_else(|| "Goal completed and master synthesis was delivered.".to_string());
+
+    galley
+        .create_goal_event(CreateGoalEventInput {
+            goal_id: goal.id.clone(),
+            task_id: None,
+            author_session_id: Some(master_session_id.clone()),
+            event_type: GoalEventType::Synthesis,
+            body: summary.clone(),
+        })
+        .await?;
+    let final_goal = galley
+        .update_goal_state(goal.id.clone(), GoalStatus::Completed, Some(summary))
+        .await?;
+    let completed_snapshot = galley.goal_status(final_goal.id.clone()).await?;
+    shutdown_goal_worker_runners(
+        galley,
+        &completed_snapshot,
+        worker_session_ids,
+        supervisor.clone(),
+        Some(format!("goal {} completed worker cleanup", final_goal.id)),
+    )
+    .await?;
+    emit_json(&GoalRunFrame {
+        schema_version: SCHEMA_VERSION,
+        stream: "goal",
+        phase: "finished",
+        goal: &final_goal,
+        session_id: Some(master_session_id.0),
+        note: final_goal.latest_summary.clone(),
+    })?;
+    Ok(())
+}
+
+async fn build_goal_synthesis_prompt(
+    galley: &SqliteGalley,
+    snapshot: &GoalStatusSnapshot,
+    worker_session_ids: &[SessionId],
+) -> Result<String, GalleyError> {
+    let goal = &snapshot.goal;
+    let fallback_worker_ids = goal_worker_session_ids(snapshot, worker_session_ids);
+    let worker_ids = fallback_worker_ids.as_slice();
+    let mut out = String::new();
+    push_limited(
+        &mut out,
+        &format!(
+            "[Galley Goal Master Synthesis]\n\nYou are the master session for this Galley Goal. Answer the user directly in their language. Do not expose worker protocol, Goal ids, command logs, or internal coordination unless it materially helps the user.\n\nObjective:\n{}\n\nProduce a concise final answer with: conclusion, key evidence, important gaps or caveats, and next actions. Internal temp paths are scratch; only report a file path as the deliverable when the user explicitly asked Galley to save there.\n\nGoal status: {:?}\nProject id: {}\n\n",
+            goal.objective,
+            goal.status,
+            goal.project_id
+        ),
+        28_000,
+    );
+
+    if !snapshot.tasks.is_empty() {
+        push_limited(&mut out, "Task board:\n", 28_000);
+        for task in &snapshot.tasks {
+            push_limited(
+                &mut out,
+                &format!(
+                    "- [{:?}] {} | owner={:?} | scope={:?}\n  result={}\n",
+                    task.status,
+                    task.title,
+                    task.owner_session_id,
+                    task.scope,
+                    task.result_summary.as_deref().unwrap_or("")
+                ),
+                28_000,
+            );
+        }
+        push_limited(&mut out, "\n", 28_000);
+    }
+
+    if !snapshot.events.is_empty() {
+        push_limited(&mut out, "Goal events:\n", 28_000);
+        for event in &snapshot.events {
+            push_limited(
+                &mut out,
+                &format!(
+                    "- {:?} by {:?}: {}\n",
+                    event.event_type, event.author_session_id, event.body
+                ),
+                28_000,
+            );
+        }
+        push_limited(&mut out, "\n", 28_000);
+    }
+
+    push_limited(&mut out, "Worker session latest output:\n", 28_000);
+    for session_id in worker_ids {
+        let messages = galley.session_messages(session_id.clone(), Some(6)).await?;
+        push_limited(
+            &mut out,
+            &format!("\n## Worker session {session_id}\n"),
+            28_000,
+        );
+        for message in messages {
+            let body = message
+                .final_answer
+                .as_deref()
+                .filter(|answer| !answer.trim().is_empty())
+                .unwrap_or(&message.content);
+            if body.trim().is_empty() {
+                continue;
+            }
+            push_limited(
+                &mut out,
+                &format!("{:?}: {}\n", message.role, compact_text(body, 2400)),
+                28_000,
+            );
+        }
+    }
+    Ok(out)
+}
+
+fn first_non_empty_line(text: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| compact_text(line, 600))
+}
+
+fn compact_text(text: &str, max_chars: usize) -> String {
+    let one_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one_line.chars().count() <= max_chars {
+        return one_line;
+    }
+    let mut out: String = one_line.chars().take(max_chars.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+fn push_limited(out: &mut String, text: &str, max_chars: usize) {
+    if out.chars().count() >= max_chars {
+        return;
+    }
+    let remaining = max_chars.saturating_sub(out.chars().count());
+    if text.chars().count() <= remaining {
+        out.push_str(text);
+    } else {
+        out.extend(text.chars().take(remaining.saturating_sub(1)));
+        out.push('…');
+    }
 }
 
 fn goal_budget_left(goal: &GoalBrief, controller_started: Instant) -> bool {
@@ -2309,7 +4342,36 @@ fn runtime_arg_from_kind(kind: RuntimeKind) -> RuntimeArg {
     }
 }
 
-fn goal_worker_prompt(goal: &GoalBrief, wave: u32, worker_index: u32) -> String {
+fn goal_memory_policy_prompt(runtime_kind: RuntimeKind) -> &'static str {
+    match runtime_kind {
+        RuntimeKind::Managed => {
+            r#"Memory/SOP policy:
+- Managed GA may use its normal memory/SOP self-evolution mechanism for durable, reusable learnings.
+- Do not store Goal protocol state in memory/SOP: Goal ids, task ids, worker session ids, worker indexes, rounds/waves, temporary coordination logs, or transient task-board state.
+- This does not permit modifying GenericAgent config, model config, credentials, or Galley Goal state."#
+        }
+        RuntimeKind::External => {
+            r#"Memory/SOP policy:
+- Attached external GA is user-owned; do not modify external GA memory, SOP, skills, config, temp state, or temp/goal_state.json.
+- Do not store Goal protocol state in memory/SOP: Goal ids, task ids, worker session ids, worker indexes, rounds/waves, temporary coordination logs, or transient task-board state."#
+        }
+    }
+}
+
+fn goal_worker_prompt_template(
+    goal: &GoalBrief,
+    wave: u32,
+    worker_index: u32,
+    assigned_task: Option<&GoalTaskBrief>,
+) -> String {
+    let memory_policy = goal_memory_policy_prompt(goal.runtime_kind);
+    let assigned_task_block = assigned_task
+        .map(goal_worker_assigned_task_block)
+        .unwrap_or_else(|| {
+            format!(
+                "Assigned task:\n- Look for an open task whose scope starts with `{GOAL_CONTROLLER_TASK_SCOPE_PREFIX}{worker_index}:` and claim it first.\n"
+            )
+        });
     format!(
         r#"[Galley Goal Worker]
 
@@ -2317,6 +4379,7 @@ You are worker {worker_index} in wave {wave} of a Galley Goal/Hive run.
 
 Goal id: {goal_id}
 Project id: {project_id}
+Your session id: {session_id_placeholder}
 Objective:
 {objective}
 
@@ -2325,29 +4388,136 @@ Worker limit: {worker_limit}
 Runtime: {runtime:?}
 Write mode: {write_mode:?}
 
+{assigned_task_block}
+
+Budget semantics:
+- The budget is a sustained work window, not an early-finish limit.
+- While budget remains, do not treat the first useful result as the endpoint.
+- Read Goal status and recent events before choosing work so you improve on prior waves instead of repeating them.
+- If Goal status is wrapping, completed, failed, or stopped, stop immediately. Do not create tasks, post heartbeats, or ask the supervisor to stop you.
+
 Protocol:
 1. Read current state with: galley goal status {goal_id}
-2. If there is an open task you can help with, claim it atomically:
+2. Use exactly the session id shown above for ownership and author attribution.
+   Do not infer your session id from Project sessions, titles, Goal status, or other workers' events.
+3. Claim your assigned task atomically before doing new work:
    galley goal task claim <task-id> --owner-session <your-session-id> --scope "<files/modules you expect to touch>"
-3. If no suitable task exists, create one:
-   galley goal task create {goal_id} "<short task title>" --description "<what you will do>" --owner-session <your-session-id> --scope "<files/modules>"
-4. Post progress/conflict/result events:
-   galley goal event post {goal_id} --event-type progress "<brief progress>"
-5. On completion, update the task with result and post a result event.
+4. Do not claim another worker slot's assigned task unless the Goal status clearly shows your own slot has no open/claimed/running task.
+5. Post progress/conflict/result events:
+   galley goal event post {goal_id} --event-type progress "<brief progress>" --author-session <your-session-id>
+6. On completion, update the task with result and post a result event:
+   galley goal task complete <task-id> --result-summary "<what you delivered>"
+   galley goal event post {goal_id} --event-type result "<brief result>" --task <task-id> --author-session <your-session-id>
+7. If you cannot complete the task, mark it blocked or cancelled with a short reason instead of continuing silently.
+8. Internal temp paths are scratch. If the user asked to save a final artifact to an explicit path, save there and report that path; otherwise do not present internal temp paths as the deliverable.
 
 Autonomy:
 - Coordinate through the Galley task board; do not call GenericAgent native /hive.
-- Do not write GenericAgent memory/SOP/config or temp/goal_state.json.
+{memory_policy}
 - Destructive, external-send, credential, payment, delete, commit, and push actions still require explicit confirmation.
 "#,
         wave = wave,
         goal_id = goal.id,
         project_id = goal.project_id,
+        session_id_placeholder = GOAL_WORKER_SESSION_ID_PLACEHOLDER,
         objective = goal.objective,
         budget_minutes = goal.budget_seconds / 60,
         worker_limit = goal.worker_limit,
         runtime = goal.runtime_kind,
         write_mode = goal.write_mode,
+        assigned_task_block = assigned_task_block,
+        memory_policy = memory_policy,
+    )
+}
+
+fn goal_worker_wake_prompt(
+    goal: &GoalBrief,
+    wave: u32,
+    worker_index: u32,
+    session_id: &SessionId,
+    task: &GoalTaskBrief,
+) -> String {
+    let memory_policy = goal_memory_policy_prompt(goal.runtime_kind);
+    let assigned_task_block = goal_worker_assigned_task_block(task);
+    format!(
+        r#"[Galley Goal Worker Task]
+
+You are worker {worker_index} in wave {wave} of the same Galley Goal.
+
+Goal id: {goal_id}
+Your session id: {session_id}
+Objective:
+{objective}
+
+Deadline: {deadline_at}
+
+{assigned_task_block}
+
+This is a task wake inside your existing worker session. Do not treat earlier useful results as the endpoint while budget remains.
+If Goal status is wrapping, completed, failed, or stopped, stop immediately. Do not create tasks, post heartbeats, or ask the supervisor to stop you.
+
+Next action:
+1. Read current state with: galley goal status {goal_id}
+2. Claim the assigned task if it is still open:
+   galley goal task claim {task_id} --owner-session {session_id} --scope "{task_scope}"
+3. Execute this task. If it is already claimed/running by your own session, continue it; if it is gone or terminal, inspect the task board and choose the closest task for this worker slot.
+4. Post progress/result events with --author-session {session_id}, and complete or block your task when done. Galley will not wake this worker again until this session produces a terminal task/result signal.
+5. Internal temp paths are scratch. If the user asked to save a final artifact to an explicit path, save there and report that path; otherwise do not present internal temp paths as the deliverable.
+
+Keep coordinating through the Galley task board. Do not call GenericAgent native /hive.
+{memory_policy}
+"#,
+        wave = wave,
+        worker_index = worker_index,
+        goal_id = goal.id,
+        session_id = session_id,
+        objective = goal.objective,
+        deadline_at = goal.deadline_at,
+        assigned_task_block = assigned_task_block,
+        task_id = task.id,
+        task_scope = task.scope.as_deref().unwrap_or(""),
+        memory_policy = memory_policy,
+    )
+}
+
+fn goal_worker_assigned_task_block(task: &GoalTaskBrief) -> String {
+    format!(
+        "Assigned task:\n- id: {task_id}\n- title: {title}\n- scope: {scope}\n- description: {description}\n",
+        task_id = task.id,
+        title = task.title,
+        scope = task.scope.as_deref().unwrap_or(""),
+        description = task.description.as_deref().unwrap_or("")
+    )
+}
+
+fn goal_worker_protocol_reminder_prompt(
+    goal: &GoalBrief,
+    wave: u32,
+    session_id: &SessionId,
+) -> String {
+    format!(
+        r#"[Galley Goal Worker Checkpoint]
+
+You are still in wave {wave} of the same Galley Goal.
+
+Goal id: {goal_id}
+Your session id: {session_id}
+
+Before Galley can assign more work to this worker, leave a terminal signal for your current task.
+
+Required action:
+1. Read current state with: galley goal status {goal_id}
+2. If Goal status is wrapping, completed, failed, or stopped, stop immediately. Do not post heartbeats.
+3. If your task is done, run:
+   galley goal task complete <task-id> --result-summary "<what you delivered>"
+   galley goal event post {goal_id} --event-type result "<brief result>" --task <task-id> --author-session {session_id}
+4. If you cannot finish, mark the task blocked or cancelled with a short reason.
+
+Do not start a new task in this checkpoint.
+"#,
+        wave = wave,
+        goal_id = goal.id,
+        session_id = session_id,
     )
 }
 
@@ -2539,5 +4709,626 @@ fn map_error_tag(tag: &str, msg: String) -> GalleyError {
         | "spawn_io"
         | "pipe_unavailable" => GalleyError::RunnerError { message: msg },
         _ => GalleyError::Internal { message: msg },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use galley_core_lib::api::{GoalTaskBrief, ProjectId};
+
+    use super::{
+        goal_controller_decision, goal_controller_decision_after_wait, goal_drain_cap_seconds,
+        goal_has_worker_material_signal, goal_master_checkpoint_event_body,
+        goal_master_checkpoint_seen, goal_master_planning_prompt, goal_memory_policy_prompt,
+        goal_ready_idle_worker_slot_indices, goal_ready_worker_slot_indices, goal_seed_task_specs,
+        goal_worker_has_progress_signal, goal_worker_has_terminal_signal,
+        goal_worker_prompt_template, goal_worker_session_ids, goal_worker_terminal_counts,
+        goal_worker_wake_prompt, goal_worker_wave_baseline, goal_wrapping_summary, GoalBrief,
+        GoalControllerDecision, GoalEventBrief, GoalEventType, GoalFailReason, GoalId,
+        GoalMasterCheckpointKind, GoalStatus, GoalStatusSnapshot, GoalTaskId, GoalTaskStatus,
+        GoalWorkerSlot, GoalWorkerWaitOutcome, GoalWrapReason, GoalWriteMode, RuntimeKind,
+        SessionBrief, SessionId, SessionStatus, GOAL_WORKER_SESSION_ID_PLACEHOLDER,
+    };
+
+    fn test_goal() -> GoalBrief {
+        GoalBrief {
+            id: GoalId("goal_test".to_string()),
+            proposal_id: None,
+            project_id: ProjectId("proj_test".to_string()),
+            master_session_id: Some(SessionId("master".to_string())),
+            objective: "Test goal".to_string(),
+            status: GoalStatus::Running,
+            budget_seconds: 900,
+            worker_limit: 2,
+            runtime_kind: RuntimeKind::Managed,
+            write_mode: GoalWriteMode::Autonomous,
+            started_at: "2026-06-05T00:00:00Z".to_string(),
+            deadline_at: "2026-06-05T00:15:00Z".to_string(),
+            ended_at: None,
+            latest_summary: None,
+            result_seen_at: None,
+            stop_requested: false,
+            created_at: "2026-06-05T00:00:00Z".to_string(),
+            updated_at: "2026-06-05T00:00:00Z".to_string(),
+        }
+    }
+
+    fn test_task(id: &str, status: GoalTaskStatus, owner: Option<&str>) -> GoalTaskBrief {
+        test_task_with_scope(id, status, owner, None)
+    }
+
+    fn test_task_with_scope(
+        id: &str,
+        status: GoalTaskStatus,
+        owner: Option<&str>,
+        scope: Option<&str>,
+    ) -> GoalTaskBrief {
+        GoalTaskBrief {
+            id: GoalTaskId(id.to_string()),
+            goal_id: GoalId("goal_test".to_string()),
+            title: id.to_string(),
+            description: None,
+            status,
+            owner_session_id: owner.map(|sid| SessionId(sid.to_string())),
+            scope: scope.map(str::to_string),
+            result_summary: None,
+            created_at: "2026-06-05T00:00:00Z".to_string(),
+            updated_at: "2026-06-05T00:00:00Z".to_string(),
+        }
+    }
+
+    fn test_event(
+        id: i64,
+        event_type: GoalEventType,
+        task: Option<&str>,
+        author: Option<&str>,
+    ) -> GoalEventBrief {
+        GoalEventBrief {
+            id,
+            goal_id: GoalId("goal_test".to_string()),
+            task_id: task.map(|task_id| GoalTaskId(task_id.to_string())),
+            author_session_id: author.map(|sid| SessionId(sid.to_string())),
+            event_type,
+            body: "event".to_string(),
+            created_at: "2026-06-05T00:00:00Z".to_string(),
+        }
+    }
+
+    fn test_session(id: &str) -> SessionBrief {
+        SessionBrief {
+            id: SessionId(id.to_string()),
+            project_id: Some("proj_test".to_string()),
+            title: id.to_string(),
+            status: SessionStatus::Completed,
+            summary: None,
+            turn_count: None,
+            last_activity_at: "2026-06-05T00:00:00Z".to_string(),
+            created_at: "2026-06-05T00:00:00Z".to_string(),
+            updated_at: "2026-06-05T00:00:00Z".to_string(),
+            pinned: None,
+            has_unread: None,
+            selected_llm_index: None,
+            selected_llm_key: None,
+            selected_llm_display_name: None,
+            runtime_kind: RuntimeKind::Managed,
+            runtime_label: "Galley".to_string(),
+            ga_runtime_kind: RuntimeKind::Managed,
+            ga_runtime_id: None,
+            prompt_profile: None,
+        }
+    }
+
+    fn test_snapshot(
+        tasks: Vec<GoalTaskBrief>,
+        events: Vec<GoalEventBrief>,
+        sessions: Vec<SessionBrief>,
+    ) -> GoalStatusSnapshot {
+        GoalStatusSnapshot {
+            goal: test_goal(),
+            project: None,
+            tasks,
+            events,
+            sessions,
+        }
+    }
+
+    fn test_slot(
+        worker_index: u32,
+        session_id: &str,
+        baseline: &GoalStatusSnapshot,
+    ) -> GoalWorkerSlot {
+        GoalWorkerSlot {
+            worker_index,
+            wave: 1,
+            baseline: goal_worker_wave_baseline(baseline, SessionId(session_id.to_string())),
+            capped: false,
+        }
+    }
+
+    #[test]
+    fn goal_controller_continues_with_results_while_budget_remains() {
+        assert_eq!(
+            goal_controller_decision(true, true, false),
+            GoalControllerDecision::Continue
+        );
+    }
+
+    #[test]
+    fn goal_controller_wraps_results_after_deadline() {
+        assert_eq!(
+            goal_controller_decision(false, true, false),
+            GoalControllerDecision::Wrap(GoalWrapReason::Deadline)
+        );
+    }
+
+    #[test]
+    fn goal_controller_continues_without_material_while_budget_remains() {
+        assert_eq!(
+            goal_controller_decision(true, false, false),
+            GoalControllerDecision::Continue
+        );
+    }
+
+    #[test]
+    fn goal_controller_does_not_fail_before_deadline_after_prior_results() {
+        assert_eq!(
+            goal_controller_decision(true, true, false),
+            GoalControllerDecision::Continue
+        );
+    }
+
+    #[test]
+    fn goal_controller_all_worker_slot_cap_wraps_when_results_exist() {
+        assert_eq!(
+            goal_controller_decision(true, true, true),
+            GoalControllerDecision::Wrap(GoalWrapReason::WaveCap)
+        );
+    }
+
+    #[test]
+    fn goal_controller_all_worker_slot_cap_fails_without_results() {
+        assert_eq!(
+            goal_controller_decision(true, false, true),
+            GoalControllerDecision::Fail(GoalFailReason::NoResultByWaveCap)
+        );
+    }
+
+    #[test]
+    fn goal_controller_deadline_fails_without_results() {
+        assert_eq!(
+            goal_controller_decision(false, false, false),
+            GoalControllerDecision::Fail(GoalFailReason::NoResultByDeadline)
+        );
+    }
+
+    #[test]
+    fn goal_controller_drain_cap_wraps_even_without_results() {
+        assert_eq!(
+            goal_controller_decision_after_wait(
+                GoalWorkerWaitOutcome::DrainCapReached,
+                false,
+                false,
+                false,
+            ),
+            GoalControllerDecision::Wrap(GoalWrapReason::DrainCap)
+        );
+    }
+
+    #[test]
+    fn goal_controller_waits_when_worker_idle_without_terminal_signal() {
+        assert_eq!(
+            goal_controller_decision_after_wait(
+                GoalWorkerWaitOutcome::IdleWithoutSignal,
+                true,
+                true,
+                false,
+            ),
+            GoalControllerDecision::WaitForSignal
+        );
+    }
+
+    #[test]
+    fn goal_controller_keeps_waiting_idle_without_signal_until_deadline() {
+        assert_eq!(
+            goal_controller_decision_after_wait(
+                GoalWorkerWaitOutcome::IdleWithoutSignal,
+                true,
+                false,
+                false,
+            ),
+            GoalControllerDecision::WaitForSignal
+        );
+    }
+
+    #[test]
+    fn goal_worker_initial_prompt_binds_session_id_placeholder() {
+        let task = test_task_with_scope(
+            "task_1",
+            GoalTaskStatus::Open,
+            None,
+            Some("goal-worker-1:first-pass"),
+        );
+        let prompt = goal_worker_prompt_template(&test_goal(), 1, 1, Some(&task));
+        assert!(prompt.contains(GOAL_WORKER_SESSION_ID_PLACEHOLDER));
+        assert_eq!(
+            prompt.matches(GOAL_WORKER_SESSION_ID_PLACEHOLDER).count(),
+            1
+        );
+        assert!(prompt.contains("Your session id: {{GALLEY_SESSION_ID}}"));
+        assert!(prompt.contains("Do not infer your session id"));
+        assert!(prompt.contains("Assigned task:"));
+        assert!(prompt.contains("task_1"));
+        assert!(prompt.contains("goal-worker-1:first-pass"));
+        assert!(!prompt.contains("Identify your session id from the Goal status"));
+    }
+
+    #[test]
+    fn goal_memory_policy_allows_managed_self_evolution_without_protocol_state() {
+        let task = test_task_with_scope(
+            "task_1",
+            GoalTaskStatus::Open,
+            None,
+            Some("goal-worker-1:first-pass"),
+        );
+        let prompt = goal_worker_prompt_template(&test_goal(), 1, 1, Some(&task));
+
+        assert!(prompt.contains(
+            "Managed GA may use its normal memory/SOP self-evolution mechanism"
+        ));
+        assert!(prompt.contains("durable, reusable learnings"));
+        assert!(prompt.contains("Do not store Goal protocol state in memory/SOP"));
+        assert!(prompt.contains("Goal ids, task ids, worker session ids"));
+        assert!(prompt.contains("does not permit modifying GenericAgent config"));
+        assert!(!prompt.contains("Do not write GenericAgent memory/SOP/config"));
+    }
+
+    #[test]
+    fn goal_memory_policy_keeps_external_ga_state_read_only() {
+        let mut goal = test_goal();
+        goal.runtime_kind = RuntimeKind::External;
+        let task = test_task_with_scope(
+            "task_1",
+            GoalTaskStatus::Open,
+            None,
+            Some("goal-worker-1:first-pass"),
+        );
+        let prompt = goal_worker_prompt_template(&goal, 1, 1, Some(&task));
+
+        assert!(prompt.contains("Attached external GA is user-owned"));
+        assert!(prompt.contains("do not modify external GA memory, SOP, skills, config"));
+        assert!(prompt.contains("temp/goal_state.json"));
+        assert!(prompt.contains("Do not store Goal protocol state in memory/SOP"));
+    }
+
+    #[test]
+    fn goal_master_planner_uses_runtime_aware_memory_policy() {
+        let managed_prompt = goal_master_planning_prompt(&test_snapshot(vec![], vec![], vec![]), 1);
+        assert!(managed_prompt.contains("Managed GA may use its normal memory/SOP"));
+        assert!(managed_prompt.contains("Do not store Goal protocol state in memory/SOP"));
+        assert!(!managed_prompt.contains("Do not write GA memory, SOP, config"));
+
+        let mut external_snapshot = test_snapshot(vec![], vec![], vec![]);
+        external_snapshot.goal.runtime_kind = RuntimeKind::External;
+        let external_prompt = goal_master_planning_prompt(&external_snapshot, 1);
+        assert!(external_prompt.contains("Attached external GA is user-owned"));
+        assert!(external_prompt.contains("do not modify external GA memory, SOP"));
+    }
+
+    #[test]
+    fn goal_worker_wake_prompt_reuses_memory_policy() {
+        let task = GoalTaskBrief {
+            description: Some("Review the current answer and find gaps.".to_string()),
+            ..test_task_with_scope(
+                "task_wake",
+                GoalTaskStatus::Open,
+                None,
+                Some("goal-worker-2:verification"),
+            )
+        };
+        let prompt = goal_worker_wake_prompt(
+            &test_goal(),
+            2,
+            2,
+            &SessionId("worker_2".to_string()),
+            &task,
+        );
+
+        assert!(prompt.contains(goal_memory_policy_prompt(RuntimeKind::Managed)));
+        assert!(!prompt.contains("write GenericAgent memory/SOP/config"));
+    }
+
+    #[test]
+    fn goal_seed_tasks_adapt_to_worker_limit_without_domain_roles() {
+        let mut goal = test_goal();
+        goal.worker_limit = 2;
+        let two = goal_seed_task_specs(&goal);
+        assert_eq!(two.len(), 2);
+        assert_eq!(two[0].1.scope, "goal-worker-1:first-pass");
+        assert_eq!(two[1].1.scope, "goal-worker-2:independent-review");
+        assert!(two[0].1.title.contains("第一版完整结果"));
+        assert!(two[1].1.title.contains("独立核对"));
+
+        goal.worker_limit = 3;
+        let three = goal_seed_task_specs(&goal);
+        assert_eq!(three.len(), 3);
+        assert_eq!(three[2].1.scope, "goal-worker-3:synthesis-polish");
+
+        goal.worker_limit = 5;
+        let five = goal_seed_task_specs(&goal);
+        assert_eq!(five.len(), 5);
+        assert_eq!(five[4].1.scope, "goal-worker-5:final-quality-review");
+
+        let combined = five
+            .iter()
+            .map(|(_, spec)| format!("{} {}", spec.title, spec.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!combined.contains("最新信息"));
+        assert!(!combined.contains("来源交叉验证"));
+        assert!(!combined.contains("Worker 1=核心调研"));
+    }
+
+    #[test]
+    fn goal_worker_wake_prompt_points_to_concrete_task_not_generic_continuation() {
+        let task = GoalTaskBrief {
+            description: Some("Review the current answer and find gaps.".to_string()),
+            ..test_task_with_scope(
+                "task_wake",
+                GoalTaskStatus::Open,
+                None,
+                Some("goal-worker-2:verification"),
+            )
+        };
+        let prompt = goal_worker_wake_prompt(
+            &test_goal(),
+            2,
+            2,
+            &SessionId("worker_2".to_string()),
+            &task,
+        );
+
+        assert!(prompt.contains("[Galley Goal Worker Task]"));
+        assert!(prompt.contains("task_wake"));
+        assert!(prompt.contains("goal-worker-2:verification"));
+        assert!(prompt.contains("galley goal task claim task_wake"));
+        assert!(!prompt.contains("[Galley Goal Worker Continuation]"));
+        assert!(!prompt.contains("Continue as worker"));
+    }
+
+    #[test]
+    fn goal_master_checkpoint_body_carries_internal_marker() {
+        let body = goal_master_checkpoint_event_body(
+            GoalMasterCheckpointKind::WorkersStarted,
+            "已启动 2 个 Agent，正在拆分任务。",
+        );
+        assert!(body.starts_with(GoalMasterCheckpointKind::WorkersStarted.marker()));
+        assert!(body.contains("已启动 2 个 Agent，正在拆分任务。"));
+    }
+
+    #[test]
+    fn goal_master_checkpoint_seen_dedupes_by_kind_and_master_session() {
+        let mut workers_event = test_event(1, GoalEventType::System, None, Some("master"));
+        workers_event.body = goal_master_checkpoint_event_body(
+            GoalMasterCheckpointKind::WorkersStarted,
+            "已启动 2 个 Agent，正在拆分任务。",
+        );
+        let mut worker_authored_event =
+            test_event(2, GoalEventType::System, None, Some("worker_1"));
+        worker_authored_event.body = goal_master_checkpoint_event_body(
+            GoalMasterCheckpointKind::FirstMaterial,
+            "已有初步进展，正在继续核对和整理。",
+        );
+        let snapshot = test_snapshot(vec![], vec![workers_event, worker_authored_event], vec![]);
+
+        assert!(goal_master_checkpoint_seen(
+            &snapshot,
+            GoalMasterCheckpointKind::WorkersStarted
+        ));
+        assert!(!goal_master_checkpoint_seen(
+            &snapshot,
+            GoalMasterCheckpointKind::FirstMaterial
+        ));
+    }
+
+    #[test]
+    fn goal_worker_terminal_signal_requires_task_or_result_growth() {
+        let worker = SessionId("worker_1".to_string());
+        let before = test_snapshot(vec![], vec![], vec![]);
+        let baseline = goal_worker_wave_baseline(&before, worker.clone());
+        let turn_count_only = test_snapshot(vec![], vec![], vec![test_session("worker_1")]);
+        assert!(!goal_worker_has_terminal_signal(
+            &turn_count_only,
+            &baseline
+        ));
+
+        let completed_task = test_snapshot(
+            vec![test_task(
+                "task_1",
+                GoalTaskStatus::Completed,
+                Some("worker_1"),
+            )],
+            vec![],
+            vec![],
+        );
+        assert!(goal_worker_has_terminal_signal(&completed_task, &baseline));
+
+        let result_event = test_snapshot(
+            vec![],
+            vec![test_event(1, GoalEventType::Result, None, Some("worker_1"))],
+            vec![],
+        );
+        assert!(goal_worker_has_terminal_signal(&result_event, &baseline));
+
+        assert_eq!(
+            goal_worker_terminal_counts(&result_event, &worker).result_event_count,
+            1
+        );
+    }
+
+    #[test]
+    fn goal_worker_progress_signal_accepts_claimed_task_without_terminal_result() {
+        let worker = SessionId("worker_1".to_string());
+        let before = test_snapshot(vec![], vec![], vec![]);
+        let baseline = goal_worker_wave_baseline(&before, worker);
+        let claimed_task = test_snapshot(
+            vec![test_task(
+                "task_1",
+                GoalTaskStatus::Claimed,
+                Some("worker_1"),
+            )],
+            vec![],
+            vec![],
+        );
+        assert!(!goal_worker_has_terminal_signal(&claimed_task, &baseline));
+        assert!(goal_worker_has_progress_signal(&claimed_task, &baseline));
+    }
+
+    #[test]
+    fn goal_worker_result_event_can_belong_to_owned_task() {
+        let before = test_snapshot(
+            vec![test_task(
+                "task_1",
+                GoalTaskStatus::Running,
+                Some("worker_1"),
+            )],
+            vec![],
+            vec![],
+        );
+        let baseline = goal_worker_wave_baseline(&before, SessionId("worker_1".to_string()));
+        let after = test_snapshot(
+            vec![test_task(
+                "task_1",
+                GoalTaskStatus::Running,
+                Some("worker_1"),
+            )],
+            vec![test_event(1, GoalEventType::Result, Some("task_1"), None)],
+            vec![],
+        );
+        assert!(goal_worker_has_terminal_signal(&after, &baseline));
+    }
+
+    #[test]
+    fn goal_ready_worker_slots_are_independent_per_session() {
+        let before = test_snapshot(vec![], vec![], vec![]);
+        let slots = vec![
+            test_slot(1, "worker_1", &before),
+            test_slot(2, "worker_2", &before),
+        ];
+        let after = test_snapshot(
+            vec![test_task(
+                "task_2",
+                GoalTaskStatus::Completed,
+                Some("worker_2"),
+            )],
+            vec![],
+            vec![],
+        );
+        assert_eq!(goal_ready_worker_slot_indices(&after, &slots), vec![1]);
+    }
+
+    #[test]
+    fn goal_ready_worker_slot_must_be_idle_before_wake() {
+        let before = test_snapshot(vec![], vec![], vec![]);
+        let slots = vec![test_slot(1, "worker_1", &before)];
+        let after = test_snapshot(
+            vec![test_task(
+                "task_1",
+                GoalTaskStatus::Completed,
+                Some("worker_1"),
+            )],
+            vec![],
+            vec![],
+        );
+
+        assert_eq!(goal_ready_worker_slot_indices(&after, &slots), vec![0]);
+        assert!(goal_ready_idle_worker_slot_indices(
+            &after,
+            &slots,
+            &[SessionId("worker_1".to_string())]
+        )
+        .is_empty());
+        assert_eq!(
+            goal_ready_idle_worker_slot_indices(&after, &slots, &[]),
+            vec![0]
+        );
+    }
+
+    #[test]
+    fn controller_assigned_open_tasks_are_not_worker_material_until_claimed() {
+        let open_seed = test_snapshot(
+            vec![test_task_with_scope(
+                "seed",
+                GoalTaskStatus::Open,
+                None,
+                Some("goal-worker-1:first-pass"),
+            )],
+            vec![],
+            vec![],
+        );
+        assert!(!goal_has_worker_material_signal(&open_seed));
+
+        let claimed_seed = test_snapshot(
+            vec![test_task_with_scope(
+                "seed",
+                GoalTaskStatus::Claimed,
+                Some("worker_1"),
+                Some("goal-worker-1:first-pass"),
+            )],
+            vec![],
+            vec![],
+        );
+        assert!(goal_has_worker_material_signal(&claimed_seed));
+    }
+
+    #[test]
+    fn goal_worker_session_ids_falls_back_to_project_sessions_without_master() {
+        let snapshot = test_snapshot(
+            vec![],
+            vec![],
+            vec![
+                test_session("master"),
+                test_session("worker_1"),
+                test_session("worker_2"),
+            ],
+        );
+        assert_eq!(
+            goal_worker_session_ids(&snapshot, &[]),
+            vec![
+                SessionId("worker_1".to_string()),
+                SessionId("worker_2".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn goal_worker_session_ids_prefers_goal_event_authors_over_project_sessions() {
+        let snapshot = test_snapshot(
+            vec![],
+            vec![test_event(1, GoalEventType::System, None, Some("worker_1"))],
+            vec![
+                test_session("master"),
+                test_session("worker_1"),
+                test_session("unrelated_project_session"),
+            ],
+        );
+        assert_eq!(
+            goal_worker_session_ids(&snapshot, &[]),
+            vec![SessionId("worker_1".to_string())]
+        );
+    }
+
+    #[test]
+    fn goal_drain_cap_scales_with_budget_inside_bounds() {
+        assert_eq!(goal_drain_cap_seconds(15 * 60), 5 * 60);
+        assert_eq!(goal_drain_cap_seconds(30 * 60), 450);
+        assert_eq!(goal_drain_cap_seconds(60 * 60), 15 * 60);
+        assert_eq!(goal_drain_cap_seconds(120 * 60), 15 * 60);
+    }
+
+    #[test]
+    fn goal_wrapping_summary_marks_drain_cap() {
+        let summary = goal_wrapping_summary(GoalWrapReason::DrainCap, false);
+        assert!(summary.contains("drain cap reached"));
+        assert!(summary.contains("available results"));
     }
 }

@@ -19,6 +19,13 @@ pub enum MessageRole {
     System,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageVisibility {
+    Visible,
+    Internal,
+}
+
 /// Summary of one persisted message. Full conversation rendering needs
 /// more fields (tool calls, approvals, etc.); B1's read APIs surface
 /// just enough for sidebar peek + agent CLI display.
@@ -29,6 +36,10 @@ pub struct MessageBrief {
     pub session_id: SessionId,
     pub role: MessageRole,
     pub content: String,
+    /// Final answer produced by the runner when available. Assistant
+    /// messages can have intermediate step content before this lands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub final_answer: Option<String>,
     /// ISO 8601.
     pub created_at: String,
     /// One-line digest produced by the runner at turn_end; falls back
@@ -39,6 +50,8 @@ pub struct MessageBrief {
     /// the agent loop). Useful for grouping replies.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turn_index: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<MessageVisibility>,
     /// Where this message came from (B2 M5+). Optional on read APIs to
     /// keep backward-compatible JSON shape; always present on
     /// `send_message` responses.

@@ -30,6 +30,8 @@ const MIG_012: &str = include_str!("../migrations/012_managed_model_local_secret
 const MIG_013: &str = include_str!("../migrations/013_session_llm_key.sql");
 const MIG_014: &str = include_str!("../migrations/014_managed_model_auth_kind.sql");
 const MIG_015: &str = include_str!("../migrations/015_goal_v1.sql");
+const MIG_016: &str = include_str!("../migrations/016_goal_master_session.sql");
+const MIG_017: &str = include_str!("../migrations/017_message_visibility.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -37,7 +39,7 @@ async fn fresh_pool() -> SqlitePool {
         .expect("open in-memory sqlite");
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
-        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015,
+        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -100,6 +102,14 @@ async fn runtime_identity_migration_preserves_existing_attach_users() {
         .execute(&pool)
         .await
         .expect("run goal v1 migration");
+    sqlx::raw_sql(MIG_016)
+        .execute(&pool)
+        .await
+        .expect("run goal master session migration");
+    sqlx::raw_sql(MIG_017)
+        .execute(&pool)
+        .await
+        .expect("run message visibility migration");
 
     let active: String =
         sqlx::query_scalar("SELECT value FROM prefs WHERE key = 'active_runtime_kind'")

@@ -28,11 +28,11 @@ use crate::api::{
     GoalId, GoalProposalBrief, GoalProposalId, GoalProposalStatus, GoalStatus, GoalStatusSnapshot,
     GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode, HealthCheck, HealthReport,
     HealthStatus, ManagedModelAuthKind, ManagedModelCredentialStatus, ManagedModelProtocol,
-    ManagedModelProviderRecord, ManagedModelRecord, MessageBrief, MessageId, MessageRole, Origin,
-    OriginVia, ProjectBrief, ProjectId, ProjectPatch, RuntimeKind, SearchHit, SearchScope,
-    SessionBrief, SessionFilter, SessionId, SessionStatus, StatusSummary, UpdateGoalTaskInput,
-    DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE,
-    MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT,
+    ManagedModelProviderRecord, ManagedModelRecord, MessageBrief, MessageId, MessageRole,
+    MessageVisibility, Origin, OriginVia, ProjectBrief, ProjectId, ProjectPatch, RuntimeKind,
+    SearchHit, SearchScope, SessionBrief, SessionFilter, SessionId, SessionStatus, StatusSummary,
+    UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT,
+    GOAL_CONFIRMATION_PHRASE, MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT,
 };
 use crate::app_paths;
 use crate::error::{GalleyError, Result};
@@ -102,15 +102,69 @@ impl SqliteGalley {
         sqlx::query_as::<_, PersistedMessageRow>(
             "SELECT id, session_id, turn_index, sequence, role, content, \
                     tool_calls, tool_results, thinking, final_answer, summary, \
-                    preamble, created_via, supervisor, origin_note, created_at \
+                    preamble, created_via, supervisor, origin_note, visibility, created_at \
              FROM messages \
-             WHERE session_id = ? \
+             WHERE session_id = ? AND visibility = 'visible' \
              ORDER BY turn_index ASC, sequence ASC",
         )
         .bind(session_id.as_str())
         .fetch_all(&self.pool)
         .await
         .map_err(map_sqlx_err)
+    }
+
+    pub async fn session_messages_including_internal(
+        &self,
+        id: SessionId,
+        tail: Option<usize>,
+    ) -> Result<Vec<MessageBrief>> {
+        self.session_messages_inner(id, tail, true).await
+    }
+
+    async fn session_messages_inner(
+        &self,
+        id: SessionId,
+        tail: Option<usize>,
+        include_internal: bool,
+    ) -> Result<Vec<MessageBrief>> {
+        let visibility_clause = if include_internal {
+            ""
+        } else {
+            " AND visibility = 'visible'"
+        };
+        let rows = if let Some(n) = tail {
+            let limit = i64::try_from(n).unwrap_or(i64::MAX);
+            let sql = format!(
+                "SELECT id, session_id, turn_index, role, content, final_answer, summary, \
+                        created_via, supervisor, origin_note, visibility, created_at \
+                 FROM messages \
+                 WHERE session_id = ?{visibility_clause} \
+                 ORDER BY turn_index DESC, sequence DESC \
+                 LIMIT ?"
+            );
+            let mut rows: Vec<MessageRow> = sqlx::query_as::<_, MessageRow>(&sql)
+                .bind(id.as_str())
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx_err)?;
+            rows.reverse();
+            rows
+        } else {
+            let sql = format!(
+                "SELECT id, session_id, turn_index, role, content, final_answer, summary, \
+                        created_via, supervisor, origin_note, visibility, created_at \
+                 FROM messages \
+                 WHERE session_id = ?{visibility_clause} \
+                 ORDER BY turn_index ASC, sequence ASC"
+            );
+            sqlx::query_as::<_, MessageRow>(&sql)
+                .bind(id.as_str())
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx_err)?
+        };
+        rows.into_iter().map(MessageRow::into_brief).collect()
     }
 
     pub async fn persist_gui_user_message(
@@ -126,10 +180,10 @@ impl SqliteGalley {
             "INSERT INTO messages (
                id, session_id, turn_index, sequence, role, content,
                tool_calls, tool_results, thinking, final_answer, created_at,
-               created_via, supervisor, origin_note
+               created_via, supervisor, origin_note, visibility
              ) VALUES (?, ?, ?, 0, 'user', ?,
                        NULL, NULL, NULL, NULL, ?,
-                       ?, ?, ?)
+                       ?, ?, ?, 'visible')
              ON CONFLICT(id) DO UPDATE SET
                content = excluded.content,
                created_via = excluded.created_via,
@@ -159,10 +213,10 @@ impl SqliteGalley {
             "INSERT INTO messages (
                id, session_id, turn_index, sequence, role, content,
                tool_calls, tool_results, thinking, final_answer, summary,
-               preamble, created_at
+               preamble, created_at, visibility
              ) VALUES (?, ?, ?, 1, 'assistant', ?,
                        ?, ?, ?, ?, ?,
-                       ?, ?)
+                       ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                content       = excluded.content,
                tool_calls    = excluded.tool_calls,
@@ -170,7 +224,8 @@ impl SqliteGalley {
                thinking      = excluded.thinking,
                final_answer  = excluded.final_answer,
                summary       = excluded.summary,
-               preamble      = excluded.preamble",
+               preamble      = excluded.preamble,
+               visibility    = excluded.visibility",
         )
         .bind(&id)
         .bind(p.session_id.as_str())
@@ -183,12 +238,15 @@ impl SqliteGalley {
         .bind(&p.summary)
         .bind(&p.preamble)
         .bind(&created_at)
+        .bind(message_visibility_sql(p.visibility))
         .execute(&self.pool)
         .await
         .map_err(map_sqlx_err)?;
-        if let Some(body) = p.final_answer.as_deref().filter(|s| !s.trim().is_empty()) {
-            self.index_message_fts(&id, p.session_id.as_str(), "assistant", p.turn_index, body)
-                .await;
+        if p.visibility == MessageVisibility::Visible {
+            if let Some(body) = p.final_answer.as_deref().filter(|s| !s.trim().is_empty()) {
+                self.index_message_fts(&id, p.session_id.as_str(), "assistant", p.turn_index, body)
+                    .await;
+            }
         }
         Ok(())
     }
@@ -247,6 +305,7 @@ impl SqliteGalley {
         let msg_cnt: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM messages \
              WHERE role IN ('user','assistant') \
+               AND visibility = 'visible' \
                AND COALESCE(NULLIF(TRIM(CASE \
                  WHEN role = 'user' THEN content \
                  WHEN role = 'assistant' THEN COALESCE(final_answer, content) \
@@ -281,6 +340,7 @@ impl SqliteGalley {
                END AS body \
              FROM messages \
              WHERE role IN ('user','assistant') \
+               AND visibility = 'visible' \
                AND COALESCE(NULLIF(TRIM(CASE \
                  WHEN role = 'user' THEN content \
                  WHEN role = 'assistant' THEN COALESCE(final_answer, content) \
@@ -322,8 +382,10 @@ impl SqliteGalley {
                    s.title AS session_title, \
                    s.last_activity_at AS session_activity_at \
                  FROM messages_fts fts \
+                 JOIN messages m ON m.id = fts.message_id \
                  JOIN sessions s ON s.id = fts.session_id \
                  WHERE messages_fts MATCH ? \
+                   AND m.visibility = 'visible' \
                    AND s.status != 'archived'{runtime_clause} \
                  ORDER BY s.last_activity_at DESC \
                  LIMIT ?"
@@ -357,6 +419,7 @@ impl SqliteGalley {
              FROM messages m \
              JOIN sessions s ON s.id = m.session_id \
              WHERE m.role IN ('user','assistant') \
+               AND m.visibility = 'visible' \
                AND s.status != 'archived' \
                AND ( \
                  m.content LIKE ? ESCAPE '\\' \
@@ -1026,10 +1089,12 @@ struct MessageRow {
     turn_index: i64,
     role: String,
     content: String,
+    final_answer: Option<String>,
     summary: Option<String>,
     created_via: Option<String>,
     supervisor: Option<String>,
     origin_note: Option<String>,
+    visibility: String,
     created_at: String,
 }
 
@@ -1040,9 +1105,11 @@ impl MessageRow {
             session_id: SessionId(self.session_id),
             role: parse_message_role(&self.role)?,
             content: self.content,
+            final_answer: self.final_answer,
             created_at: self.created_at,
             summary: self.summary,
             turn_index: Some(self.turn_index.max(0) as u32),
+            visibility: Some(parse_message_visibility(&self.visibility)?),
             origin: self
                 .created_via
                 .map(|via| {
@@ -1074,6 +1141,7 @@ pub struct PersistedMessageRow {
     pub created_via: Option<String>,
     pub supervisor: Option<String>,
     pub origin_note: Option<String>,
+    pub visibility: String,
     pub created_at: String,
 }
 
@@ -1087,6 +1155,7 @@ pub struct PersistAssistantMessage {
     pub final_answer: Option<String>,
     pub summary: Option<String>,
     pub preamble: Option<String>,
+    pub visibility: MessageVisibility,
 }
 
 pub struct PersistToolEventPending {
@@ -1294,6 +1363,7 @@ struct GoalProposalRow {
     id: String,
     objective: String,
     project_id: Option<String>,
+    master_session_id: Option<String>,
     budget_seconds: i64,
     worker_limit: i64,
     runtime_kind: String,
@@ -1311,6 +1381,7 @@ impl GoalProposalRow {
             id: GoalProposalId(self.id),
             objective: self.objective,
             project_id: self.project_id.map(ProjectId),
+            master_session_id: self.master_session_id.map(SessionId),
             budget_seconds: self.budget_seconds.max(0) as u32,
             worker_limit: self.worker_limit.max(0) as u32,
             runtime_kind: parse_runtime_kind(&self.runtime_kind)?,
@@ -1330,6 +1401,7 @@ struct GoalRow {
     id: String,
     proposal_id: Option<String>,
     project_id: String,
+    master_session_id: Option<String>,
     objective: String,
     status: String,
     budget_seconds: i64,
@@ -1340,6 +1412,7 @@ struct GoalRow {
     deadline_at: String,
     ended_at: Option<String>,
     latest_summary: Option<String>,
+    result_seen_at: Option<String>,
     stop_requested: i64,
     created_at: String,
     updated_at: String,
@@ -1351,6 +1424,7 @@ impl GoalRow {
             id: GoalId(self.id),
             proposal_id: self.proposal_id.map(GoalProposalId),
             project_id: ProjectId(self.project_id),
+            master_session_id: self.master_session_id.map(SessionId),
             objective: self.objective,
             status: parse_goal_status(&self.status)?,
             budget_seconds: self.budget_seconds.max(0) as u32,
@@ -1361,6 +1435,7 @@ impl GoalRow {
             deadline_at: self.deadline_at,
             ended_at: self.ended_at,
             latest_summary: self.latest_summary,
+            result_seen_at: self.result_seen_at,
             stop_requested: self.stop_requested != 0,
             created_at: self.created_at,
             updated_at: self.updated_at,
@@ -1692,6 +1767,25 @@ fn parse_message_role(s: &str) -> Result<MessageRole> {
     })
 }
 
+fn parse_message_visibility(s: &str) -> Result<MessageVisibility> {
+    Ok(match s {
+        "visible" => MessageVisibility::Visible,
+        "internal" => MessageVisibility::Internal,
+        other => {
+            return Err(GalleyError::Internal {
+                message: format!("unknown message visibility: {other}"),
+            })
+        }
+    })
+}
+
+fn message_visibility_sql(visibility: MessageVisibility) -> &'static str {
+    match visibility {
+        MessageVisibility::Visible => "visible",
+        MessageVisibility::Internal => "internal",
+    }
+}
+
 fn parse_origin_via(s: &str) -> Result<OriginVia> {
     Ok(match s {
         "gui" => OriginVia::Gui,
@@ -1872,6 +1966,7 @@ async fn insert_user_message_inner(
     session_id: SessionId,
     content: String,
     origin: Origin,
+    visibility: MessageVisibility,
 ) -> Result<MessageBrief> {
     let row: Option<(String, String)> =
         sqlx::query_as("SELECT id, status FROM sessions WHERE id = ?")
@@ -1899,8 +1994,8 @@ async fn insert_user_message_inner(
     sqlx::query(
         "INSERT INTO messages \
          (id, session_id, turn_index, sequence, role, content, created_at, \
-          created_via, supervisor, origin_note) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          created_via, supervisor, origin_note, visibility) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&msg_id)
     .bind(&session_id.0)
@@ -1912,30 +2007,33 @@ async fn insert_user_message_inner(
     .bind(origin.via.as_sql())
     .bind(&origin.supervisor)
     .bind(&origin.reason)
+    .bind(message_visibility_sql(visibility))
     .execute(&mut *conn)
     .await
     .map_err(map_sqlx_err)?;
-    let fts_res = async {
-        sqlx::query("DELETE FROM messages_fts WHERE message_id = ?")
+    if visibility == MessageVisibility::Visible {
+        let fts_res = async {
+            sqlx::query("DELETE FROM messages_fts WHERE message_id = ?")
+                .bind(&msg_id)
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query(
+                "INSERT INTO messages_fts (message_id, session_id, role, turn_index, body) \
+                 VALUES (?, ?, ?, ?, ?)",
+            )
             .bind(&msg_id)
+            .bind(&session_id.0)
+            .bind("user")
+            .bind(next_turn)
+            .bind(&content)
             .execute(&mut *conn)
             .await?;
-        sqlx::query(
-            "INSERT INTO messages_fts (message_id, session_id, role, turn_index, body) \
-             VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(&msg_id)
-        .bind(&session_id.0)
-        .bind("user")
-        .bind(next_turn)
-        .bind(&content)
-        .execute(&mut *conn)
-        .await?;
-        std::result::Result::<(), sqlx::Error>::Ok(())
-    }
-    .await;
-    if let Err(e) = fts_res {
-        eprintln!("[galley-core] index user message fts failed: {e}");
+            std::result::Result::<(), sqlx::Error>::Ok(())
+        }
+        .await;
+        if let Err(e) = fts_res {
+            eprintln!("[galley-core] index user message fts failed: {e}");
+        }
     }
     sqlx::query("UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?")
         .bind(&now)
@@ -1949,9 +2047,11 @@ async fn insert_user_message_inner(
         session_id,
         role: MessageRole::User,
         content,
+        final_answer: None,
         created_at: now,
         summary: None,
         turn_index: Some(next_turn.max(0) as u32),
+        visibility: Some(visibility),
         origin: Some(origin),
     })
 }
@@ -2017,7 +2117,7 @@ const SESSIONS_SELECT_COLS: &str = "id, project_id, title, status, summary, turn
 impl SqliteGalley {
     async fn fetch_goal_proposal(&self, id: &str) -> Result<GoalProposalBrief> {
         let row = sqlx::query_as::<_, GoalProposalRow>(
-            "SELECT id, objective, project_id, budget_seconds, worker_limit, \
+            "SELECT id, objective, project_id, master_session_id, budget_seconds, worker_limit, \
                     runtime_kind, write_mode, status, internal_confirm_token, \
                     expires_at, created_at, updated_at \
              FROM goal_proposals WHERE id = ? LIMIT 1",
@@ -2034,9 +2134,9 @@ impl SqliteGalley {
 
     async fn fetch_goal(&self, id: &str) -> Result<GoalBrief> {
         let row = sqlx::query_as::<_, GoalRow>(
-            "SELECT id, proposal_id, project_id, objective, status, budget_seconds, \
+            "SELECT id, proposal_id, project_id, master_session_id, objective, status, budget_seconds, \
                     worker_limit, runtime_kind, write_mode, started_at, deadline_at, \
-                    ended_at, latest_summary, stop_requested, created_at, updated_at \
+                    ended_at, latest_summary, result_seen_at, stop_requested, created_at, updated_at \
              FROM goals WHERE id = ? LIMIT 1",
         )
         .bind(id)
@@ -2158,41 +2258,7 @@ impl GalleyApi for SqliteGalley {
         id: SessionId,
         tail: Option<usize>,
     ) -> Result<Vec<MessageBrief>> {
-        // No `tail` → full transcript, oldest-first.
-        // `tail = Some(n)` → last n turns, returned in chronological
-        // order. Implemented as ORDER BY DESC LIMIT n + reverse client-
-        // side; subquery+ORDER BY ASC would work too but adds noise.
-        let rows = if let Some(n) = tail {
-            let limit = i64::try_from(n).unwrap_or(i64::MAX);
-            let mut rows: Vec<MessageRow> = sqlx::query_as::<_, MessageRow>(
-                "SELECT id, session_id, turn_index, role, content, summary, \
-                        created_via, supervisor, origin_note, created_at \
-                 FROM messages \
-                 WHERE session_id = ? \
-                 ORDER BY turn_index DESC, sequence DESC \
-                 LIMIT ?",
-            )
-            .bind(id.as_str())
-            .bind(limit)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(map_sqlx_err)?;
-            rows.reverse();
-            rows
-        } else {
-            sqlx::query_as::<_, MessageRow>(
-                "SELECT id, session_id, turn_index, role, content, summary, \
-                        created_via, supervisor, origin_note, created_at \
-                 FROM messages \
-                 WHERE session_id = ? \
-                 ORDER BY turn_index ASC, sequence ASC",
-            )
-            .bind(id.as_str())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(map_sqlx_err)?
-        };
-        rows.into_iter().map(MessageRow::into_brief).collect()
+        self.session_messages_inner(id, tail, false).await
     }
 
     async fn search_messages(
@@ -2227,8 +2293,10 @@ impl GalleyApi for SqliteGalley {
                         snippet(messages_fts, 4, '<mark>', '</mark>', '…', 16) AS snippet, \
                         bm25(messages_fts) AS rank \
                  FROM messages_fts fts \
+                 JOIN messages m ON m.id = fts.message_id \
                  JOIN sessions s ON s.id = fts.session_id \
-                 WHERE messages_fts MATCH ?{scope_clause}{runtime_clause} \
+                 WHERE messages_fts MATCH ? \
+                   AND m.visibility = 'visible'{scope_clause}{runtime_clause} \
                  ORDER BY rank ASC \
                  LIMIT ?"
             );
@@ -2267,6 +2335,7 @@ impl GalleyApi for SqliteGalley {
              FROM messages m \
              JOIN sessions s ON s.id = m.session_id \
              WHERE m.role IN ('user','assistant') \
+               AND m.visibility = 'visible' \
                AND m.content LIKE ? ESCAPE '\\'{scope_clause}{runtime_clause} \
              ORDER BY s.last_activity_at DESC \
              LIMIT ?"
@@ -2425,7 +2494,25 @@ impl GalleyApi for SqliteGalley {
         // helper so SQL + validation lives in one place. See
         // [insert_user_message_inner] for the body.
         let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
-        insert_user_message_inner(&mut conn, session_id, content, origin).await
+        insert_user_message_inner(
+            &mut conn,
+            session_id,
+            content,
+            origin,
+            MessageVisibility::Visible,
+        )
+        .await
+    }
+
+    async fn send_message_with_visibility(
+        &self,
+        session_id: SessionId,
+        content: String,
+        origin: crate::api::Origin,
+        visibility: MessageVisibility,
+    ) -> Result<MessageBrief> {
+        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
+        insert_user_message_inner(&mut conn, session_id, content, origin, visibility).await
     }
 
     // ============= B3 M4a · session writes =============
@@ -2941,14 +3028,15 @@ impl GalleyApi for SqliteGalley {
 
         sqlx::query(
             "INSERT INTO goal_proposals (
-                id, objective, project_id, budget_seconds, worker_limit,
+                id, objective, project_id, master_session_id, budget_seconds, worker_limit,
                 runtime_kind, write_mode, status, internal_confirm_token,
                 expires_at, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(objective)
         .bind(input.project_id.as_ref().map(ProjectId::as_str))
+        .bind(input.master_session_id.as_ref().map(SessionId::as_str))
         .bind(i64::from(budget_seconds))
         .bind(i64::from(worker_limit))
         .bind(runtime_kind_sql(runtime_kind))
@@ -2975,7 +3063,7 @@ impl GalleyApi for SqliteGalley {
     ) -> Result<GoalBrief> {
         let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
         let proposal_row = sqlx::query_as::<_, GoalProposalRow>(
-            "SELECT id, objective, project_id, budget_seconds, worker_limit, \
+            "SELECT id, objective, project_id, master_session_id, budget_seconds, worker_limit, \
                     runtime_kind, write_mode, status, internal_confirm_token, \
                     expires_at, created_at, updated_at \
              FROM goal_proposals WHERE id = ? LIMIT 1",
@@ -3029,19 +3117,40 @@ impl GalleyApi for SqliteGalley {
                 project_id
             }
         };
+        if let Some(master_session_id) = proposal.master_session_id.as_ref() {
+            let master_project_id: Option<String> =
+                sqlx::query_scalar("SELECT project_id FROM sessions WHERE id = ? LIMIT 1")
+                    .bind(master_session_id.as_str())
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(map_sqlx_err)?
+                    .ok_or_else(|| GalleyError::NotFound {
+                        message: format!("master session {master_session_id} not found"),
+                    })?;
+            if master_project_id.is_none() {
+                sqlx::query("UPDATE sessions SET project_id = ?, updated_at = ? WHERE id = ?")
+                    .bind(&project_id)
+                    .bind(&now)
+                    .bind(master_session_id.as_str())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| map_constraint_err("goal.run assign master session", e))?;
+            }
+        }
 
         let goal_id = mint_goal_id("goal");
         let deadline_at = chrono_after_seconds_iso(proposal.budget_seconds);
         sqlx::query(
             "INSERT INTO goals (
-                id, proposal_id, project_id, objective, status, budget_seconds,
+                id, proposal_id, project_id, master_session_id, objective, status, budget_seconds,
                 worker_limit, runtime_kind, write_mode, started_at, deadline_at,
-                ended_at, latest_summary, stop_requested, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?)",
+                ended_at, latest_summary, result_seen_at, stop_requested, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?)",
         )
         .bind(&goal_id)
         .bind(proposal.id.as_str())
         .bind(&project_id)
+        .bind(proposal.master_session_id.as_ref().map(SessionId::as_str))
         .bind(&proposal.objective)
         .bind(goal_status_sql(GoalStatus::Running))
         .bind(i64::from(proposal.budget_seconds))
@@ -3107,9 +3216,9 @@ impl GalleyApi for SqliteGalley {
 
     async fn list_active_goals(&self) -> Result<Vec<GoalBrief>> {
         let rows = sqlx::query_as::<_, GoalRow>(
-            "SELECT id, proposal_id, project_id, objective, status, budget_seconds, \
+            "SELECT id, proposal_id, project_id, master_session_id, objective, status, budget_seconds, \
                     worker_limit, runtime_kind, write_mode, started_at, deadline_at, \
-                    ended_at, latest_summary, stop_requested, created_at, updated_at \
+                    ended_at, latest_summary, result_seen_at, stop_requested, created_at, updated_at \
              FROM goals WHERE status IN ('running','wrapping') \
              ORDER BY deadline_at ASC, started_at ASC",
         )
@@ -3117,6 +3226,48 @@ impl GalleyApi for SqliteGalley {
         .await
         .map_err(map_sqlx_err)?;
         rows.into_iter().map(GoalRow::into_brief).collect()
+    }
+
+    async fn list_visible_goals(&self) -> Result<Vec<GoalBrief>> {
+        let rows = sqlx::query_as::<_, GoalRow>(
+            "SELECT id, proposal_id, project_id, master_session_id, objective, status, budget_seconds, \
+                    worker_limit, runtime_kind, write_mode, started_at, deadline_at, \
+                    ended_at, latest_summary, result_seen_at, stop_requested, created_at, updated_at \
+             FROM goals \
+             WHERE status IN ('running','wrapping') \
+                OR (status IN ('completed','failed') AND result_seen_at IS NULL) \
+             ORDER BY CASE status \
+                    WHEN 'running' THEN 0 \
+                    WHEN 'wrapping' THEN 1 \
+                    WHEN 'failed' THEN 2 \
+                    WHEN 'completed' THEN 3 \
+                    ELSE 4 END, \
+                deadline_at ASC, updated_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        rows.into_iter().map(GoalRow::into_brief).collect()
+    }
+
+    async fn mark_goal_result_seen(&self, id: GoalId, _origin: Origin) -> Result<GoalBrief> {
+        let now = chrono_now_iso();
+        let res = sqlx::query(
+            "UPDATE goals SET result_seen_at = COALESCE(result_seen_at, ?), updated_at = ? \
+             WHERE id = ?",
+        )
+        .bind(&now)
+        .bind(&now)
+        .bind(id.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        if res.rows_affected() == 0 {
+            return Err(GalleyError::NotFound {
+                message: format!("goal {id} not found"),
+            });
+        }
+        self.fetch_goal(id.as_str()).await
     }
 
     async fn request_goal_stop(&self, id: GoalId, _origin: Origin) -> Result<GoalBrief> {
@@ -3341,7 +3492,14 @@ impl GalleyApi for SqliteGalley {
         content: String,
         origin: Origin,
     ) -> Result<MessageBrief> {
-        insert_user_message_inner(tx, session_id, content, origin).await
+        insert_user_message_inner(
+            tx,
+            session_id,
+            content,
+            origin,
+            MessageVisibility::Visible,
+        )
+        .await
     }
 
     async fn begin_tx(&self) -> Result<Transaction<'_, Sqlite>> {

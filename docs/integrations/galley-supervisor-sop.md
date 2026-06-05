@@ -138,6 +138,11 @@ Attach/external GA safety is strict: do not call GA native `/hive`, do not start
 `temp/goal_state.json`. External GA only participates through ordinary Galley
 child-session prompts and the Galley Goal CLI protocol.
 
+Managed GA can use its normal memory/SOP self-evolution mechanism for durable,
+reusable learnings. Do not force Goal protocol state into memory/SOP: Goal ids,
+task ids, worker session ids, rounds/waves, temporary coordination logs, and
+transient task-board state belong to Galley Core.
+
 ### Project-Backed Session Groups
 
 A Project-backed session group means: create or reuse one Galley Project, create
@@ -673,7 +678,8 @@ command; report that distinction instead of resending the same message. For
 
 Do not:
 
-- Modify GA memory or GA configuration.
+- Modify external GA memory or any GA configuration.
+- Store Galley Goal protocol state in GA memory/SOP.
 - Auto-approve Galley approval prompts for the user.
 - Pretend to inspect a session without running `brief` or `show`.
 - Create many sessions without a clear split.
