@@ -24,6 +24,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button, IconButton } from "@/components/ui/button";
 import { ThemePreferenceMenu } from "@/components/theme/ThemePreferenceMenu";
 import { TooltipLabel } from "@/components/ui/tooltip";
+import { goalPillLabel, goalStageLabel } from "@/lib/goals";
 import { useCopy } from "@/lib/i18n";
 import { isMac, isWindowActionTarget } from "@/lib/platform";
 import { formatShortcutReadable } from "@/lib/shortcuts";
@@ -337,18 +338,26 @@ function GoalIndicator({
   onStopGoal?: (goalId: string) => void;
 }) {
   const copy = useCopy().topbar;
+  const [confirmingStopId, setConfirmingStopId] = useState<string | null>(null);
   const primary = goals[0];
+  const visualGoal = goalAttentionGoal(goals);
   const label =
-    goals.length > 1 ? `Goals · ${goals.length}` : goalTopbarLabel(primary);
-  const style = goalIndicatorStyle(primary);
+    goals.length > 1
+      ? copy.goalPillMultiple(goals.length)
+      : goalPillLabel(primary.status, copy);
+  const style = goalIndicatorStyle(visualGoal);
   const Icon =
-    primary.status === "completed"
+    visualGoal.status === "completed"
       ? CheckCircle
-      : primary.status === "failed"
+      : visualGoal.status === "failed"
         ? Warning
         : Target;
   return (
-    <Popover.Root>
+    <Popover.Root
+      onOpenChange={(open) => {
+        if (!open) setConfirmingStopId(null);
+      }}
+    >
       <TooltipLabel text={copy.goalTooltip} side="bottom">
         <Popover.Trigger asChild>
           <button
@@ -369,43 +378,47 @@ function GoalIndicator({
         <Popover.Content
           align="end"
           sideOffset={8}
-          className="z-50 w-[320px] rounded-md border border-line bg-elevated p-3 shadow-elevated"
+          className="z-50 max-h-[min(70vh,520px)] w-[320px] overflow-y-auto rounded-md border border-line bg-elevated p-3 shadow-elevated"
         >
           <div className="space-y-3">
             {goals.map((goal) => {
-              const statusChips = goalStatusChips(goal, copy);
+              const remaining =
+                goal.status === "running" || goal.status === "wrapping"
+                  ? remainingMinutes(goal.deadlineAt)
+                  : null;
               return (
                 <div
                   key={goal.id}
                   className="border-b border-line/70 pb-3 last:border-0 last:pb-0"
                 >
-                  <div className="flex items-start gap-2">
-                    <Target
-                      size={15}
-                      weight="thin"
-                      className="mt-0.5 text-brand-strong"
+                  {/* Status line: stage dot + word (left), live
+                      countdown (right). The countdown lives here, not
+                      on the pill, because it ticks to zero at the
+                      deadline while the Goal is still wrapping up. */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        goalStageDotClass(goal),
+                      )}
                     />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px] font-medium text-ink">
-                        {goal.objective}
-                      </div>
-                      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-                        {statusChips.map((chip, index) => (
-                          <span
-                            key={`${goal.id}-${chip}`}
-                            className={cn(
-                              "inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] leading-none",
-                              index === 0
-                                ? goalStatusChipClass(goal)
-                                : "border-line/70 bg-hover/60 text-ink-muted",
-                            )}
-                          >
-                            {chip}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+                    <span className="text-[12px] font-medium text-ink">
+                      {goalStageLabel(goal.status, copy)}
+                    </span>
+                    {remaining !== null && (
+                      <span className="ml-auto text-[12px] tabular-nums text-ink-soft">
+                        {copy.goalRemaining(remaining)}
+                      </span>
+                    )}
                   </div>
+
+                  <div className="mt-2 line-clamp-2 break-words text-[13px] font-medium leading-snug text-ink">
+                    {goal.objective}
+                  </div>
+                  <div className="mt-1 text-[11px] text-ink-muted">
+                    {copy.goalWorkerCount(goal.workerLimit)}
+                  </div>
+
                   <div className="mt-3 flex flex-col gap-2">
                     <Button
                       size="sm"
@@ -415,36 +428,46 @@ function GoalIndicator({
                     >
                       {goalPrimaryActionLabel(goal, copy)}
                     </Button>
-                    <div className="flex items-center justify-between gap-2 pt-0.5">
-                      <div className="flex min-w-0 items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-[12px]"
-                          onClick={() => onOpenProject?.(goal.projectId)}
-                        >
-                          {copy.openGoalProject}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-[12px]"
-                          onClick={() => copyGoalStatusCommand(goal.id)}
-                        >
-                          {copy.copyGoalStatus}
-                        </Button>
-                      </div>
-                      {(goal.status === "running" ||
-                        goal.status === "wrapping") && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 border border-error/25 px-2.5 font-medium text-error hover:bg-error/[var(--opacity-soft)] hover:text-error"
-                          onClick={() => onStopGoal?.(goal.id)}
-                        >
-                          {copy.stopGoal}
-                        </Button>
+                    {(goal.status === "running" ||
+                      goal.status === "wrapping") &&
+                      confirmingStopId === goal.id && (
+                        <div className="text-[11px] leading-snug text-error">
+                          {copy.stopGoalConsequence}
+                        </div>
                       )}
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-[12px]"
+                        onClick={() => onOpenProject?.(goal.projectId)}
+                      >
+                        {copy.openGoalProject}
+                      </Button>
+                      {(goal.status === "running" ||
+                        goal.status === "wrapping") &&
+                        (confirmingStopId === goal.id ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 border border-error bg-error/[var(--opacity-soft)] px-2.5 font-medium text-error hover:bg-error/[var(--opacity-medium)] hover:text-error"
+                            onClick={() => {
+                              setConfirmingStopId(null);
+                              onStopGoal?.(goal.id);
+                            }}
+                          >
+                            {copy.confirmStopGoal}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 border border-error/25 px-2.5 font-medium text-error hover:bg-error/[var(--opacity-soft)] hover:text-error"
+                            onClick={() => setConfirmingStopId(goal.id)}
+                          >
+                            {copy.stopGoal}
+                          </Button>
+                        ))}
                     </div>
                   </div>
                 </div>
@@ -457,15 +480,6 @@ function GoalIndicator({
   );
 }
 
-function goalTopbarLabel(goal: GoalBrief) {
-  if (goal.status === "completed") return "Goal · ready";
-  if (goal.status === "failed") return "Goal · failed";
-  if (goal.status === "wrapping") return "Goal · wrapping";
-  const remaining = remainingMinutes(goal.deadlineAt);
-  if (remaining !== null) return `Goal · ${remaining}m`;
-  return "Goal · running";
-}
-
 function goalPrimaryActionLabel(
   goal: GoalBrief,
   copy: ReturnType<typeof useCopy>["topbar"],
@@ -473,6 +487,23 @@ function goalPrimaryActionLabel(
   if (goal.status === "completed") return copy.openGoalResult;
   if (goal.status === "failed") return copy.viewGoalDetails;
   return copy.openGoal;
+}
+
+function goalAttentionGoal(goals: GoalBrief[]): GoalBrief {
+  // Pill color/icon should reflect the most attention-worthy status,
+  // not the backend list order (which puts running first). A failed
+  // Goal waiting for the user must not hide behind a calm brand-color
+  // pill just because another Goal is still running.
+  const priority: Record<GoalBrief["status"], number> = {
+    failed: 0,
+    completed: 1,
+    wrapping: 2,
+    running: 3,
+    stopped: 4,
+  };
+  return goals.reduce((best, goal) =>
+    priority[goal.status] < priority[best.status] ? goal : best,
+  );
 }
 
 function goalIndicatorStyle(goal: GoalBrief) {
@@ -494,55 +525,17 @@ function goalIndicatorStyle(goal: GoalBrief) {
   };
 }
 
-function goalStatusText(
-  goal: GoalBrief,
-  copy: ReturnType<typeof useCopy>["topbar"],
-) {
-  const remaining = remainingMinutes(goal.deadlineAt);
-  if (goal.status === "completed") {
-    return copy.goalStatusReady(goal.workerLimit);
-  }
-  if (goal.status === "failed") {
-    return copy.goalStatusFailed(goal.workerLimit);
-  }
-  if (goal.status === "wrapping") {
-    return copy.goalStatusWrapping(goal.workerLimit);
-  }
-  if (goal.status === "stopped") {
-    return copy.goalStatusStopped(goal.workerLimit);
-  }
-  return copy.goalStatusRunning(remaining, goal.workerLimit);
-}
-
-function goalStatusChips(
-  goal: GoalBrief,
-  copy: ReturnType<typeof useCopy>["topbar"],
-) {
-  return goalStatusText(goal, copy)
-    .split(" · ")
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-function goalStatusChipClass(goal: GoalBrief) {
-  if (goal.status === "completed") {
-    return "border-success/25 bg-success/[var(--opacity-soft)] text-success";
-  }
-  if (goal.status === "failed") {
-    return "border-error/25 bg-error/[var(--opacity-soft)] text-error";
-  }
-  return "border-brand/25 bg-brand-soft text-brand-strong";
+function goalStageDotClass(goal: GoalBrief) {
+  if (goal.status === "failed") return "bg-error";
+  if (goal.status === "completed") return "bg-success";
+  if (goal.status === "stopped") return "bg-ink-muted";
+  return "bg-brand-strong";
 }
 
 function remainingMinutes(deadlineAt: string) {
   const deadline = Date.parse(deadlineAt);
   if (!Number.isFinite(deadline)) return null;
   return Math.max(0, Math.ceil((deadline - Date.now()) / 60_000));
-}
-
-function copyGoalStatusCommand(goalId: string) {
-  const text = `galley goal status ${goalId}`;
-  void navigator.clipboard?.writeText(text).catch(() => undefined);
 }
 
 function ChannelsIndicator({

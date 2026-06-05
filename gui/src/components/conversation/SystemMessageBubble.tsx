@@ -1,4 +1,4 @@
-import { ChatCircleDots, Info } from "@phosphor-icons/react";
+import { ChatCircleDots, Info, Target } from "@phosphor-icons/react";
 
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { useCopy } from "@/lib/i18n";
@@ -26,7 +26,7 @@ import { useCopy } from "@/lib/i18n";
  */
 interface SystemMessageBubbleProps {
   content: string;
-  variant: "side_question" | "system";
+  variant: "side_question" | "system" | "goal";
 }
 
 export function SystemMessageBubble({
@@ -43,6 +43,20 @@ export function SystemMessageBubble({
         <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-warning">
           <ChatCircleDots size={12} weight="bold" />
           {copy.conversation.sideQuestion}
+        </div>
+        <MarkdownView source={content} variant="agent" />
+      </div>
+    );
+  }
+  if (variant === "goal") {
+    return (
+      <div
+        data-role="system-bubble"
+        className="my-5 rounded-r-sm border-l-[3px] border-brand-strong/60 bg-brand-soft px-4 py-2.5"
+      >
+        <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-brand-strong">
+          <Target size={12} weight="bold" />
+          {copy.conversation.goalNarration}
         </div>
         <MarkdownView source={content} variant="agent" />
       </div>

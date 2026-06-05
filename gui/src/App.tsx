@@ -148,6 +148,7 @@ function App() {
   const appendUserTurnExternal = useMessagesStore(
     (s) => s.appendUserTurnExternal,
   );
+  const appendSystemTurn = useMessagesStore((s) => s.appendSystemTurn);
   const attachExternalBridge = useRuntimeStore((s) => s.attachExternalBridge);
   const applyExternalSessionCreated = useSessionsStore(
     (s) => s.applyExternalSessionCreated,
@@ -696,6 +697,7 @@ function App() {
         message: {
           content: string;
           createdAt?: string;
+          role?: "user" | "agent" | "system";
           origin?: {
             via: "gui" | "cli" | "supervisor" | "system";
             supervisor?: string;
@@ -704,6 +706,18 @@ function App() {
         };
       }>("user-message-persisted", (e) => {
         const { sessionId, message, dispatch } = e.payload;
+        // Galley-authored `system` rows (Goal master narration) render
+        // as neutral Goal narration, not as the operator's own input.
+        // The DB row is already persisted by Core; append a transient
+        // in-memory turn so the live view updates without a reload.
+        if (message.role === "system") {
+          appendSystemTurn(sessionId, {
+            role: "system",
+            content: message.content,
+            variant: "goal",
+          });
+          return;
+        }
         appendUserTurnExternal(
           sessionId,
           message.content,
@@ -722,7 +736,7 @@ function App() {
       cancelled = true;
       unlisten?.();
     };
-  }, [appendUserTurnExternal]);
+  }, [appendUserTurnExternal, appendSystemTurn]);
 
   // A socket-created session can now start its own runner immediately.
   // Attach the same JS-side event listeners used by GUI-spawned bridges
@@ -910,14 +924,19 @@ function App() {
         workerLimit: config.workerLimit,
         budgetSeconds: config.budgetSeconds,
       });
-      const { goal, masterMessage } = result;
+      const { goal, objectiveMessage, masterMessage } = result;
       appendUserTurnExternal(
         masterSessionId,
-        masterMessage.content,
-        masterMessage.origin,
-        masterMessage.createdAt,
+        objectiveMessage.content,
+        objectiveMessage.origin,
+        objectiveMessage.createdAt,
         false,
       );
+      appendSystemTurn(masterSessionId, {
+        role: "system",
+        content: masterMessage.content,
+        variant: "goal",
+      });
       setActiveGoals((goals) => {
         const withoutCurrent = goals.filter(
           (candidate) => candidate.id !== goal.id,

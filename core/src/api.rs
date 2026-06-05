@@ -107,6 +107,18 @@ pub trait GalleyApi: Send + Sync {
         visibility: MessageVisibility,
     ) -> Result<MessageBrief>;
 
+    /// Write a Galley-authored `system`-role visible message into a
+    /// session (e.g. Goal master narration). Distinct from
+    /// `send_message`, which always writes a `user` row: system rows
+    /// render as neutral narration, not as the human operator's input,
+    /// and never dispatch to the runner.
+    async fn send_system_message(
+        &self,
+        session_id: SessionId,
+        content: String,
+        origin: Origin,
+    ) -> Result<MessageBrief>;
+
     // ---------------- session writes (B3 M4a) ----------------
     //
     // All session writes return the freshly-read `SessionBrief` so the

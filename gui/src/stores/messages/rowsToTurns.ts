@@ -8,6 +8,7 @@ import type {
   AgentTurn,
   ConversationToolEvent,
   Origin,
+  SystemTurn,
   Turn,
   UserTurn,
 } from "@/types/conversation";
@@ -102,8 +103,19 @@ export function rowsToTurns(rows: MessageRow[]): Turn[] {
         summary: row.summary ?? undefined,
       };
       turns.push(turn);
+    } else if (row.role === "system") {
+      // The only `system` rows persisted to `messages` are Galley Goal
+      // master-session narration (launch + checkpoints). /btw and other
+      // bridge system messages are transient and never hit SQLite, so a
+      // restored system row is always Goal narration → "goal" variant.
+      const systemTurn: SystemTurn = {
+        role: "system",
+        content: row.content,
+        variant: "goal",
+      };
+      turns.push(systemTurn);
     }
-    // system / tool rows: skipped at v0.1.
+    // tool rows: skipped at v0.1.
   }
   return turns;
 }

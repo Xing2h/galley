@@ -97,13 +97,14 @@ export interface UserTurn {
  * Rendered as a callout block distinct from agent turns:
  *   - "side_question": yellow AskUserBubble-family chrome
  *   - "system": neutral muted register
+ *   - "goal": Galley Goal narration (Target glyph, "Galley" label)
  */
 export interface SystemTurn {
   role: "system";
   /** Markdown source — rendered via the same MarkdownView pipeline
    * as agent final answers. */
   content: string;
-  variant: "side_question" | "system";
+  variant: "side_question" | "system" | "goal";
 }
 
 export interface AgentTurn {

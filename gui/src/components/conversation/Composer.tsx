@@ -21,6 +21,7 @@ import { Button, DialogActionRow } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { TooltipLabel } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
+import { goalPillLabel } from "@/lib/goals";
 import { cn } from "@/lib/utils";
 import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
 
@@ -871,15 +872,10 @@ function GoalConfirmDialog({
 }
 
 function GoalContextBadge({ goal }: { goal: GoalBrief }) {
-  const remaining = remainingMinutes(goal.deadlineAt);
-  const label =
-    goal.status === "wrapping"
-      ? "Goal · wrapping"
-      : remaining === null
-        ? "Goal · running"
-        : `Goal · ${remaining}m`;
+  const copy = useCopy();
+  const label = goalPillLabel(goal.status, copy.topbar);
   return (
-    <TooltipLabel text="This conversation belongs to an active Goal">
+    <TooltipLabel text={copy.composer.goalContextBadgeTooltip}>
       <span
         className={cn(
           "inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-brand/25 bg-brand-soft px-2",
@@ -891,12 +887,6 @@ function GoalContextBadge({ goal }: { goal: GoalBrief }) {
       </span>
     </TooltipLabel>
   );
-}
-
-function remainingMinutes(deadlineAt: string) {
-  const deadline = Date.parse(deadlineAt);
-  if (!Number.isFinite(deadline)) return null;
-  return Math.max(0, Math.ceil((deadline - Date.now()) / 60_000));
 }
 
 /**

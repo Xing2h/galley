@@ -1968,6 +1968,40 @@ async fn insert_user_message_inner(
     origin: Origin,
     visibility: MessageVisibility,
 ) -> Result<MessageBrief> {
+    insert_message_inner(
+        conn,
+        session_id,
+        MessageRole::User,
+        content,
+        origin,
+        visibility,
+    )
+    .await
+}
+
+/// Shared writer for standalone (sequence=0) conversation messages.
+/// `role` selects user vs Galley system narration; both occupy their
+/// own `turn_index` so the `(turn_index, sequence)` ordering and the
+/// `msg_{session}_{turn}_{role}` id stay collision-free. Assistant
+/// rows are written by a different path (they hang off a user turn at
+/// sequence=1), so this helper only mints `user` / `system` rows.
+async fn insert_message_inner(
+    conn: &mut SqliteConnection,
+    session_id: SessionId,
+    role: MessageRole,
+    content: String,
+    origin: Origin,
+    visibility: MessageVisibility,
+) -> Result<MessageBrief> {
+    let role_sql = match role {
+        MessageRole::User => "user",
+        MessageRole::System => "system",
+        MessageRole::Agent => {
+            return Err(GalleyError::InvalidArgs {
+                message: "insert_message_inner only writes user/system rows".into(),
+            });
+        }
+    };
     let row: Option<(String, String)> =
         sqlx::query_as("SELECT id, status FROM sessions WHERE id = ?")
             .bind(&session_id.0)
@@ -1990,7 +2024,7 @@ async fn insert_user_message_inner(
     .await
     .map_err(map_sqlx_err)?;
     let now = chrono_now_iso();
-    let msg_id = format!("msg_{}_{}_user", session_id.0, next_turn);
+    let msg_id = format!("msg_{}_{}_{}", session_id.0, next_turn, role_sql);
     sqlx::query(
         "INSERT INTO messages \
          (id, session_id, turn_index, sequence, role, content, created_at, \
@@ -2001,7 +2035,7 @@ async fn insert_user_message_inner(
     .bind(&session_id.0)
     .bind(next_turn)
     .bind(0_i64)
-    .bind("user")
+    .bind(role_sql)
     .bind(&content)
     .bind(&now)
     .bind(origin.via.as_sql())
@@ -2023,7 +2057,7 @@ async fn insert_user_message_inner(
             )
             .bind(&msg_id)
             .bind(&session_id.0)
-            .bind("user")
+            .bind(role_sql)
             .bind(next_turn)
             .bind(&content)
             .execute(&mut *conn)
@@ -2032,7 +2066,7 @@ async fn insert_user_message_inner(
         }
         .await;
         if let Err(e) = fts_res {
-            eprintln!("[galley-core] index user message fts failed: {e}");
+            eprintln!("[galley-core] index {role_sql} message fts failed: {e}");
         }
     }
     sqlx::query("UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?")
@@ -2045,7 +2079,7 @@ async fn insert_user_message_inner(
     Ok(MessageBrief {
         id: MessageId(msg_id),
         session_id,
-        role: MessageRole::User,
+        role,
         content,
         final_answer: None,
         created_at: now,
@@ -2513,6 +2547,24 @@ impl GalleyApi for SqliteGalley {
     ) -> Result<MessageBrief> {
         let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
         insert_user_message_inner(&mut conn, session_id, content, origin, visibility).await
+    }
+
+    async fn send_system_message(
+        &self,
+        session_id: SessionId,
+        content: String,
+        origin: crate::api::Origin,
+    ) -> Result<MessageBrief> {
+        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
+        insert_message_inner(
+            &mut conn,
+            session_id,
+            MessageRole::System,
+            content,
+            origin,
+            MessageVisibility::Visible,
+        )
+        .await
     }
 
     // ============= B3 M4a · session writes =============

@@ -104,6 +104,11 @@ struct StartDesktopGoalInput {
 #[serde(rename_all = "camelCase")]
 struct StartDesktopGoalResult {
     goal: GoalBrief,
+    /// The user's objective, persisted as the master session's first
+    /// user turn (the human's own words — no Galley framing).
+    objective_message: MessageBrief,
+    /// Galley's launch acknowledgement, persisted as a `system`
+    /// narration turn right after the objective.
     master_message: MessageBrief,
 }
 
@@ -1234,13 +1239,23 @@ async fn start_desktop_goal(
         .start_goal_from_proposal(proposal.id, proposal.internal_confirm_token, Origin::gui())
         .await
         .map_err(stringify_error)?;
-    let master_message = galley
+    // The objective is the user's own words → a normal user turn.
+    let objective_message = galley
         .send_message(
+            master_session_id.clone(),
+            input.objective.trim().to_string(),
+            Origin::gui(),
+        )
+        .await
+        .map_err(stringify_error)?;
+    // Galley's launch acknowledgement → system narration, so it reads
+    // as Galley speaking, not the operator. Gives immediate feedback
+    // before the first controller checkpoint lands and anchors the
+    // "results return here" promise inside the session.
+    let master_message = galley
+        .send_system_message(
             master_session_id,
-            format!(
-                "Goal 已启动：{}\n\nGalley 正在后台推进这个目标，完成后会在这里汇总。",
-                input.objective.trim()
-            ),
+            "Goal 已启动 · 完成后会在这个对话汇总结果".to_string(),
             Origin::gui(),
         )
         .await
@@ -1255,6 +1270,7 @@ async fn start_desktop_goal(
 
     Ok(StartDesktopGoalResult {
         goal,
+        objective_message,
         master_message,
     })
 }

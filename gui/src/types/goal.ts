@@ -56,6 +56,7 @@ export interface GoalMasterMessage {
 
 export interface StartDesktopGoalResult {
   goal: GoalBrief;
+  objectiveMessage: GoalMasterMessage;
   masterMessage: GoalMasterMessage;
 }
 

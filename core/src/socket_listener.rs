@@ -832,7 +832,11 @@ async fn dispatch_session_checkpoint(
     };
     let origin = origin_from_args(parsed.supervisor.clone(), parsed.reason.clone());
     let session_id = SessionId(parsed.session_id.clone());
-    let brief = match galley.send_message(session_id, content, origin).await {
+    // Checkpoints are Galley-authored narration, not the human
+    // operator's input — persist them as a `system` row so the GUI
+    // renders neutral narration instead of a user bubble. Still
+    // `persisted_only`: never dispatched to the runner.
+    let brief = match galley.send_system_message(session_id, content, origin).await {
         Ok(b) => b,
         Err(e) => return map_galley_err(request_id, e),
     };

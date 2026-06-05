@@ -261,3 +261,105 @@ The boundary is now runtime-aware:
 
 This preserves the self-evolution promise for built-in GA users without letting
 the temporary Hive coordination protocol pollute future sessions.
+
+## 2026-06-05 Goal Surface UX Pass
+
+A dogf(ood-driven review of the shipped Goal surfaces (TopBar pill,
+indicator popover, Composer confirm dialog, and the master session)
+produced a batch of UX fixes. The theme: the V1 surfaces were correct
+but leaked internal mechanics and mislabelled who was speaking.
+
+### TopBar pill and badge are stage-only
+
+The pill previously rendered a live countdown (`Goal · 30m`) drawn from
+the deadline. But the deadline is "stop dispatching new work", not
+"result delivered" — after it the Goal still drains and wraps. A pill
+counting to zero read as "timed out / stuck". It also hard-coded English
+labels, so the zh UI showed an English pill over a localized popover.
+
+The pill (and the Composer context badge) now show stage only:
+`Goal · 运行中 / 整理中 / 已完成 / 失败 / 已停止`. The live countdown moves
+into the popover, where it is supplementary detail rather than the
+headline. `已完成` deliberately reads as "Done", not "就绪/Ready": a
+finished Goal has a result waiting, and "ready" would misread as "ready
+to start". A shared `goalPillLabel` / `goalStageLabel` helper in
+`lib/goals.ts` keeps TopBar and Composer in sync.
+
+### Run time is a user-set deadline, shown verbatim
+
+The popover countdown stays as `剩余 N 分钟` / `N分 left`. We do not
+soften it with "约 N 分钟": the time is the user's own setting, and
+hedging it reads as Galley not honouring the request. The mental model
+"this is my deadline; Galley wraps up when it arrives" is conveyed by
+the stage transition itself (运行中 → 整理中), not by prose. We dropped
+the orphan `goalRunningDescription` / `goalReadyDescription` copy that
+was defined but never rendered rather than wiring it in — the stage
+words already carry the meaning, and a finished-Goal description would
+just repeat the primary action button.
+
+### Indicator popover rebuild
+
+Replaced the "split the status sentence into chips on ` · `" hack with
+an explicit status line (stage dot + word, right-aligned countdown),
+objective as the primary text, and worker count demoted to a quiet meta
+line. Removed the "Copy command" (`galley goal status <id>`) button from
+the default popover: it is an agent/terminal affordance, noise for the
+desktop operator. Added a max-height + scroll for the multi-Goal case.
+
+### Pill attention color reflects the worst status, not goals[0]
+
+`list_visible_goals` orders running first, so a failed Goal awaiting the
+user could hide behind a calm brand-color pill while a sibling ran. The
+pill color/icon now pick the most attention-worthy Goal via
+`goalAttentionGoal` (failed > completed > wrapping > running > stopped),
+independent of list order. The `Goals · N` label stays a plain count;
+color + icon carry the signal.
+
+### Stop gets an inline confirm with a consequence line
+
+Stopping a Goal kills in-flight workers and skips master synthesis, so
+there is no final summary — and stop is irreversible. The TopBar stop
+action now arms an inline confirm (per-Goal, reset on popover close)
+with a one-line consequence: `停止后不会生成最终汇总` /
+`Stopping skips the final summary`. The line is the point of the
+confirm: "the Goal ends" is obvious, but "you lose the synthesis" is the
+expectation gap (users may assume stop means "wrap up early").
+
+### Agent count label carries the semantics
+
+`workerLimit` is max concurrency, not "start N now" (V1.5 lazy worker
+spawn). Rather than add a help line, the confirm dialog label changed
+from "Agent 数量" to "Agent 数量上限" / "Max Agents" — "上限" removes the
+"selecting 5 launches 5 immediately" misread at the label itself.
+
+### Master session: system narration stops impersonating the user
+
+The biggest fix. The master session launch message and all controller
+checkpoints were written via `send_message` (user role) and rendered as
+user bubbles — Galley's operational narration impersonating the human
+operator. Routing them through `assistant` was rejected: it would bury
+the one real agent bubble (the final synthesis) among look-alike
+narration bubbles and blur "system fact" vs "AI-generated content".
+
+Instead the master session now reads as an honest dialogue:
+
+- The objective is persisted as a plain `user` turn — the human's own
+  words, with no `Goal 已启动：` framing wrapped around it.
+- A new `send_system_message` Core path writes a `system`-role visible
+  row. Launch acknowledgement and every checkpoint use it. No schema
+  change: the `messages.role` CHECK already allowed `system`, and
+  `system` rows get their own `turn_index` (sequence 0, `_system` id
+  suffix) so ordering and ids stay collision-free. `insert_user_message_inner`
+  was refactored to a role-parameterized `insert_message_inner`.
+- The GUI renders `system` rows through the existing `SystemMessageBubble`
+  with a new `"goal"` variant (Target glyph, "Galley" label, brand-soft
+  register) — reusing the non-bubble callout system rather than inventing
+  a message type. Both the restore path (`rowsToTurns`) and the live
+  path (`user-message-persisted` listener, branched on `role`) route
+  Goal system rows to a goal narration turn.
+- Identification is unambiguous: the only `system` rows ever persisted
+  to `messages` are Goal narration. `/btw` and other bridge system
+  messages are transient and never hit SQLite.
+
+The result is the wave: user objective → Galley launch ack → checkpoints
+→ agent synthesis. Who is speaking is now truthful at each step.

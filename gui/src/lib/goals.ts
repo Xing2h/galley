@@ -1,11 +1,53 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { useCopy } from "@/lib/i18n";
 import type {
   GoalBrief,
+  GoalStatus,
   GoalStatusSnapshot,
   StartDesktopGoalInput,
   StartDesktopGoalResult,
 } from "@/types/goal";
+
+type TopbarCopy = ReturnType<typeof useCopy>["topbar"];
+
+/**
+ * Bare stage word for a Goal status — `运行中` / `Running` etc.
+ * Used by the TopBar popover status line (no `Goal ·` prefix needed
+ * inside the Goal surface itself).
+ *
+ * `completed` reads as "Done" rather than "Ready": the result exists
+ * and is waiting to be read, not "ready to start" — the latter is the
+ * exact misread we want to avoid on a finished Goal.
+ */
+export function goalStageLabel(
+  status: GoalStatus,
+  copy: TopbarCopy,
+): string {
+  switch (status) {
+    case "wrapping":
+      return copy.goalStageWrapping;
+    case "completed":
+      return copy.goalStageDone;
+    case "failed":
+      return copy.goalStageFailed;
+    case "stopped":
+      return copy.goalStageStopped;
+    default:
+      return copy.goalStageRunning;
+  }
+}
+
+/**
+ * Compact pill label for the TopBar indicator and the Composer context
+ * badge — `Goal · 运行中`. Stage-only: the live countdown lives in the
+ * popover, because the pill should read as a stable phase, not a
+ * number that ticks to zero (deadline is "stop dispatching new work",
+ * not "result delivered").
+ */
+export function goalPillLabel(status: GoalStatus, copy: TopbarCopy): string {
+  return `Goal · ${goalStageLabel(status, copy)}`;
+}
 
 export function listActiveGoals() {
   return invoke<GoalBrief[]>("list_active_goals");
