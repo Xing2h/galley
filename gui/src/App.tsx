@@ -62,7 +62,7 @@ import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
 import { hydrateApp } from "@/lib/hydrate";
 import { makeAppError } from "@/types/app-error";
-import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
+import type { GoalBrief, GoalLaunchConfig, GoalStatus } from "@/types/goal";
 
 function goalMasterSessionTitle(objective: string): string {
   const normalized = objective.replace(/\s+/g, " ").trim();
@@ -513,6 +513,54 @@ function App() {
         console.debug("[goals] mark result seen failed.", e);
       });
   }, [activeGoals, activeSessionId]);
+
+  // Goal terminal-state toast: fire once when a Goal crosses from
+  // running/wrapping into completed/failed, off the same 5s visible-goal
+  // poll. `goalStatusRef` records prior statuses so we only toast on the
+  // observed transition — never re-fire on subsequent polls, and never
+  // toast a goal that was already terminal on first sight (app startup
+  // with an unseen completed goal). The notify closure lives in a ref
+  // refreshed each render so the detection effect can depend on
+  // `activeGoals` alone without churning on `openGoal` / `copy` identity.
+  const goalStatusRef = useRef<Map<string, GoalStatus>>(new Map());
+  const notifyGoalTerminalRef = useRef<(goal: GoalBrief) => void>(() => {});
+  useEffect(() => {
+    notifyGoalTerminalRef.current = (goal: GoalBrief) => {
+      const done = goal.status === "completed";
+      pushToast(
+        makeAppError({
+          category: "business",
+          severity: done ? "info" : "error",
+          title: done ? copy.toasts.goalCompleted : copy.toasts.goalFailed,
+          message: goal.objective,
+          hint: null,
+          retryable: false,
+          context: "goal_terminal",
+          traceback: null,
+          action: {
+            kind: "view_goal",
+            label: done
+              ? copy.toasts.viewGoalResult
+              : copy.toasts.viewGoalDetails,
+            goalId: goal.id,
+          },
+          autoDismissMs: 6000,
+        }),
+      );
+    };
+  });
+  useEffect(() => {
+    const prev = goalStatusRef.current;
+    const next = new Map<string, GoalStatus>();
+    for (const goal of activeGoals) {
+      next.set(goal.id, goal.status);
+      const before = prev.get(goal.id);
+      const terminal = goal.status === "completed" || goal.status === "failed";
+      const wasActive = before === "running" || before === "wrapping";
+      if (terminal && wasActive) notifyGoalTerminalRef.current(goal);
+    }
+    goalStatusRef.current = next;
+  }, [activeGoals]);
 
   const themeAppliedRef = useRef(false);
   useEffect(() => {
@@ -1905,6 +1953,7 @@ function App() {
         toasts={toasts}
         onDismiss={dismissToast}
         onViewProject={openProjectInSidebar}
+        onViewGoal={openGoal}
         onRestartChannels={() => {
           void restartChannelsFromToast();
         }}

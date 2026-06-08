@@ -51,6 +51,11 @@ export interface AppError {
         projectId: string;
       }
     | {
+        kind: "view_goal";
+        label: string;
+        goalId: string;
+      }
+    | {
         kind: "restart_channels";
         label: string;
       }

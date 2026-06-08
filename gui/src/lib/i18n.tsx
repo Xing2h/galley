@@ -932,6 +932,10 @@ const zhCopy = {
     goalStartedMessage: (workers: number, minutes: number) =>
       `接下来 ${minutes} 分钟，Galley 会用 ${workers} 个 Agent 持续推进。`,
     goalStartFailed: "Goal 启动失败",
+    goalCompleted: "Goal 已完成",
+    goalFailed: "Goal 失败",
+    viewGoalResult: "查看结果",
+    viewGoalDetails: "查看详情",
     modelSelectionChanged: "已切换到默认模型",
     modelSelectionChangedMessage:
       "此对话之前使用的模型已不可用，Galley 将改用默认模型。",
@@ -2020,6 +2024,10 @@ const enCopy: AppCopy = {
     goalStartedMessage: (workers: number, minutes: number) =>
       `For the next ${minutes} minutes, Galley will keep working with ${workers} Agents.`,
     goalStartFailed: "Could not start Goal",
+    goalCompleted: "Goal done",
+    goalFailed: "Goal failed",
+    viewGoalResult: "View result",
+    viewGoalDetails: "View details",
     modelSelectionChanged: "Switched to the default model",
     modelSelectionChangedMessage:
       "The model this conversation used is no longer available; Galley will switch to the default.",

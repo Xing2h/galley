@@ -5,6 +5,7 @@ import {
   FileCode,
   FolderOpen,
   Info,
+  Target,
   Warning,
   X as XIcon,
 } from "@phosphor-icons/react";
@@ -30,6 +31,8 @@ export interface ErrorCardActions {
   onOpenGADocs?: () => void;
   /** Open a project scope from a positive feedback toast. */
   onViewProject?: (projectId: string) => void;
+  /** Open a Goal's master session from a completion / failure toast. */
+  onViewGoal?: (goalId: string) => void;
   /** Restart enabled Channels from an actionable toast. */
   onRestartChannels?: () => void;
   /** Restart Galley after an app update has been prepared. */
@@ -67,6 +70,7 @@ export function ErrorCard({
   onOpenMyKey,
   onOpenGADocs,
   onViewProject,
+  onViewGoal,
   onRestartChannels,
   onRestartAppUpdate,
 }: ErrorCardProps) {
@@ -145,6 +149,7 @@ export function ErrorCard({
                 onOpenMyKey={onOpenMyKey}
                 onOpenGADocs={onOpenGADocs}
                 onViewProject={onViewProject}
+                onViewGoal={onViewGoal}
                 onRestartChannels={onRestartChannels}
                 onRestartAppUpdate={onRestartAppUpdate}
                 onToggleDetails={() => setOpen((v) => !v)}
@@ -197,6 +202,7 @@ export function ErrorCard({
               onOpenMyKey={onOpenMyKey}
               onOpenGADocs={onOpenGADocs}
               onViewProject={onViewProject}
+              onViewGoal={onViewGoal}
               onRestartChannels={onRestartChannels}
               onRestartAppUpdate={onRestartAppUpdate}
               onToggleDetails={() => setOpen((v) => !v)}
@@ -237,6 +243,7 @@ interface ActionDef {
     | "onOpenMyKey"
     | "onOpenGADocs"
     | "onViewProject"
+    | "onViewGoal"
     | "onRestartChannels"
     | "onRestartAppUpdate"
     | "copyDetails"
@@ -366,6 +373,14 @@ function defaultActions(error: AppError, copy: AppCopy): ActionDef[] {
       handler: "onViewProject",
     });
   }
+  if (error.action?.kind === "view_goal") {
+    actions.push({
+      id: "view-goal",
+      label: error.action.label,
+      kind: "ghost",
+      handler: "onViewGoal",
+    });
+  }
   if (error.action?.kind === "restart_channels") {
     actions.push({
       id: "restart-channels",
@@ -411,6 +426,7 @@ function isActionAvailable(
     | "onOpenMyKey"
     | "onOpenGADocs"
     | "onViewProject"
+    | "onViewGoal"
     | "onRestartChannels"
     | "onRestartAppUpdate"
   >,
@@ -428,6 +444,8 @@ function isActionAvailable(
       return (
         error.action?.kind === "view_project" && Boolean(handlers.onViewProject)
       );
+    case "onViewGoal":
+      return error.action?.kind === "view_goal" && Boolean(handlers.onViewGoal);
     case "onRestartChannels":
       return (
         error.action?.kind === "restart_channels" &&
@@ -459,6 +477,7 @@ function ActionButton({
   onOpenMyKey,
   onOpenGADocs,
   onViewProject,
+  onViewGoal,
   onRestartChannels,
   onRestartAppUpdate,
   onToggleDetails,
@@ -471,6 +490,7 @@ function ActionButton({
   onOpenMyKey?: () => void;
   onOpenGADocs?: () => void;
   onViewProject?: (projectId: string) => void;
+  onViewGoal?: (goalId: string) => void;
   onRestartChannels?: () => void;
   onRestartAppUpdate?: () => void;
   onToggleDetails: () => void;
@@ -495,6 +515,14 @@ function ActionButton({
         {
           const { projectId } = error.action;
           return () => onViewProject(projectId);
+        }
+      case "onViewGoal":
+        if (error.action?.kind !== "view_goal" || !onViewGoal) {
+          return undefined;
+        }
+        {
+          const { goalId } = error.action;
+          return () => onViewGoal(goalId);
         }
       case "onRestartChannels":
         if (error.action?.kind !== "restart_channels") {
@@ -552,6 +580,7 @@ const ACTION_ICONS: Partial<Record<ActionDef["handler"], typeof Cube>> = {
   onOpenMyKey: FileCode,
   onOpenGADocs: ArrowSquareOut,
   onViewProject: FolderOpen,
+  onViewGoal: Target,
   copyDetails: FileCode,
   toggleDetails: CaretDown,
 };
