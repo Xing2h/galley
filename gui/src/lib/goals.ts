@@ -69,6 +69,10 @@ export function stopGoal(id: string) {
   return invoke<GoalBrief>("request_goal_stop", { id });
 }
 
+export function goalWorkspaceHasFiles(id: string) {
+  return invoke<boolean>("goal_workspace_has_files", { id });
+}
+
 export function startDesktopGoal(input: StartDesktopGoalInput) {
   return invoke<StartDesktopGoalResult>("start_desktop_goal", { input });
 }

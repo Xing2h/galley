@@ -151,6 +151,11 @@ pub struct GoalBrief {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_seen_at: Option<String>,
     pub stop_requested: bool,
+    /// Galley-owned scratch workspace for file/code deliverables (P3).
+    /// Always set for goals created post-migration-019; the directory
+    /// is created lazily by the agents on first write.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_path: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

@@ -10,6 +10,7 @@ import {
   ChatCircleText,
   CheckCircle,
   CircleNotch,
+  FolderOpen,
   Gear,
   Lightning,
   PencilSimple,
@@ -20,11 +21,12 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { ThemePreferenceMenu } from "@/components/theme/ThemePreferenceMenu";
 import { TooltipLabel } from "@/components/ui/tooltip";
-import { goalPillLabel, goalStageLabel } from "@/lib/goals";
+import { goalPillLabel, goalStageLabel, goalWorkspaceHasFiles } from "@/lib/goals";
 import { useCopy } from "@/lib/i18n";
 import { isMac, isWindowActionTarget } from "@/lib/platform";
 import { formatShortcutReadable } from "@/lib/shortcuts";
@@ -339,6 +341,9 @@ function GoalIndicator({
 }) {
   const copy = useCopy().topbar;
   const [confirmingStopId, setConfirmingStopId] = useState<string | null>(null);
+  const [workspaceReady, setWorkspaceReady] = useState<Record<string, boolean>>(
+    {},
+  );
   const primary = goals[0];
   const visualGoal = goalAttentionGoal(goals);
   const label =
@@ -355,7 +360,25 @@ function GoalIndicator({
   return (
     <Popover.Root
       onOpenChange={(open) => {
-        if (!open) setConfirmingStopId(null);
+        if (!open) {
+          setConfirmingStopId(null);
+          return;
+        }
+        // On open, gate the "open output folder" affordance: only goals
+        // whose scratch workspace actually holds files get the button.
+        // Checked here (rare) rather than on the 5s poll.
+        for (const goal of goals) {
+          if (!goal.workspacePath) continue;
+          void goalWorkspaceHasFiles(goal.id)
+            .then((hasFiles) => {
+              setWorkspaceReady((prev) =>
+                prev[goal.id] === hasFiles
+                  ? prev
+                  : { ...prev, [goal.id]: hasFiles },
+              );
+            })
+            .catch(() => undefined);
+        }
       }}
     >
       <TooltipLabel text={copy.goalTooltip} side="bottom">
@@ -436,14 +459,36 @@ function GoalIndicator({
                         </div>
                       )}
                     <div className="flex items-center justify-between gap-2 pt-0.5">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2 text-[12px]"
-                        onClick={() => onOpenProject?.(goal.projectId)}
-                      >
-                        {copy.openGoalProject}
-                      </Button>
+                      <div className="flex min-w-0 items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-[12px]"
+                          onClick={() => onOpenProject?.(goal.projectId)}
+                        >
+                          {copy.openGoalProject}
+                        </Button>
+                        {workspaceReady[goal.id] && goal.workspacePath && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-[12px]"
+                            leadingIcon={
+                              <FolderOpen size={13} weight="thin" />
+                            }
+                            onClick={() => {
+                              const path = goal.workspacePath;
+                              if (path) {
+                                void revealItemInDir(path).catch(
+                                  () => undefined,
+                                );
+                              }
+                            }}
+                          >
+                            {copy.openGoalWorkspace}
+                          </Button>
+                        )}
+                      </div>
                       {(goal.status === "running" ||
                         goal.status === "wrapping") &&
                         (confirmingStopId === goal.id ? (

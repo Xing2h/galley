@@ -1414,6 +1414,7 @@ struct GoalRow {
     latest_summary: Option<String>,
     result_seen_at: Option<String>,
     stop_requested: i64,
+    workspace_path: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -1437,6 +1438,7 @@ impl GoalRow {
             latest_summary: self.latest_summary,
             result_seen_at: self.result_seen_at,
             stop_requested: self.stop_requested != 0,
+            workspace_path: self.workspace_path,
             created_at: self.created_at,
             updated_at: self.updated_at,
         })
@@ -2220,7 +2222,8 @@ impl SqliteGalley {
         let row = sqlx::query_as::<_, GoalRow>(
             "SELECT id, proposal_id, project_id, master_session_id, objective, status, budget_seconds, \
                     worker_limit, runtime_kind, write_mode, started_at, deadline_at, \
-                    ended_at, latest_summary, result_seen_at, stop_requested, created_at, updated_at \
+                    ended_at, latest_summary, result_seen_at, stop_requested, workspace_path, \
+                    created_at, updated_at \
              FROM goals WHERE id = ? LIMIT 1",
         )
         .bind(id)
@@ -3242,12 +3245,15 @@ impl GalleyApi for SqliteGalley {
 
         let goal_id = mint_goal_id("goal");
         let deadline_at = chrono_after_seconds_iso(proposal.budget_seconds);
+        let workspace_path = crate::app_paths::goal_workspace_dir(&goal_id)
+            .map(|p| p.to_string_lossy().into_owned());
         sqlx::query(
             "INSERT INTO goals (
                 id, proposal_id, project_id, master_session_id, objective, status, budget_seconds,
                 worker_limit, runtime_kind, write_mode, started_at, deadline_at,
-                ended_at, latest_summary, result_seen_at, stop_requested, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?)",
+                ended_at, latest_summary, result_seen_at, stop_requested, workspace_path,
+                created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?, ?)",
         )
         .bind(&goal_id)
         .bind(proposal.id.as_str())
@@ -3261,6 +3267,7 @@ impl GalleyApi for SqliteGalley {
         .bind(goal_write_mode_sql(proposal.write_mode))
         .bind(&now)
         .bind(&deadline_at)
+        .bind(&workspace_path)
         .bind(&now)
         .bind(&now)
         .execute(&mut *tx)
@@ -3391,7 +3398,8 @@ impl GalleyApi for SqliteGalley {
         let rows = sqlx::query_as::<_, GoalRow>(
             "SELECT id, proposal_id, project_id, master_session_id, objective, status, budget_seconds, \
                     worker_limit, runtime_kind, write_mode, started_at, deadline_at, \
-                    ended_at, latest_summary, result_seen_at, stop_requested, created_at, updated_at \
+                    ended_at, latest_summary, result_seen_at, stop_requested, workspace_path, \
+                    created_at, updated_at \
              FROM goals WHERE status IN ('running','wrapping') \
              ORDER BY deadline_at ASC, started_at ASC",
         )
@@ -3405,7 +3413,8 @@ impl GalleyApi for SqliteGalley {
         let rows = sqlx::query_as::<_, GoalRow>(
             "SELECT id, proposal_id, project_id, master_session_id, objective, status, budget_seconds, \
                     worker_limit, runtime_kind, write_mode, started_at, deadline_at, \
-                    ended_at, latest_summary, result_seen_at, stop_requested, created_at, updated_at \
+                    ended_at, latest_summary, result_seen_at, stop_requested, workspace_path, \
+                    created_at, updated_at \
              FROM goals \
              WHERE status IN ('running','wrapping') \
                 OR (status IN ('completed','failed') AND result_seen_at IS NULL) \

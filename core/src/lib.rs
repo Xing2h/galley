@@ -48,6 +48,33 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 /// runs Up migrations in version order on first connect.
 const DB_URL: &str = "sqlite:workbench.db";
 const MAIN_WINDOW_LABEL: &str = "main";
+
+/// Galley's own copy of the Hive master SOP, embedded at compile time.
+/// Managed GA reads its (self-evolvable) seeded memory copy; attach GA
+/// can't read that and Galley must not seed the user's GA checkout
+/// (Rule 1), so its master reads this Galley-owned materialized copy.
+const GOAL_HIVE_MASTER_DUTY_SOP: &str =
+    include_str!("../../managed-ga/state-seed/memory/goal_hive_master_duty.md");
+
+/// Absolute path to Galley's materialized Hive master SOP copy. Pure
+/// path computation (no filesystem touch) so prompt builders can embed
+/// the read path without side effects.
+pub fn goal_master_duty_sop_path() -> Option<std::path::PathBuf> {
+    app_paths::goal_runtime_dir().map(|dir| dir.join("master_duty.md"))
+}
+
+/// Materialize Galley's embedded Hive master SOP to its data-dir copy
+/// (idempotent overwrite, keeping it in sync with the binary). Returns
+/// the path on success. Called by the Goal controller before attach-mode
+/// master planning so the attach master has a Galley-owned file to read.
+pub fn ensure_goal_master_duty_sop() -> Option<std::path::PathBuf> {
+    let path = goal_master_duty_sop_path()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok()?;
+    }
+    std::fs::write(&path, GOAL_HIVE_MASTER_DUTY_SOP).ok()?;
+    Some(path)
+}
 const TRAY_SHOW_GALLEY_LABEL: &str = "Open Galley";
 const TRAY_HIDE_GALLEY_LABEL: &str = "Hide Galley";
 
@@ -1195,6 +1222,39 @@ async fn goal_status(id: GoalId) -> std::result::Result<GoalStatusSnapshot, Stri
     galley.goal_status(id).await.map_err(stringify_error)
 }
 
+/// True when the goal's scratch workspace exists and holds at least one
+/// file (P3). Drives the TopBar "open output folder" affordance so it is
+/// hidden for purely textual goals whose workspace was never written to.
+#[tauri::command]
+async fn goal_workspace_has_files(id: GoalId) -> std::result::Result<bool, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    let goal = galley.goal_status(id).await.map_err(stringify_error)?.goal;
+    let Some(path) = goal.workspace_path else {
+        return Ok(false);
+    };
+    Ok(dir_has_any_file(std::path::Path::new(&path)))
+}
+
+/// Shallow-recursive check for at least one regular file under `root`.
+/// Returns false on a missing dir or any read error (best-effort gate).
+fn dir_has_any_file(root: &std::path::Path) -> bool {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[tauri::command]
 async fn mark_goal_result_seen(id: GoalId) -> std::result::Result<GoalBrief, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
@@ -1410,6 +1470,12 @@ pub fn run() {
             sql: include_str!("../migrations/018_goal_deliverable.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 19,
+            description: "add Goal file workspace path",
+            sql: include_str!("../migrations/019_goal_workspace.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —
@@ -1510,6 +1576,7 @@ pub fn run() {
             list_active_goals,
             list_visible_goals,
             goal_status,
+            goal_workspace_has_files,
             mark_goal_result_seen,
             request_goal_stop,
             start_desktop_goal,

@@ -26,6 +26,7 @@ export interface GoalBrief {
   latestSummary?: string;
   resultSeenAt?: string;
   stopRequested: boolean;
+  workspacePath?: string;
   createdAt: string;
   updatedAt: string;
 }

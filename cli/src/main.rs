@@ -44,6 +44,10 @@ const GOAL_CONTROLLER_MAX_DRAIN_SECONDS: u64 = 900;
 const GOAL_WORKER_SESSION_ID_PLACEHOLDER: &str = "{{GALLEY_SESSION_ID}}";
 const GOAL_SEED_TASK_MARKER: &str = "[galley-seed-tasks:v1]";
 const GOAL_MASTER_PLANNING_MARKER: &str = "[galley-master-planning:v1]";
+/// Marker that opens a master-authored check report event. The body
+/// after it is a free-text P0/P1 issue list the next design round reads
+/// as its changelog. Reuses the event stream (no schema/CLI change).
+const GOAL_CHECK_REPORT_MARKER: &str = "[galley-check-report]";
 const GOAL_CONTROLLER_TASK_SCOPE_PREFIX: &str = "goal-worker-";
 const GOAL_MASTER_PLANNING_TIMEOUT_SECONDS: u64 = 180;
 
@@ -2225,6 +2229,13 @@ async fn run_goal_controller(
     }
 
     let runtime = runtime_arg_from_kind(goal.runtime_kind);
+    // Attach masters read Galley's own SOP copy from disk (they can't read
+    // the seeded memory file, and Galley must not write the user's GA
+    // checkout). Materialize it once before planning; managed reads its
+    // memory copy and ignores this.
+    if goal.runtime_kind == RuntimeKind::External {
+        let _ = galley_core_lib::ensure_goal_master_duty_sop();
+    }
     let controller_started = Instant::now();
     let mut worker_session_ids: Vec<SessionId> = Vec::new();
     let mut worker_slots: Vec<GoalWorkerSlot> = Vec::new();
@@ -2954,10 +2965,30 @@ fn goal_master_planning_next_round(snapshot: &GoalStatusSnapshot) -> u32 {
         .saturating_add(1) as u32
 }
 
+/// Most recent master check report (P0/P1 issue list), body with the
+/// marker stripped. None until the master posts its first check report.
+/// Threaded into the next planning prompt so design rounds fix by the
+/// list instead of re-deciding from scratch.
+fn goal_latest_check_report(snapshot: &GoalStatusSnapshot) -> Option<String> {
+    snapshot
+        .events
+        .iter()
+        .rev()
+        .find(|event| event.body.contains(GOAL_CHECK_REPORT_MARKER))
+        .map(|event| {
+            event
+                .body
+                .replacen(GOAL_CHECK_REPORT_MARKER, "", 1)
+                .trim()
+                .to_string()
+        })
+}
+
 fn goal_master_planning_prompt(snapshot: &GoalStatusSnapshot, round: u32) -> String {
     let goal = &snapshot.goal;
     let memory_policy = goal_memory_policy_prompt(goal.runtime_kind);
     let master_duty = goal_master_duty_prompt(goal.runtime_kind);
+    let workspace_block = goal_workspace_prompt_block(goal);
     let master_session_id = goal
         .master_session_id
         .as_ref()
@@ -3017,6 +3048,14 @@ fn goal_master_planning_prompt(snapshot: &GoalStatusSnapshot, round: u32) -> Str
         })
         .collect::<Vec<_>>()
         .join("\n");
+    let check_report_block = match goal_latest_check_report(snapshot) {
+        Some(report) => format!(
+            "Open issues to fix this round (from the latest check report — address P0 before P1):\n{report}"
+        ),
+        None => {
+            "No check report yet. Early rounds: probe + produce the first anchor draft.".to_string()
+        }
+    };
     format!(
         r#"[Galley Goal Master Planner]
 
@@ -3031,12 +3070,22 @@ Deadline: {deadline_at}
 
 {master_duty}
 
+{workspace_block}
+
 Deliverable anchor (the single source of truth for the result):
 {anchor_summary}
 - Read the current anchor with: galley goal deliverable get {goal_id}
 - Maintain ONE current-best deliverable. Each round, fold worker output that passes your review into a new version:
   galley goal deliverable set {goal_id} "<full updated deliverable>" --note "<what changed>" --author-session {master_session_id}
 - Only replace the anchor when the result genuinely improves; if a change makes it worse, keep the current version (never lose ground). Workers produce candidates; you decide what merges.
+
+Refinement loop (probe -> design -> execute -> check, repeat until budget):
+- Probe/check rounds diverge: dispatch independent angles to different workers — user-view trial, attacker/edge cases, third-party review, and questioning the objective itself. Each check task must return reproducible evidence, not a "looks done" claim.
+- After a check round, post ONE check report event listing issues ordered by harm (P0 then P1):
+  galley goal event post {goal_id} --event-type system "{check_marker} P0: <blocking issues>; P1: <important-but-not-blocking>" --author-session {master_session_id}
+- Design/execute rounds converge: read the latest check report and fix P0 first, then P1, folding accepted fixes into the next anchor version. Do not re-decide from scratch — fix by the list.
+
+{check_report_block}
 
 Rules:
 1. First read state: galley goal status {goal_id} and galley goal deliverable get {goal_id}.
@@ -3067,7 +3116,10 @@ galley goal task create {goal_id} "Independent verification and gap check agains
         worker_limit = goal.worker_limit,
         deadline_at = goal.deadline_at,
         master_duty = master_duty,
+        workspace_block = workspace_block,
         anchor_summary = anchor_summary,
+        check_marker = GOAL_CHECK_REPORT_MARKER,
+        check_report_block = check_report_block,
         memory_policy = memory_policy,
     )
 }
@@ -4264,6 +4316,21 @@ async fn build_goal_synthesis_prompt(
         );
     }
 
+    if let Some(listing) = goal_workspace_file_listing(goal) {
+        // File/code deliverable: the real artifact lives in the workspace.
+        // Tell the master to deliver a summary + point at the folder rather
+        // than dumping file contents into the conversation.
+        push_limited(
+            &mut out,
+            &format!(
+                "This Goal produced files in its shared workspace ({}). These files are the deliverable. In the final answer, summarize what was built and how to use/run it, and tell the user the result files are in the Goal's output folder — do NOT paste full file contents into the conversation. Workspace files:\n{}\n\n",
+                goal.workspace_path.as_deref().unwrap_or(""),
+                listing
+            ),
+            34_000,
+        );
+    }
+
     if !snapshot.tasks.is_empty() {
         push_limited(&mut out, "Task board:\n", 28_000);
         for task in &snapshot.tasks {
@@ -4408,24 +4475,83 @@ fn runtime_arg_from_kind(kind: RuntimeKind) -> RuntimeArg {
     }
 }
 
-fn goal_master_duty_prompt(runtime_kind: RuntimeKind) -> &'static str {
+fn goal_master_duty_prompt(runtime_kind: RuntimeKind) -> String {
     match runtime_kind {
         RuntimeKind::Managed => {
-            // Managed GA has the Galley-seeded Hive master SOP in memory.
+            // Managed GA has the Galley-seeded Hive master SOP in memory
+            // (and may have self-evolved it), so point it at the file.
             r#"Master discipline:
 - Read memory/goal_hive_master_duty.md and follow it. You are the design office: decompose, judge, aggregate — never produce deliverable content yourself.
 - Run rounds as probe -> design -> execute -> check: spread divergent work (probe/check) across parallel workers, converge yourself (design/execute selection).
 - Keep a single "current best accepted version" as the anchor; each round make incremental changes on it; only merge a change when it raises quality, roll back if it gets worse.
 - Drive toward a deliverable a critical reviewer can find no fault in within the budget; keep the core deliverable clean and separate from process notes."#
+                .to_string()
         }
         RuntimeKind::External => {
-            // Attached GA may not have the SOP file; inline the discipline.
-            r#"Master discipline (you are the design office: decompose, judge, aggregate — never produce deliverable content yourself):
+            // Attached GA can't read the seeded memory file and Galley must
+            // not write into the user's GA checkout (Rule 1). Point the
+            // master at Galley's own materialized SOP copy (written by the
+            // controller before planning). Mirrors managed "read a file",
+            // just a Galley-owned path. Falls back to a short inline brief
+            // only if the data dir can't be resolved.
+            match galley_core_lib::goal_master_duty_sop_path() {
+                Some(path) => format!(
+                    "Master discipline — you are the Hive master (design office: decompose, judge, aggregate; never produce deliverable content yourself). Read {} and follow it for the whole run.",
+                    path.display()
+                ),
+                None => r#"Master discipline (you are the design office: decompose, judge, aggregate — never produce deliverable content yourself):
 - Run rounds as probe -> design -> execute -> check. Spread divergent work (probe/check) across parallel workers; converge yourself on design and selection.
 - Keep a single "current best accepted version" as the anchor. Each round make incremental changes on it; only merge a change when it raises quality; roll back if it gets worse — never lose ground.
 - Drive toward a deliverable a critical reviewer can find no fault in within the budget. Keep the core deliverable clean and separate from process notes."#
+                    .to_string(),
+            }
         }
     }
+}
+
+/// Shared file-workspace instruction injected into master + worker
+/// prompts when the goal has a workspace path (P3). Empty string when
+/// none, so callers can unconditionally interpolate it.
+fn goal_workspace_prompt_block(goal: &GoalBrief) -> String {
+    match goal.workspace_path.as_deref() {
+        Some(path) => format!(
+            r#"Shared file workspace: {path}
+- This directory is shared by the master and all workers. For file/code deliverables, read and write files here (create it if it does not exist); coordinate who touches what via the task board to avoid clobbering.
+- Keep the core deliverable at the top level; put scratch/intermediate files in subfolders so the final deliverable is easy to locate.
+- Check tasks run/test artifacts here and return reproducible evidence (commands + output).
+- For purely textual deliverables you may ignore the workspace and use the deliverable anchor instead."#
+        ),
+        None => String::new(),
+    }
+}
+
+/// Relative listing of the goal workspace, or None when it is missing /
+/// empty. Used at synthesis to decide file-vs-text delivery and to point
+/// the master at the produced files.
+fn goal_workspace_file_listing(goal: &GoalBrief) -> Option<String> {
+    let path = goal.workspace_path.as_deref()?;
+    let root = std::path::Path::new(path);
+    let mut files: Vec<String> = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = std::fs::read_dir(&dir).ok()?;
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if let Ok(rel) = p.strip_prefix(root) {
+                files.push(rel.to_string_lossy().into_owned());
+                if files.len() >= 200 {
+                    break;
+                }
+            }
+        }
+    }
+    if files.is_empty() {
+        return None;
+    }
+    files.sort();
+    Some(files.join("\n"))
 }
 
 fn goal_memory_policy_prompt(runtime_kind: RuntimeKind) -> &'static str {
@@ -4451,6 +4577,7 @@ fn goal_worker_prompt_template(
     assigned_task: Option<&GoalTaskBrief>,
 ) -> String {
     let memory_policy = goal_memory_policy_prompt(goal.runtime_kind);
+    let workspace_block = goal_workspace_prompt_block(goal);
     let assigned_task_block = assigned_task
         .map(goal_worker_assigned_task_block)
         .unwrap_or_else(|| {
@@ -4475,6 +4602,8 @@ Runtime: {runtime:?}
 Write mode: {write_mode:?}
 
 {assigned_task_block}
+
+{workspace_block}
 
 Budget semantics:
 - The budget is a sustained work window, not an early-finish limit.
@@ -4512,6 +4641,7 @@ Autonomy:
         runtime = goal.runtime_kind,
         write_mode = goal.write_mode,
         assigned_task_block = assigned_task_block,
+        workspace_block = workspace_block,
         memory_policy = memory_policy,
     )
 }
@@ -4835,16 +4965,17 @@ mod tests {
 
     use super::{
         goal_controller_decision, goal_controller_decision_after_wait, goal_drain_cap_seconds,
-        goal_has_worker_material_signal, goal_master_checkpoint_event_body,
-        goal_master_checkpoint_seen, goal_master_planning_prompt, goal_memory_policy_prompt,
-        goal_ready_idle_worker_slot_indices, goal_ready_worker_slot_indices, goal_seed_task_specs,
-        goal_worker_has_progress_signal, goal_worker_has_terminal_signal,
-        goal_worker_prompt_template, goal_worker_session_ids, goal_worker_terminal_counts,
-        goal_worker_wake_prompt, goal_worker_wave_baseline, goal_wrapping_summary, GoalBrief,
-        GoalControllerDecision, GoalEventBrief, GoalEventType, GoalFailReason, GoalId,
-        GoalMasterCheckpointKind, GoalStatus, GoalStatusSnapshot, GoalTaskId, GoalTaskStatus,
-        GoalWorkerSlot, GoalWorkerWaitOutcome, GoalWrapReason, GoalWriteMode, RuntimeKind,
-        SessionBrief, SessionId, SessionStatus, GOAL_WORKER_SESSION_ID_PLACEHOLDER,
+        goal_has_worker_material_signal, goal_latest_check_report,
+        goal_master_checkpoint_event_body, goal_master_checkpoint_seen, goal_master_planning_prompt,
+        goal_memory_policy_prompt, goal_ready_idle_worker_slot_indices,
+        goal_ready_worker_slot_indices, goal_seed_task_specs, goal_worker_has_progress_signal,
+        goal_worker_has_terminal_signal, goal_worker_prompt_template, goal_worker_session_ids,
+        goal_worker_terminal_counts, goal_worker_wake_prompt, goal_worker_wave_baseline,
+        goal_wrapping_summary, GoalBrief, GoalControllerDecision, GoalEventBrief, GoalEventType,
+        GoalFailReason, GoalId, GoalMasterCheckpointKind, GoalStatus, GoalStatusSnapshot,
+        GoalTaskId, GoalTaskStatus, GoalWorkerSlot, GoalWorkerWaitOutcome, GoalWrapReason,
+        GoalWriteMode, RuntimeKind, SessionBrief, SessionId, SessionStatus,
+        GOAL_CHECK_REPORT_MARKER, GOAL_WORKER_SESSION_ID_PLACEHOLDER,
     };
 
     fn test_goal() -> GoalBrief {
@@ -4865,6 +4996,7 @@ mod tests {
             latest_summary: None,
             result_seen_at: None,
             stop_requested: false,
+            workspace_path: None,
             created_at: "2026-06-05T00:00:00Z".to_string(),
             updated_at: "2026-06-05T00:00:00Z".to_string(),
         }
@@ -5130,6 +5262,10 @@ mod tests {
         let external_prompt = goal_master_planning_prompt(&external_snapshot, 1);
         assert!(external_prompt.contains("Attached external GA is user-owned"));
         assert!(external_prompt.contains("do not modify external GA memory, SOP"));
+        // Both runtimes get the Hive master discipline; attach reads a
+        // Galley-owned SOP file (or inline fallback), managed reads memory.
+        assert!(external_prompt.contains("decompose, judge, aggregate"));
+        assert!(managed_prompt.contains("Read memory/goal_hive_master_duty.md"));
     }
 
     #[test]
@@ -5246,6 +5382,23 @@ mod tests {
             &snapshot,
             GoalMasterCheckpointKind::FirstMaterial
         ));
+    }
+
+    #[test]
+    fn goal_latest_check_report_returns_newest_stripped_body() {
+        let none_snapshot = test_snapshot(vec![], vec![], vec![]);
+        assert!(goal_latest_check_report(&none_snapshot).is_none());
+
+        let mut older = test_event(1, GoalEventType::System, None, Some("master"));
+        older.body = format!("{GOAL_CHECK_REPORT_MARKER} P0: missing tests; P1: naming");
+        let mut unrelated = test_event(2, GoalEventType::System, None, Some("worker_1"));
+        unrelated.body = "Wave 1 worker 1 session started.".to_string();
+        let mut newer = test_event(3, GoalEventType::System, None, Some("master"));
+        newer.body = format!("{GOAL_CHECK_REPORT_MARKER} P0: crash on empty input");
+        let snapshot = test_snapshot(vec![], vec![older, unrelated, newer], vec![]);
+
+        let report = goal_latest_check_report(&snapshot).expect("latest report");
+        assert_eq!(report, "P0: crash on empty input");
     }
 
     #[test]
