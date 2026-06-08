@@ -4625,6 +4625,8 @@ Protocol:
    galley goal event post {goal_id} --event-type result "<brief result>" --task <task-id> --author-session <your-session-id>
 7. If you cannot complete the task, mark it blocked or cancelled with a short reason instead of continuing silently.
 8. Internal temp paths are scratch. If the user asked to save a final artifact to an explicit path, save there and report that path; otherwise do not present internal temp paths as the deliverable.
+9. Keep the deliverable clean: the deliverable (workspace files or your result content) contains only the deliverable itself — no meta like "this file is...", "needs verification", or process commentary. Put evidence, caveats, and process notes in your result event or a separate notes file, never inside the deliverable.
+10. No echo: do not post pure acknowledgement or no-op events. Post only meaningful progress, results, conflicts, or blockers.
 
 Autonomy:
 - Coordinate through the Galley task board; do not call GenericAgent native /hive.
