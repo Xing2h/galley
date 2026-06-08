@@ -363,3 +363,93 @@ Instead the master session now reads as an honest dialogue:
 
 The result is the wave: user objective → Galley launch ack → checkpoints
 → agent synthesis. Who is speaking is now truthful at each step.
+
+## 2026-06-08 Output-Quality Alignment With Official Hive (P1–P3)
+
+After the UX pass, the remaining gap to official GA Goal Hive was not
+experience (Galley already exceeds it: GUI confirm, pill, toast, master
+narration vs hand-written goal_state.json + reading model_responses
+tails) but **output quality**. Official Hive's quality comes from the
+master duty loop in `goal_hive_master_duty.md`; Galley's controller was
+a thin scheduler doing "workers run once → master synthesizes once".
+
+### Reframe: provide the infra the SOP assumes, then point the master at the SOP
+
+The cleanest model: Galley supplies the infrastructure the official SOP
+stands on, then lets the master read/run that SOP. The coordination
+skeleton (master/worker/task-board ≈ BBS) was already aligned. The
+missing infra was the **deliverable layer** (an anchor that survives and
+is refined across rounds) and the **artifact layer** (a shared
+workspace). The two GA-native mechanism SOPs — `goal_hive_sop.md`
+(HTTP BBS, ports, native worker spawn) and `goal_mode_sop.md`
+(goal_state.json) — are exactly what Galley replaced with Core and must
+NOT be fed to the master; only the runtime-agnostic
+`goal_hive_master_duty.md` is.
+
+### P1 — deliverable anchor (migration 018)
+
+`goal_deliverables` (append-only versions; highest = current anchor,
+history kept for future rollback). Replaces one-shot end-synthesis with
+"master refines a current-best anchor each round, only merging
+improvements, never losing ground". `set/latest_goal_deliverable`,
+surfaced in `GoalStatusSnapshot`. 256KB cap truncates on a char boundary
+with a note rather than failing the write. Delivery is anchor-first;
+falls back to one-shot synthesis when no anchor exists. Anchor lives in
+Core (text), not a file workspace — fits the headless model and covers
+the common text-deliverable case without the workspace's product cost.
+
+### P2 — check-report loop (no schema)
+
+Master runs explicit probe → design → execute → check rounds. Check
+rounds post a `[galley-check-report]` event (P0/P1 issue list); design
+rounds read the latest report (`goal_latest_check_report`) and fix by
+the list instead of re-deciding. Reuses the event stream — no new schema
+or CLI.
+
+### P3 — file workspace (migration 019)
+
+`goals.workspace_path` = a Galley-owned per-goal scratch dir
+(`<data>/goal-workspaces/<id>`), created lazily by the agents on first
+write so "dir exists" ≈ "produced files". Injected into master + worker
+prompts (absolute path; cwd unchanged to avoid breaking GA relative
+paths — mirrors official BBS_CWD being an absolute subdir, not a cwd
+change). Unlocks file/code deliverables and the check phase's real
+run/test verification. Synthesis is file-aware (summary + "open output
+folder", not pasted contents). GUI: `goal_workspace_has_files` gates a
+TopBar "open output folder" affordance (revealItemInDir). Deferred: no
+auto-cleanup (user manages the folder); operating on the user's *own*
+repo is a separate, larger feature P3 deliberately does not attempt.
+
+### Master SOP parity for attach GA: read a file, don't inject
+
+External GA's master should get the same discipline as managed. But
+"read `memory/goal_hive_master_duty.md`" can't work for attach: the file
+isn't in the user's checkout and Galley must not seed it there (Rule 1).
+First attempt injected the full SOP into the prompt; reconsidered to
+"read a Galley-owned file on disk" because it mirrors official (the
+master is an agent reading its SOP from disk), is token-efficient across
+many rounds, and is robust under context compaction. Final shape: both
+runtimes read a file — managed reads its self-evolvable memory copy;
+attach reads `<data>/goal-runtime/master_duty.md`, materialized from the
+`include_str!`-embedded copy by the controller before planning. Nothing
+is written into the user's GA checkout.
+
+### Alignment ceiling (intentional)
+
+~90% is reachable; the last ~10% is off-limits by Galley's constitution
+and should not be chased: workers operating freely on the user's real
+filesystem without confirmations, HTTP BBS, and running GA native /hive.
+Pursuing those would make Galley a divergent GA fork (Rule 1).
+
+### Deferred
+
+- P4 instability circuit-breaker: managed already inherits §1 失稳急刹
+  from the SOP file; the marginal work is controller-level stall
+  detection + attach inline. Lowest priority (defensive, not
+  capability-expanding).
+- Worker-prompt parity with `agent_team_worker.py` (atomic claim,
+  deliverable/report separation, no-echo).
+- Real GA + LLM dogfood of a file-type goal (esp. attach): confirm
+  workers produce files in the workspace, check workers actually run,
+  the master updates the anchor + posts check reports each round, and
+  delivery is "summary + output folder".
