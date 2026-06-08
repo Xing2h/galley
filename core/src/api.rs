@@ -23,10 +23,11 @@ pub mod status;
 
 pub use goal::{
     ClaimGoalTaskInput, CreateGoalEventInput, CreateGoalProposalInput, CreateGoalTaskInput,
-    GoalBrief, GoalEventBrief, GoalEventType, GoalId, GoalProposalBrief, GoalProposalId,
-    GoalProposalStatus, GoalStatus, GoalStatusSnapshot, GoalTaskBrief, GoalTaskId, GoalTaskStatus,
-    GoalWriteMode, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT,
-    GOAL_CONFIRMATION_PHRASE, MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT,
+    GoalBrief, GoalDeliverable, GoalEventBrief, GoalEventType, GoalId, GoalProposalBrief,
+    GoalProposalId, GoalProposalStatus, GoalStatus, GoalStatusSnapshot, GoalTaskBrief, GoalTaskId,
+    GoalTaskStatus, GoalWriteMode, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS,
+    DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE, MAX_GOAL_WORKER_LIMIT,
+    MIN_GOAL_WORKER_LIMIT,
 };
 pub use health::{HealthCheck, HealthReport, HealthStatus};
 pub use message::{MessageBrief, MessageId, MessageRole, MessageVisibility};
@@ -315,6 +316,20 @@ pub trait GalleyApi: Send + Sync {
     ) -> Result<GoalBrief>;
 
     async fn goal_status(&self, id: GoalId) -> Result<GoalStatusSnapshot>;
+
+    /// Append a new deliverable anchor version for a goal. `version` is
+    /// assigned as the current max + 1. Content over the size cap is
+    /// truncated on a char boundary with a marker note.
+    async fn set_goal_deliverable(
+        &self,
+        goal_id: GoalId,
+        content: String,
+        note: Option<String>,
+        author_session_id: Option<SessionId>,
+    ) -> Result<GoalDeliverable>;
+
+    /// Latest (highest-version) deliverable anchor for a goal, if any.
+    async fn latest_goal_deliverable(&self, goal_id: GoalId) -> Result<Option<GoalDeliverable>>;
 
     async fn list_active_goals(&self) -> Result<Vec<GoalBrief>>;
 

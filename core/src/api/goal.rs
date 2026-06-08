@@ -190,6 +190,20 @@ pub struct GoalEventBrief {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GoalDeliverable {
+    pub id: String,
+    pub goal_id: GoalId,
+    pub version: u32,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_session_id: Option<SessionId>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GoalStatusSnapshot {
     pub goal: GoalBrief,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -197,6 +211,10 @@ pub struct GoalStatusSnapshot {
     pub tasks: Vec<GoalTaskBrief>,
     pub events: Vec<GoalEventBrief>,
     pub sessions: Vec<SessionBrief>,
+    /// Current best deliverable anchor (highest version), if the master
+    /// has produced one. None falls back to one-shot synthesis at wrap-up.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deliverable: Option<GoalDeliverable>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

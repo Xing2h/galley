@@ -247,6 +247,24 @@ enum GoalCmd {
     /// Append-only Goal event stream commands.
     #[command(subcommand)]
     Event(GoalEventCmd),
+    /// Deliverable anchor commands (current best result, refined over rounds).
+    #[command(subcommand)]
+    Deliverable(GoalDeliverableCmd),
+}
+
+#[derive(Subcommand, Debug)]
+enum GoalDeliverableCmd {
+    /// Print the current deliverable anchor (highest version). Empty when none.
+    Get { goal_id: String },
+    /// Append a new deliverable anchor version (the current best result).
+    Set {
+        goal_id: String,
+        content: String,
+        #[arg(long)]
+        note: Option<String>,
+        #[arg(long)]
+        author_session: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -830,6 +848,7 @@ async fn run(cli: Cli) -> Result<(), GalleyError> {
         }) => goal_stop(goal_id, supervisor, reason).await,
         Command::Goal(GoalCmd::Task(cmd)) => goal_task(cmd).await,
         Command::Goal(GoalCmd::Event(cmd)) => goal_event(cmd).await,
+        Command::Goal(GoalCmd::Deliverable(cmd)) => goal_deliverable(cmd).await,
         Command::Llm(LlmCmd::List) => llm_list().await,
         Command::Llm(LlmCmd::Set {
             session_id,
@@ -2938,6 +2957,24 @@ fn goal_master_planning_next_round(snapshot: &GoalStatusSnapshot) -> u32 {
 fn goal_master_planning_prompt(snapshot: &GoalStatusSnapshot, round: u32) -> String {
     let goal = &snapshot.goal;
     let memory_policy = goal_memory_policy_prompt(goal.runtime_kind);
+    let master_duty = goal_master_duty_prompt(goal.runtime_kind);
+    let master_session_id = goal
+        .master_session_id
+        .as_ref()
+        .map(SessionId::as_str)
+        .unwrap_or("-");
+    let anchor_summary = match snapshot.deliverable.as_ref() {
+        Some(d) => format!(
+            "- Current anchor: version {} ({} chars){}.",
+            d.version,
+            d.content.chars().count(),
+            d.note
+                .as_deref()
+                .map(|n| format!(", last note: {n}"))
+                .unwrap_or_default()
+        ),
+        None => "- No deliverable anchor yet — this round should produce the first one.".to_string(),
+    };
     let task_lines = if snapshot.tasks.is_empty() {
         "No tasks exist yet.".to_string()
     } else {
@@ -2983,24 +3020,34 @@ fn goal_master_planning_prompt(snapshot: &GoalStatusSnapshot, round: u32) -> Str
     format!(
         r#"[Galley Goal Master Planner]
 
-You are the hidden Master planner for a Galley Native Goal. You are a scheduler/editor, not a worker.
+You are the hidden Master planner for a Galley Native Goal. You decompose, judge, and curate; you do not produce deliverable content yourself.
 
 Goal id: {goal_id}
+Master session: {master_session_id}
 Objective: {objective}
 Round: {round}
 Max concurrent workers: {worker_limit}
 Deadline: {deadline_at}
 
+{master_duty}
+
+Deliverable anchor (the single source of truth for the result):
+{anchor_summary}
+- Read the current anchor with: galley goal deliverable get {goal_id}
+- Maintain ONE current-best deliverable. Each round, fold worker output that passes your review into a new version:
+  galley goal deliverable set {goal_id} "<full updated deliverable>" --note "<what changed>" --author-session {master_session_id}
+- Only replace the anchor when the result genuinely improves; if a change makes it worse, keep the current version (never lose ground). Workers produce candidates; you decide what merges.
+
 Rules:
-1. First read the current state with: galley goal status {goal_id}
+1. First read state: galley goal status {goal_id} and galley goal deliverable get {goal_id}.
 2. Create at most {worker_limit} open tasks for this round. Creating fewer is allowed.
-3. Use only Galley CLI/Core writes: galley goal task create|update|complete and galley goal event post.
+3. Use only Galley CLI/Core writes: galley goal task|event|deliverable.
 4. Do not call GA native /hive. Do not start agent_bbs.py. Do not write Goal state outside Galley Core.
 {memory_policy}
 5. Task scopes must be idempotent and slot-bound: goal-worker-N:master-round-{round}:short-kind, where N is 1..{worker_limit}.
 6. Before creating a task, inspect existing task scopes and do not duplicate an existing scope.
-7. Each task needs a concrete title, clear acceptance criteria in --description, and one slot scope.
-8. If useful results already exist and budget remains, create validation, gap-fill, structure, or risk-check tasks instead of declaring done early.
+7. Each task needs a concrete title, clear acceptance criteria in --description, one slot scope, and must drive a better anchor.
+8. If a usable anchor already exists and budget remains, create validation, gap-fill, structure, or risk-check tasks that raise the next anchor version instead of declaring done early.
 9. If Goal status is wrapping/completed/failed/stopped, stop without creating tasks.
 10. End with a short hidden final answer: MASTER_PLAN_DONE round={round} tasks=<number_created>.
 
@@ -3011,13 +3058,16 @@ Recent events:
 {event_lines}
 
 Suggested CLI examples:
-galley goal task create {goal_id} "Produce first complete deliverable" --description "Acceptance: ..." --scope "goal-worker-1:master-round-{round}:first-pass"
-galley goal task create {goal_id} "Independent verification and gap check" --description "Acceptance: ..." --scope "goal-worker-2:master-round-{round}:verify-gaps"
+galley goal task create {goal_id} "Produce the deliverable's first complete draft" --description "Acceptance: ..." --scope "goal-worker-1:master-round-{round}:first-pass"
+galley goal task create {goal_id} "Independent verification and gap check against the anchor" --description "Acceptance: ..." --scope "goal-worker-2:master-round-{round}:verify-gaps"
 "#,
         goal_id = goal.id,
+        master_session_id = master_session_id,
         objective = goal.objective,
         worker_limit = goal.worker_limit,
         deadline_at = goal.deadline_at,
+        master_duty = master_duty,
+        anchor_summary = anchor_summary,
         memory_policy = memory_policy,
     )
 }
@@ -4198,6 +4248,22 @@ async fn build_goal_synthesis_prompt(
         28_000,
     );
 
+    if let Some(deliverable) = snapshot.deliverable.as_ref() {
+        // The anchor is the curated current-best result. Deliver it as the
+        // spine — polish/format only — rather than rebuilding from scattered
+        // worker output. Task board / events / worker outputs below are
+        // supporting context for final polish, not a fresh synthesis source.
+        push_limited(
+            &mut out,
+            &format!(
+                "Current deliverable anchor (version {}) — this is the curated best result. Deliver it as the final answer, polishing wording and structure only; do not discard or rebuild it. The sections below are context for last-mile polish.\n\n--- DELIVERABLE ANCHOR START ---\n{}\n--- DELIVERABLE ANCHOR END ---\n\n",
+                deliverable.version, deliverable.content
+            ),
+            // Allow the anchor itself to be large; it is the payload.
+            300_000,
+        );
+    }
+
     if !snapshot.tasks.is_empty() {
         push_limited(&mut out, "Task board:\n", 28_000);
         for task in &snapshot.tasks {
@@ -4339,6 +4405,26 @@ fn runtime_arg_from_kind(kind: RuntimeKind) -> RuntimeArg {
     match kind {
         RuntimeKind::Managed => RuntimeArg::Managed,
         RuntimeKind::External => RuntimeArg::External,
+    }
+}
+
+fn goal_master_duty_prompt(runtime_kind: RuntimeKind) -> &'static str {
+    match runtime_kind {
+        RuntimeKind::Managed => {
+            // Managed GA has the Galley-seeded Hive master SOP in memory.
+            r#"Master discipline:
+- Read memory/goal_hive_master_duty.md and follow it. You are the design office: decompose, judge, aggregate — never produce deliverable content yourself.
+- Run rounds as probe -> design -> execute -> check: spread divergent work (probe/check) across parallel workers, converge yourself (design/execute selection).
+- Keep a single "current best accepted version" as the anchor; each round make incremental changes on it; only merge a change when it raises quality, roll back if it gets worse.
+- Drive toward a deliverable a critical reviewer can find no fault in within the budget; keep the core deliverable clean and separate from process notes."#
+        }
+        RuntimeKind::External => {
+            // Attached GA may not have the SOP file; inline the discipline.
+            r#"Master discipline (you are the design office: decompose, judge, aggregate — never produce deliverable content yourself):
+- Run rounds as probe -> design -> execute -> check. Spread divergent work (probe/check) across parallel workers; converge yourself on design and selection.
+- Keep a single "current best accepted version" as the anchor. Each round make incremental changes on it; only merge a change when it raises quality; roll back if it gets worse — never lose ground.
+- Drive toward a deliverable a critical reviewer can find no fault in within the budget. Keep the core deliverable clean and separate from process notes."#
+        }
     }
 }
 
@@ -4653,6 +4739,37 @@ async fn goal_event(cmd: GoalEventCmd) -> Result<(), GalleyError> {
     Ok(())
 }
 
+async fn goal_deliverable(cmd: GoalDeliverableCmd) -> Result<(), GalleyError> {
+    let galley = SqliteGalley::open().await?;
+    match cmd {
+        GoalDeliverableCmd::Get { goal_id } => {
+            let deliverable = galley.latest_goal_deliverable(GoalId(goal_id)).await?;
+            // Empty stdout (exit 0) when no anchor exists yet — same
+            // "absent is not an error" convention as `llm list`.
+            if let Some(deliverable) = deliverable {
+                emit_json(&deliverable)?;
+            }
+        }
+        GoalDeliverableCmd::Set {
+            goal_id,
+            content,
+            note,
+            author_session,
+        } => {
+            let deliverable = galley
+                .set_goal_deliverable(
+                    GoalId(goal_id),
+                    content,
+                    note,
+                    author_session.map(SessionId),
+                )
+                .await?;
+            emit_json(&deliverable)?;
+        }
+    }
+    Ok(())
+}
+
 /// `llm list` bypasses the socket and reads the cached `llm_list` pref
 /// directly. Sub-plan §1.6 chose this path over a socket round-trip so
 /// the command stays sub-50ms regardless of bridge spawn cost.
@@ -4829,6 +4946,7 @@ mod tests {
             tasks,
             events,
             sessions,
+            deliverable: None,
         }
     }
 

@@ -1404,6 +1404,12 @@ pub fn run() {
             sql: include_str!("../migrations/017_message_visibility.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 18,
+            description: "add Goal deliverable anchor",
+            sql: include_str!("../migrations/018_goal_deliverable.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —

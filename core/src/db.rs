@@ -24,14 +24,14 @@ use sqlx::{FromRow, Sqlite, SqliteConnection, SqlitePool, Transaction};
 
 use crate::api::{
     ClaimGoalTaskInput, CreateGoalEventInput, CreateGoalProposalInput, CreateGoalTaskInput,
-    CreateProjectInput, CreateSessionInput, GalleyApi, GoalBrief, GoalEventBrief, GoalEventType,
-    GoalId, GoalProposalBrief, GoalProposalId, GoalProposalStatus, GoalStatus, GoalStatusSnapshot,
-    GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode, HealthCheck, HealthReport,
-    HealthStatus, ManagedModelAuthKind, ManagedModelCredentialStatus, ManagedModelProtocol,
-    ManagedModelProviderRecord, ManagedModelRecord, MessageBrief, MessageId, MessageRole,
-    MessageVisibility, Origin, OriginVia, ProjectBrief, ProjectId, ProjectPatch, RuntimeKind,
-    SearchHit, SearchScope, SessionBrief, SessionFilter, SessionId, SessionStatus, StatusSummary,
-    UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT,
+    CreateProjectInput, CreateSessionInput, GalleyApi, GoalBrief, GoalDeliverable, GoalEventBrief,
+    GoalEventType, GoalId, GoalProposalBrief, GoalProposalId, GoalProposalStatus, GoalStatus,
+    GoalStatusSnapshot, GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode, HealthCheck,
+    HealthReport, HealthStatus, ManagedModelAuthKind, ManagedModelCredentialStatus,
+    ManagedModelProtocol, ManagedModelProviderRecord, ManagedModelRecord, MessageBrief, MessageId,
+    MessageRole, MessageVisibility, Origin, OriginVia, ProjectBrief, ProjectId, ProjectPatch,
+    RuntimeKind, SearchHit, SearchScope, SessionBrief, SessionFilter, SessionId, SessionStatus,
+    StatusSummary, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT,
     GOAL_CONFIRMATION_PHRASE, MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT,
 };
 use crate::app_paths;
@@ -1634,6 +1634,56 @@ fn goal_status_sql(s: GoalStatus) -> &'static str {
         GoalStatus::Completed => "completed",
         GoalStatus::Stopped => "stopped",
         GoalStatus::Failed => "failed",
+    }
+}
+
+/// Max stored deliverable content size in bytes. 256 KiB is far beyond
+/// any reasonable text deliverable; exceeding it signals runaway output,
+/// so we truncate on a char boundary rather than fail the master's write.
+const GOAL_DELIVERABLE_MAX_BYTES: usize = 256 * 1024;
+
+fn cap_goal_deliverable_content(
+    content: String,
+    note: Option<String>,
+) -> (String, Option<String>) {
+    if content.len() <= GOAL_DELIVERABLE_MAX_BYTES {
+        return (content, note);
+    }
+    let mut end = GOAL_DELIVERABLE_MAX_BYTES;
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+    let truncated = content[..end].to_string();
+    let marker = "[galley: deliverable truncated at 256KB]";
+    let note = Some(match note {
+        Some(n) if !n.trim().is_empty() => format!("{n} · {marker}"),
+        _ => marker.to_string(),
+    });
+    (truncated, note)
+}
+
+#[derive(sqlx::FromRow)]
+struct GoalDeliverableRow {
+    id: String,
+    goal_id: String,
+    version: i64,
+    content: String,
+    note: Option<String>,
+    author_session_id: Option<String>,
+    created_at: String,
+}
+
+impl GoalDeliverableRow {
+    fn into_brief(self) -> GoalDeliverable {
+        GoalDeliverable {
+            id: self.id,
+            goal_id: GoalId(self.goal_id),
+            version: self.version.max(0) as u32,
+            content: self.content,
+            note: self.note,
+            author_session_id: self.author_session_id.map(SessionId),
+            created_at: self.created_at,
+        }
     }
 }
 
@@ -3249,6 +3299,7 @@ impl GalleyApi for SqliteGalley {
         let project = self.fetch_project(goal.project_id.as_str()).await.ok();
         let tasks = self.goal_tasks_for(id.as_str()).await?;
         let events = self.goal_events_for(id.as_str(), 50).await?;
+        let deliverable = self.latest_goal_deliverable(id.clone()).await?;
         let sessions = self
             .list_sessions(SessionFilter {
                 project_id: Some(goal.project_id.0.clone()),
@@ -3263,7 +3314,77 @@ impl GalleyApi for SqliteGalley {
             tasks,
             events,
             sessions,
+            deliverable,
         })
+    }
+
+    async fn set_goal_deliverable(
+        &self,
+        goal_id: GoalId,
+        content: String,
+        note: Option<String>,
+        author_session_id: Option<SessionId>,
+    ) -> Result<GoalDeliverable> {
+        // Bound stored size. Truncate on a char boundary and annotate the
+        // note so an oversized write never fails the master's round.
+        let (content, note) = cap_goal_deliverable_content(content, note);
+        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
+        // Confirm the goal exists for a clean not_found rather than an FK error.
+        let exists: Option<String> = sqlx::query_scalar("SELECT id FROM goals WHERE id = ?")
+            .bind(goal_id.as_str())
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(map_sqlx_err)?;
+        if exists.is_none() {
+            return Err(GalleyError::NotFound {
+                message: format!("goal {goal_id} not found"),
+            });
+        }
+        let next_version: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM goal_deliverables WHERE goal_id = ?",
+        )
+        .bind(goal_id.as_str())
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(map_sqlx_err)?;
+        let now = chrono_now_iso();
+        let row_id = format!("gdlv_{}_{}", goal_id.0, next_version);
+        sqlx::query(
+            "INSERT INTO goal_deliverables \
+             (id, goal_id, version, content, note, author_session_id, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&row_id)
+        .bind(goal_id.as_str())
+        .bind(next_version)
+        .bind(&content)
+        .bind(&note)
+        .bind(author_session_id.as_ref().map(SessionId::as_str))
+        .bind(&now)
+        .execute(&mut *conn)
+        .await
+        .map_err(map_sqlx_err)?;
+        Ok(GoalDeliverable {
+            id: row_id,
+            goal_id,
+            version: next_version.max(0) as u32,
+            content,
+            note,
+            author_session_id,
+            created_at: now,
+        })
+    }
+
+    async fn latest_goal_deliverable(&self, goal_id: GoalId) -> Result<Option<GoalDeliverable>> {
+        let row = sqlx::query_as::<_, GoalDeliverableRow>(
+            "SELECT id, goal_id, version, content, note, author_session_id, created_at \
+             FROM goal_deliverables WHERE goal_id = ? ORDER BY version DESC LIMIT 1",
+        )
+        .bind(goal_id.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        Ok(row.map(GoalDeliverableRow::into_brief))
     }
 
     async fn list_active_goals(&self) -> Result<Vec<GoalBrief>> {

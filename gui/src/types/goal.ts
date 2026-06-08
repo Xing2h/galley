@@ -123,10 +123,21 @@ export interface GoalSessionBrief {
   promptProfile?: string;
 }
 
+export interface GoalDeliverable {
+  id: string;
+  goalId: string;
+  version: number;
+  content: string;
+  note?: string;
+  authorSessionId?: string;
+  createdAt: string;
+}
+
 export interface GoalStatusSnapshot {
   goal: GoalBrief;
   project?: Project;
   tasks: GoalTaskBrief[];
   events: GoalEventBrief[];
   sessions: GoalSessionBrief[];
+  deliverable?: GoalDeliverable;
 }

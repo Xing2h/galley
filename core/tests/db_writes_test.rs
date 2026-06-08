@@ -40,6 +40,7 @@ const MIG_014: &str = include_str!("../migrations/014_managed_model_auth_kind.sq
 const MIG_015: &str = include_str!("../migrations/015_goal_v1.sql");
 const MIG_016: &str = include_str!("../migrations/016_goal_master_session.sql");
 const MIG_017: &str = include_str!("../migrations/017_message_visibility.sql");
+const MIG_018: &str = include_str!("../migrations/018_goal_deliverable.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -54,7 +55,7 @@ async fn fresh_pool() -> SqlitePool {
         .expect("enable foreign keys");
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
-        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017,
+        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -361,6 +362,113 @@ async fn goal_start_rejects_token_mismatch_and_expired_proposal() {
         .await
         .expect_err("expired proposal should fail");
     assert!(matches!(expired, GalleyError::InvalidArgs { .. }));
+}
+
+#[tokio::test]
+async fn goal_deliverable_versions_increment_and_surface_in_status() {
+    let pool = fresh_pool().await;
+    let galley = SqliteGalley::from_pool(pool.clone());
+
+    let proposal = galley
+        .create_goal_proposal(
+            CreateGoalProposalInput {
+                objective: "Refine a report".into(),
+                project_id: None,
+                master_session_id: None,
+                budget_seconds: None,
+                worker_limit: None,
+                runtime_kind: Some(RuntimeKind::Managed),
+                write_mode: None,
+                expires_in_seconds: None,
+            },
+            Origin::cli(None, Some("test".into())),
+        )
+        .await
+        .expect("create proposal");
+    let goal = galley
+        .start_goal_from_proposal(
+            proposal.id.clone(),
+            proposal.internal_confirm_token.clone(),
+            Origin::cli(None, None),
+        )
+        .await
+        .expect("start goal");
+
+    // No anchor before the master writes one.
+    assert!(galley
+        .latest_goal_deliverable(goal.id.clone())
+        .await
+        .expect("latest")
+        .is_none());
+    let snapshot = galley.goal_status(goal.id.clone()).await.expect("status");
+    assert!(snapshot.deliverable.is_none());
+
+    let v1 = galley
+        .set_goal_deliverable(goal.id.clone(), "draft one".into(), Some("first".into()), None)
+        .await
+        .expect("set v1");
+    assert_eq!(v1.version, 1);
+
+    let v2 = galley
+        .set_goal_deliverable(
+            goal.id.clone(),
+            "draft two, improved".into(),
+            Some("folded review".into()),
+            None,
+        )
+        .await
+        .expect("set v2");
+    assert_eq!(v2.version, 2);
+
+    // Latest is the highest version; it surfaces in goal_status.
+    let latest = galley
+        .latest_goal_deliverable(goal.id.clone())
+        .await
+        .expect("latest")
+        .expect("some");
+    assert_eq!(latest.version, 2);
+    assert_eq!(latest.content, "draft two, improved");
+    let snapshot = galley.goal_status(goal.id.clone()).await.expect("status");
+    assert_eq!(snapshot.deliverable.expect("anchor").version, 2);
+}
+
+#[tokio::test]
+async fn goal_deliverable_oversized_content_is_truncated_with_note() {
+    let pool = fresh_pool().await;
+    let galley = SqliteGalley::from_pool(pool.clone());
+
+    let proposal = galley
+        .create_goal_proposal(
+            CreateGoalProposalInput {
+                objective: "Big output".into(),
+                project_id: None,
+                master_session_id: None,
+                budget_seconds: None,
+                worker_limit: None,
+                runtime_kind: Some(RuntimeKind::Managed),
+                write_mode: None,
+                expires_in_seconds: None,
+            },
+            Origin::cli(None, None),
+        )
+        .await
+        .expect("create proposal");
+    let goal = galley
+        .start_goal_from_proposal(
+            proposal.id,
+            proposal.internal_confirm_token,
+            Origin::cli(None, None),
+        )
+        .await
+        .expect("start goal");
+
+    let huge = "a".repeat(256 * 1024 + 500);
+    let d = galley
+        .set_goal_deliverable(goal.id.clone(), huge, None, None)
+        .await
+        .expect("set huge");
+    assert!(d.content.len() <= 256 * 1024);
+    assert!(d.note.unwrap_or_default().contains("truncated"));
 }
 
 // ---------------- managed model metadata ----------------
