@@ -220,12 +220,29 @@ function buildCdpScript(code) {
 let ws = null;
 const WS_URL = 'ws://127.0.0.1:18765';
 const KEEPALIVE_MS = 25000;
+const PROBE_RETRY_MS = 3000;
+const PROBE_ALARM_MINUTES = 0.5; // Chrome MV3 alarms are 30s-level fallback.
 let keepaliveTimer = null;
+let probeTimer = null;
+
+function clearProbeTimer() {
+  if (!probeTimer) return;
+  clearTimeout(probeTimer);
+  probeTimer = null;
+}
 
 function scheduleProbe() {
-  // Chrome MV3 alarms have a coarse floor. Use them only as a disconnected
-  // fallback; active pages and the keepalive timer do the fast path.
-  chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: 0.5 });
+  // A Galley probe starts a short-lived local WebSocket server. If the
+  // extension only waits for a coarse MV3 alarm, repeated manual tests can
+  // miss that server on Windows. Retry quickly while the service worker is
+  // alive, and keep an alarm fallback in case Chrome suspends it.
+  clearProbeTimer();
+  probeTimer = setTimeout(() => {
+    probeTimer = null;
+    if (ws && ws.readyState <= 1) return;
+    connectWS();
+  }, PROBE_RETRY_MS);
+  chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: PROBE_ALARM_MINUTES });
 }
 
 function clearKeepaliveTimer() {
@@ -264,6 +281,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }
   }
   if (alarm.name === 'tmwd-ws-probe') {
+    clearProbeTimer();
     if (ws && ws.readyState <= 1) return; // Already connected/connecting
     connectWS();
   }
@@ -343,6 +361,7 @@ async function handleWsExec(data) {
 
 function connectWS() {
   if (ws && ws.readyState <= 1) return; // CONNECTING or OPEN
+  clearProbeTimer();
   ws = null;
   console.log('[TMWD-WS] Connecting to', WS_URL);
   try {
@@ -356,6 +375,7 @@ function connectWS() {
   }
   ws.onopen = async () => {
     console.log('[TMWD-WS] Connected!');
+    clearProbeTimer();
     scheduleKeepalive(); // Keep SW alive while connected
     const tabs = (await chrome.tabs.query({})).filter(t => isScriptable(t.url));
     ws.send(JSON.stringify({

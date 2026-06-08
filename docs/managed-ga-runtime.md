@@ -197,6 +197,11 @@ Rules:
 - The success test must be deterministic and model-free: verify extension
   layout, bridge connection, tab discovery, and a minimal JavaScript execution
   such as reading `document.title`.
+- Browser Control probes must tolerate Chromium MV3 service-worker wake-up and
+  reconnect timing, especially on Windows. Do not collapse the probe window
+  back to a few seconds unless the extension has an equivalent immediate
+  wake-up path. Fast recovery should come from an in-worker retry while it is
+  awake; `chrome.alarms` is only a 30-second-level fallback.
 - After the test succeeds, Galley may offer a beginner demo. In Chinese UI,
   use Baidu for the weather-search demo to avoid making Google reachability
   part of the setup experience. The demo should validate the managed GA browser

@@ -60,9 +60,12 @@ pub enum BrowserControlProbeContext {
 impl BrowserControlProbeContext {
     fn wait_duration(self) -> Duration {
         match self {
-            Self::Startup => Duration::from_secs(3),
-            Self::Recheck => Duration::from_secs(5),
-            Self::Manual => Duration::from_secs(12),
+            // Chromium MV3 service workers can be asleep when Galley starts a
+            // probe. Keep the temporary TMWebDriver server alive long enough
+            // for the extension's alarm-based reconnect path to fire.
+            Self::Startup => Duration::from_secs(35),
+            Self::Recheck => Duration::from_secs(35),
+            Self::Manual => Duration::from_secs(35),
         }
     }
 
@@ -577,6 +580,27 @@ mod tests {
         fs::create_dir_all(source_dir).expect("source dir");
         fs::write(source_dir.join("manifest.json"), r#"{"version":"1.2.3"}"#).expect("manifest");
         fs::write(source_dir.join("content.js"), "console.log('bridge');").expect("content");
+    }
+
+    #[test]
+    fn probe_contexts_wait_through_mv3_reconnect_alarm() {
+        let reconnect_window = Duration::from_secs(35);
+        assert_eq!(
+            BrowserControlProbeContext::Startup.wait_duration(),
+            reconnect_window
+        );
+        assert_eq!(
+            BrowserControlProbeContext::Recheck.wait_duration(),
+            reconnect_window
+        );
+        assert_eq!(
+            BrowserControlProbeContext::Manual.wait_duration(),
+            reconnect_window
+        );
+        assert_eq!(
+            BrowserControlProbeContext::Manual.process_timeout(),
+            reconnect_window + Duration::from_secs(3)
+        );
     }
 
     #[test]

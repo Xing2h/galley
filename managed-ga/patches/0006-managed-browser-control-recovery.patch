@@ -1,5 +1,5 @@
 diff --git a/TMWebDriver.py b/TMWebDriver.py
-index b2c4f7d..5a98d6d 100644
+index 504b04a..4322f61 100644
 --- a/TMWebDriver.py
 +++ b/TMWebDriver.py
 @@ -39,6 +39,8 @@ class TMWebDriver:
@@ -27,15 +27,14 @@ index b2c4f7d..5a98d6d 100644
                          tabs = data.get('tabs', [])
                          current_tab_ids = {str(tab['id']) for tab in tabs}
                          print(f"Received tabs update: {current_tab_ids}")
-@@ -175,8 +179,14 @@ class TMWebDriver:
-
+@@ -176,7 +180,13 @@ class TMWebDriver:
          self.latest_session_id = session_id
          if self.default_session_id is None: self.default_session_id = session_id
-+
+
 +    def _register_extension_client(self, client: WebSocket) -> None:
 +        self.extension_client = client
 +        self.extension_connected_at = time.time()
-
++
      def _unregister_client(self, client: WebSocket) -> None:
 +        if self.extension_client == client:
 +            self.extension_client = None
@@ -61,7 +60,7 @@ index b2c4f7d..5a98d6d 100644
          return {session['id']: session['url'] for session in self.get_all_sessions()}
 
 diff --git a/assets/tmwd_cdp_bridge/background.js b/assets/tmwd_cdp_bridge/background.js
-index 6dbd4b7..f4e5ae0 100644
+index 6dbd4b7..56a1112 100644
 --- a/assets/tmwd_cdp_bridge/background.js
 +++ b/assets/tmwd_cdp_bridge/background.js
 @@ -16,6 +16,13 @@ chrome.runtime.onInstalled.addListener(() => {
@@ -78,19 +77,36 @@ index 6dbd4b7..f4e5ae0 100644
    if (msg.cmd === 'cookies') return await handleCookies(msg, sender);
    if (msg.cmd === 'cdp') return await handleCDP(msg, sender);
    if (msg.cmd === 'batch') return await handleBatch(msg, sender);
-@@ -219,26 +226,33 @@ function buildCdpScript(code) {
+@@ -212,26 +219,50 @@ function buildCdpScript(code) {
  // --- WebSocket Client for TMWebDriver ---
  let ws = null;
  const WS_URL = 'ws://127.0.0.1:18765';
 +const KEEPALIVE_MS = 25000;
++const PROBE_RETRY_MS = 3000;
++const PROBE_ALARM_MINUTES = 0.5; // Chrome MV3 alarms are 30s-level fallback.
 +let keepaliveTimer = null;
++let probeTimer = null;
++
++function clearProbeTimer() {
++  if (!probeTimer) return;
++  clearTimeout(probeTimer);
++  probeTimer = null;
++}
 
  function scheduleProbe() {
 -  // Use chrome.alarms to survive MV3 service worker suspension
 -  chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: 0.083 }); // ~5s
-+  // Chrome MV3 alarms have a coarse floor. Use them only as a disconnected
-+  // fallback; active pages and the keepalive timer do the fast path.
-+  chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: 0.5 });
++  // A Galley probe starts a short-lived local WebSocket server. If the
++  // extension only waits for a coarse MV3 alarm, repeated manual tests can
++  // miss that server on Windows. Retry quickly while the service worker is
++  // alive, and keep an alarm fallback in case Chrome suspends it.
++  clearProbeTimer();
++  probeTimer = setTimeout(() => {
++    probeTimer = null;
++    if (ws && ws.readyState <= 1) return;
++    connectWS();
++  }, PROBE_RETRY_MS);
++  chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: PROBE_ALARM_MINUTES });
  }
 
 -function scheduleKeepalive() {
@@ -126,7 +142,7 @@ index 6dbd4b7..f4e5ae0 100644
  }
 
  chrome.alarms.onAlarm.addListener(async (alarm) => {
-@@ -254,7 +254,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
+@@ -240,7 +271,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
      return;
    }
    if (alarm.name === 'tmwd-ws-keepalive') {
@@ -134,9 +150,11 @@ index 6dbd4b7..f4e5ae0 100644
      if (ws && ws.readyState === WebSocket.OPEN) {
        try { ws.send('{"type":"ping"}'); } catch (_) {}
        scheduleKeepalive();
-@@ -265,12 +264,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
+@@ -251,13 +281,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
+     }
    }
    if (alarm.name === 'tmwd-ws-probe') {
++    clearProbeTimer();
      if (ws && ws.readyState <= 1) return; // Already connected/connecting
 -    if (await isServerAlive()) {
 -      console.log('[TMWD-WS] Server detected, connecting...');
@@ -148,7 +166,15 @@ index 6dbd4b7..f4e5ae0 100644
    }
  });
 
-@@ -342,6 +336,7 @@ function connectWS() {
+@@ -335,6 +361,7 @@ async function handleWsExec(data) {
+
+ function connectWS() {
+   if (ws && ws.readyState <= 1) return; // CONNECTING or OPEN
++  clearProbeTimer();
+   ws = null;
+   console.log('[TMWD-WS] Connecting to', WS_URL);
+   try {
+@@ -342,11 +369,13 @@ function connectWS() {
    } catch (e) {
      console.error('[TMWD-WS] Constructor error:', e);
      ws = null;
@@ -156,7 +182,13 @@ index 6dbd4b7..f4e5ae0 100644
      scheduleProbe();
      return;
    }
-@@ -386,6 +381,7 @@ function connectWS() {
+   ws.onopen = async () => {
+     console.log('[TMWD-WS] Connected!');
++    clearProbeTimer();
+     scheduleKeepalive(); // Keep SW alive while connected
+     const tabs = (await chrome.tabs.query({})).filter(t => isScriptable(t.url));
+     ws.send(JSON.stringify({
+@@ -386,6 +415,7 @@ function connectWS() {
    ws.onclose = () => {
      console.log('[TMWD-WS] Disconnected');
      ws = null;
@@ -165,7 +197,7 @@ index 6dbd4b7..f4e5ae0 100644
    };
    ws.onerror = (e) => {
 diff --git a/assets/tmwd_cdp_bridge/content.js b/assets/tmwd_cdp_bridge/content.js
-index b9c337b..72d642b 100644
+index 748b2b4..72d642b 100644
 --- a/assets/tmwd_cdp_bridge/content.js
 +++ b/assets/tmwd_cdp_bridge/content.js
 @@ -1,5 +1,15 @@
@@ -185,10 +217,10 @@ index b9c337b..72d642b 100644
  document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(e => e.remove());
 
 diff --git a/ga.py b/ga.py
-index 61cf1ca..42c3af9 100644
+index a65356d..a4755ac 100644
 --- a/ga.py
 +++ b/ga.py
-@@ -110,14 +110,31 @@ def ask_user(question, candidates=None):
+@@ -111,14 +111,31 @@ def ask_user(question, candidates=None):
 
  import simphtml
  driver = None
@@ -221,7 +253,7 @@ index 61cf1ca..42c3af9 100644
      if len(sess) == 0: return
      if len(sess) == 1:
          #driver.newtab()
-@@ -133,7 +151,7 @@ def web_scan(tabs_only=False, switch_tab_id=None, text_only=False, maxlen=35000)
+@@ -133,7 +150,7 @@ def web_scan(tabs_only=False, switch_tab_id=None, text_only=False, maxlen=35000)
      try:
          if driver is None: first_init_driver()
          if len(driver.get_all_sessions()) == 0:
@@ -230,7 +262,7 @@ index 61cf1ca..42c3af9 100644
          tabs = []
          for sess in driver.get_all_sessions():
              sess.pop('connected_at', None)
-@@ -179,7 +197,7 @@ def web_execute_js(script, switch_tab_id=None, no_monitor=False):
+@@ -179,7 +196,7 @@ def web_execute_js(script, switch_tab_id=None, no_monitor=False):
      global driver
      try:
          if driver is None: first_init_driver()
