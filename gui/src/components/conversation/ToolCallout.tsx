@@ -15,9 +15,10 @@ import {
   Terminal,
   XCircle,
 } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { ApprovalForm } from "@/components/conversation/ApprovalForm";
+import { LiveDots } from "@/components/conversation/LiveIndicators";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
@@ -109,7 +110,7 @@ export function ToolCallout({
  *
  * Six visual states (see ToolEventStatus):
  *
- *   running             apricot bar + spinning notch + auto-open
+ *   running             apricot bar + spinning notch + live elapsed + auto-open
  *   success-current     apricot bar + check + auto-open
  *   success-historical  near-invisible bar + muted check + auto-collapse
  *                       (fades into the document)
@@ -127,20 +128,17 @@ function BlockToolCallout({
   const forcedOpen = cfg.forcedOpen;
   const [openManual, setOpenManual] = useState(cfg.defaultOpen);
   const open = forcedOpen || openManual;
+  const runningSec = useRunningSeconds(tool.status === "running");
 
   return (
     <div
       className={cn(
-        "relative my-3 overflow-hidden rounded-md border border-line transition-all",
+        "relative my-3 overflow-hidden rounded-md border border-line transition-colors",
         cfg.bgClass,
       )}
     >
       <div
-        className={cn(
-          "absolute inset-y-0 left-0 w-[3px]",
-          cfg.barClass,
-          tool.status === "running" && "tool-running-bar-breath",
-        )}
+        className={cn("absolute inset-y-0 left-0 w-[3px]", cfg.barClass)}
       />
 
       {/* Head */}
@@ -158,9 +156,20 @@ function BlockToolCallout({
         <span className="font-mono text-[13px] font-medium text-ink">
           {tool.name}
         </span>
+        {tool.status === "running" && (
+          <LiveDots className="text-ink-muted" />
+        )}
         <span className="ml-auto flex items-center gap-2.5 text-[11px] text-ink-muted">
           <StatusPill status={tool.status} />
-          {tool.elapsed && <span>{tool.elapsed}</span>}
+          {tool.status === "running"
+            ? runningSec >= 1 && (
+                <span className="tabular-nums">
+                  {formatRunningElapsed(runningSec)}
+                </span>
+              )
+            : tool.elapsed && (
+                <span className="tabular-nums">{tool.elapsed}</span>
+              )}
           {!forcedOpen && (
             <CaretDown
               size={12}
@@ -214,6 +223,44 @@ function BlockToolCallout({
 }
 
 // ---------- internals ----------
+
+/**
+ * Per-second elapsed counter for a running tool. Same liveness
+ * principle as the thinking placeholder (Conversation.tsx
+ * useElapsedSeconds): the ticking number is itself proof of life,
+ * and it doubles as useful info on slow tools (web_scan / code_run).
+ *
+ * Mount-based, not start-timestamp-based: the running BlockToolCallout
+ * mounts when the tool enters `running` and unmounts when it flips to
+ * the settled inline pill, so mount ≈ tool start for the live path.
+ * (On a mid-run reload the count would start fresh — the same
+ * accepted limitation as the thinking counter; running tools are
+ * transient so this rarely shows.) Ticks only while `active`.
+ */
+function useRunningSeconds(active: boolean): number {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const start = Date.now();
+    const id = window.setInterval(() => {
+      setSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [active]);
+  return active ? sec : 0;
+}
+
+/**
+ * Compact elapsed format matching the tool's own `elapsed` register
+ * (English units: "14s" / "1m 2s"), distinct from the thinking
+ * placeholder's localized "秒" form.
+ */
+function formatRunningElapsed(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}m ${s}s`;
+}
 
 interface StatusConfig {
   /** Tailwind classes for the 3px left bar. */

@@ -258,7 +258,7 @@ const zhCopy = {
     goalTooltip: "作为 Goal 运行",
     cancelGoalMode: "取消 Goal 模式",
     startGoal: "启动 Goal",
-    startGoalWithEnter: "打开确认弹窗 · Enter",
+    startGoalWithEnter: "确认 Goal · Enter",
     goalArmedHint: "Goal 模式",
     goalPlaceholder: "写下要完成的目标…",
     goalContextBadgeTooltip: "这个对话属于一个进行中的 Goal",

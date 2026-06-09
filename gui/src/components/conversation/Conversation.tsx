@@ -1,6 +1,7 @@
 import { CaretDown } from "@phosphor-icons/react";
-import { Fragment, useEffect, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useState } from "react";
 
+import { LiveDots } from "@/components/conversation/LiveIndicators";
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import {
   MessageAgent,
@@ -179,13 +180,17 @@ function normalizedInlineText(value?: string | null): string {
  * Per-step header — sits above each agent turn's thinking summary
  * AND carries the chapter-break weight between turns now that
  * SoftHr is gone. Tuned for that double role:
- *   - mt-7 (28px) gives turn-to-turn breathing room comparable to
- *     the old SoftHr's my-5 (40px) without the visual noise of an
- *     actual rule
- *   - serif italic + muted ink puts it in the same voice family as
- *     the other "soft prompt" UI text in the product. The previous
- *     mono+uppercase+tracking treatment read as a sysmon log line
- *     and clashed with the Notion+Claude register.
+ *   - mt-6 (24px) gives turn-to-turn breathing room (the marker is
+ *     now the only chapter-break signal between turns) without the
+ *     visual noise of an actual rule. The Swiss marker (tabular
+ *     index + hairline) is visually self-separating, so it needs
+ *     less surrounding whitespace than a softer label would —
+ *     structure does the separating, not a big gap.
+ *   - Swiss structural register: upright (not italic), tabular
+ *     figures, a thin vertical rule separating the step label from
+ *     the summary. The cool, precise metadata deliberately contrasts
+ *     with the warm Newsreader serif of the answer body below —
+ *     structure reads as structure, prose reads as prose.
  *   - 12px keeps it from competing with the body content below.
  *
  * Why "第 N 步" and not "第 N 轮": Chinese 「轮」 collides with the
@@ -196,9 +201,9 @@ function normalizedInlineText(value?: string | null): string {
  * Three rendering modes:
  *
  *   thinking placeholder (`thinking={true}`):
- *     In-flight state — the full status line runs as a sequential
- *     opacity wave, including the elapsed counter once it appears.
- *     No chevron, no expand. Mounted when the user submits and
+ *     In-flight state — upright status text with a three-dot working
+ *     indicator and a tabular elapsed counter once it appears. No
+ *     chevron, no expand. Mounted when the user submits and
  *     unmounted when turn_progress / turn_end takes over the row.
  *
  *   settled, no detail (`thinking={false}`, no thinking/preamble):
@@ -241,8 +246,8 @@ export function TurnMarker({
   /**
    * True while this step is in flight. Renders a live status in place
    * of the settled summary so the user gets a progress signal during
-   * LLM TTFT / tool dispatch / answer streaming. The whole status line
-   * renders as a single sequential opacity wave. An elapsed-seconds
+   * LLM TTFT / tool dispatch / answer streaming. It renders as upright
+   * status text plus a three-dot working indicator. An elapsed-seconds
    * counter joins after 3s: immediate readout feels mechanical, but
    * waiting longer makes a real model pause feel like a frozen UI. See
    * useElapsedSeconds for details.
@@ -277,46 +282,47 @@ export function TurnMarker({
     thinking && elapsedSec >= THINKING_ELAPSED_VISIBLE_AFTER_SEC
       ? formatElapsedSeconds(elapsedSec, copy)
       : null;
-  const hasStepNumber = index != null;
   const hasDetail = !thinking && Boolean(thinkingContent || preamble);
   const [open, setOpen] = useState(false);
+
+  const stepLabel = index != null ? copy.conversation.step(index) : null;
+  const trailing = thinking ? (
+    <ThinkingStatus
+      status={liveStatus}
+      elapsedLabel={elapsedLabel}
+      showStillRunning={elapsedSec >= THINKING_STILL_RUNNING_VISIBLE_AFTER_SEC}
+    />
+  ) : summary ? (
+    <span className="min-w-0 flex-1 truncate select-text text-ink-soft">
+      {summary}
+    </span>
+  ) : null;
 
   return (
     <div>
       <div
         onClick={hasDetail ? () => setOpen((v) => !v) : undefined}
         className={cn(
-          "mb-2 mt-7 flex min-w-0 items-baseline text-[12px] italic text-ink-muted",
-          hasDetail && "cursor-pointer transition-colors hover:text-ink-soft",
+          "mb-2.5 mt-6 flex min-w-0 items-center gap-2 text-[12px] text-ink-soft",
+          hasDetail &&
+            "cursor-pointer transition-colors duration-150 hover:text-ink",
         )}
       >
-        <span className="min-w-0 flex-1 truncate select-text">
-          {thinking ? (
-            <ThinkingWaveText
-              index={hasStepNumber ? index : undefined}
-              status={liveStatus}
-              elapsedLabel={elapsedLabel}
-              showStillRunning={
-                thinking &&
-                elapsedSec >= THINKING_STILL_RUNNING_VISIBLE_AFTER_SEC
-              }
-            />
-          ) : summary ? (
-            <>
-              {hasStepNumber && <>{copy.conversation.step(index)}</>}
-              {" · "}
-              <span className="text-ink-soft">{summary}</span>
-            </>
-          ) : (
-            hasStepNumber && <>{copy.conversation.step(index)}</>
-          )}
-        </span>
+        {stepLabel && (
+          <span className="shrink-0 font-medium tabular-nums tracking-[0.01em] text-ink-soft">
+            {stepLabel}
+          </span>
+        )}
+        {stepLabel && trailing && (
+          <span className="h-2.5 w-px shrink-0 bg-line-strong" aria-hidden />
+        )}
+        {trailing}
         {hasDetail && (
           <CaretDown
             size={11}
             weight="thin"
             className={cn(
-              "ml-1.5 inline-block align-baseline text-ink-muted transition-transform duration-150",
+              "ml-auto shrink-0 text-ink-muted transition-transform duration-150",
               open && "rotate-180",
             )}
           />
@@ -329,123 +335,51 @@ export function TurnMarker({
   );
 }
 
-function ThinkingWaveText({
-  index,
+/**
+ * In-flight status for the step marker — replaces the previous
+ * per-character opacity wave. Swiss register: upright text, a single
+ * localized "working" affordance (three staggered dots), and the
+ * elapsed counter in tabular figures so the digits don't jitter as
+ * they tick. The ticking counter is itself the primary proof of
+ * liveness; the dots cover the first seconds before it appears.
+ */
+function ThinkingStatus({
   status,
   elapsedLabel,
   showStillRunning,
 }: {
-  index?: number;
   status?: string;
   elapsedLabel: string | null;
   showStillRunning: boolean;
 }) {
   const copy = useCopy();
-  const WAVE_STEP_MS = 160;
-  const WAVE_REST_MS = 240;
-  const WAVE_MIN_DURATION_MS = 1300;
-  const statusText = `${index != null ? `${copy.conversation.step(index)} · ` : ""}${status?.trim() || copy.conversation.thinking}`;
-  const elapsedText = elapsedLabel
-    ? ` · ${elapsedLabel}${
-        showStillRunning ? ` · ${copy.conversation.stillRunning}` : ""
-      }`
-    : "";
-  const text = `${statusText}${elapsedText}`;
-  const statusTokens = toThinkingWaveTokens(statusText, 0);
-  const elapsedTokens = toThinkingWaveTokens(
-    elapsedText,
-    statusTokens.nextIndex,
+  // Strip trailing dots from either the live status or the fallback
+  // copy ("思考中...") so they don't double up with LiveDots.
+  const statusText = (status?.trim() || copy.conversation.thinking).replace(
+    /[.\u2026]+$/,
+    "",
   );
-  const visibleTokenCount = elapsedTokens.nextIndex;
-  const durationMs = Math.max(
-    (Math.max(visibleTokenCount, 1) - 1) * WAVE_STEP_MS + WAVE_REST_MS,
-    WAVE_MIN_DURATION_MS,
-  );
-
   return (
-    <span
-      className="thinking-wave"
-      aria-label={text}
-      style={
-        {
-          "--thinking-wave-duration": `${durationMs}ms`,
-        } as CSSProperties
-      }
-    >
-      {statusTokens.tokens.map((token, i) => (
-        <ThinkingWaveToken
-          // Keep keys positional so text updates (especially elapsed
-          // seconds) don't restart the existing token animations.
-          key={`status-${i}`}
-          token={token.value}
-          waveIndex={token.waveIndex}
-        />
-      ))}
-      {elapsedTokens.tokens.map((token, i) => (
-        <ThinkingWaveToken
-          key={`elapsed-${i}`}
-          token={token.value}
-          waveIndex={token.waveIndex}
-          elapsed
-        />
-      ))}
-    </span>
-  );
-}
-
-function toThinkingWaveTokens(
-  text: string,
-  startIndex: number,
-): {
-  tokens: { value: string; waveIndex: number | null }[];
-  nextIndex: number;
-} {
-  let nextIndex = startIndex;
-  const tokens = Array.from(text).map((value) => {
-    if (value === " ") return { value, waveIndex: null };
-    const waveIndex = nextIndex;
-    nextIndex += 1;
-    return { value, waveIndex };
-  });
-  return { tokens, nextIndex };
-}
-
-function ThinkingWaveToken({
-  token,
-  waveIndex,
-  elapsed = false,
-}: {
-  token: string;
-  waveIndex: number | null;
-  elapsed?: boolean;
-}) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "thinking-wave-token",
-        waveIndex == null && "thinking-wave-token-space",
-        elapsed && "thinking-wave-token-elapsed",
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+      <span className="truncate">{statusText}</span>
+      <LiveDots className="pb-px text-ink-muted" />
+      {elapsedLabel && (
+        <span className="shrink-0 tabular-nums text-ink-muted">
+          {` · ${elapsedLabel}`}
+          {showStillRunning && ` · ${copy.conversation.stillRunning}`}
+        </span>
       )}
-      style={
-        waveIndex == null
-          ? undefined
-          : ({
-              "--thinking-wave-index": waveIndex,
-            } as CSSProperties)
-      }
-    >
-      {token === " " ? "\u00A0" : token}
     </span>
   );
 }
 
 /**
  * Inline expansion of TurnMarker — surfaces the LLM's per-step
- * reasoning on demand. Reuses MarkdownView "thinking" variant so the
- * typography (italic serif ink-soft) matches the TurnMarker row above
- * and the content reads as a continuation of the same voice rather
- * than a separate callout block. No border, no background, no leading
+ * reasoning on demand. Renders via MarkdownView "thinking" variant
+ * (italic serif ink-soft). This is read-content — the LLM's actual
+ * reasoning prose — so it keeps the warm serif register, deliberately
+ * distinct from the cool Swiss sans of the TurnMarker row above
+ * (structure vs prose). No border, no background, no leading
  * icon — keeps the chrome out of the way so the prose stays the focus.
  *
  * Source order: thinking → preamble. Mirrors how the LLM actually
@@ -525,4 +459,4 @@ function StrongHr() {
 
 // SoftHr removed (2026-05-09): even at my-5 (40px) the hr+marker
 // stack between turns felt heavy. TurnMarker's own top margin +
-// uppercase tracking now carries the chapter-break feel.
+// structural register now carries the chapter-break feel.

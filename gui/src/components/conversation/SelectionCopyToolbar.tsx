@@ -2,17 +2,17 @@ import { Check, Copy } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
-import { TooltipLabel } from "@/components/ui/tooltip";
+import { ActionChip } from "@/components/conversation/ActionChip";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const ASSISTANT_SELECTION_SCOPE =
   '[data-selection-copy-scope="assistant-answer"]';
 const TOOLBAR_SELECTOR = "[data-selection-copy-toolbar]";
-const TOOLBAR_WIDTH = 32;
+const TOOLBAR_WIDTH = 28;
 const VIEWPORT_GAP = 12;
 const TOOLBAR_GUTTER_GAP = 10;
-const TOOLBAR_HEIGHT = 30;
+const TOOLBAR_HEIGHT = 28;
 
 interface SelectionCopyToolbarProps {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
@@ -108,7 +108,7 @@ export function SelectionCopyToolbar({
       if (copyTimerRef.current !== null) {
         window.clearTimeout(copyTimerRef.current);
       }
-      copyTimerRef.current = window.setTimeout(() => setCopied(false), 1200);
+      copyTimerRef.current = window.setTimeout(() => setCopied(false), 1500);
     } catch (error) {
       console.warn("[SelectionCopyToolbar] copy failed", error);
     }
@@ -116,9 +116,6 @@ export function SelectionCopyToolbar({
 
   if (!toolbar) return null;
 
-  const label = copied
-    ? copy.conversation.copied
-    : copy.conversation.copySelection;
   const tooltipSide = toolbar.side === "left" ? "left" : "right";
 
   return createPortal(
@@ -130,36 +127,17 @@ export function SelectionCopyToolbar({
       )}
       style={{ left: toolbar.left, top: toolbar.top }}
     >
-      <TooltipLabel
-        text={copy.conversation.copySelection}
-        side={tooltipSide}
-        sideOffset={7}
-      >
-        <button
-          type="button"
-          aria-label={label}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => void onCopy()}
-          className={cn(
-            "pointer-events-auto inline-flex h-[30px] w-[32px] select-none items-center justify-center rounded-sm border",
-            "border-line/80 bg-elevated/75 text-[13px] shadow-[0_4px_14px_rgba(0,0,0,0.08)] backdrop-blur-md",
-            "transition-[background-color,border-color,color,box-shadow] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
-            "hover:border-line-strong hover:bg-elevated/90 hover:shadow-[0_6px_18px_rgba(0,0,0,0.1)]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
-            "active:bg-elevated active:duration-[45ms]",
-            copied ? "text-success" : "text-ink-muted hover:text-ink",
-          )}
-        >
-          {copied ? (
-            <Check size={14} weight="bold" />
-          ) : (
-            <Copy size={14} weight="regular" />
-          )}
-          <span className="sr-only" aria-live="polite">
-            {label}
-          </span>
-        </button>
-      </TooltipLabel>
+      <ActionChip
+        variant="floating"
+        active={copied}
+        idleIcon={<Copy size={14} weight="thin" />}
+        activeIcon={<Check size={14} weight="bold" />}
+        idleLabel={copy.conversation.copySelection}
+        activeLabel={copy.conversation.copied}
+        onClick={() => void onCopy()}
+        tooltipSide={tooltipSide}
+        className="pointer-events-auto"
+      />
     </div>,
     document.body,
   );

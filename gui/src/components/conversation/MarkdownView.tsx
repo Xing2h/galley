@@ -9,6 +9,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   Children,
+  type CSSProperties,
   isValidElement,
   useEffect,
   useRef,
@@ -82,15 +83,21 @@ export function MarkdownView({
       : variant === "narration"
         ? PROSE_NARRATION
         : PROSE_THINKING;
+  const usesCjkSerif = cjkDominant(source);
+  const proseStyle = {
+    "--galley-prose-serif": "var(--font-serif)",
+    WebkitFontSmoothing: usesCjkSerif ? "auto" : undefined,
+  } as CSSProperties;
   return (
     <div
       data-selection-copy-scope={
         selectionCopyScope ? "assistant-answer" : undefined
       }
       className={cn("select-text", proseClass, className)}
+      style={proseStyle}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkCjkAdjacentQuotedStrong]}
         components={COMPONENTS}
         urlTransform={markdownUrlTransform}
       >
@@ -114,12 +121,12 @@ const PROSE_BASE = cn(
   // Paragraphs.
   "[&_p]:my-3 [&_p]:leading-[1.7] [&_p:last-child]:mb-0",
   // Headings (Newsreader, slight weight contrast against body).
-  "[&_h1]:mt-5 [&_h1]:mb-3 [&_h1]:font-serif [&_h1]:text-[22px] [&_h1]:font-medium [&_h1]:leading-[1.3] [&_h1]:tracking-[0.005em] [&_h1]:text-ink",
-  "[&_h2]:mt-5 [&_h2]:mb-2.5 [&_h2]:font-serif [&_h2]:text-[19px] [&_h2]:font-medium [&_h2]:leading-[1.35] [&_h2]:text-ink",
+  "[&_h1]:mt-5 [&_h1]:mb-3 [&_h1]:font-[var(--galley-prose-serif)] [&_h1]:text-[22px] [&_h1]:font-medium [&_h1]:leading-[1.3] [&_h1]:tracking-[0.005em] [&_h1]:text-ink",
+  "[&_h2]:mt-5 [&_h2]:mb-2.5 [&_h2]:font-[var(--galley-prose-serif)] [&_h2]:text-[19px] [&_h2]:font-medium [&_h2]:leading-[1.35] [&_h2]:text-ink",
   // h3 deliberately close to body size — DESIGN.md §4.3 calls this
   // out as a way to avoid jarring jumps inside the document flow.
-  "[&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:font-serif [&_h3]:text-[17px] [&_h3]:font-medium [&_h3]:text-ink",
-  "[&_h4]:mt-3 [&_h4]:mb-1.5 [&_h4]:font-serif [&_h4]:text-[15.5px] [&_h4]:font-medium [&_h4]:text-ink",
+  "[&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:font-[var(--galley-prose-serif)] [&_h3]:text-[17px] [&_h3]:font-medium [&_h3]:text-ink",
+  "[&_h4]:mt-3 [&_h4]:mb-1.5 [&_h4]:font-[var(--galley-prose-serif)] [&_h4]:text-[15.5px] [&_h4]:font-medium [&_h4]:text-ink",
   // Lists. ::marker pulls list bullets into the muted register so
   // they read as structure rather than content.
   "[&_ul]:my-3 [&_ul]:ml-5 [&_ul]:list-disc",
@@ -134,7 +141,7 @@ const PROSE_BASE = cn(
   // styles); we keep a fallback for any pre that escapes.
   "[&_pre]:my-3.5",
   // Blockquotes — apricot-bar accent, italic, muted.
-  "[&_blockquote]:my-3 [&_blockquote]:border-l-[3px] [&_blockquote]:border-brand [&_blockquote]:pl-3.5 [&_blockquote]:font-serif [&_blockquote]:italic [&_blockquote]:text-ink-soft",
+  "[&_blockquote]:my-3 [&_blockquote]:border-l-[3px] [&_blockquote]:border-brand [&_blockquote]:pl-3.5 [&_blockquote]:font-[var(--galley-prose-serif)] [&_blockquote]:italic [&_blockquote]:text-ink-soft",
   // Links.
   "[&_a]:text-brand-strong [&_a]:underline [&_a]:underline-offset-[3px] [&_a]:decoration-brand-strong/40 [&_a:hover]:decoration-brand-strong",
   // Tables — GFM extension. The table component wraps them in an
@@ -153,7 +160,7 @@ const PROSE_BASE = cn(
 const PROSE_AGENT = cn(
   PROSE_BASE,
   // The "final answer floats in the document" register (DESIGN.md §4.3).
-  "font-serif text-[16.5px] leading-[1.7] tracking-[0.005em] text-ink",
+  "font-[var(--galley-prose-serif)] text-[16.5px] leading-[1.7] tracking-[0.005em] text-ink",
 );
 
 const PROSE_NARRATION = cn(
@@ -161,15 +168,87 @@ const PROSE_NARRATION = cn(
   // Intermediate LLM narrator prose must match the in-flight body
   // register. Otherwise a pre-tool sentence streams as `agent`, then
   // snaps smaller/softer once turn_end classifies it as narration.
-  "font-serif text-[16.5px] leading-[1.7] tracking-[0.005em] text-ink",
+  "font-[var(--galley-prose-serif)] text-[16.5px] leading-[1.7] tracking-[0.005em] text-ink",
 );
 
 const PROSE_THINKING = cn(
   PROSE_BASE,
   // Thinking summary register: italic serif muted (a notch lighter
   // than the answer body).
-  "font-serif text-[14px] italic leading-[1.55] text-ink-soft",
+  "font-[var(--galley-prose-serif)] text-[14px] italic leading-[1.55] text-ink-soft",
 );
+
+const CJK_SCRIPT =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
+function cjkDominant(source: string): boolean {
+  return CJK_SCRIPT.test(source);
+}
+
+// CommonMark deliberately keeps `名叫**"下一个字"**` literal: the
+// opener follows a CJK letter and precedes punctuation. LLMs emit this
+// shape often enough that Galley should render the intended emphasis
+// without asking the user to mentally parse raw `**` markers.
+type MarkdownAstNode = {
+  type: string;
+  value?: string;
+  children?: MarkdownAstNode[];
+  [key: string]: unknown;
+};
+
+const CJK_ADJACENT_QUOTED_STRONG =
+  /([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])\*\*((?:["'“‘「『《（(])[^*\n]+?(?:["'”’」』》）)]))\*\*/gu;
+
+function remarkCjkAdjacentQuotedStrong() {
+  return (tree: MarkdownAstNode) => {
+    transformCjkAdjacentQuotedStrong(tree);
+  };
+}
+
+function transformCjkAdjacentQuotedStrong(node: MarkdownAstNode) {
+  if (!node.children) return;
+
+  const nextChildren: MarkdownAstNode[] = [];
+  for (const child of node.children) {
+    if (child.type === "text" && typeof child.value === "string") {
+      nextChildren.push(
+        ...(splitCjkAdjacentQuotedStrong(child.value) ?? [child]),
+      );
+      continue;
+    }
+
+    transformCjkAdjacentQuotedStrong(child);
+    nextChildren.push(child);
+  }
+
+  node.children = nextChildren;
+}
+
+function splitCjkAdjacentQuotedStrong(value: string): MarkdownAstNode[] | null {
+  const pieces: MarkdownAstNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of value.matchAll(CJK_ADJACENT_QUOTED_STRONG)) {
+    const start = match.index ?? 0;
+    const [fullMatch, prefixChar, strongText] = match;
+
+    if (start > lastIndex) {
+      pieces.push({ type: "text", value: value.slice(lastIndex, start) });
+    }
+    pieces.push({ type: "text", value: prefixChar });
+    pieces.push({
+      type: "strong",
+      children: [{ type: "text", value: strongText }],
+    });
+    lastIndex = start + fullMatch.length;
+  }
+
+  if (pieces.length === 0) return null;
+  if (lastIndex < value.length) {
+    pieces.push({ type: "text", value: value.slice(lastIndex) });
+  }
+  return pieces;
+}
 
 // ---------- Code block (Shiki, fine-grained imports) ----------
 

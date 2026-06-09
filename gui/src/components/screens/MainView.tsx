@@ -571,9 +571,10 @@ export function MainView({
               once streaming content has begun (the partial render
               is itself the live signal).
 
-              Renders as TurnMarker in thinking mode — same italic
-              serif 12px register as the settled marker, just with
-              a sequential "思考中..." wave in place of the summary.
+              Renders as TurnMarker in thinking mode — same upright
+              12px structural register as the settled marker, just
+              with a three-dot working indicator in place of the
+              summary.
               Used to live inside a ThinkingSummary callout (bg-surface
               + bar) but that chrome was sized for multi-paragraph
               thinking content, not a one-liner "still working"

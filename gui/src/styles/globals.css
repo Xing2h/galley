@@ -49,6 +49,10 @@
   --color-brand: #d9a78a;
   --color-brand-soft: #f8edda;
   --color-brand-strong: #c68762;
+  /* Stronger apricot band than brand-soft — used for the user-message
+     fill so it stays scannable in long conversations (a "highlighted
+     passage", not a barely-tinted one). */
+  --color-brand-tint: #f1dece;
 
   /* --- semantic states --- */
   --color-success: #5a8c5a;
@@ -77,30 +81,36 @@
     0 1px 0 rgba(31, 27, 23, 0.12), 0 1px 2px rgba(31, 27, 23, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.34);
   --shadow-button-raised-hover:
-    0 2px 0 rgba(31, 27, 23, 0.12), 0 6px 14px rgba(31, 27, 23, 0.1),
+    0 2px 0 rgba(31, 27, 23, 0.14), 0 3px 8px rgba(31, 27, 23, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.42);
   --shadow-button-raised-active: inset 0 1px 3px rgba(31, 27, 23, 0.14);
   --shadow-button-primary:
     0 1px 0 rgba(31, 27, 23, 0.24), 0 2px 6px rgba(31, 27, 23, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   --shadow-button-primary-hover:
-    0 2px 0 rgba(31, 27, 23, 0.22), 0 8px 18px rgba(31, 27, 23, 0.16),
+    0 2px 0 rgba(31, 27, 23, 0.24), 0 3px 9px rgba(31, 27, 23, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
   --shadow-button-primary-active: inset 0 2px 5px rgba(0, 0, 0, 0.2);
   --shadow-brand-control:
     0 1px 0 rgba(198, 135, 98, 0.3), 0 2px 7px rgba(198, 135, 98, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
   --shadow-brand-control-hover:
-    0 2px 0 rgba(198, 135, 98, 0.28), 0 8px 16px rgba(198, 135, 98, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 2px 0 rgba(198, 135, 98, 0.34), 0 3px 9px rgba(198, 135, 98, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
   --shadow-brand-control-active: inset 0 2px 5px rgba(31, 27, 23, 0.18);
   --shadow-neutral-control:
     0 1px 0 rgba(31, 27, 23, 0.04), 0 2px 7px rgba(31, 27, 23, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
   --shadow-neutral-control-hover:
-    0 2px 0 rgba(31, 27, 23, 0.05), 0 8px 16px rgba(31, 27, 23, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 2px 0 rgba(31, 27, 23, 0.07), 0 3px 9px rgba(31, 27, 23, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
   --shadow-neutral-control-active: inset 0 2px 5px rgba(31, 27, 23, 0.12);
+  /* Deep contact inset for the pressed (active) state — the gap
+     between a raised control and the surface collapses; pairs with a
+     ~2px downward translate for perceptible key travel. All `*-hover`
+     tokens above are "firm" (hard bottom edge, tight soft blur, no
+     balloon) so hover reads as planted, not floaty. */
+  --shadow-control-press: inset 0 3px 6px rgba(31, 27, 23, 0.26);
   --shadow-float: 0 6px 18px rgba(31, 27, 23, 0.1);
   --shadow-float-hover: 0 8px 22px rgba(31, 27, 23, 0.14);
   --shadow-composer-stop:
@@ -141,6 +151,8 @@ html[data-theme="dark"] {
   --color-brand: #d6a083;
   --color-brand-soft: #3a2d23;
   --color-brand-strong: #e2ae8d;
+  /* Dark-mode user-message band — provisional; revisit in the dark pass. */
+  --color-brand-tint: #4a3829;
 
   --color-success: #8fbf8f;
   --color-warning: #d6a250;
@@ -154,30 +166,31 @@ html[data-theme="dark"] {
     0 1px 0 rgba(239, 231, 220, 0.07), 0 2px 8px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(239, 231, 220, 0.08);
   --shadow-button-raised-hover:
-    0 1px 0 rgba(239, 231, 220, 0.08), 0 8px 18px rgba(0, 0, 0, 0.28),
+    0 2px 0 rgba(239, 231, 220, 0.08), 0 3px 9px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(239, 231, 220, 0.1);
   --shadow-button-raised-active: inset 0 1px 3px rgba(0, 0, 0, 0.34);
   --shadow-button-primary:
     0 1px 0 rgba(239, 231, 220, 0.09), 0 2px 8px rgba(0, 0, 0, 0.32),
     inset 0 1px 0 rgba(239, 231, 220, 0.08);
   --shadow-button-primary-hover:
-    0 1px 0 rgba(239, 231, 220, 0.1), 0 8px 18px rgba(0, 0, 0, 0.38),
+    0 2px 0 rgba(239, 231, 220, 0.1), 0 3px 9px rgba(0, 0, 0, 0.34),
     inset 0 1px 0 rgba(239, 231, 220, 0.1);
   --shadow-button-primary-active: inset 0 2px 5px rgba(0, 0, 0, 0.44);
   --shadow-brand-control:
     0 1px 0 rgba(226, 174, 141, 0.18), 0 2px 8px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(239, 231, 220, 0.08);
   --shadow-brand-control-hover:
-    0 1px 0 rgba(226, 174, 141, 0.22), 0 8px 18px rgba(0, 0, 0, 0.36),
+    0 2px 0 rgba(226, 174, 141, 0.22), 0 3px 9px rgba(0, 0, 0, 0.32),
     inset 0 1px 0 rgba(239, 231, 220, 0.1);
   --shadow-brand-control-active: inset 0 2px 5px rgba(0, 0, 0, 0.38);
   --shadow-neutral-control:
     0 1px 0 rgba(239, 231, 220, 0.05), 0 2px 8px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(239, 231, 220, 0.07);
   --shadow-neutral-control-hover:
-    0 1px 0 rgba(239, 231, 220, 0.08), 0 8px 18px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(239, 231, 220, 0.08);
+    0 2px 0 rgba(239, 231, 220, 0.07), 0 3px 9px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(239, 231, 220, 0.09);
   --shadow-neutral-control-active: inset 0 2px 5px rgba(0, 0, 0, 0.34);
+  --shadow-control-press: inset 0 3px 7px rgba(0, 0, 0, 0.5);
   --shadow-float: 0 10px 24px rgba(0, 0, 0, 0.38);
   --shadow-float-hover: 0 12px 30px rgba(0, 0, 0, 0.46);
   --shadow-composer-stop:
@@ -411,24 +424,6 @@ html[data-theme="dark"] .settings-model-provider-card {
   animation: runtime-mode-highlight 0.9s ease-out;
 }
 
-/* Peripheral liveness for tool execution. Only the narrow status bar
-   breathes so long-running tools feel alive without pulling attention
-   away from the command / args / result text. */
-@keyframes tool-running-bar-breath {
-  0%,
-  100% {
-    opacity: 0.55;
-    box-shadow: none;
-  }
-  50% {
-    opacity: 1;
-    box-shadow: 0 0 8px rgba(217, 167, 138, 0.18);
-  }
-}
-.tool-running-bar-breath {
-  animation: tool-running-bar-breath 2.2s ease-in-out infinite;
-}
-
 /* Pending approval is actionable, so it gets a small attention pulse.
    Keep the motion on the icon instead of the dock or button: the user
    should notice the wait, not feel nagged by a flashing CTA. */
@@ -594,53 +589,36 @@ html[data-theme="dark"] .settings-model-provider-card {
   position: absolute;
 }
 
-/* Running Composer state. Stop is available, but it should read as a
-   quiet live affordance instead of a flashing warning button. */
-@keyframes composer-stop-breath {
-  0%,
-  100% {
-    box-shadow: var(--shadow-composer-stop);
-  }
-  50% {
-    box-shadow: var(--shadow-composer-stop-pulse);
-  }
-}
-.composer-stop-breath {
-  animation: composer-stop-breath 2.6s ease-in-out infinite;
-}
+/* Running Composer state. Stop is available as a static raised
+   control (shadow-composer-stop at rest, the pulse shadow on hover);
+   it no longer breathes — the deep-amber fill + Stop glyph + the
+   conversation's own running indicators carry "stoppable" without an
+   ambient loop. */
 
-/* Sequential opacity wave for the in-flight step marker. Only visible
-   glyphs consume a wave index; spaces keep layout but don't slow the
-   sequence. Duration is set by the component from visible token count
-   so the next pass starts shortly after the last visible glyph lights. */
-@keyframes thinking-wave {
+/* In-flight "working" indicator for the step marker. Three dots with
+   a gentle staggered opacity lift — a single localized affordance
+   (three glyphs), not a full-sentence character wave. Conveys liveness
+   during LLM TTFT / tool dispatch without the restless shimmer of the
+   previous per-character treatment; the tabular elapsed counter that
+   joins after a few seconds is the primary proof-of-life. */
+@keyframes live-dots {
   0%,
-  6%,
-  18%,
+  80%,
   100% {
-    opacity: var(--thinking-wave-floor, 0.58);
+    opacity: 0.22;
   }
-  10%,
-  14% {
-    opacity: 1;
+  40% {
+    opacity: 0.85;
   }
 }
-.thinking-wave {
-  display: inline-block;
+.live-dot {
+  animation: live-dots 1.4s ease-in-out infinite;
 }
-.thinking-wave-token {
-  animation: thinking-wave var(--thinking-wave-duration, 2.16s) linear infinite;
-  animation-delay: calc(var(--thinking-wave-index) * 160ms);
-  display: inline-block;
-  opacity: var(--thinking-wave-floor, 0.58);
+.live-dot:nth-child(2) {
+  animation-delay: 0.16s;
 }
-.thinking-wave-token-space {
-  animation: none;
-  opacity: 1;
-}
-.thinking-wave-token-elapsed {
-  --thinking-wave-floor: 0.74;
-  font-variant-numeric: tabular-nums;
+.live-dot:nth-child(3) {
+  animation-delay: 0.32s;
 }
 
 /* Streaming-content cursor — a soft breathing caret appended to the
@@ -661,7 +639,6 @@ html[data-theme="dark"] .settings-model-provider-card {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tool-running-bar-breath,
   .approval-attention-breath,
   .browser-control-attention,
   .sidebar-liveness-rail,
@@ -669,8 +646,7 @@ html[data-theme="dark"] .settings-model-provider-card {
   .sidebar-step-tick,
   .sidebar-unread-pop,
   .sidebar-attention-pop,
-  .composer-stop-breath,
-  .thinking-wave-token,
+  .live-dot,
   .streaming-cursor {
     animation: none;
     opacity: 1;

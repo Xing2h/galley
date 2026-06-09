@@ -67,9 +67,12 @@ import { IconTooltip, type TooltipSide } from "@/components/ui/tooltip";
  *   - Disabled handling is universal: `opacity-40 + cursor-not-allowed`.
  *     We don't `disabled:hover:*` override — opacity already kills the
  *     hover visual cleanly.
- *   - Button-like controls should feel pressable: hover is a tiny lift,
- *     active is a quicker downward press. Ghost/text-adjacent actions
- *     keep the same timing but avoid heavy shadows.
+ *   - Button-like controls feel pressable with real key travel: hover
+ *     rises a crisp 1px (firm shadow, planted — not floaty), press sinks
+ *     2px with a slight compression scale and a deep contact inset
+ *     (`--shadow-control-press`). Ghost / text-adjacent actions stay flat
+ *     (a quiet 1px press, no shadow). Timing is asymmetric: ~70ms snap
+ *     down, ~140ms settle up.
  *   - All variants use `rounded-sm` and shared motion timing. Override
  *     via `className` only when you have a specific reason (the
  *     ModeCard / Composer submit-pill remain hand-rolled outliers).
@@ -128,13 +131,13 @@ export interface DialogActionRowProps extends HTMLAttributes<HTMLDivElement> {
 
 const RAISED_BUTTON_SURFACE = cn(
   "shadow-[var(--shadow-button-raised)]",
-  "hover:-translate-y-[0.5px] hover:shadow-[var(--shadow-button-raised-hover)]",
-  "active:translate-y-[0.5px] active:shadow-[var(--shadow-button-raised-active)]",
-  "disabled:translate-y-0 disabled:shadow-none",
+  "hover:-translate-y-px hover:shadow-[var(--shadow-button-raised-hover)]",
+  "active:translate-y-[2px] active:scale-[0.97] active:shadow-[var(--shadow-control-press)]",
+  "disabled:translate-y-0 disabled:scale-100 disabled:shadow-none",
 );
 
 const QUIET_BUTTON_PRESS = cn(
-  "active:translate-y-[0.5px]",
+  "active:translate-y-px",
   "disabled:translate-y-0 disabled:shadow-none",
 );
 
@@ -142,9 +145,9 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: cn(
     "border border-ink bg-ink font-medium text-elevated",
     "shadow-[var(--shadow-button-primary)]",
-    "hover:-translate-y-[0.5px] hover:bg-ink/95 hover:shadow-[var(--shadow-button-primary-hover)]",
-    "active:translate-y-[0.5px] active:bg-ink active:shadow-[var(--shadow-button-primary-active)]",
-    "disabled:translate-y-0 disabled:shadow-none",
+    "hover:-translate-y-px hover:bg-ink/95 hover:shadow-[var(--shadow-button-primary-hover)]",
+    "active:translate-y-[2px] active:scale-[0.97] active:bg-ink active:shadow-[var(--shadow-control-press)]",
+    "disabled:translate-y-0 disabled:scale-100 disabled:shadow-none",
   ),
   secondary: cn(
     "border border-line bg-elevated text-ink",
@@ -261,7 +264,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         type={type}
         className={cn(
           "inline-flex select-none items-center justify-center rounded-sm transition-[background-color,border-color,color,box-shadow,transform]",
-          "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[45ms]",
+          "duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
           "disabled:cursor-not-allowed disabled:opacity-40",
           VARIANT_CLASSES[variant],
           SIZE_CLASSES[size],
@@ -301,7 +304,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         aria-label={ariaLabel}
         className={cn(
           "inline-flex select-none items-center justify-center rounded-sm transition-[background-color,border-color,color,box-shadow,transform]",
-          "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[45ms]",
+          "duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
           "disabled:cursor-not-allowed disabled:opacity-40",
           ICON_VARIANT_CLASSES[variant],
           ICON_SIZE_CLASSES[size],

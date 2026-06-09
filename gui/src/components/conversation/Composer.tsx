@@ -92,9 +92,13 @@ const PASTE_PLACEHOLDER_RE = /\[Pasted text #(\d+) \+\d+ lines\]/g;
 
 const COMPOSER_ACTION_BUTTON = cn(
   "flex size-8 items-center justify-center rounded-full border transition-[background-color,border-color,color,box-shadow,transform]",
-  "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[45ms]",
-  "hover:-translate-y-[0.5px] active:translate-y-[0.5px]",
-  "disabled:translate-y-0 disabled:shadow-none",
+  "duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
+  // Full key travel: rises a crisp 1px on hover (key meets finger),
+  // sinks 2px on press (~3px of perceptible travel) with a slight
+  // compression scale. Integer-pixel movement, never sub-pixel.
+  "hover:-translate-y-px",
+  "active:translate-y-[2px] active:scale-[0.97]",
+  "disabled:translate-y-0 disabled:scale-100 disabled:shadow-none",
 );
 
 const COMPOSER_SEND_BUTTON = cn(
@@ -102,14 +106,15 @@ const COMPOSER_SEND_BUTTON = cn(
   "border-brand-strong/40 bg-brand text-ink",
   "shadow-[var(--shadow-brand-control)]",
   "hover:bg-brand-strong hover:text-elevated hover:shadow-[var(--shadow-brand-control-hover)]",
-  "active:bg-brand-strong active:text-elevated active:shadow-[var(--shadow-brand-control-active)]",
+  "active:bg-brand-strong active:text-elevated active:shadow-[var(--shadow-control-press)]",
 );
 
 const COMPOSER_STOP_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
   "border-warning/70 bg-warning text-elevated",
-  "hover:bg-warning/90",
-  "active:shadow-[var(--shadow-brand-control-active)]",
+  "shadow-[var(--shadow-composer-stop)]",
+  "hover:bg-warning/90 hover:shadow-[var(--shadow-composer-stop-pulse)]",
+  "active:shadow-[var(--shadow-control-press)]",
 );
 
 const COMPOSER_CONFIG_BUTTON = cn(
@@ -117,33 +122,33 @@ const COMPOSER_CONFIG_BUTTON = cn(
   "border-line bg-surface text-ink-soft",
   "shadow-[var(--shadow-neutral-control)]",
   "hover:border-brand/35 hover:bg-brand-soft hover:text-ink hover:shadow-[var(--shadow-neutral-control-hover)]",
-  "active:shadow-[var(--shadow-neutral-control-active)]",
+  "active:shadow-[var(--shadow-control-press)]",
 );
 
 const COMPOSER_GOAL_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
   "border-line bg-surface text-ink-soft",
   "shadow-[var(--shadow-neutral-control)]",
-  "hover:border-warning/45 hover:bg-warning/[var(--opacity-soft)] hover:text-warning hover:shadow-[var(--shadow-neutral-control-hover)]",
-  "active:shadow-[var(--shadow-neutral-control-active)]",
+  "hover:border-brand/45 hover:bg-brand-soft hover:text-brand-strong hover:shadow-[var(--shadow-neutral-control-hover)]",
+  "active:shadow-[var(--shadow-control-press)]",
 );
 
 const COMPOSER_GOAL_BUTTON_ARMED = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-warning/45 bg-warning/[var(--opacity-soft)] text-warning",
+  "border-brand/45 bg-brand-soft text-brand-strong",
   "shadow-[var(--shadow-neutral-control)]",
-  "hover:bg-warning/[var(--opacity-medium)] hover:shadow-[var(--shadow-neutral-control-hover)]",
-  "active:shadow-[var(--shadow-neutral-control-active)]",
+  "hover:bg-brand/[var(--opacity-medium)] hover:shadow-[var(--shadow-neutral-control-hover)]",
+  "active:shadow-[var(--shadow-control-press)]",
 );
 
 const COMPOSER_GOAL_SEND_BUTTON = cn(
   "inline-flex h-8 min-w-[112px] items-center justify-center gap-1.5 rounded-full border px-3",
   "text-[12.5px] font-semibold transition-[background-color,border-color,color,box-shadow,transform]",
-  "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[45ms]",
-  "border-warning bg-warning text-elevated",
-  "shadow-[var(--shadow-button-raised)] hover:-translate-y-[0.5px] hover:bg-warning/90 hover:shadow-[var(--shadow-button-raised-hover)]",
-  "active:translate-y-[0.5px] active:bg-warning active:shadow-[var(--shadow-button-raised-active)]",
-  "disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none",
+  "duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
+  "border-brand-strong/40 bg-brand text-ink",
+  "shadow-[var(--shadow-brand-control)] hover:-translate-y-px hover:bg-brand-strong hover:text-elevated hover:shadow-[var(--shadow-brand-control-hover)]",
+  "active:translate-y-[2px] active:scale-[0.97] active:bg-brand-strong active:text-elevated active:shadow-[var(--shadow-control-press)]",
+  "disabled:translate-y-0 disabled:scale-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none",
 );
 
 export interface ComposerProps {
@@ -487,7 +492,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     return (
       <div
         className={cn(
-          "rounded-md border border-line bg-elevated px-3.5 pb-2 pt-3.5 shadow-card transition-all",
+          "rounded-md border border-line bg-elevated px-3.5 pb-2 pt-3.5 shadow-card transition-[border-color,box-shadow] duration-150",
           "focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand/20",
           disabled && "opacity-60",
         )}
@@ -524,7 +529,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {effectiveGoalArmed && (
-              <span className="hidden min-w-0 truncate text-[11px] font-medium text-warning sm:inline">
+              <span className="hidden min-w-0 truncate text-[11px] font-medium text-ink-soft sm:inline">
                 {copy.composer.goalArmedHint}
               </span>
             )}
@@ -580,7 +585,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     type="button"
                     onClick={onStop}
                     aria-label={copy.composer.stop}
-                    className={cn("composer-stop-breath", COMPOSER_STOP_BUTTON)}
+                    className={COMPOSER_STOP_BUTTON}
                   >
                     <Stop size={14} weight="fill" />
                   </button>
@@ -846,7 +851,7 @@ function GoalConfirmDialog({
               {copy.common.cancel}
             </Button>
             <Button
-              variant="warning"
+              variant="primary"
               onClick={() =>
                 onConfirm({
                   workerLimit,

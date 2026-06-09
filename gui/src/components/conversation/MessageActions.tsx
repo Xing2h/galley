@@ -3,9 +3,8 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { useEffect, useRef, useState } from "react";
 
-import { IconButton } from "@/components/ui/button";
+import { ActionChip } from "@/components/conversation/ActionChip";
 import { useCopy } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 
 /**
  * Per-reply action bar — sits below the agent's final answer
@@ -99,62 +98,22 @@ export function MessageActions({ source }: MessageActionsProps) {
 
   return (
     <div className="mt-1.5 flex items-center gap-0.5">
-      <ActionButton
+      <ActionChip
         active={copied}
         idleIcon={<Copy size={14} weight="thin" />}
-        idleLabel={copy.conversation.copy}
         activeIcon={<Check size={14} weight="bold" />}
+        idleLabel={copy.conversation.copy}
         activeLabel={copy.conversation.copied}
-        onClick={onCopy}
+        onClick={() => void onCopy()}
       />
-      <ActionButton
+      <ActionChip
         active={saved}
         idleIcon={<FloppyDisk size={14} weight="thin" />}
-        idleLabel={copy.conversation.save}
         activeIcon={<Check size={14} weight="bold" />}
+        idleLabel={copy.conversation.save}
         activeLabel={copy.conversation.saved}
-        onClick={onSave}
+        onClick={() => void onSave()}
       />
     </div>
-  );
-}
-
-function ActionButton({
-  active,
-  idleIcon,
-  idleLabel,
-  activeIcon,
-  activeLabel,
-  onClick,
-}: {
-  active: boolean;
-  idleIcon: React.ReactNode;
-  idleLabel: string;
-  activeIcon: React.ReactNode;
-  activeLabel: string;
-  onClick: () => void;
-}) {
-  // Icon-only: IconButton's Radix-backed tooltip handles the hover
-  // label, while `aria-label` carries the semantic name for screen
-  // readers. `aria-live="polite"` announces the post-click state
-  // change since the success feedback is purely visual.
-  const label = active ? activeLabel : idleLabel;
-  return (
-    <IconButton
-      ariaLabel={label}
-      onClick={onClick}
-      size="xs"
-      className={cn(
-        "size-6",
-        active
-          ? "text-success"
-          : "text-ink-muted hover:bg-hover hover:text-ink-soft",
-      )}
-    >
-      {active ? activeIcon : idleIcon}
-      <span className="sr-only" aria-live="polite">
-        {label}
-      </span>
-    </IconButton>
   );
 }

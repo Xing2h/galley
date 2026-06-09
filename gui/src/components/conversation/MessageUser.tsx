@@ -1,6 +1,7 @@
 import { CaretDown, CaretUp, Check, Copy, Robot } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { ActionChip } from "@/components/conversation/ActionChip";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useCopy, type AppCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -11,37 +12,43 @@ import type { Origin } from "@/types/conversation";
  *
  * Per DESIGN.md §4.3 (as amended 2026-05-14):
  *   - font-sans 15px medium
- *   - left border 3px brand-strong (apricot) — primary visual anchor
+ *   - left border 4px brand-strong (apricot) — primary visual anchor
  *     for scroll-back. In long conversations users navigate by their
  *     own questions; the brand bar makes each user turn a strong
  *     "checkpoint" in the scroll.
- *   - bg-brand-soft (solid) — apricot tint matching the Sidebar
- *     active-row / filter-banner / ApprovalDock vocabulary. "I'm
- *     in focus" is a single visual language across the product;
- *     the user's own turns sit in the same family. Still a
- *     document callout (full-width, left-anchored), not an IM
- *     bubble.
- *   - rounded-r-sm — softens the trailing edge into a callout
- *     shape (a touch less round than ThinkingSummary's 8px so the
- *     hierarchy reads user > thinking).
+ *   - bg-brand-tint (solid) — apricot band a step deeper than
+ *     brand-soft so it stays scannable while scrolling a long
+ *     conversation (the fill, not the thin bar, is what the eye
+ *     catches during fast scroll). Sibling of the Sidebar active-row /
+ *     ApprovalDock apricot family. Still a document callout
+ *     (full-width, left-anchored), not an IM bubble.
+ *   - sharp right edge (no radius) — a crisp editorial "quoted
+ *     input" rectangle anchored by the apricot left bar. Swiss
+ *     geometry: structure via a hard edge + the brand rule, not a
+ *     softened corner. The warmth stays in the apricot fill + bar;
+ *     only the geometry is hardened.
  *   - `whitespace-pre-wrap break-words` — preserves the `\n`s in
  *     pasted content (otherwise they'd collapse to spaces under
  *     CSS default whitespace:normal) and lets long Chinese / URL /
  *     token strings break inside words rather than overflowing.
  *
  * Long-content collapse (≥7 lines or >500 chars):
- *   Collapsed by default to ~6 lines + fade-out gradient mask.
- *   Toggle button below the callout switches between "展开（共 N 行）"
+ *   Collapsed by default to 6 lines via `line-clamp` — a clean
+ *   line-boundary truncation, no fade-out gradient mask. Toggle
+ *   button below the callout switches between "展开（共 N 行）"
  *   and "收起". Saves screen real-estate in conversations where
  *   the user pasted a long prompt / stack trace / document.
  *
  * Message actions:
- *   Supervisor provenance stays pinned to the left brand bar so it
- *   reads as belonging to this prompt. Copy is hover-revealed in the
- *   prompt's upper-right corner as an absolute overlay, so showing it
- *   never changes the message block height or nudges the assistant
- *   answer below. Mouse leave delays hiding briefly so the user can
- *   move from the message body to the action without chasing it.
+ *   Supervisor provenance stays pinned to the left brand bar. Copy is
+ *   a transient floating chip (the same design as the assistant
+ *   selection-copy chip) that fades in on hover at the block's
+ *   top-right — overlaid on the block so it unambiguously belongs to
+ *   this message and never touches the inter-turn gap. The model:
+ *   persistent actions live in the assistant reply bar; transient copy
+ *   surfaces as a floating chip on a user action (hover / select).
+ *   Mouse leave delays hiding briefly so the user can move from the
+ *   message body to the action without chasing it.
  *
  * `data-role="user-msg"` is a stable anchor that MainView's scroll
  * effect uses to find the just-submitted user message and snap its
@@ -50,8 +57,6 @@ import type { Origin } from "@/types/conversation";
  */
 const COLLAPSE_LINE_THRESHOLD = 6;
 const COLLAPSE_CHAR_THRESHOLD = 500;
-// ≈ 6 lines at 15px font-size × 1.65 leading + py-2.5 (10px ea side).
-const COLLAPSED_MAX_H_PX = 175;
 const ACTION_HIDE_DELAY_MS = 1800;
 const COPY_FEEDBACK_MS = 1500;
 
@@ -176,8 +181,20 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
     }
   };
 
-  const copyLabel = copied ? copy.conversation.copied : copy.conversation.copy;
   const copyVisible = actionsVisible || copied;
+
+  const copyChip = (
+    <ActionChip
+      variant="floating"
+      active={copied}
+      idleIcon={<Copy size={14} weight="thin" />}
+      activeIcon={<Check size={14} weight="bold" />}
+      idleLabel={copy.conversation.copy}
+      activeLabel={copy.conversation.copied}
+      onClick={() => void handleCopy()}
+      revealed={copyVisible}
+    />
+  );
 
   return (
     <div
@@ -211,59 +228,32 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
       <div
         data-role="user-msg"
         className={cn(
-          "relative rounded-r-sm border-l-[3px] border-brand-strong bg-brand-soft px-4 py-2.5 pr-12 text-[15px] font-medium leading-[1.65] text-ink",
-          "select-text whitespace-pre-wrap break-words",
-          isLong && collapsed && "overflow-hidden",
+          "relative border-l-4 border-brand-strong bg-brand-tint py-2.5 pl-4 pr-10 text-[15px] font-medium leading-[1.65] text-ink",
+          "select-text",
         )}
-        style={
-          isLong && collapsed ? { maxHeight: COLLAPSED_MAX_H_PX } : undefined
-        }
       >
-        {content}
-        <IconTooltip text={copyLabel}>
-          <button
-            type="button"
-            onClick={() => void handleCopy()}
-            aria-hidden={!copyVisible}
-            aria-label={copyLabel}
-            tabIndex={copyVisible ? 0 : -1}
-            className={cn(
-              "absolute right-1.5 top-1.5 z-10 inline-flex size-6 items-center justify-center rounded-sm",
-              "transition-[color,background-color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
-              copyVisible ? "opacity-100" : "pointer-events-none opacity-0",
-              copied
-                ? "text-success"
-                : "text-ink-muted hover:bg-elevated hover:text-ink-soft focus-visible:bg-elevated focus-visible:text-ink-soft focus-visible:outline-none",
-            )}
-          >
-            {copied ? (
-              <Check size={14} weight="bold" />
-            ) : (
-              <Copy size={14} weight="thin" />
-            )}
-            <span className="sr-only" aria-live="polite">
-              {copyLabel}
-            </span>
-          </button>
-        </IconTooltip>
-        {/* Fade-out gradient at the bottom of the collapsed view — a
-            soft visual hint that more content is hidden below. Matches
-            the brand-soft background so the gradient blends into the
-            callout edge instead of looking like a sticker. */}
-        {isLong && collapsed && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-brand-soft via-brand-soft/85 to-transparent"
-          />
-        )}
+        <span
+          className={cn(
+            "block whitespace-pre-wrap break-words",
+            isLong && collapsed && "line-clamp-6",
+          )}
+        >
+          {content}
+        </span>
+        {/* Transient copy — a floating chip (same design as the
+            selection-copy chip) that fades in on hover at the block's
+            top-right. Overlaid on the block so it unambiguously belongs
+            to this message and never touches the inter-turn gap. The
+            block reserves `pr-10` so the chip never covers text. */}
+        <div className="absolute right-1.5 top-1.5 z-10">{copyChip}</div>
       </div>
       {isLong && (
-        <div className="mt-1 flex items-center gap-1">
+        <div className="mt-1">
           <button
             type="button"
             onClick={() => setCollapsed((c) => !c)}
             aria-expanded={!collapsed}
-            className="inline-flex h-6 items-center gap-1 rounded-sm px-1 text-[11.5px] text-ink-muted underline-offset-2 transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover hover:text-ink hover:underline active:translate-y-[0.5px] active:duration-[45ms]"
+            className="inline-flex h-6 items-center gap-1 rounded-sm px-1 text-[11.5px] text-ink-muted underline-offset-2 transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover hover:text-ink hover:underline active:translate-y-px active:duration-[45ms]"
           >
             {collapsed ? (
               <>
