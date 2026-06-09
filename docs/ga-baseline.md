@@ -15,41 +15,40 @@ audited against.
 
 ## Current Baseline
 
-Locked commit: `5d122e20ea7e9dfd7941998acb902fbac4a2bc9a`
+Locked commit: `ba19018a6d84df7f530275fa4b9b0858843e932a`
 
 - Source: `lsdefine/GenericAgent` upstream `main`
-- Date audited: 2026-06-04
-- Previous baseline: `5f46b43816d6298f5e1d34c7076ea31f875b7810`
-- Delta: 5 commits
-- Result: no external bridge protocol or dependency break; managed runtime
-  needed refreshed patch contexts for upstream `agentmain.py` / `ga.py`
-  changes, and previously direct managed payload fixes for Browser Control and
-  ChatGPT / Codex were converted into explicit replay patches. The managed build
-  script now applies the manifest-declared patch list and normalizes
-  patch-touched text files before and after replay.
-- Devlog: [GA upstream upgrade 5f46b438 -> 5d122e20](./devlog/2026-06-04-ga-upstream-upgrade-5f46b438-to-5d122e20.md)
+- Date audited: 2026-06-09
+- Previous baseline: `5d122e20ea7e9dfd7941998acb902fbac4a2bc9a`
+- Delta: 16 commits
+- Result: no external bridge protocol or dependency break; `agent_loop.py` and
+  `pyproject.toml` did not change. Managed runtime needed refreshed
+  state-root and ChatGPT / Codex patch contexts because upstream moved nearby
+  `agentmain.py` and `llmcore.py` code. The managed build script now also
+  normalizes upstream trailing whitespace in `frontends/conductor.py` and
+  `memory/incubator_sop.md`.
+- Devlog: [GA upstream upgrade 5d122e20 -> ba19018a](./devlog/2026-06-09-ga-upstream-upgrade-5d122e20-to-ba19018a.md)
 
 Relevant compatibility notes:
 
 - `agent_loop.py`: no diff in this range. The dispatch / hooks surface Galley
   audits for attach mode did not move.
-- `agentmain.py`: upstream added an EXIT sentinel for the run loop, per-instance
-  `no_print` injection, and a lower-collision model-response log id. Managed
-  mode preserves those changes while routing temp/log paths through
-  `GALLEY_GA_STATE_ROOT`.
-- `ga.py`: upstream added `safe_print` / `myprint` plumbing. Managed mode keeps
-  that while preserving Galley's non-interactive `code_run` stdin close and
-  Browser Control recovery diagnostics.
-- `llmcore.py`: no upstream diff in this range. Galley's ChatGPT / Codex
-  managed backend remains a managed patch because it is a Galley credential IPC
-  contract, not upstream GA behavior.
-- `frontends/continue_cmd.py`: upstream hardened malformed-log preview fallback.
-  Managed mode keeps `/continue` log scan and cache paths under
-  `GALLEY_GA_STATE_ROOT`.
-- `TMWebDriver.py`: upstream reduced duplicate disconnect logging. Galley's
-  extension status probe remains a managed patch for user-facing no-tabs
-  diagnostics.
-- `reflect/checklist_master.py`: upstream added a checklist poll hard cap.
+- `agentmain.py`: upstream added SDK usage comments, removed the unused
+  `show_mode` field, and raised the long-prompt spill threshold from 1500 to
+  2000 chars. Managed mode preserves those changes while routing temp/log paths
+  through `GALLEY_GA_STATE_ROOT`.
+- `ga.py`: upstream suppresses the final info marker. Managed mode keeps that
+  while preserving Galley's non-interactive `code_run` stdin close and Browser
+  Control recovery diagnostics.
+- `llmcore.py`: upstream added `mykey.json` `remote_url` loading and generalized
+  OpenAI / Claude user-agent handling. Galley's ChatGPT / Codex managed backend
+  remains a managed patch because it is a Galley credential IPC contract, but it
+  now preserves upstream `sess.user_agent` for non-Codex OpenAI-like requests.
+- `frontends/conductor.py`, `frontends/tuiapp_v2.py`, and `frontends/tui_v3.py`:
+  upstream shipped conductor / IM plugin work and TUI fixes. These are bundled
+  in managed GA but do not move Galley's attach bridge contract.
+- `reflect/scheduler.py`: upstream ensures the scheduled-task directory exists
+  before cron import.
 - `pyproject.toml`: no dependency diff in this range; bundled Python
   dependencies did not need changes.
 

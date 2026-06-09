@@ -77,6 +77,8 @@ NORMALIZE_FILES=(
   "$DEST/frontends/continue_cmd.py"
   "$DEST/assets/tmwd_cdp_bridge/background.js"
   "$DEST/assets/tmwd_cdp_bridge/content.js"
+  "$DEST/frontends/conductor.py"
+  "$DEST/memory/incubator_sop.md"
 )
 
 # Normalize incidental upstream trailing spaces before patch replay so patch

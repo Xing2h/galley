@@ -2,8 +2,8 @@
 
 Patch stack id: `galley-managed-ga-patches-v1`
 
-Last replay verified: `2026-06-04` against upstream
-`5d122e20ea7e9dfd7941998acb902fbac4a2bc9a`.
+Last replay verified: `2026-06-09` against upstream
+`ba19018a6d84df7f530275fa4b9b0858843e932a`.
 
 Current patches:
 

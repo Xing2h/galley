@@ -1,5 +1,5 @@
 diff --git a/llmcore.py b/llmcore.py
-index a6a899b..3a51e50 100644
+index a954645..30391d2 100644
 --- a/llmcore.py
 +++ b/llmcore.py
 @@ -1,4 +1,4 @@
@@ -8,7 +8,7 @@ index a6a899b..3a51e50 100644
  from datetime import datetime
  urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
  _RESP_CACHE_KEY = str(uuid.uuid4())
-@@ -394,19 +394,69 @@ def _stream_with_retry(sess, url, headers, payload, parse_fn):
+@@ -396,20 +396,71 @@ def _stream_with_retry(sess, url, headers, payload, parse_fn):
              err = f"\n\n[!!! 流异常中断 {type(e).__name__}: {e} !!!]" if streamed else f"!!!Error: {type(e).__name__}: {e}"
              yield err; return [{"type": "text", "text": err}]
 
@@ -60,6 +60,7 @@ index a6a899b..3a51e50 100644
      if 'kimi' in ml or 'moonshot' in ml: temperature = 1
      elif 'minimax' in ml: temperature = max(0.01, min(temperature, 1.0))  # MiniMax requires temp in (0, 1]
 -    headers = {"Authorization": f"Bearer {sess.api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"}
+-    headers["User-Agent"] = sess.user_agent
 +    api_key = sess.api_key
 +    account_id = None
 +    if getattr(sess, 'codex_backend', False):
@@ -69,6 +70,8 @@ index a6a899b..3a51e50 100644
 +        headers.update({"User-Agent": "codex_cli_rs/0.0.0 (Galley)", "originator": "codex_cli_rs"})
 +        account_id = account_id or _codex_account_id_from_jwt(api_key)
 +        if account_id: headers["ChatGPT-Account-ID"] = account_id
++    else:
++        headers["User-Agent"] = sess.user_agent
      if api_mode == "responses":
 -        url = auto_make_url(sess.api_base, "responses")
 +        url = f"{sess.api_base.rstrip('/')}/responses" if getattr(sess, 'codex_backend', False) else auto_make_url(sess.api_base, "responses")
@@ -81,7 +84,7 @@ index a6a899b..3a51e50 100644
      else:
          url = auto_make_url(sess.api_base, "chat/completions")
          if sess.system: messages = [{"role": "system", "content": sess.system}] + messages
-@@ -520,6 +570,10 @@ class BaseSession:
+@@ -523,6 +574,10 @@ class BaseSession:
          self.api_key = cfg['apikey']
          self.api_base = cfg['apibase'].rstrip('/')
          self.model = cfg.get('model', '')
@@ -92,7 +95,7 @@ index a6a899b..3a51e50 100644
          default_context_win = 30000
          if 'deepseek' in self.model.lower():
              default_context_win = 70000; self.cut_msg_interval = 25; self.trim_keep_rate = 0.3
-@@ -533,7 +587,7 @@ class BaseSession:
+@@ -533,7 +588,7 @@ class BaseSession:
          self.proxies = {"http": proxy, "https": proxy} if proxy else None
          self.max_retries = max(0, int(cfg.get('max_retries', 4)))
          self.verify = cfg.get('verify', True)
@@ -101,7 +104,7 @@ index a6a899b..3a51e50 100644
          default_ct, default_rt = (5, 30) if self.stream else (10, 240)
          self.connect_timeout = max(1, int(cfg.get('timeout', default_ct)))
          self.read_timeout = max(5, int(cfg.get('read_timeout', default_rt)))
-@@ -540,6 +594,8 @@ class BaseSession:
+@@ -541,6 +596,8 @@ class BaseSession:
              v = cfg.get(key); v = None if v is None else str(v).strip().lower()
              return v if not v or v in valid else print(f"[WARN] Invalid {key} {v!r}, ignored.")
          self.reasoning_effort = _enum('reasoning_effort', {'none', 'minimal', 'low', 'medium', 'high', 'xhigh'})

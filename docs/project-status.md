@@ -29,6 +29,10 @@ execution, update-check failures now show a manual download fallback plus
 copyable phase / endpoint / detail diagnostics, and the bundled GenericAgent
 baseline is refreshed to audited upstream `5d122e20`.
 
+Post-`v0.2.7` working state: the next managed-GA baseline has been audited and
+rebuilt at upstream `ba19018a`; this has not changed the already published
+`v0.2.7` artifacts.
+
 The default update channel was promoted to `v0.2.7` after publish. The live
 channel verifier passed with cache-busting for both `stable` and the legacy
 `beta` alias, and the `galley-update-channel` branch manifest reports version
@@ -52,11 +56,11 @@ Post-promote follow-up:
 | Core architecture | Rust Galley Core is authoritative | [architecture demo](./architecture-demo.md) |
 | CLI / Agent API | Feature-complete for v0.2; schema frozen | [agent-api](./agent-api.md) |
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
-| Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; v0.2.7 closes non-interactive `code_run` stdin and refreshes the bundled GA baseline to audited upstream `5d122e20`; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
+| Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; v0.2.7 closes non-interactive `code_run` stdin and refreshed the bundled GA baseline to audited upstream `5d122e20`; current working baseline is audited upstream `ba19018a`; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | Backup mechanism exists; runtime identity and managed model config migrations are in dogfood | [B4 M8](./refactor/B4-M8-sub-plan.md) |
 | Release path | v0.2.7 is published as GitHub Latest and the live update-channel target | [release / update SOP](./release-update-sop.md) |
 | Windows | v0.2.7 targets issue #9 `code_run` stdin and update-check diagnostics; Windows setup is published | [Windows checklist](./windows-build-checklist.md) |
-| GA baseline | Locked to audited upstream `5d122e20` | [GA baseline](./ga-baseline.md) |
+| GA baseline | Locked to audited upstream `ba19018a` | [GA baseline](./ga-baseline.md) |
 
 ## Compact Timeline
 
