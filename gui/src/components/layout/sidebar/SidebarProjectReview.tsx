@@ -293,6 +293,9 @@ function SidebarProjectRow({
       className={cn(
         "group relative mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 overflow-hidden rounded-sm px-3 py-1.5 text-left text-[13px] outline-none",
         "transition-[background-color,color] focus-visible:ring-2 focus-visible:ring-brand/30",
+        (onStartConversation || hasRowActions) &&
+          "group-hover:pr-16 group-focus-within:pr-16",
+        actionsOpen && "pr-16",
         active
           ? "bg-selected text-ink"
           : actionsOpen
@@ -333,7 +336,7 @@ function SidebarProjectRow({
             "pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-75",
             "group-hover:pointer-events-auto group-hover:opacity-100",
             "group-focus-within:pointer-events-auto group-focus-within:opacity-100",
-            (active || actionsOpen) && "pointer-events-auto opacity-100",
+            actionsOpen && "pointer-events-auto opacity-100",
           )}
         >
           {onStartConversation && (
@@ -354,7 +357,6 @@ function SidebarProjectRow({
                   "group-hover:text-ink-soft group-focus-within:text-ink-soft",
                   "hover:bg-hover hover:text-ink active:bg-selected/60",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
-                  active && "text-ink-soft",
                 )}
               >
                 <Plus size={13} weight="thin" />

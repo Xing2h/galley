@@ -203,7 +203,7 @@ export function SidebarSessionRow({
       data-galley-context-menu-trigger={hasRowActions ? "" : undefined}
       onClick={isEditing ? undefined : onClick}
       className={cn(
-        "group relative mx-1.5 grid min-h-[48px] grid-cols-[16px_minmax(0,1fr)_12px] items-start gap-2 overflow-hidden rounded-sm px-3 py-1.5",
+        "group relative mx-1.5 grid min-h-[48px] grid-cols-[16px_minmax(0,1fr)] items-start gap-2 overflow-hidden rounded-sm px-3 py-1.5",
         "transition-[background-color,box-shadow,color]",
         isEditing
           ? "bg-elevated ring-1 ring-brand/30"
@@ -239,7 +239,14 @@ export function SidebarSessionRow({
           <StatusIcon status={session.status} size={14} />
         )}
       </span>
-      <div className="min-w-0 flex-1">
+      <div
+        className={cn(
+          "min-w-0 flex-1 transition-[padding] duration-75",
+          showActionTrigger &&
+            "group-hover:pr-6 group-focus-within:pr-6",
+          actionsOpen && "pr-6",
+        )}
+      >
         <div className="flex min-h-5 min-w-0 items-center gap-1.5">
           {isEditing ? (
             <SessionTitleEditor
@@ -305,10 +312,10 @@ export function SidebarSessionRow({
           </div>
         )}
       </div>
-      <div className="flex h-5 w-3 items-center justify-center pt-[5px]">
+      {attentionDot && (
         <div
           className={cn(
-            "flex items-center justify-center transition-opacity duration-75",
+            "absolute right-3 top-3 z-10 flex size-2 items-center justify-center transition-opacity duration-75",
             showActionTrigger &&
               "group-hover:opacity-0 group-focus-within:opacity-0",
             actionsOpen && "opacity-0",
@@ -316,7 +323,7 @@ export function SidebarSessionRow({
         >
           {attentionDot}
         </div>
-      </div>
+      )}
       {showActionTrigger && (
         <div
           className={cn(
