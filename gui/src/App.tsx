@@ -72,6 +72,13 @@ function goalMasterSessionTitle(objective: string): string {
   return `Goal · ${normalized.slice(0, limit)}…`;
 }
 
+function shouldSkipGlobalContextMenuGuard(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return !!target.closest(
+    'input, textarea, select, [contenteditable], [role="textbox"], [data-galley-context-menu-trigger]',
+  );
+}
+
 /**
  * V0.1 Stage 2 #8 — App entry.
  *
@@ -617,6 +624,19 @@ function App() {
   // user actually has intent. Sidebar's "New Chat" button still
   // creates an explicit session immediately, because that click
   // *is* the intent.
+
+  useEffect(() => {
+    const onContextMenu = (e: MouseEvent) => {
+      if (shouldSkipGlobalContextMenuGuard(e.target)) return;
+      e.preventDefault();
+    };
+    // Bubble-phase guard: Radix object menus handle the event first;
+    // empty WebView space still loses the browser default menu.
+    window.addEventListener("contextmenu", onContextMenu);
+    return () => {
+      window.removeEventListener("contextmenu", onContextMenu);
+    };
+  }, []);
 
   // Global keyboard shortcuts: ⌘K palette, ⌘, settings, ⌘N new chat.
   // Esc handled by Radix Dialog (Settings) and cmdk (CommandPalette)

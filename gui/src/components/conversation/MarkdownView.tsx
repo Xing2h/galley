@@ -505,7 +505,10 @@ function MarkdownImage({
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
-        <span className="my-3 block max-w-full">
+        <span
+          data-galley-context-menu-trigger=""
+          className="my-3 block max-w-full"
+        >
           <a
             href={preview.openHref}
             target="_blank"

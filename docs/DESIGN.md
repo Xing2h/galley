@@ -341,7 +341,8 @@ Browser Control 是 managed GA 的核心能力完成项。未连接时，TopBar 
 - **PINNED section** 仅在有 pin session 时显示，空时不占位
 - **EARLIER 折叠成单行入口**：sidebar 是当前工作面，不是无限历史列表；完整旧 session 浏览进入 `EarlierDialog`。
 - **Archived 不叫 Trash**：archive 是保留数据；真正永久删除只在 Archived dialog 里出现。
-- Sidebar 不可折叠；可拖拽调整宽度。`⌘K` 全局 Command Palette，右键菜单提供 rename / pin / move to project / archive 等低频操作。
+- Sidebar 不可折叠；可拖拽调整宽度。`⌘K` 全局 Command Palette。对象级低频操作由右键菜单和 row hover / focus `⋯` 共同承载：session row 提供 rename / pin / move to project / archive，project row 提供 pin / edit / delete。右键是熟练用户快捷入口，`⋯` 是可发现入口；两者必须共享同一组动作、排序和 destructive 样式。row contextual actions 使用 overlay，不在非 hover 状态制造额外右侧 gutter；attention slot 仍保持轻量对齐。
+- WebView 默认右键菜单在非编辑区禁用，避免空白处出现 `Reload / Inspect Element`。输入框、textarea、contenteditable、`role="textbox"` 等可编辑区域保留系统编辑菜单。
 
 #### Session Row（参考 PRD §7.5）
 
@@ -1187,7 +1188,7 @@ YOLO = "You Only Live Once"。
 - **Slash commands** in Composer（`/restore` `/new` 等）
 - **Cross-session 全文搜索**（Command Palette `#` prefix）
 - **Custom LLM displayName**（Settings → LLM tab）
-- **拖拽 session 到 Project**（V0.1 用右键 + `...`）
+- **拖拽 session 到 Project**（V0.1 用右键 + hover `⋯`）
 - **Trees / file explorer**（如果 V0.2+ 加 file inspector，候选 [trees.software](https://trees.software) + [@pierre/diffs](https://diffs.com) 配套）
 
 ---

@@ -1,10 +1,12 @@
 import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useEffect, useRef, useState } from "react";
 import {
   Archive,
   CaretRight,
   Cat,
   Check,
+  DotsThree,
   Folder,
   PauseCircle,
   Pencil,
@@ -14,12 +16,23 @@ import {
   X as XIcon,
 } from "@phosphor-icons/react";
 
+import { IconButton } from "@/components/ui/button";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
 import type { Project, Session } from "@/types/session";
 
+import {
+  SidebarRowMenuContent,
+  SidebarRowMenuItem,
+  type SidebarRowMenuKind,
+  SidebarRowMenuPortal,
+  SidebarRowMenuSeparator,
+  SidebarRowMenuSub,
+  SidebarRowMenuSubContent,
+  SidebarRowMenuSubTrigger,
+} from "./SidebarRowMenu";
 import type { SidebarAttention } from "./types";
 
 
@@ -67,6 +80,14 @@ export function SidebarSessionRow({
   onCancelRename?: () => void;
 }) {
   const copy = useCopy();
+  const hasRowActions = !!(
+    onArchive ||
+    onTogglePin ||
+    onAssignToProject ||
+    onRequestRename
+  );
+  const showActionTrigger = hasRowActions && !isEditing;
+  const [actionsOpen, setActionsOpen] = useState(false);
   // Four-state sidebar display (Stage 3 round 7+10, V0.2 ask_user):
   //   1. running                  — bold brand spinner + italic "正在工作 · 第 N 步" subline
   //   2. pending ask_user         — warning PauseCircle + "⏸ 等你回复" subline (V0.2)
@@ -141,11 +162,48 @@ export function SidebarSessionRow({
       : cleanSummary
         ? copy.sidebar.completedSummary(cleanSummary)
         : null;
+  const attentionDot =
+    attention === "error" ? (
+      <IconTooltip text={copy.sidebar.errorBadge(session.errorCount || 1)}>
+        <span
+          aria-label={copy.sidebar.errorBadge(session.errorCount || 1)}
+          className="sidebar-attention-pop size-2 rounded-full bg-error"
+        />
+      </IconTooltip>
+    ) : attention === "ask_user" ? (
+      <IconTooltip text={copy.sidebar.gaWaitingForReply}>
+        <span
+          aria-label={copy.sidebar.waitingForYou}
+          className="sidebar-attention-pop size-2 rounded-full bg-warning"
+        />
+      </IconTooltip>
+    ) : attention === "approval" ? (
+      <IconTooltip
+        text={copy.sidebar.pendingApprovalBadge(
+          session.pendingApprovalCount || 1,
+        )}
+      >
+        <span
+          aria-label={copy.sidebar.pendingApprovalBadge(
+            session.pendingApprovalCount || 1,
+          )}
+          className="sidebar-attention-pop size-2 rounded-full bg-warning"
+        />
+      </IconTooltip>
+    ) : attention === "unread" ? (
+      <IconTooltip text={copy.sidebar.newReplyTitle}>
+        <span
+          aria-label={copy.sidebar.unread}
+          className="sidebar-unread-pop size-2 rounded-full bg-brand"
+        />
+      </IconTooltip>
+    ) : null;
   const row = (
     <div
+      data-galley-context-menu-trigger={hasRowActions ? "" : undefined}
       onClick={isEditing ? undefined : onClick}
       className={cn(
-        "relative mx-1.5 grid min-h-[48px] grid-cols-[16px_minmax(0,1fr)_12px] items-start gap-2 overflow-hidden rounded-sm px-3 py-1.5",
+        "group relative mx-1.5 grid min-h-[48px] grid-cols-[16px_minmax(0,1fr)_12px] items-start gap-2 overflow-hidden rounded-sm px-3 py-1.5",
         "transition-[background-color,box-shadow,color]",
         isEditing
           ? "bg-elevated ring-1 ring-brand/30"
@@ -153,7 +211,9 @@ export function SidebarSessionRow({
               "cursor-pointer",
               active
                 ? "bg-selected"
-                : showRunningActivity
+                : actionsOpen
+                  ? "bg-hover"
+                  : showRunningActivity
                   ? "bg-brand-soft/45 ring-1 ring-brand/10 hover:bg-brand-soft/70"
                   : "hover:bg-hover",
             ),
@@ -246,164 +306,230 @@ export function SidebarSessionRow({
         )}
       </div>
       <div className="flex h-5 w-3 items-center justify-center pt-[5px]">
-        {attention === "error" ? (
-          <IconTooltip text={copy.sidebar.errorBadge(session.errorCount || 1)}>
-            <span
-              aria-label={copy.sidebar.errorBadge(session.errorCount || 1)}
-              className="sidebar-attention-pop size-2 rounded-full bg-error"
-            />
-          </IconTooltip>
-        ) : attention === "ask_user" ? (
-          <IconTooltip text={copy.sidebar.gaWaitingForReply}>
-            <span
-              aria-label={copy.sidebar.waitingForYou}
-              className="sidebar-attention-pop size-2 rounded-full bg-warning"
-            />
-          </IconTooltip>
-        ) : attention === "approval" ? (
-          <IconTooltip
-            text={copy.sidebar.pendingApprovalBadge(
-              session.pendingApprovalCount || 1,
-            )}
-          >
-            <span
-              aria-label={copy.sidebar.pendingApprovalBadge(
-                session.pendingApprovalCount || 1,
-              )}
-              className="sidebar-attention-pop size-2 rounded-full bg-warning"
-            />
-          </IconTooltip>
-        ) : attention === "unread" ? (
-          <IconTooltip text={copy.sidebar.newReplyTitle}>
-            <span
-              aria-label={copy.sidebar.unread}
-              className="sidebar-unread-pop size-2 rounded-full bg-brand"
-            />
-          </IconTooltip>
-        ) : null}
+        <div
+          className={cn(
+            "flex items-center justify-center transition-opacity duration-75",
+            showActionTrigger &&
+              "group-hover:opacity-0 group-focus-within:opacity-0",
+            actionsOpen && "opacity-0",
+          )}
+        >
+          {attentionDot}
+        </div>
       </div>
+      {showActionTrigger && (
+        <div
+          className={cn(
+            "pointer-events-none absolute right-2 top-1.5 z-10 flex h-6 w-6 items-center justify-center opacity-0 transition-opacity duration-75",
+            "group-hover:pointer-events-auto group-hover:opacity-100",
+            "group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+            actionsOpen && "pointer-events-auto opacity-100",
+          )}
+        >
+          <DropdownMenu.Root open={actionsOpen} onOpenChange={setActionsOpen}>
+            <IconTooltip text={copy.common.more} side="right">
+              <DropdownMenu.Trigger asChild>
+                <IconButton
+                  ariaLabel={copy.common.more}
+                  tooltip={false}
+                  size="xs"
+                  active={actionsOpen}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                >
+                  <DotsThree size={15} weight="bold" />
+                </IconButton>
+              </DropdownMenu.Trigger>
+            </IconTooltip>
+            <SidebarRowMenuPortal kind="dropdown">
+              <SidebarRowMenuContent
+                kind="dropdown"
+                align="end"
+                sideOffset={6}
+                className="z-50 min-w-[180px] rounded-md border border-line bg-elevated p-1 shadow-elevated"
+              >
+                <SidebarSessionMenuItems
+                  kind="dropdown"
+                  session={session}
+                  projects={projects}
+                  onArchive={onArchive}
+                  onTogglePin={onTogglePin}
+                  onAssignToProject={onAssignToProject}
+                  onRequestRename={onRequestRename}
+                />
+              </SidebarRowMenuContent>
+            </SidebarRowMenuPortal>
+          </DropdownMenu.Root>
+        </div>
+      )}
     </div>
   );
 
-  if (!onArchive && !onTogglePin && !onAssignToProject && !onRequestRename)
-    return row;
+  if (!hasRowActions) return row;
 
-  const sortedProjects = projects;
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>{row}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-50 min-w-[180px] rounded-md border border-line bg-elevated p-1 shadow-elevated">
+          <SidebarSessionMenuItems
+            kind="context"
+            session={session}
+            projects={projects}
+            onArchive={onArchive}
+            onTogglePin={onTogglePin}
+            onAssignToProject={onAssignToProject}
+            onRequestRename={onRequestRename}
+          />
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
+function SidebarSessionMenuItems({
+  kind,
+  session,
+  projects,
+  onArchive,
+  onTogglePin,
+  onAssignToProject,
+  onRequestRename,
+}: {
+  kind: SidebarRowMenuKind;
+  session: Session;
+  projects: Project[];
+  onArchive?: () => void;
+  onTogglePin?: () => void;
+  onAssignToProject?: (projectId: string | null) => void;
+  onRequestRename?: () => void;
+}) {
+  const copy = useCopy();
   const itemClass = cn(
     "flex cursor-pointer items-center gap-2 rounded-sm px-2.5 py-1.5 text-[12.5px] text-ink-soft outline-none transition-colors",
     "data-[highlighted]:bg-hover data-[highlighted]:text-ink",
   );
 
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>{row}</ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content
-          className={cn(
-            "z-50 min-w-[180px] rounded-md border border-line bg-elevated p-1 shadow-elevated",
-          )}
+    <>
+      {onRequestRename && (
+        <SidebarRowMenuItem
+          kind={kind}
+          onSelect={onRequestRename}
+          className={itemClass}
         >
-          {onRequestRename && (
-            <ContextMenu.Item onSelect={onRequestRename} className={itemClass}>
-              <Pencil size={13} weight="thin" />
-              {copy.sidebar.rename}
-            </ContextMenu.Item>
+          <Pencil size={13} weight="thin" />
+          {copy.sidebar.rename}
+        </SidebarRowMenuItem>
+      )}
+      {onTogglePin && (
+        <SidebarRowMenuItem
+          kind={kind}
+          onSelect={onTogglePin}
+          className={itemClass}
+        >
+          {session.pinned ? (
+            <>
+              <PushPinSlash size={13} weight="thin" />
+              {copy.sidebar.unpin}
+            </>
+          ) : (
+            <>
+              <PushPin size={13} weight="thin" />
+              {copy.sidebar.pin}
+            </>
           )}
-          {onTogglePin && (
-            <ContextMenu.Item onSelect={onTogglePin} className={itemClass}>
-              {session.pinned ? (
-                <>
-                  <PushPinSlash size={13} weight="thin" />
-                  {copy.sidebar.unpin}
-                </>
+        </SidebarRowMenuItem>
+      )}
+      {onAssignToProject && (
+        <SidebarRowMenuSub kind={kind}>
+          <SidebarRowMenuSubTrigger
+            kind={kind}
+            className={cn(
+              itemClass,
+              "data-[state=open]:bg-hover data-[state=open]:text-ink",
+            )}
+          >
+            <Folder size={13} weight="thin" />
+            {copy.sidebar.addToProject}
+            <CaretRight
+              size={10}
+              weight="thin"
+              className="ml-auto text-ink-muted"
+            />
+          </SidebarRowMenuSubTrigger>
+          <SidebarRowMenuPortal kind={kind}>
+            <SidebarRowMenuSubContent
+              kind={kind}
+              className="z-50 min-w-[200px] rounded-md border border-line bg-elevated p-1 shadow-elevated"
+              sideOffset={4}
+            >
+              {projects.length === 0 ? (
+                <div className="px-2.5 py-1.5 text-[12px] italic text-ink-muted">
+                  {copy.sidebar.noProjects}
+                </div>
               ) : (
+                projects.map((p) => {
+                  const isCurrent = session.projectId === p.id;
+                  return (
+                    <SidebarRowMenuItem
+                      key={p.id}
+                      kind={kind}
+                      onSelect={() => onAssignToProject(p.id)}
+                      disabled={isCurrent}
+                      className={cn(
+                        itemClass,
+                        "data-[disabled]:cursor-default data-[disabled]:opacity-50",
+                      )}
+                    >
+                      <Folder size={13} weight="thin" />
+                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                      {isCurrent && (
+                        <Check
+                          size={11}
+                          weight="bold"
+                          className="text-brand-strong"
+                        />
+                      )}
+                    </SidebarRowMenuItem>
+                  );
+                })
+              )}
+              {session.projectId && (
                 <>
-                  <PushPin size={13} weight="thin" />
-                  {copy.sidebar.pin}
+                  <SidebarRowMenuSeparator
+                    kind={kind}
+                    className="my-1 h-px bg-line"
+                  />
+                  <SidebarRowMenuItem
+                    kind={kind}
+                    onSelect={() => onAssignToProject(null)}
+                    className={itemClass}
+                  >
+                    <XIcon size={13} weight="thin" />
+                    {copy.sidebar.removeFromProject}
+                  </SidebarRowMenuItem>
                 </>
               )}
-            </ContextMenu.Item>
-          )}
-          {onAssignToProject && (
-            <ContextMenu.Sub>
-              <ContextMenu.SubTrigger
-                className={cn(
-                  itemClass,
-                  "data-[state=open]:bg-hover data-[state=open]:text-ink",
-                )}
-              >
-                <Folder size={13} weight="thin" />
-                {copy.sidebar.addToProject}
-                <CaretRight
-                  size={10}
-                  weight="thin"
-                  className="ml-auto text-ink-muted"
-                />
-              </ContextMenu.SubTrigger>
-              <ContextMenu.Portal>
-                <ContextMenu.SubContent
-                  className={cn(
-                    "z-50 min-w-[200px] rounded-md border border-line bg-elevated p-1 shadow-elevated",
-                  )}
-                  sideOffset={4}
-                >
-                  {sortedProjects.length === 0 ? (
-                    <div className="px-2.5 py-1.5 text-[12px] italic text-ink-muted">
-                      {copy.sidebar.noProjects}
-                    </div>
-                  ) : (
-                    sortedProjects.map((p) => {
-                      const isCurrent = session.projectId === p.id;
-                      return (
-                        <ContextMenu.Item
-                          key={p.id}
-                          onSelect={() => onAssignToProject(p.id)}
-                          disabled={isCurrent}
-                          className={cn(
-                            itemClass,
-                            "data-[disabled]:cursor-default data-[disabled]:opacity-50",
-                          )}
-                        >
-                          <Folder size={13} weight="thin" />
-                          <span className="min-w-0 flex-1 truncate">
-                            {p.name}
-                          </span>
-                          {isCurrent && (
-                            <Check
-                              size={11}
-                              weight="bold"
-                              className="text-brand-strong"
-                            />
-                          )}
-                        </ContextMenu.Item>
-                      );
-                    })
-                  )}
-                  {session.projectId && (
-                    <>
-                      <ContextMenu.Separator className="my-1 h-px bg-line" />
-                      <ContextMenu.Item
-                        onSelect={() => onAssignToProject(null)}
-                        className={itemClass}
-                      >
-                        <XIcon size={13} weight="thin" />
-                        {copy.sidebar.removeFromProject}
-                      </ContextMenu.Item>
-                    </>
-                  )}
-                </ContextMenu.SubContent>
-              </ContextMenu.Portal>
-            </ContextMenu.Sub>
-          )}
-          {onArchive && (
-            <ContextMenu.Item onSelect={onArchive} className={itemClass}>
-              <Archive size={13} weight="thin" />
-              {copy.sidebar.archive}
-            </ContextMenu.Item>
-          )}
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
+            </SidebarRowMenuSubContent>
+          </SidebarRowMenuPortal>
+        </SidebarRowMenuSub>
+      )}
+      {onArchive && (
+        <SidebarRowMenuItem
+          kind={kind}
+          onSelect={onArchive}
+          className={itemClass}
+        >
+          <Archive size={13} weight="thin" />
+          {copy.sidebar.archive}
+        </SidebarRowMenuItem>
+      )}
+    </>
   );
 }
 
@@ -474,6 +600,7 @@ function SessionTitleEditor({
       onBlur={commit}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
       className={cn(
         "min-w-0 flex-1 truncate rounded-sm bg-app px-1 py-0 text-[13px] font-medium text-ink",
         "border border-line outline-none ring-2 ring-brand/30",

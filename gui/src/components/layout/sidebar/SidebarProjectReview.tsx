@@ -1,7 +1,9 @@
 import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Fragment, useState } from "react";
 import {
   CaretRight,
+  DotsThree,
   Folder,
   FolderOpen,
   Plus,
@@ -11,6 +13,7 @@ import {
   Trash,
 } from "@phosphor-icons/react";
 
+import { IconButton } from "@/components/ui/button";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
 import { effectiveProjectActivityAt } from "@/lib/projects";
@@ -18,6 +21,13 @@ import { groupSessions } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 import type { Project, Session } from "@/types/session";
 
+import {
+  SidebarRowMenuContent,
+  SidebarRowMenuItem,
+  type SidebarRowMenuKind,
+  SidebarRowMenuPortal,
+  SidebarRowMenuSeparator,
+} from "./SidebarRowMenu";
 import { SidebarSectionLabel, SidebarTimelineBuckets } from "./SidebarTimeline";
 import { PROJECT_ACTIVE_WINDOW_MS, type ProjectScopePhase } from "./types";
 
@@ -261,12 +271,15 @@ function SidebarProjectRow({
   onDelete?: () => void;
 }) {
   const copy = useCopy();
+  const hasRowActions = !!(onTogglePin || onEdit || onDelete);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const ProjectIcon = expanded ? FolderOpen : Folder;
   const newConversationTitle = copy.sidebar.newConversationInProjectTitle(
     project.name,
   );
   const row = (
     <div
+      data-galley-context-menu-trigger={hasRowActions ? "" : undefined}
       role="button"
       tabIndex={0}
       aria-expanded={expanded}
@@ -278,9 +291,13 @@ function SidebarProjectRow({
         }
       }}
       className={cn(
-        "group mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 rounded-sm px-3 py-1.5 text-left text-[13px] outline-none",
+        "group relative mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 overflow-hidden rounded-sm px-3 py-1.5 text-left text-[13px] outline-none",
         "transition-[background-color,color] focus-visible:ring-2 focus-visible:ring-brand/30",
-        active ? "bg-selected text-ink" : "text-ink hover:bg-hover",
+        active
+          ? "bg-selected text-ink"
+          : actionsOpen
+            ? "bg-hover text-ink"
+            : "text-ink hover:bg-hover",
       )}
     >
       <ProjectIcon
@@ -310,33 +327,123 @@ function SidebarProjectRow({
           </span>
         </IconTooltip>
       )}
-      {onStartConversation && (
-        <IconTooltip text={newConversationTitle}>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStartConversation();
-            }}
-            aria-label={newConversationTitle}
-            className={cn(
-              "-mr-2 inline-flex size-[32px] shrink-0 items-center justify-center rounded-sm",
-              "pointer-events-none text-ink-muted opacity-0 transition-[background-color,color,opacity] duration-75",
-              "group-hover:pointer-events-auto group-hover:text-ink-soft group-hover:opacity-100",
-              "hover:bg-hover hover:text-ink active:bg-selected/60",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
-              active && "pointer-events-auto text-ink-soft opacity-100",
-            )}
-          >
-            <Plus size={13} weight="thin" />
-          </button>
-        </IconTooltip>
+      {(onStartConversation || hasRowActions) && (
+        <div
+          className={cn(
+            "pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-75",
+            "group-hover:pointer-events-auto group-hover:opacity-100",
+            "group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+            (active || actionsOpen) && "pointer-events-auto opacity-100",
+          )}
+        >
+          {onStartConversation && (
+            <IconTooltip text={newConversationTitle}>
+              <button
+                type="button"
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStartConversation();
+                }}
+                aria-label={newConversationTitle}
+                className={cn(
+                  "inline-flex size-[28px] shrink-0 items-center justify-center rounded-sm",
+                  "text-ink-muted transition-[background-color,color,opacity] duration-75",
+                  "group-hover:text-ink-soft group-focus-within:text-ink-soft",
+                  "hover:bg-hover hover:text-ink active:bg-selected/60",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+                  active && "text-ink-soft",
+                )}
+              >
+                <Plus size={13} weight="thin" />
+              </button>
+            </IconTooltip>
+          )}
+          {hasRowActions && (
+            <DropdownMenu.Root
+              open={actionsOpen}
+              onOpenChange={setActionsOpen}
+            >
+              <IconTooltip text={copy.common.more} side="right">
+                <DropdownMenu.Trigger asChild>
+                  <IconButton
+                    ariaLabel={copy.common.more}
+                    tooltip={false}
+                    size="xs"
+                    active={actionsOpen}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    }}
+                  >
+                    <DotsThree size={15} weight="bold" />
+                  </IconButton>
+                </DropdownMenu.Trigger>
+              </IconTooltip>
+              <SidebarRowMenuPortal kind="dropdown">
+                <SidebarRowMenuContent
+                  kind="dropdown"
+                  align="end"
+                  sideOffset={6}
+                  className="z-50 min-w-[160px] rounded-md border border-line bg-elevated p-1 shadow-elevated"
+                >
+                  <SidebarProjectMenuItems
+                    kind="dropdown"
+                    project={project}
+                    onTogglePin={onTogglePin}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                </SidebarRowMenuContent>
+              </SidebarRowMenuPortal>
+            </DropdownMenu.Root>
+          )}
+        </div>
       )}
     </div>
   );
 
-  if (!onTogglePin && !onEdit && !onDelete) return row;
+  if (!hasRowActions) return row;
 
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>{row}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-50 min-w-[160px] rounded-md border border-line bg-elevated p-1 shadow-elevated">
+          <SidebarProjectMenuItems
+            kind="context"
+            project={project}
+            onTogglePin={onTogglePin}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
+function SidebarProjectMenuItems({
+  kind,
+  project,
+  onTogglePin,
+  onEdit,
+  onDelete,
+}: {
+  kind: SidebarRowMenuKind;
+  project: Project;
+  onTogglePin?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
+  const copy = useCopy();
   const itemClass = cn(
     "flex cursor-pointer items-center gap-2 rounded-sm px-2.5 py-1.5 text-[12.5px] text-ink-soft outline-none transition-colors",
     "data-[highlighted]:bg-hover data-[highlighted]:text-ink",
@@ -347,50 +454,53 @@ function SidebarProjectRow({
   );
 
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>{row}</ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content
-          className={cn(
-            "z-50 min-w-[160px] rounded-md border border-line bg-elevated p-1 shadow-elevated",
-          )}
+    <>
+      {onTogglePin && (
+        <SidebarRowMenuItem
+          kind={kind}
+          onSelect={onTogglePin}
+          className={itemClass}
         >
-          {onTogglePin && (
-            <ContextMenu.Item onSelect={onTogglePin} className={itemClass}>
-              {project.pinned ? (
-                <>
-                  <PushPinSlash size={13} weight="thin" />
-                  {copy.sidebar.unpin}
-                </>
-              ) : (
-                <>
-                  <PushPin size={13} weight="thin" />
-                  {copy.sidebar.pin}
-                </>
-              )}
-            </ContextMenu.Item>
-          )}
-          {onEdit && (
-            <ContextMenu.Item onSelect={onEdit} className={itemClass}>
-              <FolderOpen size={13} weight="thin" />
-              {copy.sidebar.editProject}
-            </ContextMenu.Item>
-          )}
-          {onDelete && (
+          {project.pinned ? (
             <>
-              <ContextMenu.Separator className="my-1 h-px bg-line" />
-              <ContextMenu.Item
-                onSelect={onDelete}
-                className={destructiveItemClass}
-              >
-                <Trash size={13} weight="thin" />
-                {copy.sidebar.deleteProject}
-              </ContextMenu.Item>
+              <PushPinSlash size={13} weight="thin" />
+              {copy.sidebar.unpin}
+            </>
+          ) : (
+            <>
+              <PushPin size={13} weight="thin" />
+              {copy.sidebar.pin}
             </>
           )}
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
+        </SidebarRowMenuItem>
+      )}
+      {onEdit && (
+        <SidebarRowMenuItem
+          kind={kind}
+          onSelect={onEdit}
+          className={itemClass}
+        >
+          <FolderOpen size={13} weight="thin" />
+          {copy.sidebar.editProject}
+        </SidebarRowMenuItem>
+      )}
+      {onDelete && (
+        <>
+          <SidebarRowMenuSeparator
+            kind={kind}
+            className="my-1 h-px bg-line"
+          />
+          <SidebarRowMenuItem
+            kind={kind}
+            onSelect={onDelete}
+            className={destructiveItemClass}
+          >
+            <Trash size={13} weight="thin" />
+            {copy.sidebar.deleteProject}
+          </SidebarRowMenuItem>
+        </>
+      )}
+    </>
   );
 }
 

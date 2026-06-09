@@ -447,6 +447,7 @@ function EarlierRow({
 
   const row = (
     <li
+      data-galley-context-menu-trigger={!selectMode ? "" : undefined}
       onClick={handleClick}
       className={cn(
         "group flex cursor-pointer items-start gap-3 px-5 py-3 transition-colors",
