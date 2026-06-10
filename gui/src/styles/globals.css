@@ -526,43 +526,31 @@ html[data-theme="dark"] .settings-model-provider-card {
   animation: sidebar-step-tick 0.24s ease-out;
 }
 
-@keyframes sidebar-dot-pop {
+@keyframes sidebar-state-pop {
   0% {
-    opacity: 0;
-    transform: scale(0.55);
+    opacity: 0.3;
+    transform: scale(0.42);
   }
-  68% {
+  50% {
     opacity: 1;
-    transform: scale(1.14);
+    transform: scale(1.38);
+  }
+  72% {
+    transform: scale(0.94);
   }
   100% {
     opacity: 1;
     transform: scale(1);
   }
 }
-.sidebar-unread-pop {
-  animation: sidebar-dot-pop 0.22s ease-out;
-}
-
-@keyframes sidebar-attention-pop {
-  0% {
-    opacity: 0.55;
-    transform: scale(0.72);
-    box-shadow: 0 0 0 0 rgba(191, 122, 31, 0.2);
-  }
-  42% {
-    opacity: 1;
-    transform: scale(1.16);
-    box-shadow: 0 0 0 4px rgba(191, 122, 31, 0.08);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(191, 122, 31, 0);
-  }
-}
-.sidebar-attention-pop {
-  animation: sidebar-attention-pop 0.34s ease-out;
+/* One-shot "pop in" for a session row's status glyph when it enters an
+   attention state (waiting / approval / error) or lands as unread.
+   Scale + fade with a pronounced overshoot so the entry reads as a
+   deliberate "look here" beat on a busy multi-session board. Color
+   comes from the glyph itself. Keyed per state so it replays on entry,
+   never while staying in-state. */
+.sidebar-state-pop {
+  animation: sidebar-state-pop 0.44s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Composer submit acknowledgement. The host bumps a counter after a
@@ -644,8 +632,7 @@ html[data-theme="dark"] .settings-model-provider-card {
   .sidebar-liveness-rail,
   .sidebar-liveness-tick,
   .sidebar-step-tick,
-  .sidebar-unread-pop,
-  .sidebar-attention-pop,
+  .sidebar-state-pop,
   .live-dot,
   .streaming-cursor {
     animation: none;

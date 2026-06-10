@@ -12,7 +12,6 @@ import {
   Pencil,
   PushPin,
   PushPinSlash,
-  WarningCircle,
   X as XIcon,
 } from "@phosphor-icons/react";
 
@@ -33,7 +32,6 @@ import {
   SidebarRowMenuSubContent,
   SidebarRowMenuSubTrigger,
 } from "./SidebarRowMenu";
-import type { SidebarAttention } from "./types";
 
 
 export function SidebarSessionRow({
@@ -114,14 +112,25 @@ export function SidebarSessionRow({
   const hasBlockingError = session.status === "error";
   const showRunningActivity =
     isRunning && !hasPendingAsk && !hasPendingApproval && !hasBlockingError;
+  // Right-side dot is unread-only now; the ongoing states
+  // (running / waiting / error) are carried by the left status rail.
   const showUnread =
-    !!session.hasUnread && !active && !hasPendingAsk && !isRunning;
-  const attention = resolveSidebarAttention({
-    hasBlockingError,
-    hasPendingAsk,
-    hasPendingApproval,
-    showUnread,
-  });
+    !!session.hasUnread &&
+    !active &&
+    !hasPendingAsk &&
+    !hasPendingApproval &&
+    !hasBlockingError &&
+    !isRunning;
+  // Left status-rail kind — one continuous-state channel scanned down
+  // the left edge. running breathes (in progress); waiting / error are
+  // static color (needs you / stuck). completed / idle = no rail.
+  const railKind: "running" | "waiting" | "error" | null = hasBlockingError
+    ? "error"
+    : hasPendingAsk || hasPendingApproval
+      ? "waiting"
+      : showRunningActivity
+        ? "running"
+        : null;
   // Subline composition:
   //
   //   running + last completed step known → "第 N 步 · {summary}"
@@ -153,51 +162,51 @@ export function SidebarSessionRow({
   const cleanSummary = session.summary
     ? stripLegacyStepPrefix(session.summary)
     : null;
-  const sublineText = hasPendingAsk
-    ? copy.sidebar.pendingAskPrefix
-    : showRunningActivity
-      ? session.lastStepIndex != null && cleanSummary
-        ? copy.sidebar.stepSummary(session.lastStepIndex, cleanSummary)
-        : copy.sidebar.thinking
-      : cleanSummary
-        ? copy.sidebar.completedSummary(cleanSummary)
-        : null;
-  const attentionDot =
-    attention === "error" ? (
-      <IconTooltip text={copy.sidebar.errorBadge(session.errorCount || 1)}>
-        <span
-          aria-label={copy.sidebar.errorBadge(session.errorCount || 1)}
-          className="sidebar-attention-pop size-2 rounded-full bg-error"
-        />
-      </IconTooltip>
-    ) : attention === "ask_user" ? (
-      <IconTooltip text={copy.sidebar.gaWaitingForReply}>
-        <span
-          aria-label={copy.sidebar.waitingForYou}
-          className="sidebar-attention-pop size-2 rounded-full bg-warning"
-        />
-      </IconTooltip>
-    ) : attention === "approval" ? (
-      <IconTooltip
-        text={copy.sidebar.pendingApprovalBadge(
-          session.pendingApprovalCount || 1,
-        )}
-      >
-        <span
-          aria-label={copy.sidebar.pendingApprovalBadge(
-            session.pendingApprovalCount || 1,
-          )}
-          className="sidebar-attention-pop size-2 rounded-full bg-warning"
-        />
-      </IconTooltip>
-    ) : attention === "unread" ? (
-      <IconTooltip text={copy.sidebar.newReplyTitle}>
-        <span
-          aria-label={copy.sidebar.unread}
-          className="sidebar-unread-pop size-2 rounded-full bg-brand"
-        />
-      </IconTooltip>
-    ) : null;
+  const approvalCount = session.pendingApprovalCount || 0;
+  const errorCount = session.errorCount || 0;
+  // Subline doubles as the status line — always state-colored, upright
+  // (no italic), text-explicit for the blocking states so a glance
+  // reads "等你回复 / 等待审批 / 出错" without decoding an icon.
+  const sublineText = hasBlockingError
+    ? errorCount > 1
+      ? `${copy.sidebar.errored} · ${errorCount}`
+      : copy.sidebar.errored
+    : hasPendingAsk
+      ? copy.sidebar.waitingForYou
+      : hasPendingApproval
+        ? approvalCount > 1
+          ? `${copy.sidebar.waitingApproval} · ${approvalCount}`
+          : copy.sidebar.waitingApproval
+        : showRunningActivity
+          ? session.lastStepIndex != null && cleanSummary
+            ? copy.sidebar.stepSummary(session.lastStepIndex, cleanSummary)
+            : copy.sidebar.thinking
+          : cleanSummary
+            ? copy.sidebar.completedSummary(cleanSummary)
+            : null;
+  const sublineTone: "running" | "warning" | "error" | "muted" =
+    hasBlockingError
+      ? "error"
+      : hasPendingAsk || hasPendingApproval
+        ? "warning"
+        : showRunningActivity
+          ? "running"
+          : "muted";
+  // One-shot pop on entering an attention / unread state. Keyed on the
+  // icon span below so it replays on entry, never while staying put.
+  const attentionKey = hasBlockingError
+    ? "error"
+    : hasPendingAsk
+      ? "ask"
+      : hasPendingApproval
+        ? "approval"
+        : showUnread
+          ? "unread"
+          : isRunning
+            ? "running"
+            : "idle";
+  const shouldPopIcon =
+    hasBlockingError || hasPendingAsk || hasPendingApproval || showUnread;
   const row = (
     <div
       data-galley-context-menu-trigger={hasRowActions ? "" : undefined}
@@ -214,29 +223,45 @@ export function SidebarSessionRow({
                 : actionsOpen
                   ? "bg-hover"
                   : showRunningActivity
-                  ? "bg-brand-soft/45 ring-1 ring-brand/10 hover:bg-brand-soft/70"
-                  : "hover:bg-hover",
+                    ? "bg-brand-soft/40 hover:bg-brand-soft/60"
+                    : "hover:bg-hover",
             ),
       )}
     >
-      {showRunningActivity && !isEditing && (
-        <>
+      {railKind && !isEditing && (
+        railKind === "running" ? (
+          <>
+            <span
+              aria-hidden
+              className="sidebar-liveness-rail absolute bottom-1.5 left-0 top-1.5 w-[3px] rounded-full bg-brand-strong/55"
+            />
+            <span
+              key={`${session.id}:${session.lastStepIndex ?? "thinking"}:${cleanSummary ?? ""}`}
+              aria-hidden
+              className="sidebar-liveness-tick absolute bottom-1.5 left-0 top-1.5 w-[3px] rounded-full bg-brand-strong"
+            />
+          </>
+        ) : (
           <span
             aria-hidden
-            className="sidebar-liveness-rail absolute bottom-1.5 left-0 top-1.5 w-[2px] rounded-full bg-brand-strong/55"
+            className={cn(
+              "absolute bottom-1.5 left-0 top-1.5 w-[3px] rounded-full",
+              railKind === "error" ? "bg-error" : "bg-warning",
+            )}
           />
-          <span
-            key={`${session.id}:${session.lastStepIndex ?? "thinking"}:${cleanSummary ?? ""}`}
-            aria-hidden
-            className="sidebar-liveness-tick absolute bottom-1.5 left-0 top-1.5 w-[2px] rounded-full bg-brand-strong"
-          />
-        </>
+        )
       )}
-      <span className="flex h-5 w-4 items-center justify-center pt-0.5">
+      <span
+        key={`icon:${attentionKey}`}
+        className={cn(
+          "flex h-5 w-4 items-center justify-center pt-0.5",
+          shouldPopIcon && "sidebar-state-pop",
+        )}
+      >
         {hasPendingAsk ? (
           <PauseCircle size={14} weight="fill" className="text-warning" />
         ) : (
-          <StatusIcon status={session.status} size={14} />
+          <StatusIcon status={session.status} size={14} unread={showUnread} />
         )}
       </span>
       <div
@@ -259,7 +284,11 @@ export function SidebarSessionRow({
               title={session.title}
               className={cn(
                 "min-w-0 flex-1 truncate text-[13px] text-ink",
-                isRunning || showUnread || hasPendingAsk || hasPendingApproval
+                isRunning ||
+                  showUnread ||
+                  hasPendingAsk ||
+                  hasPendingApproval ||
+                  hasBlockingError
                   ? "font-semibold"
                   : "font-medium",
               )}
@@ -283,47 +312,19 @@ export function SidebarSessionRow({
             key={`${session.id}:${showRunningActivity ? `running:${session.lastStepIndex ?? "thinking"}:${cleanSummary ?? ""}` : `settled:${sublineText}`}`}
             className={cn(
               "mt-0.5 truncate text-[11px] leading-[1.4]",
-              hasPendingAsk
+              sublineTone === "warning"
                 ? "font-medium text-warning"
-                : showRunningActivity
-                  ? "sidebar-step-tick italic text-brand-strong/85"
-                  : "text-ink-muted",
+                : sublineTone === "error"
+                  ? "font-medium text-error"
+                  : sublineTone === "running"
+                    ? "sidebar-step-tick text-brand-strong/85"
+                    : "text-ink-muted",
             )}
           >
             {sublineText}
           </div>
         )}
-        {(session.pendingApprovalCount > 0 || session.errorCount > 0) && (
-          <div className="mt-1 flex items-center gap-1">
-            {session.pendingApprovalCount > 0 && (
-              <Badge tone="warning">
-                <PauseCircle size={10} weight="bold" />
-                {copy.sidebar.pendingApprovalBadge(
-                  session.pendingApprovalCount,
-                )}
-              </Badge>
-            )}
-            {session.errorCount > 0 && (
-              <Badge tone="error">
-                <WarningCircle size={10} weight="bold" />
-                {copy.sidebar.errorBadge(session.errorCount)}
-              </Badge>
-            )}
-          </div>
-        )}
       </div>
-      {attentionDot && (
-        <div
-          className={cn(
-            "absolute right-3 top-3 z-10 flex size-2 items-center justify-center transition-opacity duration-75",
-            showActionTrigger &&
-              "group-hover:opacity-0 group-focus-within:opacity-0",
-            actionsOpen && "opacity-0",
-          )}
-        >
-          {attentionDot}
-        </div>
-      )}
       {showActionTrigger && (
         <div
           className={cn(
@@ -618,30 +619,6 @@ function SessionTitleEditor({
 }
 
 
-function Badge({
-  tone,
-  children,
-}: {
-  tone: "warning" | "error";
-  children: React.ReactNode;
-}) {
-  const map = {
-    warning: "text-warning bg-warning/10",
-    error: "text-error bg-error/10",
-  } as const;
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[10px] font-medium",
-        map[tone],
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-
 /**
  * Strip the legacy "第 N 步 · " prefix that earlier versions of
  * bumpSessionAfterTurn wrote into session.summary. The current
@@ -652,23 +629,4 @@ function Badge({
  */
 function stripLegacyStepPrefix(s: string): string {
   return s.replace(/^第\s*\d+\s*步\s*·\s*/, "");
-}
-
-
-function resolveSidebarAttention({
-  hasBlockingError,
-  hasPendingAsk,
-  hasPendingApproval,
-  showUnread,
-}: {
-  hasBlockingError: boolean;
-  hasPendingAsk: boolean;
-  hasPendingApproval: boolean;
-  showUnread: boolean;
-}): SidebarAttention {
-  if (hasBlockingError) return "error";
-  if (hasPendingAsk) return "ask_user";
-  if (hasPendingApproval) return "approval";
-  if (showUnread) return "unread";
-  return "none";
 }

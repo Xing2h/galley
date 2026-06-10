@@ -97,6 +97,8 @@ const zhCopy = {
     gaWaitingForReply: "GA 在等你回复",
     pendingApprovalBadge: (count: number) => `${count} 待审批`,
     errorBadge: (count: number) => `${count} 错误`,
+    waitingApproval: "等待审批",
+    errored: "出错",
     rename: "重命名",
     pin: "置顶",
     unpin: "取消置顶",
@@ -1154,6 +1156,8 @@ const enCopy: AppCopy = {
     pendingApprovalBadge: (count) =>
       `${count} approval${count === 1 ? "" : "s"}`,
     errorBadge: (count) => `${count} error${count === 1 ? "" : "s"}`,
+    waitingApproval: "Waiting for approval",
+    errored: "Error",
     rename: "Rename",
     pin: "Pin",
     unpin: "Unpin",

@@ -391,19 +391,47 @@ Browser Control 是 managed GA 的核心能力完成项。未连接时，TopBar 
 
 #### Session Row（参考 PRD §7.5）
 
-每行显示：
+Sidebar 的设计目标是一块**可一眼扫描的多 session 状态板**：很多 session 同时跑时，扫一眼左列就能 triage 每个 session 的处境——还在跑 / 等你回复 / 等审批 / 出错 / 完成未读 / 闲置。外围 liveness 在这里是被**加强**的，不是被削弱的（对照 §2.7：A/B 原则在外围监控面是例外，环境 liveness 有价值）。
 
-- 16px Phosphor thin **状态 icon**（颜色随状态）
-  - idle: `Circle` muted / connecting: `CircleNotch` 旋转 / running: `CircleNotch` 杏沙旋转 / pending ask_user: `PauseCircle` 深琥珀 / error: `X` 深红 / completed: `CheckCircle` 杏沙 / archived: `ArchiveBox` muted
-- **Title**（13px Inter medium，1 行 truncate）
-- **下一行**：
-  - running：`第 N 步 · {summary}` 或 `思考中…`，font-serif italic
-  - settled：`已完成 · {summary}`，11px Inter muted
-  - ask_user：`等你回复`，warning
-- **Running 质感**：running row 使用极轻 `bg-brand-soft` tint + 左侧 2px liveness rail。rail 只表达“仍在推进 / 刚完成一步”，不表达百分比进度，不得从左到右推进成 progress bar。
-- **Attention dot**：右侧 overlay 注意力点，优先级 `error > ask_user > approval > unread > none`。没有注意状态时不占 layout 宽度；hover / focus / menu open 时让位给 `⋯`。未读点只在非 active、非 running、非 ask_user 的已完成回复显示；running 不叠加 unread dot。
-- **状态变化动效**：step tick / unread dot / attention dot 只做一次性 180-460ms 入场或闪烁；禁止无限闪烁、shimmer 或大面积背景呼吸。
-- **角标**：pending approval count（深琥珀点 + 数字）/ error count（深红点）
+状态由三条独立信号承载，不互相覆盖：**左侧 status spine（rail + icon）→ 状态行文案 → 标题字重**。
+
+##### 1. 左侧 status spine（rail）
+
+左缘一条 3px 连续状态通道，是整列最先被扫到的信号：
+
+- **running**：brand `bg-brand-strong` **呼吸**（`sidebar-liveness-rail` 底 + `sidebar-liveness-tick` 每步跳动）。**只有 running 会动**——动 = 仍在推进。
+- **ask_user / approval**：`bg-warning` 静态。
+- **error**：`bg-error` 静态。
+- **completed / idle**：无 rail。
+
+motion 语义专属于 running：静态彩条表示「卡在这、需要你」，呼吸表示「正在前进」，无条表示「无事发生」。rail 不表达百分比，不得从左到右推进成 progress bar。running row 另叠极轻 `bg-brand-soft/40` 底 tint。
+
+##### 2. 左侧 status icon（兼承未读）
+
+行最左 14px Phosphor 图标，颜色随状态（见 `status-icon.tsx` `STATUS_MAP`）：
+
+- idle `Circle` muted / connecting `CircleNotch` 旋转 / running `CircleNotch` **bold** 杏沙旋转 / ask_user `PauseCircle` 深琥珀 / error `XCircle` 深红 / cancelled `Prohibit` muted（区别于 error：用户主动）/ completed `CheckCircle` 杏沙 / archived `Archive` muted。
+- **未读并入左图标，不再用右侧独立点**。旧方案的右侧静点在 hover 时会被 `⋯` 菜单顶替而消失，体验割裂；现在「完成未读」= 把左侧那个本就存在的图标渲染成 `weight="fill"` + `text-brand`（空心环→实心点），无需新增元素。
+- **光学权重而非几何直径对齐**：plain `Circle` 是整列唯一的实心盘 / 空心环，按视觉重量调尺寸——实心未读点 `size*0.7`（≈10px，填充墨量重），空心 idle 环 `size*0.78`（≈11px），让环略大于点但两者视觉重量相当；idle（最低优先级）也因此是整列最安静的标记。其它有内部结构的图标（spinner / check / pause / x）保持 14px。
+- 未读优先级低于进行中状态：`showUnread` 仅在 settled（非 active、非 running、非 ask_user、非 approval、非 error）时为真。
+
+##### 3. 状态行文案（subline = 状态行）
+
+第二行直接当状态行用，始终状态着色、**直立不斜体**，blocking 状态给显式文案，扫一眼即读懂、不靠解码图标：
+
+- running：`第 N 步 · {summary}`（brand-strong，N=最近完成步 `lastStepIndex`，故意比实时滞后一步）或首步未完成时 `思考中…`。
+- ask_user：`等你回复`（warning，copy key `waitingForYou`）。
+- approval：`等待审批 · N`（warning，`waitingApproval`）。
+- error：`出错 · N`（error，`errored`）。
+- completed：`已完成 · {summary}`（muted）。
+
+计数（approval / error）折进 subline，不再单设角标行。`{summary}` 在 running→settled 间保持稳定，只换前缀 + 图标翻面（spinner→check），给用户视觉连续性。legacy `第 N 步 · ` 前缀在渲染时 strip，无需 DB migration。
+
+##### 4. 标题字重 + 入场 pop
+
+- 标题 13px Inter，进行中 / 未读 / 各 blocking 状态 `font-semibold`，其余 `font-medium`。
+- **一次性入场 pop**（`sidebar-state-pop`）：进入 error / ask / approval / unread 时图标弹一下（keyed on `attentionKey`，replay on entry，不在 in-state 时循环）。强 overshoot（scale 0.42→1.38→0.94→1，0.44s `cubic-bezier(0.22,1,0.36,1)`）确保在繁忙状态板上是明确的「看这里」一拍。**running 不 pop**（它已有呼吸 rail + 旋转图标）。
+- 所有 sidebar 状态动效都遵守 §2.7 与 reduced-motion：呼吸 rail 属外围 liveness 例外保留；pop / step-tick 是一次性入场，禁止无限闪烁 / shimmer / 大面积背景呼吸；`prefers-reduced-motion` 下 `sidebar-liveness-rail` / `sidebar-liveness-tick` / `sidebar-step-tick` / `sidebar-state-pop` 全部关停。
 - **Desktop Pet**：Cat icon 是 session status badge，仅在绑定 session 出现。
 
 #### Project 行

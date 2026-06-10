@@ -53,15 +53,35 @@ const STATUS_MAP: Record<
 export function StatusIcon({
   status,
   size = 14,
+  unread = false,
 }: {
   status: SessionStatus;
   size?: number;
+  /** Settled-but-unread: render the glyph filled + brand so the row's
+   * leftmost icon carries the unread signal (no separate dot). */
+  unread?: boolean;
 }) {
   const cfg = STATUS_MAP[status];
   const { Icon } = cfg;
+  // The idle Circle (read = hollow ring, unread = filled disc) is the only
+  // plain disc/ring in the column, so it's tuned by optical weight rather
+  // than raw diameter: a filled disc carries far more ink than a thin ring
+  // of equal size. Shrink the filled unread dot most (it reads heavy), and
+  // shrink the hollow ring a touch less so it stays slightly larger than the
+  // dot — the two then balance in perceived weight, and idle (lowest-
+  // priority state) is also the quietest marker in the column. Other glyphs
+  // (spinner, check, pause, x) have internal shape and keep full size.
+  let renderSize = size;
+  if (status === "idle") {
+    renderSize = Math.round(size * (unread ? 0.7 : 0.78));
+  }
   return (
     <span className={cn("inline-flex shrink-0", cfg.spin && "spin")}>
-      <Icon size={size} weight={cfg.weight ?? "thin"} className={cfg.className} />
+      <Icon
+        size={renderSize}
+        weight={unread ? "fill" : (cfg.weight ?? "thin")}
+        className={unread ? "text-brand" : cfg.className}
+      />
     </span>
   );
 }
