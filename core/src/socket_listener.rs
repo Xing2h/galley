@@ -2029,10 +2029,24 @@ async fn dispatch_session_move(
     }
 }
 
-struct ResolvedLlmSelection {
-    index: Option<u32>,
-    key: Option<String>,
-    display_name: Option<String>,
+pub(crate) struct ResolvedLlmSelection {
+    pub(crate) index: Option<u32>,
+    pub(crate) key: Option<String>,
+    pub(crate) display_name: Option<String>,
+}
+
+/// Crate-visible by-name LLM resolution for callers outside the socket
+/// layer (e.g. `start_desktop_goal` applying the launch model to the
+/// goal's master session). Maps the internal `SocketResponseLite` error
+/// back to `GalleyError` so non-socket callers get a normal error.
+pub(crate) async fn resolve_llm_selection_for_runtime(
+    galley: &SqliteGalley,
+    name: Option<String>,
+    runtime_kind: RuntimeKind,
+) -> Result<ResolvedLlmSelection, crate::error::GalleyError> {
+    resolve_llm_selection(galley, name, runtime_kind)
+        .await
+        .map_err(SocketResponseLite::into_galley_error)
 }
 
 async fn resolve_llm_selection(
@@ -2179,6 +2193,19 @@ impl SocketResponseLite {
             GalleyError::DbUnavailable { message } => SocketResponseLite::DbUnavailable(message),
             GalleyError::RunnerError { message } => SocketResponseLite::RunnerError(message),
             GalleyError::Internal { message } => SocketResponseLite::Internal(message),
+        }
+    }
+    fn into_galley_error(self) -> crate::error::GalleyError {
+        use crate::error::GalleyError;
+        match self {
+            SocketResponseLite::NotFound(message) => GalleyError::NotFound { message },
+            SocketResponseLite::InvalidArgs(message) => GalleyError::InvalidArgs { message },
+            SocketResponseLite::DbUnavailable(message) => GalleyError::DbUnavailable { message },
+            SocketResponseLite::RunnerError(message) => GalleyError::RunnerError { message },
+            SocketResponseLite::Internal(message) => GalleyError::Internal { message },
+            SocketResponseLite::RunnerSpawnError(e) => GalleyError::RunnerError {
+                message: format!("runner spawn failed: {e:?}"),
+            },
         }
     }
     fn with_request_id(self, request_id: Option<String>) -> SocketResponse {

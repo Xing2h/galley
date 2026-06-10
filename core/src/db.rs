@@ -3432,6 +3432,25 @@ impl GalleyApi for SqliteGalley {
         rows.into_iter().map(GoalRow::into_brief).collect()
     }
 
+    async fn list_goals_for_session(
+        &self,
+        master_session_id: SessionId,
+    ) -> Result<Vec<GoalBrief>> {
+        let rows = sqlx::query_as::<_, GoalRow>(
+            "SELECT id, proposal_id, project_id, master_session_id, objective, status, budget_seconds, \
+                    worker_limit, runtime_kind, write_mode, started_at, deadline_at, \
+                    ended_at, latest_summary, result_seen_at, stop_requested, workspace_path, \
+                    created_at, updated_at \
+             FROM goals WHERE master_session_id = ? \
+             ORDER BY started_at ASC",
+        )
+        .bind(master_session_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        rows.into_iter().map(GoalRow::into_brief).collect()
+    }
+
     async fn mark_goal_result_seen(&self, id: GoalId, _origin: Origin) -> Result<GoalBrief> {
         let now = chrono_now_iso();
         let res = sqlx::query(

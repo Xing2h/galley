@@ -335,6 +335,16 @@ pub trait GalleyApi: Send + Sync {
 
     async fn list_visible_goals(&self) -> Result<Vec<GoalBrief>>;
 
+    /// All goals whose master session is `master_session_id`, any
+    /// status (including terminal + already-seen), oldest run first.
+    /// Read-only; powers the in-thread Goal commission / terminal
+    /// markers, which must persist after a goal leaves the active /
+    /// visible lists so reopening a finished run is not amnesiac.
+    async fn list_goals_for_session(
+        &self,
+        master_session_id: SessionId,
+    ) -> Result<Vec<GoalBrief>>;
+
     async fn mark_goal_result_seen(&self, id: GoalId, origin: Origin) -> Result<GoalBrief>;
 
     async fn request_goal_stop(&self, id: GoalId, origin: Origin) -> Result<GoalBrief>;

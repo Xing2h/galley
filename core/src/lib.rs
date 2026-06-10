@@ -125,6 +125,13 @@ struct StartDesktopGoalInput {
     budget_seconds: Option<u32>,
     #[serde(default)]
     worker_limit: Option<u32>,
+    /// Display name of the model the operator picked in the Composer at
+    /// launch (case-insensitive). Best-effort applied to the master
+    /// session's LLM so its bridge — and, via inheritance, the goal's
+    /// worker sessions — run on the chosen model instead of the GA
+    /// default. Resolution failure never blocks the launch.
+    #[serde(default)]
+    llm_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1217,6 +1224,17 @@ async fn list_visible_goals() -> std::result::Result<Vec<GoalBrief>, String> {
 }
 
 #[tauri::command]
+async fn list_goals_for_session(
+    session_id: SessionId,
+) -> std::result::Result<Vec<GoalBrief>, String> {
+    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    galley
+        .list_goals_for_session(session_id)
+        .await
+        .map_err(stringify_error)
+}
+
+#[tauri::command]
 async fn goal_status(id: GoalId) -> std::result::Result<GoalStatusSnapshot, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley.goal_status(id).await.map_err(stringify_error)
@@ -1279,6 +1297,7 @@ async fn start_desktop_goal(
 ) -> std::result::Result<StartDesktopGoalResult, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     let master_session_id = input.master_session_id.clone();
+    let launch_llm_name = input.llm_name.clone();
     let proposal = galley
         .create_goal_proposal(
             CreateGoalProposalInput {
@@ -1299,6 +1318,38 @@ async fn start_desktop_goal(
         .start_goal_from_proposal(proposal.id, proposal.internal_confirm_token, Origin::gui())
         .await
         .map_err(stringify_error)?;
+    // Best-effort: apply the operator's chosen model to the master
+    // session so its bridge — and, via inheritance, the goal's worker
+    // sessions — run on it rather than the GA default. A resolution miss
+    // (empty LLM cache / unknown name) must never block the launch.
+    if let Some(name) = launch_llm_name
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        match crate::socket_listener::resolve_llm_selection_for_runtime(
+            &galley,
+            Some(name.to_string()),
+            goal.runtime_kind,
+        )
+        .await
+        {
+            Ok(sel) => {
+                if let Err(e) = galley
+                    .set_session_llm(
+                        master_session_id.clone(),
+                        sel.index,
+                        sel.key,
+                        sel.display_name,
+                    )
+                    .await
+                {
+                    eprintln!("[goal] set master session llm failed: {e:?}");
+                }
+            }
+            Err(e) => eprintln!("[goal] resolve launch llm '{name}' failed: {e:?}"),
+        }
+    }
     // The objective is the user's own words → a normal user turn.
     let objective_message = galley
         .send_message(
@@ -1575,6 +1626,7 @@ pub fn run() {
             delete_project,
             list_active_goals,
             list_visible_goals,
+            list_goals_for_session,
             goal_status,
             goal_workspace_has_files,
             mark_goal_result_seen,

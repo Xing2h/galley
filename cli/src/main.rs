@@ -3360,6 +3360,17 @@ async fn start_goal_worker_slots(
     reason: Option<String>,
 ) -> Result<Vec<GoalWorkerSlot>, GalleyError> {
     let wave = 1_u32;
+    // Workers inherit the master session's model (set at launch from the
+    // operator's Composer pick) so the whole goal runs on one model
+    // rather than the GA default. None → default, same as before.
+    let worker_llm = match goal.master_session_id.as_ref() {
+        Some(master_id) => galley
+            .session_brief(master_id.clone())
+            .await
+            .ok()
+            .and_then(|s| s.selected_llm_display_name),
+        None => None,
+    };
     let mut slots = Vec::new();
     for worker_index in 1..=goal.worker_limit {
         if goal_worker_slot_exists(existing_slots, worker_index) {
@@ -3373,7 +3384,7 @@ async fn start_goal_worker_slots(
             session_new_goal_worker_value(
                 prompt,
                 Some(goal.project_id.0.clone()),
-                None,
+                worker_llm.clone(),
                 runtime,
                 supervisor.clone(),
                 Some(reason.clone().unwrap_or_else(|| {
