@@ -45,11 +45,11 @@ export function SidebarProjectReviewPresence({
         "grid overflow-hidden motion-reduce:transition-none",
         "transition-[grid-template-rows,opacity,transform]",
         phase === "entered" &&
-          "grid-rows-[1fr] translate-y-0 opacity-100 duration-200 ease-out",
+          "grid-rows-[1fr] translate-y-0 opacity-100 duration-[260ms] ease-[cubic-bezier(0.34,1.2,0.64,1)]",
         phase === "entering" &&
-          "grid-rows-[0fr] -translate-y-1 opacity-0 duration-200 ease-out",
+          "grid-rows-[0fr] -translate-y-2 opacity-0 duration-[260ms] ease-[cubic-bezier(0.16,1,0.3,1)]",
         phase === "exiting" &&
-          "grid-rows-[0fr] -translate-y-1 opacity-0 duration-150 ease-in",
+          "grid-rows-[0fr] -translate-y-2 opacity-0 duration-[160ms] ease-[cubic-bezier(0.4,0,1,1)]",
       )}
     >
       <div className="min-h-0 overflow-hidden">{children}</div>
@@ -236,7 +236,12 @@ function SidebarProjectGroupToggle({
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className="mx-1.5 mt-3 flex w-[calc(100%-12px)] cursor-pointer items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted transition-colors hover:bg-hover hover:text-ink-soft"
+      className={cn(
+        "mx-1.5 mt-3 flex w-[calc(100%-12px)] cursor-pointer items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted",
+        "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover hover:text-ink-soft",
+        "active:translate-y-px active:duration-[45ms]",
+        "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+      )}
     >
       <CaretRight
         size={10}
@@ -296,7 +301,8 @@ function SidebarProjectRow({
       }}
       className={cn(
         "group relative mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 overflow-hidden rounded-sm px-3 py-1.5 text-left text-[13px] outline-none",
-        "transition-[background-color,color] focus-visible:ring-2 focus-visible:ring-brand/30",
+        "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] focus-visible:ring-2 focus-visible:ring-brand/30",
+        "active:translate-y-px active:duration-[45ms]",
         (onStartConversation || hasRowActions) &&
           "group-hover:pr-16 group-focus-within:pr-16",
         actionsOpen && "pr-16",
@@ -325,9 +331,9 @@ function SidebarProjectRow({
         />
       )}
       {activeGoal && (
-        <IconTooltip text="Goal 正在这个 Project 中运行">
+        <IconTooltip text={copy.sidebar.goalRunningInProject}>
           <span
-            aria-label="Active Goal Project"
+            aria-label={copy.sidebar.goalRunningInProject}
             className="inline-flex shrink-0 text-brand-strong"
           >
             <Target size={11} weight="thin" />
@@ -357,9 +363,9 @@ function SidebarProjectRow({
                 aria-label={newConversationTitle}
                 className={cn(
                   "inline-flex size-[28px] shrink-0 items-center justify-center rounded-sm",
-                  "text-ink-muted transition-[background-color,color,opacity] duration-75",
+                  "text-ink-muted transition-[background-color,color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
                   "group-hover:text-ink-soft group-focus-within:text-ink-soft",
-                  "hover:bg-hover hover:text-ink active:bg-selected/60",
+                  "hover:bg-hover hover:text-ink active:translate-y-px active:bg-selected/60 active:duration-[45ms]",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
                 )}
               >
@@ -554,19 +560,21 @@ function SidebarProjectDrawer({
   return (
     <div
       className={cn(
-        "grid overflow-hidden transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
-        expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr] duration-150 ease-in",
+        "grid overflow-hidden transition-[grid-template-rows] duration-[240ms] ease-[cubic-bezier(0.34,1.2,0.64,1)] motion-reduce:transition-none",
+        expanded
+          ? "grid-rows-[1fr]"
+          : "grid-rows-[0fr] duration-[150ms] ease-[cubic-bezier(0.4,0,1,1)]",
       )}
     >
       <div className="min-h-0 overflow-hidden">
         <div
           className={cn(
             "ml-6 mr-1.5 border-l border-brand/35 pb-2 pl-1",
-            "transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none",
+            "transition-[opacity,transform] duration-[200ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
             expanded
-              ? "translate-y-0 opacity-100 delay-[35ms]"
-              : "-translate-y-1 opacity-0",
-            !expanded && "pointer-events-none delay-0 duration-100 ease-in",
+              ? "translate-y-0 opacity-100 delay-[40ms]"
+              : "-translate-y-2 opacity-0",
+            !expanded && "pointer-events-none delay-0 duration-[120ms] ease-in",
           )}
         >
           {projectEmpty ? (
@@ -627,8 +635,8 @@ function SidebarProjectEmptyHint({
         aria-label={newConversationTitle}
         className={cn(
           "mx-1.5 mt-3 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2 rounded-sm border border-line/70 bg-elevated/55 px-3 py-2 text-left",
-          "text-[12px] font-medium text-ink-soft transition-[background-color,border-color,color]",
-          "hover:border-brand/35 hover:bg-selected/70 hover:text-ink",
+          "text-[12px] font-medium text-ink-soft transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
+          "hover:border-brand/35 hover:bg-selected/70 hover:text-ink active:translate-y-px active:duration-[45ms]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
         )}
       >

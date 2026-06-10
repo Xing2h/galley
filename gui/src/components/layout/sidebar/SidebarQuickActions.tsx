@@ -32,10 +32,11 @@ export function SidebarQuickActions({
   return (
     <div className="border-b border-line/70 py-1">
       <QuickAction
-        icon={<Plus size={14} weight="thin" />}
+        icon={<Plus size={15} weight="bold" />}
         label={newChatLabel}
         hint={formatShortcut("Mod+N")}
         onClick={onNewChat}
+        accent
       />
       <QuickAction
         icon={<MagnifyingGlass size={14} weight="thin" />}
@@ -81,6 +82,7 @@ function ProjectQuickAction({
         aria-label={projectActionLabel}
         className={cn(
           "flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-3 py-2 text-left outline-none",
+          "transition-transform duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-px active:duration-[45ms]",
           "focus-visible:ring-2 focus-visible:ring-brand/30",
         )}
       >
@@ -106,8 +108,8 @@ function ProjectQuickAction({
           aria-label={copy.sidebar.newProject}
           className={cn(
             "mr-0.5 inline-flex size-[32px] shrink-0 items-center justify-center rounded-sm",
-            "text-ink-muted transition-[background-color,color] duration-75",
-            "hover:bg-hover hover:text-ink active:bg-selected/60",
+            "text-ink-muted transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
+            "hover:bg-hover hover:text-ink active:translate-y-px active:bg-selected/60 active:duration-[45ms]",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
           )}
         >
@@ -124,22 +126,41 @@ function QuickAction({
   label,
   hint,
   onClick,
+  accent = false,
 }: {
   icon: React.ReactNode;
   label: string;
   hint?: string;
   onClick?: () => void;
+  /** Primary/creative action (New Chat): tint the icon brand-strong so
+   * the eye lands on it first. New session = creation = a brand moment,
+   * the same brand language as the active-session row — a quiet
+   * hierarchy cue, not a CTA block. */
+  accent?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 rounded-sm px-3 py-2 text-left text-[13px] text-ink transition-colors hover:bg-hover"
+      className={cn(
+        "mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 rounded-sm px-3 py-2 text-left text-[13px] text-ink",
+        "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover",
+        "active:translate-y-px active:duration-[45ms]",
+        "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+      )}
     >
-      <span className="shrink-0 text-ink-soft">{icon}</span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className={cn("shrink-0", accent ? "text-brand-strong" : "text-ink-soft")}>
+        {icon}
+      </span>
+      <span
+        className={cn("min-w-0 flex-1 truncate", accent && "font-medium")}
+      >
+        {label}
+      </span>
       {hint && (
-        <span className="shrink-0 text-[11px] text-ink-muted">{hint}</span>
+        <span className="shrink-0 font-mono text-[10.5px] tracking-wide text-ink-muted">
+          {hint}
+        </span>
       )}
     </button>
   );

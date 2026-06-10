@@ -200,7 +200,9 @@ function SidebarEarlierEntry({
         onClick={onClick}
         className={cn(
           "mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 rounded-sm px-3 py-2 text-left text-[13px] text-ink-soft",
-          "transition-colors hover:bg-hover hover:text-ink",
+          "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover hover:text-ink",
+          "active:translate-y-px active:duration-[45ms]",
+          "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
         )}
       >
         <Clock size={14} weight="thin" className="text-ink-muted" />
@@ -224,10 +226,11 @@ export function SidebarTimelinePresence({
   return (
     <div
       className={cn(
-        "transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
+        "transition-[opacity,transform] duration-[260ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
         phase === "entered" && "translate-y-0 opacity-100",
-        phase === "entering" && "translate-y-2 opacity-0",
-        phase === "exiting" && "translate-y-3 opacity-0 duration-150 ease-in",
+        phase === "entering" && "translate-y-3 opacity-0",
+        phase === "exiting" &&
+          "translate-y-4 opacity-0 duration-[160ms] ease-[cubic-bezier(0.4,0,1,1)]",
         phase !== "entered" && "pointer-events-none",
       )}
     >

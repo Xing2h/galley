@@ -115,6 +115,7 @@ const zhCopy = {
     olderProjects: "更早项目",
     editProject: "编辑项目",
     deleteProject: "删除项目",
+    goalRunningInProject: "Goal 正在这个 Project 中运行",
   },
   topbar: {
     newConversation: "新对话",
@@ -1180,6 +1181,7 @@ const enCopy: AppCopy = {
     olderProjects: "Older projects",
     editProject: "Edit project",
     deleteProject: "Delete project",
+    goalRunningInProject: "A Goal is running in this project",
   },
   topbar: {
     newConversation: "New conversation",
