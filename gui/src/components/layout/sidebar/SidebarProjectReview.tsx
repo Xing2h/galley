@@ -19,6 +19,7 @@ import { useCopy } from "@/lib/i18n";
 import { effectiveProjectActivityAt } from "@/lib/projects";
 import { groupSessions } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
+import type { GoalBrief } from "@/types/goal";
 import type { Project, Session } from "@/types/session";
 
 import {
@@ -71,6 +72,7 @@ export function SidebarProjectReview({
   reviewNowMs,
   activeId,
   petAttachedSessionId,
+  goalMasterStatus,
   onToggleProjectExpanded,
   onStartProjectConversation,
   onSelectSession,
@@ -93,6 +95,7 @@ export function SidebarProjectReview({
   reviewNowMs: number;
   activeId?: string;
   petAttachedSessionId?: string | null;
+  goalMasterStatus?: Map<string, GoalBrief>;
   onToggleProjectExpanded?: (id: string) => void;
   onStartProjectConversation?: (id: string) => void;
   onSelectSession?: (id: string) => void;
@@ -165,6 +168,7 @@ export function SidebarProjectReview({
           activeId={activeId}
           projects={projects}
           petAttachedSessionId={petAttachedSessionId}
+          goalMasterStatus={goalMasterStatus}
           onSelectSession={onSelectSession}
           onArchiveSession={onArchiveSession}
           onTogglePinSession={onTogglePinSession}
@@ -513,6 +517,7 @@ function SidebarProjectDrawer({
   activeId,
   projects,
   petAttachedSessionId,
+  goalMasterStatus,
   onSelectSession,
   onArchiveSession,
   onTogglePinSession,
@@ -529,6 +534,7 @@ function SidebarProjectDrawer({
   activeId?: string;
   projects: Project[];
   petAttachedSessionId?: string | null;
+  goalMasterStatus?: Map<string, GoalBrief>;
   onSelectSession?: (id: string) => void;
   onArchiveSession?: (id: string) => void;
   onTogglePinSession?: (id: string) => void;
@@ -574,6 +580,7 @@ function SidebarProjectDrawer({
               activeId={activeId}
               projects={projects}
               petAttachedSessionId={petAttachedSessionId}
+              goalMasterStatus={goalMasterStatus}
               onSelectSession={onSelectSession}
               onArchiveSession={onArchiveSession}
               onTogglePinSession={onTogglePinSession}

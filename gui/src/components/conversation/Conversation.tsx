@@ -2,6 +2,10 @@ import { CaretDown } from "@phosphor-icons/react";
 import { Fragment, useEffect, useState } from "react";
 
 import { LiveDots } from "@/components/conversation/LiveIndicators";
+import {
+  GoalCommissionMarker,
+  GoalTerminalMarker,
+} from "@/components/conversation/GoalRunMarkers";
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import {
   MessageAgent,
@@ -10,9 +14,11 @@ import {
 import { MessageUser } from "@/components/conversation/MessageUser";
 import { SystemMessageBubble } from "@/components/conversation/SystemMessageBubble";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
+import { annotateGoalThread } from "@/lib/goal-thread";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { AgentTurn, Turn } from "@/types/conversation";
+import type { GoalBrief } from "@/types/goal";
 import type { ApprovalDecision } from "@/types/ipc";
 
 const THINKING_ELAPSED_VISIBLE_AFTER_SEC = 3;
@@ -29,6 +35,13 @@ export interface ConversationProps {
    * threaded down to ToolCallout → ApprovalForm so the "Always
    * allow in {projectName}" button reflects context. */
   projectName?: string;
+  /**
+   * Goals whose master session is the one being viewed (any status,
+   * from `list_goals_for_session`). When present, the objective user
+   * turns render as Goal commission markers and each run gets a
+   * terminal marker — bracketing each run as an in-thread episode.
+   */
+  goals?: GoalBrief[];
 }
 
 /**
@@ -50,22 +63,32 @@ export function Conversation({
   approvalDecisions,
   onApprove,
   projectName,
+  goals,
 }: ConversationProps) {
+  const items = annotateGoalThread(turns, goals ?? []);
   return (
     <div>
-      {turns.map((t, i) => (
+      {items.map((item, i) => (
         <Fragment key={i}>
-          {t.role === "user" ? (
+          {item.kind === "commission" ? (
+            <GoalCommissionMarker goal={item.goal} content={item.content} />
+          ) : item.kind === "terminal" ? (
+            <GoalTerminalMarker goal={item.goal} />
+          ) : item.turn.role === "user" ? (
             <MessageUser
-              content={t.content}
-              origin={t.origin}
-              createdAt={t.createdAt}
+              content={item.turn.content}
+              origin={item.turn.origin}
+              createdAt={item.turn.createdAt}
             />
-          ) : t.role === "system" ? (
-            <SystemMessageBubble content={t.content} variant={t.variant} />
+          ) : item.turn.role === "system" ? (
+            <SystemMessageBubble
+              content={item.turn.content}
+              variant={item.turn.variant}
+              showGlyph={item.narrationLeading}
+            />
           ) : (
             <AgentTurnView
-              turn={t}
+              turn={item.turn}
               approvalDecisions={approvalDecisions}
               onApprove={onApprove}
               projectName={projectName}

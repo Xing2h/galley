@@ -57,6 +57,17 @@ export function listVisibleGoals() {
   return invoke<GoalBrief[]>("list_visible_goals");
 }
 
+/**
+ * All goals whose master session is `sessionId` (any status, including
+ * terminal + already-seen), oldest run first. Powers the in-thread Goal
+ * commission / terminal markers, which must survive after a goal leaves
+ * the active / visible lists so reopening a finished run is not
+ * amnesiac.
+ */
+export function listGoalsForSession(sessionId: string) {
+  return invoke<GoalBrief[]>("list_goals_for_session", { sessionId });
+}
+
 export function getGoalStatus(id: string) {
   return invoke<GoalStatusSnapshot>("goal_status", { id });
 }

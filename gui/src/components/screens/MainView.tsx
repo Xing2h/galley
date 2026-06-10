@@ -11,6 +11,7 @@ import {
   Conversation,
   TurnMarker,
 } from "@/components/conversation/Conversation";
+import { GoalRunningTail } from "@/components/conversation/GoalRunMarkers";
 import { StreamingCursor } from "@/components/conversation/LiveIndicators";
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { SelectionCopyToolbar } from "@/components/conversation/SelectionCopyToolbar";
@@ -92,6 +93,12 @@ export interface MainViewProps {
   /** Active Goal for this session's Project context, if any. */
   goal?: GoalBrief;
   /**
+   * All goals whose master session is this one (any status), powering
+   * the in-thread Goal commission / terminal markers. Forwarded to
+   * Conversation.
+   */
+  sessionGoals?: GoalBrief[];
+  /**
    * GA-initiated question waiting for a user reply. When non-null,
    * the AskUserBubble renders at the conversation tail (with chip
    * candidates) and the Composer's placeholder switches to a reply
@@ -156,11 +163,20 @@ export function MainView({
   requiresModelConfig = false,
   onOpenLLMSwitcher,
   goal,
+  sessionGoals,
   pendingAskUser,
   conversationWidth = "compact",
 }: MainViewProps) {
   const copy = useCopy();
   const stillWaiting = pendingApprovals.length > 0;
+  // Ambient liveness for a running Goal master thread (see
+  // GoalRunningTail). Only when the master isn't itself mid-turn and
+  // nothing else already signals activity, so we never double up.
+  const runningGoal = sessionGoals?.find(
+    (g) => g.status === "running" || g.status === "wrapping",
+  );
+  const goalRunningTailVisible =
+    !!runningGoal && !isRunning && !stillWaiting && !pendingAskUser;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pendingApprovalRefs = useRef(new Map<string, HTMLDivElement>());
   // Stripped partial — empty when nothing renderable yet (e.g. only
@@ -519,6 +535,7 @@ export function MainView({
               approvalDecisions={approvalDecisions}
               onApprove={onApprove}
               projectName={projectName}
+              goals={sessionGoals}
             />
             {/* In-flight pending approvals — rendered after the
               completed turns. The agent has emitted tool_call_pending
@@ -644,6 +661,11 @@ export function MainView({
                 onPickCandidate={(text) => onSubmit?.(text)}
               />
             )}
+            {/* Ambient liveness for a running Goal master thread: the
+                master itself isn't mid-turn, but its goal is still
+                progressing in worker sessions. Shown only when nothing
+                else already signals activity. */}
+            {goalRunningTailVisible && <GoalRunningTail />}
           </div>
         </div>
 

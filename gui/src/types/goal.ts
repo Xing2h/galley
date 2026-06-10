@@ -38,6 +38,11 @@ export interface StartDesktopGoalInput {
   runtimeKind?: RuntimeKind;
   budgetSeconds?: number;
   workerLimit?: number;
+  /** Display name of the model the operator picked in the Composer at
+   * launch. Best-effort applied to the master session (and inherited by
+   * worker sessions) by the backend; a miss falls back to the GA
+   * default and never blocks the launch. */
+  llmName?: string;
 }
 
 export interface GoalMasterMessage {

@@ -27,11 +27,19 @@ import { useCopy } from "@/lib/i18n";
 interface SystemMessageBubbleProps {
   content: string;
   variant: "side_question" | "system" | "goal";
+  /**
+   * Goal-narration only: show the Galley register glyph. The renderer
+   * passes `false` for the 2nd+ callout in a consecutive narration
+   * cluster so a multi-beat run shows the marker once, not on every
+   * line. Default true (any standalone narration keeps its glyph).
+   */
+  showGlyph?: boolean;
 }
 
 export function SystemMessageBubble({
   content,
   variant,
+  showGlyph = true,
 }: SystemMessageBubbleProps) {
   const copy = useCopy();
   if (variant === "side_question") {
@@ -49,16 +57,37 @@ export function SystemMessageBubble({
     );
   }
   if (variant === "goal") {
+    // Galley Goal narration is secondary running commentary, not the
+    // answer to read. Now that the commission / terminal markers carry
+    // the brand "this is a Goal" identity at the run's boundaries, the
+    // narration in between can recede: drop the brand-soft fill + banner
+    // header (which made it the heaviest block in the thread, inverting
+    // hierarchy), keep only a thin brand left rule + a single small
+    // Target glyph as a wordless register marker, and soften the body to
+    // ink-soft. The "Galley" attribution moves to the glyph's
+    // aria-label — repeating the word on every beat was redundant chrome
+    // with no per-callout information; the glyph still disambiguates
+    // narration from an agent-answer blockquote (same brand-rule look).
+    // See DESIGN.md §4.3.
     return (
       <div
         data-role="system-bubble"
-        className="my-5 rounded-r-sm border-l-[3px] border-brand-strong/60 bg-brand-soft px-4 py-2.5"
+        className="my-4 border-l-[3px] border-brand-strong/30 pl-4"
       >
-        <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-brand-strong">
-          <Target size={12} weight="bold" />
-          {copy.conversation.goalNarration}
-        </div>
-        <MarkdownView source={content} variant="agent" />
+        {showGlyph && (
+          <div className="mb-1 flex items-center text-brand-strong/70">
+            <Target
+              size={11}
+              weight="thin"
+              aria-label={copy.conversation.goalNarration}
+            />
+          </div>
+        )}
+        <MarkdownView
+          source={content}
+          variant="agent"
+          className="[&_li]:text-[13px] [&_li]:text-ink-soft [&_p]:text-[13px] [&_p]:leading-[1.6] [&_p]:text-ink-soft"
+        />
       </div>
     );
   }

@@ -1,4 +1,4 @@
-import { CaretDown, CaretUp, Check, Copy, Robot } from "@phosphor-icons/react";
+import { CaretDown, CaretUp, Check, Copy, PlugsConnected } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ActionChip } from "@/components/conversation/ActionChip";
@@ -209,18 +209,18 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
       }}
     >
       {supervisorTooltip && (
-        <div className="absolute -left-6 top-2 z-10">
-          <IconTooltip text={supervisorTooltip} side="left">
+        <div className="mb-1 flex items-center">
+          <IconTooltip text={supervisorTooltip} side="top">
             <span
               role="img"
               tabIndex={0}
               aria-label={copy.conversation.supervisorMessage}
               className={cn(
-                "inline-flex size-5 items-center justify-center rounded-sm transition-colors",
-                "text-ink-muted hover:bg-hover hover:text-ink-soft focus-visible:bg-hover focus-visible:text-ink-soft focus-visible:outline-none",
+                "inline-flex items-center rounded-sm text-ink-muted transition-colors",
+                "hover:text-ink-soft focus-visible:text-ink-soft focus-visible:outline-none",
               )}
             >
-              <Robot size={13} weight="thin" />
+              <PlugsConnected size={12} weight="thin" />
             </span>
           </IconTooltip>
         </div>

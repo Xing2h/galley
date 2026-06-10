@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCopy } from "@/lib/i18n";
 import { sortProjectsForNavigation } from "@/lib/projects";
 import { groupSessions } from "@/lib/sessions";
+import type { GoalBrief } from "@/types/goal";
 import type { Project, Session } from "@/types/session";
 
 import { SidebarFooter } from "./sidebar/SidebarFooter";
@@ -109,6 +110,10 @@ export interface SidebarProps {
    * row so users see "where the pet lives" at a glance — non-
    * interactive status, not a click target. */
   petAttachedSessionId?: string | null;
+  /** Map of master-session-id -> running/wrapping goal, so a master
+   * session row shows a goal-running state instead of reading as idle
+   * while its workers run. */
+  goalMasterStatus?: Map<string, GoalBrief>;
 }
 
 /**
@@ -155,6 +160,7 @@ export function Sidebar({
   onOpenModelsSettings,
   onOpenAgentSettings,
   petAttachedSessionId,
+  goalMasterStatus,
 }: SidebarProps) {
   const copy = useCopy();
   // Project context belongs to the right-side empty composer. Sidebar
@@ -282,6 +288,7 @@ export function Sidebar({
               reviewNowMs={projectReviewNowMs}
               activeId={activeId}
               petAttachedSessionId={petAttachedSessionId}
+              goalMasterStatus={goalMasterStatus}
               onToggleProjectExpanded={onToggleProjectExpanded}
               onStartProjectConversation={onStartProjectConversation}
               onSelectSession={onSelectSession}
@@ -316,6 +323,7 @@ export function Sidebar({
                 activeId={activeId}
                 projects={navigationProjects}
                 petAttachedSessionId={petAttachedSessionId}
+                goalMasterStatus={goalMasterStatus}
                 onSelectSession={onSelectSession}
                 onArchiveSession={onArchiveSession}
                 onTogglePinSession={onTogglePinSession}

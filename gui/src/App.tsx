@@ -27,6 +27,7 @@ import { useImSupervisorStatus } from "@/hooks/useImSupervisorStatus";
 import { pushCloseHintCopy } from "@/lib/close-hint";
 import {
   getGoalStatus,
+  listGoalsForSession,
   listVisibleGoals,
   markGoalResultSeen,
   startDesktopGoal,
@@ -132,6 +133,11 @@ function App() {
   const renameSession = useSessionsStore((s) => s.renameSession);
   const projects = useSessionsStore((s) => s.projects);
   const [activeGoals, setActiveGoals] = useState<GoalBrief[]>([]);
+  // All goals (any status) whose master session is the active one —
+  // powers the in-thread Goal commission / terminal markers. Fetched on
+  // session change and refreshed when activeGoals shift (a launch /
+  // terminal transition), so a just-finished run's markers settle.
+  const [sessionGoals, setSessionGoals] = useState<GoalBrief[]>([]);
   const activeProjectFilter = useSessionsStore((s) => s.activeProjectFilter);
   const createProject = useSessionsStore((s) => s.createProject);
   const setActiveProjectFilter = useSessionsStore(
@@ -521,6 +527,31 @@ function App() {
         console.debug("[goals] mark result seen failed.", e);
       });
   }, [activeGoals, activeSessionId]);
+
+  // Fetch the active session's goals (any status, incl. terminal+seen)
+  // for the in-thread commission / terminal markers. Re-runs on session
+  // change and when activeGoals shift (launch / terminal transition).
+  // All setState goes through async callbacks (never synchronously in
+  // the effect body); the no-session case resolves to an empty list.
+  // `cancelled` guards against stale responses.
+  useEffect(() => {
+    let cancelled = false;
+    const sid = screen === "main" ? activeSessionId : undefined;
+    const load = sid
+      ? listGoalsForSession(sid)
+      : Promise.resolve<GoalBrief[]>([]);
+    void load
+      .then((goals) => {
+        if (!cancelled) setSessionGoals(goals);
+      })
+      .catch((e) => {
+        console.debug("[goals] list goals for session failed.", e);
+        if (!cancelled) setSessionGoals([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, screen, activeGoals]);
 
   // Goal terminal-state toast: fire once when a Goal crosses from
   // running/wrapping into completed/failed, off the same 5s visible-goal
@@ -959,6 +990,21 @@ function App() {
         : "quiet";
   const effectiveActiveId = screen === "main" ? activeSessionId : undefined;
   const activeSession = visibleSessions.find((s) => s.id === effectiveActiveId);
+  // Map of master-session-id -> running/wrapping goal, so the Sidebar can
+  // show a goal-running state on a master session row (the master itself
+  // stays idle while its workers run).
+  const goalMasterStatus = useMemo(() => {
+    const map = new Map<string, GoalBrief>();
+    for (const goal of activeGoals) {
+      if (
+        goal.masterSessionId &&
+        (goal.status === "running" || goal.status === "wrapping")
+      ) {
+        map.set(goal.masterSessionId, goal);
+      }
+    }
+    return map;
+  }, [activeGoals]);
   const activeProject = activeProjectFilter
     ? projects.find((p) => p.id === activeProjectFilter)
     : undefined;
@@ -1003,6 +1049,7 @@ function App() {
         runtimeKind: activeRuntimeKind,
         workerLimit: config.workerLimit,
         budgetSeconds: config.budgetSeconds,
+        llmName: llmDisplayName,
       });
       const { goal, objectiveMessage, masterMessage } = result;
       appendUserTurnExternal(
@@ -1537,6 +1584,7 @@ function App() {
             onEditProject={(id) => setEditingProjectId(id)}
             onDeleteProject={(id) => setDeletingProjectId(id)}
             petAttachedSessionId={petAttachedSessionId}
+            goalMasterStatus={goalMasterStatus}
           />
         }
         main={
@@ -1622,6 +1670,7 @@ function App() {
                   }}
                   onOpenLLMSwitcher={openLLMSwitcherFallback}
                   goal={activeSessionGoal}
+                  sessionGoals={sessionGoals}
                   onGoalSubmit={startGoalFromComposer}
                   pendingApprovals={pendingApprovals}
                   approvalDecisions={approvalDecisions}

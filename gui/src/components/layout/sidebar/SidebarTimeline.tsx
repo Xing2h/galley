@@ -3,6 +3,7 @@ import { CaretRight, Clock } from "@phosphor-icons/react";
 import { useCopy } from "@/lib/i18n";
 import { groupSessions, SIDEBAR_BUCKET_ORDER } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
+import type { GoalBrief } from "@/types/goal";
 import type { Project, Session, SessionBucket } from "@/types/session";
 
 import { SidebarSessionRow } from "./SidebarSessionRow";
@@ -13,6 +14,7 @@ export function SidebarTimelineBuckets({
   activeId,
   projects,
   petAttachedSessionId,
+  goalMasterStatus,
   collapseEarlier = true,
   onSelectSession,
   onArchiveSession,
@@ -28,6 +30,9 @@ export function SidebarTimelineBuckets({
   activeId?: string;
   projects: Project[];
   petAttachedSessionId?: string | null;
+  /** Map of master-session-id -> running/wrapping goal, so a master
+   * session row shows a goal-running state instead of reading as idle. */
+  goalMasterStatus?: Map<string, GoalBrief>;
   collapseEarlier?: boolean;
   onSelectSession?: (id: string) => void;
   onArchiveSession?: (id: string) => void;
@@ -67,6 +72,7 @@ export function SidebarTimelineBuckets({
             activeId={activeId}
             projects={projects}
             petAttachedSessionId={petAttachedSessionId}
+            goalMasterStatus={goalMasterStatus}
             onSelectSession={onSelectSession}
             onArchiveSession={onArchiveSession}
             onTogglePinSession={onTogglePinSession}
@@ -89,6 +95,7 @@ function SidebarBucket({
   activeId,
   projects,
   petAttachedSessionId,
+  goalMasterStatus,
   onSelectSession,
   onArchiveSession,
   onTogglePinSession,
@@ -103,6 +110,7 @@ function SidebarBucket({
   activeId?: string;
   projects: Project[];
   petAttachedSessionId?: string | null;
+  goalMasterStatus?: Map<string, GoalBrief>;
   onSelectSession?: (id: string) => void;
   onArchiveSession?: (id: string) => void;
   onTogglePinSession?: (id: string) => void;
@@ -137,6 +145,7 @@ function SidebarBucket({
           session={s}
           active={s.id === activeId}
           petAttached={s.id === petAttachedSessionId}
+          goalMaster={goalMasterStatus?.get(s.id)}
           projects={projects}
           onClick={() => onSelectSession?.(s.id)}
           onArchive={

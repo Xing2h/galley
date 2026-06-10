@@ -17,9 +17,11 @@ import {
 
 import { IconButton } from "@/components/ui/button";
 import { IconTooltip } from "@/components/ui/tooltip";
+import { goalStageLabel } from "@/lib/goals";
 import { useCopy } from "@/lib/i18n";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
+import type { GoalBrief } from "@/types/goal";
 import type { Project, Session } from "@/types/session";
 
 import {
@@ -38,6 +40,7 @@ export function SidebarSessionRow({
   session,
   active,
   petAttached = false,
+  goalMaster,
   projects,
   onClick,
   onArchive,
@@ -54,6 +57,12 @@ export function SidebarSessionRow({
    * Cat icon next to the title — status only, not clickable (the
    * row itself is the click target for switching sessions). */
   petAttached?: boolean;
+  /** Running/wrapping goal this session is the master of, if any. The
+   * master session itself stays idle while workers run, so without this
+   * its row would read as idle on a busy board. When present (and the
+   * session isn't in its own running/blocking state) the row shows a
+   * goal-running state: brand breathing rail + spinner + a goal subline. */
+  goalMaster?: GoalBrief;
   /** Full project list — used to populate the "Move to project"
    * submenu. Caller passes navigation-sorted projects so the menu
    * matches the Projects section order. */
@@ -110,6 +119,16 @@ export function SidebarSessionRow({
   const hasPendingApproval =
     session.status === "waiting_approval" || session.pendingApprovalCount > 0;
   const hasBlockingError = session.status === "error";
+  // Master session of a running/wrapping goal: the work happens in
+  // worker sessions, so this session's own status is idle. Surface the
+  // goal-running state on its row so the board doesn't read it as idle.
+  // Yields to the session's own running / blocking states if any.
+  const goalRunning =
+    !!goalMaster &&
+    !isRunning &&
+    !hasPendingAsk &&
+    !hasPendingApproval &&
+    !hasBlockingError;
   const showRunningActivity =
     isRunning && !hasPendingAsk && !hasPendingApproval && !hasBlockingError;
   // Right-side dot is unread-only now; the ongoing states
@@ -120,7 +139,8 @@ export function SidebarSessionRow({
     !hasPendingAsk &&
     !hasPendingApproval &&
     !hasBlockingError &&
-    !isRunning;
+    !isRunning &&
+    !goalRunning;
   // Left status-rail kind — one continuous-state channel scanned down
   // the left edge. running breathes (in progress); waiting / error are
   // static color (needs you / stuck). completed / idle = no rail.
@@ -128,7 +148,7 @@ export function SidebarSessionRow({
     ? "error"
     : hasPendingAsk || hasPendingApproval
       ? "waiting"
-      : showRunningActivity
+      : showRunningActivity || goalRunning
         ? "running"
         : null;
   // Subline composition:
@@ -164,6 +184,12 @@ export function SidebarSessionRow({
     : null;
   const approvalCount = session.pendingApprovalCount || 0;
   const errorCount = session.errorCount || 0;
+  // Goal-master running subline, e.g. "运行中 · 2 个 Agent" — reuses the
+  // TopBar stage + worker-count copy so the row reads the same language
+  // as the goal pill. Null unless this session masters a goal.
+  const goalSubline = goalMaster
+    ? `${goalStageLabel(goalMaster.status, copy.topbar)} · ${copy.topbar.goalWorkerCount(goalMaster.workerLimit)}`
+    : null;
   // Subline doubles as the status line — always state-colored, upright
   // (no italic), text-explicit for the blocking states so a glance
   // reads "等你回复 / 等待审批 / 出错" without decoding an icon.
@@ -181,15 +207,17 @@ export function SidebarSessionRow({
           ? session.lastStepIndex != null && cleanSummary
             ? copy.sidebar.stepSummary(session.lastStepIndex, cleanSummary)
             : copy.sidebar.thinking
-          : cleanSummary
-            ? copy.sidebar.completedSummary(cleanSummary)
-            : null;
+          : goalRunning
+            ? goalSubline
+            : cleanSummary
+              ? copy.sidebar.completedSummary(cleanSummary)
+              : null;
   const sublineTone: "running" | "warning" | "error" | "muted" =
     hasBlockingError
       ? "error"
       : hasPendingAsk || hasPendingApproval
         ? "warning"
-        : showRunningActivity
+        : showRunningActivity || goalRunning
           ? "running"
           : "muted";
   // One-shot pop on entering an attention / unread state. Keyed on the
@@ -202,7 +230,7 @@ export function SidebarSessionRow({
         ? "approval"
         : showUnread
           ? "unread"
-          : isRunning
+          : isRunning || goalRunning
             ? "running"
             : "idle";
   const shouldPopIcon =
@@ -222,7 +250,7 @@ export function SidebarSessionRow({
                 ? "bg-selected"
                 : actionsOpen
                   ? "bg-hover"
-                  : showRunningActivity
+                  : showRunningActivity || goalRunning
                     ? "bg-brand-soft/40 hover:bg-brand-soft/60"
                     : "hover:bg-hover",
             ),
@@ -261,7 +289,11 @@ export function SidebarSessionRow({
         {hasPendingAsk ? (
           <PauseCircle size={14} weight="fill" className="text-warning" />
         ) : (
-          <StatusIcon status={session.status} size={14} unread={showUnread} />
+          <StatusIcon
+            status={goalRunning ? "running" : session.status}
+            size={14}
+            unread={showUnread}
+          />
         )}
       </span>
       <div
@@ -285,6 +317,7 @@ export function SidebarSessionRow({
               className={cn(
                 "min-w-0 flex-1 truncate text-[13px] text-ink",
                 isRunning ||
+                  goalRunning ||
                   showUnread ||
                   hasPendingAsk ||
                   hasPendingApproval ||
