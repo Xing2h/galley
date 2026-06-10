@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 
+import { Button, IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
@@ -185,7 +186,7 @@ export function EarlierDialog({
 
           <SearchBar query={query} onChange={setQuery} />
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-app">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-elevated">
             {filtered.length === 0 ? (
               <EmptyState filtered={!showGroups} />
             ) : showGroups ? (
@@ -271,42 +272,28 @@ function Header({
   return (
     <div className="flex items-center gap-3 border-b border-line bg-elevated px-5 py-3.5">
       <Dialog.Title className="text-[16px] font-semibold text-ink">
-        Earlier
+        {copy.projects.earlierTitle}
       </Dialog.Title>
-      <span className="text-[12.5px] text-ink-muted">{summary}</span>
+      <span className="text-[12.5px] tabular-nums tracking-[0.01em] text-ink-muted">
+        {summary}
+      </span>
 
       <div className="ml-auto flex items-center gap-2">
         {selectMode ? (
-          <button
-            type="button"
-            onClick={onCancelSelectMode}
-            className={cn(
-              "rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-soft",
-              "transition-colors hover:bg-hover hover:text-ink",
-            )}
-          >
+          <Button variant="secondary" size="sm" onClick={onCancelSelectMode}>
             {copy.common.cancel}
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
-            onClick={onEnterSelectMode}
-            disabled={total === 0}
-            className={cn(
-              "rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-soft",
-              "transition-colors hover:bg-hover hover:text-ink",
-              "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-elevated disabled:hover:text-ink-soft",
-            )}
-          >
-            {copy.projects.select}
-          </button>
+          total > 0 && (
+            <Button variant="secondary" size="sm" onClick={onEnterSelectMode}>
+              {copy.projects.select}
+            </Button>
+          )
         )}
-        <Dialog.Close
-          aria-label={copy.common.close}
-          onClick={onClose}
-          className="inline-flex size-7 items-center justify-center rounded-sm text-ink-soft transition-colors hover:bg-hover hover:text-ink"
-        >
-          <XIcon size={14} weight="thin" />
+        <Dialog.Close asChild onClick={onClose}>
+          <IconButton ariaLabel={copy.common.close} tooltip={false}>
+            <XIcon size={14} weight="thin" />
+          </IconButton>
         </Dialog.Close>
       </div>
     </div>
@@ -336,7 +323,7 @@ function SearchBar({
         autoFocus
         className={cn(
           "h-7 w-full rounded-sm border border-line bg-app pl-7 pr-3 text-[12.5px] text-ink",
-          "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
+          "placeholder:text-ink-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30",
         )}
       />
     </div>
@@ -364,9 +351,9 @@ function GroupedList({
     <div>
       {groups.map((g) => (
         <section key={g.label}>
-          <div className="sticky top-0 z-10 border-b border-line bg-app px-5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+          <div className="sticky top-0 z-10 border-b border-line bg-elevated px-5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
             {g.label}
-            <span className="ml-1.5 text-ink-soft normal-case tracking-normal">
+            <span className="ml-1.5 tabular-nums text-ink-soft normal-case tracking-normal">
               · {g.sessions.length}
             </span>
           </div>
@@ -450,7 +437,7 @@ function EarlierRow({
       data-galley-context-menu-trigger={!selectMode ? "" : undefined}
       onClick={handleClick}
       className={cn(
-        "group flex cursor-pointer items-start gap-3 px-5 py-3 transition-colors",
+        "group relative flex cursor-pointer items-start gap-3 px-5 py-3 transition-colors",
         selectMode && isSelected
           ? "bg-selected hover:bg-selected"
           : "hover:bg-hover",
@@ -482,18 +469,59 @@ function EarlierRow({
             {session.summary}
           </div>
         )}
-        <div className="mt-1 text-[10.5px] text-ink-muted">
-          {formatDate(session.lastActivityAt)}
-          {session.turnCount !== undefined && session.turnCount > 0 && (
-            <> · {copy.projects.turns(session.turnCount)}</>
-          )}
-          {session.pinned && (
-            <span className="ml-1.5 text-brand-strong">
-              · {copy.projects.pinned}
-            </span>
-          )}
-        </div>
       </div>
+
+      {/* Right metadata column — tabular ledger rail (date · turns ·
+          pinned). In browse mode it yields to the hover/focus actions;
+          in select mode it stays put. */}
+      <span
+        className={cn(
+          "shrink-0 pt-0.5 text-right text-[10.5px] tabular-nums tracking-[0.02em] text-ink-muted",
+          !selectMode &&
+            "transition-opacity duration-100 group-hover:opacity-0 group-focus-within:opacity-0",
+        )}
+      >
+        {formatDate(session.lastActivityAt)}
+        {session.turnCount !== undefined && session.turnCount > 0 && (
+          <> · {copy.projects.turns(session.turnCount)}</>
+        )}
+        {session.pinned && (
+          <span className="ml-1.5 text-brand-strong">
+            · {copy.projects.pinned}
+          </span>
+        )}
+      </span>
+
+      {!selectMode && (
+        <div className="pointer-events-none absolute right-5 top-3 flex items-center gap-1 opacity-0 transition-opacity duration-100 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+          <IconButton
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin();
+            }}
+            title={session.pinned ? copy.sidebar.unpin : copy.sidebar.pin}
+            ariaLabel={session.pinned ? copy.sidebar.unpin : copy.sidebar.pin}
+            className="hover:bg-elevated"
+          >
+            {session.pinned ? (
+              <PushPinSlash size={14} weight="thin" />
+            ) : (
+              <PushPin size={14} weight="thin" />
+            )}
+          </IconButton>
+          <IconButton
+            onClick={(e) => {
+              e.stopPropagation();
+              onArchive();
+            }}
+            title={copy.sidebar.archive}
+            ariaLabel={copy.sidebar.archive}
+            className="hover:bg-elevated"
+          >
+            <Archive size={14} weight="thin" />
+          </IconButton>
+        </div>
+      )}
     </li>
   );
 
@@ -561,45 +589,44 @@ function SelectActionBar({
   const copy = useCopy();
   const disabled = selectedCount === 0;
   return (
-    <div
-      className={cn(
-        "flex shrink-0 items-center gap-2 border-t border-line bg-elevated px-4 py-2.5",
-      )}
-    >
-      <button
-        type="button"
+    <div className="flex shrink-0 items-center gap-2 border-t border-line bg-elevated px-4 py-2.5">
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={onToggleSelectAllVisible}
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[12px] text-ink-soft",
-          "transition-colors hover:bg-hover hover:text-ink",
-        )}
+        leadingIcon={
+          allVisibleSelected ? (
+            <CheckSquare
+              size={13}
+              weight="fill"
+              className="text-brand-strong"
+            />
+          ) : (
+            <Square size={13} weight="thin" />
+          )
+        }
       >
-        {allVisibleSelected ? (
-          <CheckSquare size={13} weight="fill" className="text-brand-strong" />
-        ) : (
-          <Square size={13} weight="thin" />
-        )}
         {allVisibleSelected
           ? copy.projects.clearSelection
           : copy.projects.selectAll}
-      </button>
+      </Button>
+      <span className="text-[12px] tabular-nums tracking-[0.01em] text-ink-muted">
+        {copy.projects.selected(selectedCount)}
+      </span>
 
-      <button
-        type="button"
-        onClick={onArchive}
-        disabled={disabled}
-        className={cn(
-          "ml-auto inline-flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-soft",
-          "transition-colors hover:bg-hover hover:text-ink",
-          "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-elevated disabled:hover:text-ink-soft",
-        )}
-      >
-        <Archive size={12} weight="thin" />
-        {copy.projects.archiveSelected}
-        {selectedCount > 0 && (
-          <span className="text-ink-muted">· {selectedCount}</span>
-        )}
-      </button>
+      <div className="ml-auto flex items-center gap-1.5">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onArchive}
+          disabled={disabled}
+          aria-label={copy.projects.archiveSelected}
+          title={copy.projects.archiveSelected}
+          leadingIcon={<Archive size={12} weight="thin" />}
+        >
+          {copy.projects.archiveSelected}
+        </Button>
+      </div>
     </div>
   );
 }

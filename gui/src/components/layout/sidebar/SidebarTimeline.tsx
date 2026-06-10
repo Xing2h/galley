@@ -1,4 +1,4 @@
-import { CaretRight, Clock } from "@phosphor-icons/react";
+import { CaretRight } from "@phosphor-icons/react";
 
 import { useCopy } from "@/lib/i18n";
 import { groupSessions, SIDEBAR_BUCKET_ORDER } from "@/lib/sessions";
@@ -188,31 +188,33 @@ function SidebarEarlierEntry({
   onClick?: () => void;
 }) {
   const copy = useCopy();
-  // Single collapsed row in place of the (unbounded) `earlier` bucket.
-  // Visual register sits between a section label and a session row:
-  // muted text + small clock icon (this is "old time") + count chip +
-  // chevron hinting "opens elsewhere".
+  // `更早` is the third time bucket but its contents live in a dialog
+  // (the sidebar is current-work, not infinite history). So instead of
+  // a foreign button row, it stays in the SAME section-label family as
+  // 今天/本周 — identical 10px uppercase register + left inset — and
+  // just carries its overflow affordance inline: a right-aligned count
+  // + caret, the whole label clickable with a quiet hover. The three
+  // buckets read as one family; this one happens to be actionable.
   return (
-    <>
-      <SidebarSectionLabel>{copy.sidebar.bucketEarlier}</SidebarSectionLabel>
-      <button
-        type="button"
-        onClick={onClick}
-        className={cn(
-          "mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 rounded-sm px-3 py-2 text-left text-[13px] text-ink-soft",
-          "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover hover:text-ink",
-          "active:translate-y-px active:duration-[45ms]",
-          "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
-        )}
-      >
-        <Clock size={14} weight="thin" className="text-ink-muted" />
-        <span>{copy.sidebar.showAll}</span>
-        <span className="ml-auto flex items-center gap-1 text-[11px] text-ink-muted">
-          {count}
-          <CaretRight size={10} weight="thin" />
-        </span>
-      </button>
-    </>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={copy.sidebar.showAll}
+      className={cn(
+        "mx-1.5 mt-2 flex w-[calc(100%-12px)] cursor-pointer items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted",
+        "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover hover:text-ink-soft",
+        "active:translate-y-px active:duration-[45ms]",
+        "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">
+        {copy.sidebar.bucketEarlier}
+      </span>
+      <span className="flex items-center gap-0.5 tabular-nums normal-case tracking-normal text-ink-muted">
+        {count}
+        <CaretRight size={9} weight="thin" className="opacity-70" />
+      </span>
+    </button>
   );
 }
 

@@ -51,6 +51,14 @@ Galley 的视觉与交互气质 = **Notion + Claude**。
 | `--color-elevated` | `bg-elevated` | `#FFFFFF` | 浮起卡片（Health Check / Error / Command Palette） |
 | `--color-overlay` | `bg-overlay` | `rgba(31,27,23,0.4)` | Command Palette / modal 遮罩 |
 
+#### Elevation 不倒置（系统规范）
+
+明度即抬升:`app (#FAF7F2) < surface (#FDFAF5) < elevated (#FFF)`,越浮起越浅。
+
+> **规范**:任何"浮起"容器(dialog / menu / card)的**主体区 elevation 必须 ≥ 它自己的 chrome**,绝不更低。**不要把 dialog 主体刷成 `bg-app`**——那是画布(最低档),会让白色 header/footer 浮在一块更深的米板上,读成"头浅身深"的失衡。想表达"内容区下沉",只用**小块 inset**(勾选框、code/args `<pre>`、输入框),不要整片主体下沉。
+
+落地:浮起 dialog 通体 `bg-elevated`,band 之间靠 `border-line` hairline + 行 `divide-y` 区分(结构靠线,不靠色块)。2026-06 据此把 `ArchivedDialog` / `EarlierDialog` 的列表主体(及 Earlier 的 sticky 分组头)从 `bg-app` 收归 `bg-elevated`;输入框等 inset 控件保留 `bg-app`。
+
 #### 边框 / 分隔（line 命名空间）
 
 | CSS variable | Utility | 值 | 用途 |

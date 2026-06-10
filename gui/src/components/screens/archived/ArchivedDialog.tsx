@@ -173,7 +173,7 @@ export function ArchivedDialog({
 
             <SearchBar query={query} onChange={setQuery} />
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-app">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-elevated">
               {filtered.length === 0 ? (
                 <EmptyState filtered={isFiltered} />
               ) : (
@@ -314,7 +314,9 @@ function Header({
       <Dialog.Title className="text-[16px] font-semibold text-ink">
         {copy.projects.archivedTitle}
       </Dialog.Title>
-      <span className="text-[12.5px] text-ink-muted">{summary}</span>
+      <span className="text-[12.5px] tabular-nums tracking-[0.01em] text-ink-muted">
+        {summary}
+      </span>
 
       <div className="ml-auto flex items-center gap-2">
         {selectMode ? (
@@ -374,7 +376,7 @@ function SearchBar({
         autoFocus
         className={cn(
           "h-7 w-full rounded-sm border border-line bg-app pl-7 pr-3 text-[12.5px] text-ink",
-          "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
+          "placeholder:text-ink-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30",
         )}
       />
     </div>
@@ -428,16 +430,16 @@ function ArchivedRow({
               {session.summary}
             </div>
           )}
-          <div className="mt-1 text-[10.5px] text-ink-muted">
-            {copy.projects.archivedOn(formatDate(session.updatedAt))}
-          </div>
         </div>
+        <span className="shrink-0 pt-0.5 text-[10.5px] tabular-nums tracking-[0.02em] text-ink-muted">
+          {formatDate(session.updatedAt)}
+        </span>
       </li>
     );
   }
 
   return (
-    <li className="group flex items-start gap-3 px-5 py-3 transition-colors hover:bg-hover">
+    <li className="group relative flex items-start gap-3 px-5 py-3 transition-colors hover:bg-hover">
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium text-ink">
           {session.title}
@@ -447,12 +449,17 @@ function ArchivedRow({
             {session.summary}
           </div>
         )}
-        <div className="mt-1 text-[10.5px] text-ink-muted">
-          {copy.projects.archivedOn(formatDate(session.updatedAt))}
-        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      {/* Archived date as a right-aligned tabular metadata column — a
+          clean ledger rail down the list (Swiss: alignment is structure).
+          Yields to the row actions on hover / keyboard focus, the same
+          swap the sidebar rows use. */}
+      <span className="shrink-0 pt-0.5 text-[10.5px] tabular-nums tracking-[0.02em] text-ink-muted transition-opacity duration-100 group-hover:opacity-0 group-focus-within:opacity-0">
+        {formatDate(session.updatedAt)}
+      </span>
+
+      <div className="pointer-events-none absolute right-5 top-3 flex items-center gap-1 opacity-0 transition-opacity duration-100 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
         <IconButton
           onClick={onRestore}
           title={copy.common.restore}
@@ -513,7 +520,7 @@ function SelectActionBar({
           ? copy.projects.clearSelection
           : copy.projects.selectAll}
       </Button>
-      <span className="text-[12px] text-ink-muted">
+      <span className="text-[12px] tabular-nums tracking-[0.01em] text-ink-muted">
         {copy.projects.selected(selectedCount)}
       </span>
 
