@@ -58,7 +58,7 @@ export function ThemePreferenceMenu({
       side={variant === "topbar" ? "bottom" : "right"}
       sideOffset={variant === "topbar" ? 6 : 8}
       className={cn(
-        "z-[70] min-w-[176px] rounded-md border border-line bg-elevated p-1",
+        "galley-pop-in z-[70] min-w-[176px] rounded-md border border-line bg-elevated p-1",
         "text-[13px] text-ink shadow-elevated",
       )}
     >
@@ -102,6 +102,7 @@ export function ThemePreferenceMenu({
                 "relative flex size-7 items-center justify-center rounded-sm border border-transparent text-ink-muted",
                 "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
                 "hover:border-line hover:bg-hover hover:text-ink active:translate-y-[0.5px]",
+                "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
                 preference !== "system" &&
                   "border-brand/30 bg-brand/10 text-brand-strong hover:bg-brand/20 hover:text-brand-strong",
               )}
@@ -122,7 +123,9 @@ export function ThemePreferenceMenu({
           type="button"
           className={cn(
             "group flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left",
-            "text-ink-soft outline-none transition-colors hover:bg-hover hover:text-ink",
+            "text-ink-soft outline-none hover:bg-hover hover:text-ink",
+            "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-px active:duration-[45ms]",
+            "focus-visible:ring-2 focus-visible:ring-brand/30",
             "data-[state=open]:bg-hover data-[state=open]:text-ink",
           )}
           aria-label={copy.theme.aria}

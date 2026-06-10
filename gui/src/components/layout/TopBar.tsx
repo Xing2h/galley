@@ -387,8 +387,9 @@ function GoalIndicator({
             type="button"
             aria-label={copy.goalTooltip}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md border px-2 py-1",
-              "text-[12px] font-medium transition-colors",
+              "inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium",
+              "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
+              "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
               style.trigger,
             )}
           >
@@ -401,7 +402,7 @@ function GoalIndicator({
         <Popover.Content
           align="end"
           sideOffset={8}
-          className="z-50 max-h-[min(70vh,520px)] w-[320px] overflow-y-auto rounded-md border border-line bg-elevated p-3 shadow-elevated"
+          className="galley-pop-in z-50 max-h-[min(70vh,520px)] w-[320px] overflow-y-auto rounded-md border border-line bg-elevated p-3 shadow-elevated"
         >
           <div className="space-y-3">
             {goals.map((goal) => {
@@ -425,7 +426,12 @@ function GoalIndicator({
                         goalStageDotClass(goal),
                       )}
                     />
-                    <span className="text-[12px] font-medium text-ink">
+                    <span
+                      className={cn(
+                        "text-[12px] font-medium",
+                        goalStageTextClass(goal),
+                      )}
+                    >
                       {goalStageLabel(goal.status, copy)}
                     </span>
                     {remaining !== null && (
@@ -577,6 +583,13 @@ function goalStageDotClass(goal: GoalBrief) {
   return "bg-brand-strong";
 }
 
+function goalStageTextClass(goal: GoalBrief) {
+  if (goal.status === "failed") return "text-error";
+  if (goal.status === "completed") return "text-success";
+  if (goal.status === "stopped") return "text-ink-muted";
+  return "text-brand-strong";
+}
+
 function remainingMinutes(deadlineAt: string) {
   const deadline = Date.parse(deadlineAt);
   if (!Number.isFinite(deadline)) return null;
@@ -670,6 +683,7 @@ function BrowserControlIndicator({
             "relative flex size-7 items-center justify-center rounded-sm border border-transparent text-ink-muted",
             "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
             "hover:border-line hover:bg-hover hover:text-ink active:translate-y-[0.5px]",
+            "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
           )}
           aria-label={title}
         >
@@ -687,6 +701,7 @@ function BrowserControlIndicator({
         className={cn(
           "flex h-7 items-center gap-1.5 rounded-sm border px-2 text-[12px] transition-[background-color,border-color,color,box-shadow,transform]",
           "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px]",
+          "outline-none focus-visible:ring-2 focus-visible:ring-warning/40",
           error
             ? "border-warning/40 bg-warning/15 font-medium text-warning hover:bg-warning/25"
             : checking
@@ -737,12 +752,12 @@ function YoloIndicator({
             type="button"
             aria-label={copy.topbar.yoloView}
             className={cn(
-              "inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1",
-              "text-[12px] font-medium uppercase text-warning",
-              "transition-colors hover:bg-warning/20",
+              "inline-flex h-7 items-center rounded-md border border-warning/30 bg-warning/10 px-2.5",
+              "text-[12px] font-medium uppercase tracking-[0.04em] text-warning",
+              "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-warning/20 active:translate-y-[0.5px] active:duration-[45ms]",
+              "outline-none focus-visible:ring-2 focus-visible:ring-warning/40",
             )}
           >
-            <Lightning size={14} weight="thin" />
             YOLO
           </button>
         </Popover.Trigger>
@@ -752,40 +767,44 @@ function YoloIndicator({
           align="end"
           sideOffset={8}
           className={cn(
-            "z-50 w-[280px] rounded-md border border-line bg-elevated p-4 shadow-elevated",
+            "galley-pop-in z-50 w-[280px] overflow-hidden rounded-md border border-warning/30 bg-elevated shadow-elevated",
           )}
         >
-          <div className="flex items-center gap-2">
+          {/* Caution header band — carries the amber identity of the
+              YOLO pill that opened it, so the popover unmistakably reads
+              as a risk-state surface (DESIGN.md §2.1 warning = caution). */}
+          <div className="flex items-center gap-2 border-b border-warning/20 bg-warning/[var(--opacity-subtle)] px-4 py-3">
             <Lightning size={16} weight="thin" className="text-warning" />
             <div className="text-[13px] font-medium text-ink">
               {copy.topbar.yoloOn}
             </div>
           </div>
-          <p className="mt-1.5 text-[12px] text-ink-muted">
-            {copy.topbar.yoloDetail}
-          </p>
-          <Button
-            variant="warning"
-            size="md"
-            onClick={onDisable}
-            className="mt-3 w-full"
-            leadingIcon={<Lightning size={14} weight="thin" />}
-          >
-            {copy.topbar.turnOffNow}
-          </Button>
-          {onOpenSettings && (
-            <Popover.Close asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onOpenSettings}
-                className="mt-2 w-full"
-                trailingIcon={<ArrowRight size={12} weight="thin" />}
-              >
-                {copy.topbar.viewInSettings}
-              </Button>
-            </Popover.Close>
-          )}
+          <div className="p-4">
+            <p className="text-[12px] leading-[1.55] text-ink-muted">
+              {copy.topbar.yoloDetail}
+            </p>
+            <Button
+              variant="warning"
+              size="md"
+              onClick={onDisable}
+              className="mt-3 w-full"
+            >
+              {copy.topbar.turnOffNow}
+            </Button>
+            {onOpenSettings && (
+              <Popover.Close asChild>
+                <Button
+                  variant="ghost"
+                  size="md"
+                  onClick={onOpenSettings}
+                  className="mt-2 w-full"
+                  trailingIcon={<ArrowRight size={12} weight="thin" />}
+                >
+                  {copy.topbar.viewInSettings}
+                </Button>
+              </Popover.Close>
+            )}
+          </div>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -911,7 +930,8 @@ function SessionTitleMenu({
           }}
           className={cn(
             "group inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1",
-            "transition-colors hover:bg-hover data-[state=open]:bg-hover",
+            "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover data-[state=open]:bg-hover active:translate-y-[0.5px] active:duration-[45ms]",
+            "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
           )}
         >
           <span className="truncate font-medium text-ink">{title}</span>
@@ -1096,7 +1116,9 @@ function WidthToggleButton({
         onClick={onToggle}
         aria-label={isWide ? copy.topbar.compactWidth : copy.topbar.wideWidth}
         className={cn(
-          "inline-flex size-7 items-center justify-center rounded-md transition-colors",
+          "inline-flex size-7 items-center justify-center rounded-md",
+          "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
+          "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
           isWide
             ? "border border-brand/30 bg-brand/10 text-brand-strong hover:bg-brand/20"
             : "border border-transparent text-ink-soft hover:bg-hover hover:text-ink",

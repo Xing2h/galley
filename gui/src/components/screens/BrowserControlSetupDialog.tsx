@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowSquareOut,
   ArrowsClockwise,
+  CaretRight,
   CheckCircle,
   CircleNotch,
   ClipboardText,
@@ -15,6 +16,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   openBrowserControlExtensionsPage,
   openBrowserControlTestPage,
@@ -30,9 +32,16 @@ interface BrowserControlSetupDialogProps {
   onRunDemo?: () => void;
 }
 
+type BrowserControlCopy = ReturnType<typeof useCopy>["browserControl"];
+
 const BROWSER_CONTROL_GUIDE_URL =
   "https://datawhalechina.github.io/hello-generic-agent/part1/chapter2/#_2-1-1-chrome-安装步骤";
 const BROWSER_CONTROL_TEST_PAGE_URL = "https://example.com";
+
+const BROWSER_LABELS: Record<BrowserControlBrowser, string> = {
+  chrome: "Chrome",
+  edge: "Edge",
+};
 
 export function BrowserControlSetupDialog({
   open,
@@ -51,6 +60,7 @@ export function BrowserControlSetupDialog({
   const [copied, setCopied] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
   const [showRepair, setShowRepair] = useState(false);
+  const [browser, setBrowser] = useState<BrowserControlBrowser>("chrome");
 
   const extensionDir = layout?.extensionDir ?? lastProbe?.extensionDir ?? "";
   const connected = status === "connected";
@@ -72,19 +82,19 @@ export function BrowserControlSetupDialog({
       ? copy.connectedNoTabsStatusDetail
       : offline
         ? copy.offlineStatusDetail
-      : "";
+        : "";
 
   useEffect(() => {
     if (!open || layoutReady || busy || layoutError) return;
     void ensureLayout();
   }, [busy, ensureLayout, layoutError, layoutReady, open]);
 
-  const openExtensionsPage = async (browser: BrowserControlBrowser) => {
+  const openExtensionsPage = async (target: BrowserControlBrowser) => {
     setOpenError(null);
     const url =
-      browser === "chrome" ? "chrome://extensions" : "edge://extensions";
+      target === "chrome" ? "chrome://extensions" : "edge://extensions";
     try {
-      await openBrowserControlExtensionsPage(browser);
+      await openBrowserControlExtensionsPage(target);
     } catch {
       setOpenError(copy.openExtensionsFallback(url));
     }
@@ -99,10 +109,10 @@ export function BrowserControlSetupDialog({
     }
   };
 
-  const openTestPage = async (browser: BrowserControlBrowser) => {
+  const openTestPage = async (target: BrowserControlBrowser) => {
     setOpenError(null);
     try {
-      await openBrowserControlTestPage(browser);
+      await openBrowserControlTestPage(target);
     } catch {
       setOpenError(copy.openTestPageFallback(BROWSER_CONTROL_TEST_PAGE_URL));
     }
@@ -175,7 +185,7 @@ export function BrowserControlSetupDialog({
                       ? copy.connectedNoTabsTitle
                       : offline
                         ? copy.offlineTitle
-                      : copy.title}
+                        : copy.title}
                 </Dialog.Title>
                 <p className="mt-1 text-[12.5px] leading-[1.6] text-ink-soft">
                   {connected
@@ -184,7 +194,7 @@ export function BrowserControlSetupDialog({
                       ? copy.connectedNoTabsDescription
                       : offline
                         ? copy.offlineDescription
-                      : copy.description}
+                        : copy.description}
                 </p>
               </div>
             </div>
@@ -211,61 +221,56 @@ export function BrowserControlSetupDialog({
                 />
 
                 {showRepair && (
-                  <div className="rounded-sm border border-line bg-surface p-3.5">
-                    <div className="grid gap-3">
-                      <RepairSteps
-                        busy={busy}
-                        copied={copied}
-                        copy={copy}
-                        copyPath={copyPath}
-                        extensionDir={extensionDir}
-                        layoutError={layoutError}
-                        layoutReady={layoutReady}
-                        openError={openError}
-                        openExtensionsPage={openExtensionsPage}
-                        openGuide={openGuide}
-                        openTestPage={openTestPage}
-                        retryPrepare={ensureLayout}
-                        showFolder={showFolder}
-                      />
-                    </div>
+                  <div className="rounded-callout border border-line bg-elevated p-3.5">
+                    <SetupGuide
+                      browser={browser}
+                      busy={busy}
+                      bridgeReady={bridgeReady}
+                      copied={copied}
+                      copy={copy}
+                      copyPath={copyPath}
+                      includeTest
+                      layoutError={layoutError}
+                      layoutReady={layoutReady}
+                      openError={openError}
+                      openExtensionsPage={openExtensionsPage}
+                      openGuide={openGuide}
+                      openTestPage={openTestPage}
+                      retryPrepare={ensureLayout}
+                      setBrowser={setBrowser}
+                      showFolder={showFolder}
+                      showTestStatus={false}
+                      status={status}
+                      statusDetail={statusDetail}
+                      statusMessage={statusMessage}
+                    />
                   </div>
                 )}
               </div>
             ) : (
-              <div className="rounded-callout border border-line bg-surface p-3.5 [@media(max-height:640px)]:p-3">
-                <div className="grid gap-3">
-                  <RepairSteps
-                    busy={busy}
-                    copied={copied}
-                    copy={copy}
-                    copyPath={copyPath}
-                    extensionDir={extensionDir}
-                    layoutError={layoutError}
-                    layoutReady={layoutReady}
-                    openError={openError}
-                    openExtensionsPage={openExtensionsPage}
-                    openGuide={openGuide}
-                    openTestPage={openTestPage}
-                    retryPrepare={ensureLayout}
-                    showFolder={showFolder}
-                  />
-
-                  {layoutReady && (
-                    <SetupStep index={6} title={copy.stepTest}>
-                      <StepHint>{copy.stepTestHint}</StepHint>
-                      <div className="mt-2.5">
-                        <ConnectionStatusCard
-                          busy={busy}
-                          connected={bridgeReady}
-                          status={status}
-                          statusDetail={statusDetail}
-                          statusMessage={statusMessage}
-                        />
-                      </div>
-                    </SetupStep>
-                  )}
-                </div>
+              <div className="rounded-callout border border-line bg-elevated p-3.5 [@media(max-height:640px)]:p-3">
+                <SetupGuide
+                  browser={browser}
+                  busy={busy}
+                  bridgeReady={bridgeReady}
+                  copied={copied}
+                  copy={copy}
+                  copyPath={copyPath}
+                  includeTest
+                  layoutError={layoutError}
+                  layoutReady={layoutReady}
+                  openError={openError}
+                  openExtensionsPage={openExtensionsPage}
+                  openGuide={openGuide}
+                  openTestPage={openTestPage}
+                  retryPrepare={ensureLayout}
+                  setBrowser={setBrowser}
+                  showFolder={showFolder}
+                  showTestStatus
+                  status={status}
+                  statusDetail={statusDetail}
+                  statusMessage={statusMessage}
+                />
               </div>
             )}
           </div>
@@ -346,7 +351,7 @@ function TestPageActions({
   openError,
   openTestPage,
 }: {
-  copy: ReturnType<typeof useCopy>["browserControl"];
+  copy: BrowserControlCopy;
   openError: string | null;
   openTestPage: (browser: BrowserControlBrowser) => Promise<void>;
 }) {
@@ -379,12 +384,14 @@ function TestPageActions({
   );
 }
 
-function RepairSteps({
+function SetupGuide({
+  browser,
   busy,
+  bridgeReady,
   copied,
   copy,
   copyPath,
-  extensionDir,
+  includeTest,
   layoutError,
   layoutReady,
   openError,
@@ -392,13 +399,20 @@ function RepairSteps({
   openGuide,
   openTestPage,
   retryPrepare,
+  setBrowser,
   showFolder,
+  showTestStatus,
+  status,
+  statusDetail,
+  statusMessage,
 }: {
+  browser: BrowserControlBrowser;
   busy: boolean;
+  bridgeReady: boolean;
   copied: boolean;
-  copy: ReturnType<typeof useCopy>["browserControl"];
+  copy: BrowserControlCopy;
   copyPath: () => Promise<void>;
-  extensionDir: string;
+  includeTest: boolean;
   layoutError: string | null;
   layoutReady: boolean;
   openError: string | null;
@@ -406,24 +420,63 @@ function RepairSteps({
   openGuide: () => Promise<void>;
   openTestPage: (browser: BrowserControlBrowser) => Promise<void>;
   retryPrepare: () => Promise<unknown>;
+  setBrowser: (browser: BrowserControlBrowser) => void;
   showFolder: () => Promise<void>;
+  showTestStatus: boolean;
+  status: string;
+  statusDetail: string;
+  statusMessage: string;
 }) {
+  const [showTrouble, setShowTrouble] = useState(false);
+
   return (
-    <>
-      <SetupStep index={1} title={copy.stepPrepare}>
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[12px] text-ink-muted">{copy.browserLabel}</span>
+        <SegmentedControl<BrowserControlBrowser>
+          ariaLabel={copy.browserLabel}
+          size="sm"
+          value={browser}
+          onValueChange={setBrowser}
+          options={[
+            { value: "chrome", label: BROWSER_LABELS.chrome },
+            { value: "edge", label: BROWSER_LABELS.edge },
+          ]}
+        />
+      </div>
+
+      <SetupStep index={1} title={copy.stepOpen(BROWSER_LABELS[browser])}>
+        <StepHint>
+          {copy.stepOpenHintPrefix}
+          <StrongTerm>{copy.developerMode}</StrongTerm>
+          {copy.stepOpenHintSuffix}
+        </StepHint>
+        <div className="mt-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void openExtensionsPage(browser)}
+            leadingIcon={<ArrowSquareOut size={13} weight="thin" />}
+          >
+            {copy.openExtensions}
+          </Button>
+        </div>
+      </SetupStep>
+
+      <SetupStep index={2} title={copy.stepDrag}>
         {layoutReady ? (
           <>
-            <div className="mt-1 text-[12px] leading-[1.5] text-success">
-              {copy.stepPrepareReady}
-            </div>
             <StepHint>
-              {copy.stepPrepareHintPrefix}
-              <StrongTerm>{copy.folderName}</StrongTerm>
-              {copy.stepPrepareHintSuffix}
+              {copy.stepDragHintPrefix}
+              <strong className="font-medium text-ink">
+                {copy.stepDragWholePrefix}
+                <code className="rounded-[3px] bg-app px-1 py-0.5 font-mono text-[11px] text-ink">
+                  {copy.folderName}
+                </code>
+                {copy.stepDragWholeSuffix}
+              </strong>
+              {copy.stepDragHintSuffix}
             </StepHint>
-            <div className="mt-1 select-text break-all font-mono text-[11.5px] leading-[1.5] text-ink-muted">
-              {extensionDir}
-            </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -479,50 +532,64 @@ function RepairSteps({
         )}
       </SetupStep>
 
-      {layoutReady && (
-        <>
-          <SetupStep index={2} title={copy.stepOpenExtensions}>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void openExtensionsPage("chrome")}
-                leadingIcon={<ArrowSquareOut size={13} weight="thin" />}
-              >
-                {copy.openChrome}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void openExtensionsPage("edge")}
-                leadingIcon={<ArrowSquareOut size={13} weight="thin" />}
-              >
-                {copy.openEdge}
-              </Button>
+      {includeTest && layoutReady && (
+        <SetupStep index={3} title={copy.stepTest}>
+          <StepHint>{copy.stepTestHint}</StepHint>
+          <div className="mt-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void openTestPage(browser)}
+              leadingIcon={<ArrowSquareOut size={13} weight="thin" />}
+            >
+              {copy.openTestPage}
+            </Button>
+          </div>
+          {showTestStatus && (
+            <div className="mt-2.5">
+              <ConnectionStatusCard
+                busy={busy}
+                connected={bridgeReady}
+                status={status}
+                statusDetail={statusDetail}
+                statusMessage={statusMessage}
+              />
             </div>
-          </SetupStep>
+          )}
+        </SetupStep>
+      )}
 
-          <SetupStep index={3} title={copy.stepDeveloperMode}>
-            <StepHint>
-              {copy.stepDeveloperModeHintPrefix}
-              <StrongTerm>{copy.developerMode}</StrongTerm>
-              {copy.stepDeveloperModeHintSuffix}
-            </StepHint>
-          </SetupStep>
+      {openError && (
+        <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2 text-[12px] leading-[1.5] text-error">
+          {openError}
+        </div>
+      )}
 
-          <SetupStep index={4} title={copy.stepInstall}>
-            <div className="mt-1 grid gap-1 text-[12px] leading-[1.5] text-ink-muted">
+      {layoutReady && (
+        <div className="border-t border-line-subtle pt-2.5">
+          <button
+            type="button"
+            onClick={() => setShowTrouble((show) => !show)}
+            className="flex items-center gap-1 text-[12px] text-ink-muted transition-colors hover:text-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+          >
+            <CaretRight
+              size={11}
+              weight="bold"
+              className={cn(
+                "transition-transform duration-[120ms]",
+                showTrouble && "rotate-90",
+              )}
+            />
+            {showTrouble ? copy.troubleHide : copy.troubleShow}
+          </button>
+          {showTrouble && (
+            <div className="mt-2 grid gap-2 text-[12px] leading-[1.5] text-ink-muted">
               <div>
-                {copy.stepInstallHintPrefix}
-                <StrongTerm>{copy.folderName}</StrongTerm>
-                {copy.stepInstallHintMiddle}
+                {copy.troubleDragFailsPrefix}
+                <StrongTerm>{copy.loadUnpacked}</StrongTerm>
+                {copy.troubleDragFailsSuffix}
               </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span>
-                  {copy.stepInstallFallbackPrefix}
-                  <span className="text-ink">{copy.loadUnpacked}</span>
-                  {copy.stepInstallFallbackSuffix}
-                </span>
+              <div>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -535,38 +602,10 @@ function RepairSteps({
                 </Button>
               </div>
             </div>
-          </SetupStep>
-
-          <SetupStep index={5} title={copy.stepOpenTestPage}>
-            <StepHint>{copy.stepOpenTestPageHint}</StepHint>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void openTestPage("chrome")}
-                leadingIcon={<ArrowSquareOut size={13} weight="thin" />}
-              >
-                {copy.openChromeTestPage}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void openTestPage("edge")}
-                leadingIcon={<ArrowSquareOut size={13} weight="thin" />}
-              >
-                {copy.openEdgeTestPage}
-              </Button>
-            </div>
-          </SetupStep>
-        </>
-      )}
-
-      {openError && (
-        <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2 text-[12px] leading-[1.5] text-error">
-          {openError}
+          )}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -648,7 +687,7 @@ function SetupStep({
 }) {
   return (
     <div className="flex gap-3">
-      <div className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-line bg-elevated text-[11px] font-medium text-ink-soft">
+      <div className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-line bg-app font-mono text-[11px] font-medium tabular-nums text-ink-soft">
         {index}
       </div>
       <div className="min-w-0 flex-1">
