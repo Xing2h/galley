@@ -1,11 +1,27 @@
 import type { ResolvedLanguage } from "@/lib/language";
 
 /**
- * Empty-state conditions an epigraph can bind to. v1 ships only
- * `"fresh"`; the type is intentionally open so later conditions
- * (e.g. `"quiet"` for an all-idle team, `"busy"` for many active
- * sessions) can be added without touching the renderer — add one
- * entry to `EPIGRAPHS` and one line to `EPIGRAPH_BINDINGS`.
+ * Empty-state conditions an epigraph can bind to. Each condition is a
+ * genuine read on the *workspace's* pulse at the moment the empty
+ * screen is entered (the epigraph frames the threshold; the live pulse
+ * itself is carried by the sidebar status spine, not by this line):
+ *
+ * - `silent`  — no sessions at all (first run / emptied workspace).
+ *               The screen is literally silent → Tractatus 7.
+ * - `quiet`   — sessions exist but none are running (an inhabited
+ *               practice at rest) → PI §19 (form of life).
+ * - `working` — at least one session is running (tools/words in use)
+ *               → PI §43 (meaning is use).
+ *
+ * `fresh` is kept as a back-compat default alias (older callers / the
+ * safe fallback) and resolves to the same thesis line as `working`.
+ *
+ * The epigraph is resolved once on entry to the empty state and frozen
+ * for that sitting (see EmptyState) — it does not mutate live under the
+ * user's gaze, which would turn a quiet epigraph into a status light
+ * and duplicate the sidebar's job. Adding a condition = one entry in
+ * `EPIGRAPHS` + one line in `EPIGRAPH_BINDINGS`; the renderer is
+ * untouched.
  *
  * Part A of the philosophical-voice feature. The epigraph is a single
  * state-bound Wittgenstein line shown above the empty-state Composer:
@@ -13,7 +29,7 @@ import type { ResolvedLanguage } from "@/lib/language";
  * original on an always-on secondary line. See
  * `.kiro/specs/philosophical-voice/`.
  */
-export type EpigraphCondition = "fresh"; // future: "quiet" | "busy" | ...
+export type EpigraphCondition = "silent" | "quiet" | "working" | "fresh";
 
 export interface Epigraph {
   /** Stable key, e.g. `"tractatus-7"`. */
@@ -42,14 +58,35 @@ export interface ResolvedEpigraph {
  * German original plus every software-language translation together so
  * the curation stays editable in one place (Req 6.2 / 6.4).
  *
- * v1 ships exactly one entry, which is also the safe default. Rationale
- * for binding Tractatus 7 to the fresh/empty screen: the interface is
- * literally silent at that moment, so *sagen* and *zeigen* coincide
- * (Req 2.1) — the line is about the screen's own condition, not a
- * decorative quote.
+ * Later Wittgenstein is the body (PI §43 meaning-is-use, PI §19 form-
+ * of-life — the two lines most load-bearing for an LLM workspace);
+ * Tractatus 7 is kept as the single "silence" accent, reserved for the
+ * one moment the workspace is genuinely empty.
  */
 export const EPIGRAPHS: readonly Epigraph[] = [
   {
+    // working: tools / words in use right now. Also the thesis the
+    // Composer's contextual voice (Part B) is built on (PI §43), so the
+    // epigraph and the input share one proposition when the team works.
+    id: "pi-43",
+    source: "PI §43",
+    de: "Die Bedeutung eines Wortes ist sein Gebrauch in der Sprache.",
+    zh: "语词的意义，在于它在语言中的用法。",
+    en: "The meaning of a word is its use in the language.",
+  },
+  {
+    // quiet: an inhabited practice at rest. The accumulated, idle
+    // sessions are a language / form of life paused, not absent.
+    id: "pi-19",
+    source: "PI §19",
+    de: "Sich eine Sprache vorstellen heißt, sich eine Lebensform vorstellen.",
+    zh: "想象一种语言，就是想象一种生活形式。",
+    en: "To imagine a language is to imagine a form of life.",
+  },
+  {
+    // silent: the screen is literally silent (no sessions), so *sagen*
+    // and *zeigen* coincide (Req 2.1) — the Tractatus accent, in its
+    // one honest home.
     id: "tractatus-7",
     source: "Tractatus 7",
     de: "Wovon man nicht sprechen kann, darüber muss man schweigen.",
@@ -60,14 +97,21 @@ export const EPIGRAPHS: readonly Epigraph[] = [
 
 /** Condition -> epigraph id. */
 export const EPIGRAPH_BINDINGS: Readonly<Record<EpigraphCondition, string>> = {
-  fresh: "tractatus-7",
+  silent: "tractatus-7",
+  quiet: "pi-19",
+  working: "pi-43",
+  // Back-compat alias: generic empty state resolves to the thesis line.
+  fresh: "pi-43",
 };
 
 /**
  * Safe default used when a condition has no binding or referenced data
  * is missing (Req 2.2 / 6.3). Must reference an existing entry id.
+ * The thesis line is the most representative fallback for a populated
+ * workspace (showing "silence" on a non-empty workspace would misread
+ * the state).
  */
-export const DEFAULT_EPIGRAPH_ID = "tractatus-7";
+export const DEFAULT_EPIGRAPH_ID = "pi-43";
 
 /** Pick the translated field for a language, with cross-field fallback
  * so a single empty translation never yields an empty render. */

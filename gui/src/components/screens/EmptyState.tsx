@@ -1,5 +1,5 @@
 import { FolderOpen } from "@phosphor-icons/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   Composer,
@@ -7,6 +7,7 @@ import {
   type ComposerLLMOption,
 } from "@/components/conversation/Composer";
 import { Epigraph } from "@/components/screens/Epigraph";
+import type { EpigraphCondition } from "@/lib/epigraphs";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { GoalLaunchConfig } from "@/types/goal";
@@ -43,6 +44,15 @@ export interface EmptyStateProps {
   projectName?: string;
   /** Bumped by the host when a navigation action should return focus here. */
   focusTick?: number;
+  /**
+   * Workspace pulse the epigraph should frame: `silent` (no sessions),
+   * `quiet` (sessions exist, none running), `working` (≥1 running). The
+   * host computes this live, but the epigraph snapshots it once on
+   * mount (see below) so the line frames the moment of arrival and does
+   * not mutate under the user's gaze — the live pulse is the sidebar's
+   * job, not this quiet line's. Defaults to `quiet`.
+   */
+  epigraphCondition?: EpigraphCondition;
 }
 
 /**
@@ -71,9 +81,19 @@ export function EmptyState({
   conversationWidth = "compact",
   projectName,
   focusTick = 0,
+  epigraphCondition = "quiet",
 }: EmptyStateProps) {
   const copy = useCopy();
   const composerRef = useRef<ComposerHandle>(null);
+  // Freeze the epigraph condition on mount. EmptyState unmounts when the
+  // user navigates into a conversation and remounts on return, so this
+  // snapshot re-resolves on every fresh entry to the empty screen while
+  // staying stable during a single sitting — even if a background
+  // session starts/finishes and the host's live `epigraphCondition`
+  // prop changes underneath. A live-mutating epigraph would read as a
+  // status light (the sidebar's job) and pull attention to a line meant
+  // to be quiet.
+  const [frozenEpigraphCondition] = useState(() => epigraphCondition);
   const composerPlaceholder = projectName
     ? copy.empty.projectPlaceholder(projectName)
     : copy.empty.globalPlaceholder;
@@ -90,7 +110,7 @@ export function EmptyState({
           conversationWidth === "wide" ? "max-w-[1200px]" : "max-w-[560px]",
         )}
       >
-        <Epigraph condition="fresh" className="mb-5" />
+        <Epigraph condition={frozenEpigraphCondition} className="mb-5" />
 
         <Composer
           ref={composerRef}

@@ -47,6 +47,7 @@ import {
   managedModelsToLLMs,
 } from "@/lib/managed-model-options";
 import { bucketSession } from "@/lib/sessions";
+import type { EpigraphCondition } from "@/lib/epigraphs";
 import { useAppUpdateStore } from "@/stores/app-update";
 import { useBrowserControlStore } from "@/stores/browser-control";
 import {
@@ -945,6 +946,17 @@ function App() {
     [sessions],
   );
   const archivedCount = sessions.length - visibleSessions.length;
+  // Epigraph condition = a read on the workspace pulse at the moment the
+  // empty screen is entered. EmptyState snapshots this on mount, so it
+  // frames arrival rather than mutating live (the live pulse is the
+  // sidebar's job). silent = no sessions; working = something running;
+  // quiet = inhabited but at rest.
+  const epigraphCondition: EpigraphCondition =
+    visibleSessions.length === 0
+      ? "silent"
+      : hasRunningSessions
+        ? "working"
+        : "quiet";
   const effectiveActiveId = screen === "main" ? activeSessionId : undefined;
   const activeSession = visibleSessions.find((s) => s.id === effectiveActiveId);
   const activeProject = activeProjectFilter
@@ -1539,6 +1551,7 @@ function App() {
                   conversationWidth={conversationWidth}
                   projectName={activeProject?.name}
                   focusTick={emptyComposerFocusTick}
+                  epigraphCondition={epigraphCondition}
                   llms={llms}
                   llmConfigHint={llmConfigHint}
                   onConfigureModels={openModelConfigFromSwitcher}

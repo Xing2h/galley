@@ -262,16 +262,25 @@ Placeholder`, `empty.projectPlaceholder`, `composer.continueConversation`,
 
 ## Data Models
 
-### Curated epigraph set (v1 proposal — pending JC approval, Open Decision D3)
+### Curated epigraph set
+
+State-bound to a read on the *workspace* pulse at the moment the empty screen is
+entered. The epigraph is resolved once on entry and frozen for that sitting
+(EmptyState snapshots the condition on mount); it does not mutate live — the live
+pulse is carried by the sidebar status spine, not by this quiet line.
 
 | Condition | id | source | German original | zh | en |
 |---|---|---|---|---|---|
-| `fresh` (also default) | `tractatus-7` | Tractatus 7 | Wovon man nicht sprechen kann, darüber muss man schweigen. | 凡不可说的，应当沉默。 | Whereof one cannot speak, thereof one must be silent. |
+| `working` (≥1 session running; also default + `fresh` alias) | `pi-43` | PI §43 | Die Bedeutung eines Wortes ist sein Gebrauch in der Sprache. | 语词的意义，在于它在语言中的用法。 | The meaning of a word is its use in the language. |
+| `quiet` (sessions exist, none running) | `pi-19` | PI §19 | Sich eine Sprache vorstellen heißt, sich eine Lebensform vorstellen. | 想象一种语言，就是想象一种生活形式。 | To imagine a language is to imagine a form of life. |
+| `silent` (no sessions) | `tractatus-7` | Tractatus 7 | Wovon man nicht sprechen kann, darüber muss man schweigen. | 凡不可说的，应当沉默。 | Whereof one cannot speak, thereof one must be silent. |
 
-Rationale: on a fresh, empty screen the interface is literally silent, so the
-silence accent makes *sagen* and *zeigen* coincide (Req 2.1). v1 ships exactly
-one curated entry, which is also the safe default — the smallest set that
-satisfies the feature while leaving the structure ready for more.
+Rationale: later Wittgenstein is the body (`working` → meaning-is-use, the same
+PI §43 thesis the Composer's Part B voice rests on; `quiet` → form-of-life over
+an inhabited-but-resting workspace). Tractatus 7's "silence" accent is reserved
+for `silent`, the one moment the screen is genuinely empty so *sagen* and
+*zeigen* coincide (Req 2.1). `pi-43` is the safe default + `fresh` back-compat
+alias: the most representative line for a populated workspace.
 
 Candidates held for later conditions (not wired in v1):
 
