@@ -61,7 +61,7 @@ export function SettingsAbout({
         <SettingsSectionLabel>
           {copy.settings.about.version}
         </SettingsSectionLabel>
-        <dl className="m-0 mt-2 grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
+        <dl className="m-0 mt-2 grid grid-cols-[120px_1fr] items-center gap-y-2 text-[12.5px]">
           <dt className="text-ink-muted">
             {copy.settings.about.galleyVersion}
           </dt>
@@ -86,7 +86,7 @@ export function SettingsAbout({
         </dl>
       </div>
 
-      <div>
+      <div className="border-t border-line pt-6">
         <SettingsSectionLabel>{copy.settings.about.links}</SettingsSectionLabel>
         <div className="mt-3 space-y-1">
           <ExternalLink
