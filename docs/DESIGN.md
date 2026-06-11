@@ -59,6 +59,8 @@ Galley 的视觉与交互气质 = **Notion + Claude**。
 
 落地:浮起 dialog 通体 `bg-elevated`,band 之间靠 `border-line` hairline + 行 `divide-y` 区分(结构靠线,不靠色块)。2026-06 据此把 `ArchivedDialog` / `EarlierDialog` 的列表主体(及 Earlier 的 sticky 分组头)从 `bg-app` 收归 `bg-elevated`;输入框等 inset 控件保留 `bg-app`。
 
+例外:Settings 这类**满幅工作台式 modal** 通体 `bg-app`(画布)是有意为之——它不制造"白 chrome 浮在更深 body"的失衡(没有更浅的 header band 浮在上面),读作"设置即一块工作画布",卡片用 `bg-surface` 微微抬起。此例外只给满幅工作台 modal,不适用于普通列表 / 确认 / 设置项 dialog(那些仍按上面规范走 `bg-elevated`)。
+
 #### 边框 / 分隔（line 命名空间）
 
 | CSS variable | Utility | 值 | 用途 |
