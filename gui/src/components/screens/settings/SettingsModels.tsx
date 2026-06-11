@@ -83,6 +83,20 @@ export function SettingsModels({
     return grouped;
   }, [orderedModels]);
 
+  // Float the provider that supplies the default model (orderedModels[0])
+  // to the top of the providers list, keeping the rest in their existing
+  // order. Provider order has no functional effect — this is purely so
+  // the source of your default model is the first card you see.
+  const sortedProviders = useMemo(() => {
+    const defaultProviderId = orderedModels[0]?.providerId;
+    if (!defaultProviderId) return providers;
+    const index = providers.findIndex((p) => p.id === defaultProviderId);
+    if (index <= 0) return providers;
+    const next = [...providers];
+    const [defaultProvider] = next.splice(index, 1);
+    return [defaultProvider, ...next];
+  }, [providers, orderedModels]);
+
   const providerModelController = useProviderModelController({
     providers,
     models: orderedModels,
@@ -293,7 +307,7 @@ export function SettingsModels({
             </div>
           )}
           {!loading &&
-            providers.map((provider) => (
+            sortedProviders.map((provider) => (
               <ProviderCard
                 key={provider.id}
                 provider={provider}

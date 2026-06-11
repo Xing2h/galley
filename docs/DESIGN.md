@@ -46,14 +46,14 @@ Galley 的视觉与交互气质 = **Notion + Claude**。
 
 | CSS variable | Utility | 值 | 用途 |
 |---|---|---|---|
-| `--color-app` | `bg-app` | `#FAF7F2` | App background，暖米白（不是纯白） |
-| `--color-surface` | `bg-surface` | `#FDFAF5` | 普通卡片底 |
+| `--color-app` | `bg-app` | `#FBFAF7` | App background，暖白（不是纯白，比旧奶油更轻） |
+| `--color-surface` | `bg-surface` | `#FDFCF9` | 普通卡片底 |
 | `--color-elevated` | `bg-elevated` | `#FFFFFF` | 浮起卡片（Health Check / Error / Command Palette） |
 | `--color-overlay` | `bg-overlay` | `rgba(31,27,23,0.4)` | Command Palette / modal 遮罩 |
 
 #### Elevation 不倒置（系统规范）
 
-明度即抬升:`app (#FAF7F2) < surface (#FDFAF5) < elevated (#FFF)`,越浮起越浅。
+明度即抬升:`app (#FBFAF7) < surface (#FDFCF9) < elevated (#FFF)`,越浮起越浅。
 
 > **规范**:任何"浮起"容器(dialog / menu / card)的**主体区 elevation 必须 ≥ 它自己的 chrome**,绝不更低。**不要把 dialog 主体刷成 `bg-app`**——那是画布(最低档),会让白色 header/footer 浮在一块更深的米板上,读成"头浅身深"的失衡。想表达"内容区下沉",只用**小块 inset**(勾选框、code/args `<pre>`、输入框),不要整片主体下沉。
 
@@ -65,8 +65,8 @@ Galley 的视觉与交互气质 = **Notion + Claude**。
 
 | CSS variable | Utility | 值 | 用途 |
 |---|---|---|---|
-| `--color-line` | `border-line` | `#EDE6D8` | 卡片边、divider 默认 |
-| `--color-line-strong` | `border-line-strong` | `#D9CFB8` | hover 边、focus 边（非杏沙时） |
+| `--color-line` | `border-line` | `#EAE6DE` | 卡片边、divider 默认 |
+| `--color-line-strong` | `border-line-strong` | `#D6CFC0` | hover 边、focus 边（非杏沙时） |
 | `--color-line-subtle` | `border-line-subtle` | `rgba(31,27,23,0.06)` | 更弱的内分隔（如 modal / settings row 之间） |
 
 #### 文字三档（ink 命名空间）
@@ -81,7 +81,7 @@ Galley 的视觉与交互气质 = **Notion + Claude**。
 
 | CSS variable | Utility | 值 | 用途 |
 |---|---|---|---|
-| `--color-hover` | `bg-hover` | `#F2EDE3` | 中性灰 hover（不抢戏） |
+| `--color-hover` | `bg-hover` | `#F0EEE9` | 中性灰 hover（不抢戏） |
 | `--color-selected` | `bg-selected` | `#F8EDDA` | 杏沙 tint（品牌时刻） |
 
 > Focus ring 用 `--color-brand`（`ring-brand`），不单独 token。

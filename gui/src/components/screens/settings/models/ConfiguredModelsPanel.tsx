@@ -311,7 +311,7 @@ function ConfiguredModelRow({
         </button>
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          <div className="flex items-center gap-0.5 opacity-[var(--settings-model-action-opacity)] transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="flex items-center gap-0.5 opacity-50 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <IconButton
               ariaLabel={copy.testModel}
               size="sm"

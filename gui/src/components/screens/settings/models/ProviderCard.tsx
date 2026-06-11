@@ -126,7 +126,7 @@ export function ProviderCard({
   return (
     <div
       className={cn(
-        "settings-model-provider-card group/provider overflow-hidden rounded-sm border border-line bg-[var(--settings-model-provider-card-bg)]",
+        "group/provider overflow-hidden rounded-sm border border-line bg-surface",
         "transition-[background-color,border-color,box-shadow,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
         "hover:-translate-y-[0.5px] hover:border-line-strong hover:shadow-card",
         "active:translate-y-[0.5px] active:shadow-[var(--shadow-button-raised-active)]",
@@ -134,14 +134,7 @@ export function ProviderCard({
         open && "border-line-strong shadow-card",
       )}
     >
-      <div
-        className={cn(
-          "flex min-w-0 items-center gap-3 px-2 py-1.5 transition-colors",
-          open
-            ? "bg-[var(--settings-model-provider-header-bg)]"
-            : "bg-[var(--settings-model-provider-header-idle-bg)]",
-        )}
-      >
+      <div className="flex min-w-0 items-center gap-3 px-2 py-1.5 transition-colors">
         <button
           type="button"
           aria-expanded={open}
@@ -256,7 +249,7 @@ export function ProviderCard({
         className="px-4 pb-3"
       />
       {open && (
-        <div className="border-t border-line/70 bg-[var(--settings-model-provider-body-bg)] px-2.5 py-2">
+        <div className="border-t border-line/70 bg-app px-2.5 py-2">
           <div className="space-y-2 pl-8 pr-1">
             {providerEditor}
             {expanded && (
@@ -280,7 +273,7 @@ export function ProviderCard({
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-center gap-1.5 rounded-sm border border-line/60 bg-[var(--settings-model-toolbelt-bg)] px-2 py-1">
+                <div className="flex flex-wrap items-center gap-1.5 rounded-sm border border-line/60 bg-surface px-2 py-1">
                   <Button
                     variant="ghost"
                     size="sm"

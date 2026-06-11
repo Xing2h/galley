@@ -27,13 +27,13 @@
  */
 @theme {
   /* --- surface layers --- */
-  --color-app: #faf7f2;
-  --color-surface: #fdfaf5;
+  --color-app: #fbfaf7;
+  --color-surface: #fdfcf9;
   --color-elevated: #ffffff;
 
   /* --- borders / dividers (named "line" to avoid border-border) --- */
-  --color-line: #ede6d8;
-  --color-line-strong: #d9cfb8;
+  --color-line: #eae6de;
+  --color-line-strong: #d6cfc0;
   --color-line-subtle: rgba(31, 27, 23, 0.06);
 
   /* --- text (named "ink" to avoid text-text) --- */
@@ -42,7 +42,7 @@
   --color-ink-muted: #8e867a;
 
   /* --- interaction states --- */
-  --color-hover: #f2ede3;
+  --color-hover: #f0eee9;
   --color-selected: #f8edda;
 
   /* --- brand (apricot sand) --- */
@@ -320,85 +320,6 @@ code {
 }
 .model-row-swap-down {
   animation: model-row-swap-down 0.24s ease-out;
-}
-
-/* Settings Models has tighter nested hierarchy than generic cards:
-   provider group -> model row -> inline editor. Keep these layer tokens local
-   so dark-mode tuning does not disturb the global palette. */
-.settings-model-provider-card {
-  --settings-model-provider-card-bg: var(--color-surface);
-  --settings-model-provider-header-bg: color-mix(
-    in srgb,
-    var(--color-selected) 44%,
-    var(--color-surface)
-  );
-  --settings-model-provider-header-idle-bg: var(--color-surface);
-  --settings-model-provider-body-bg: color-mix(
-    in srgb,
-    var(--color-elevated) 58%,
-    var(--color-app)
-  );
-  --settings-model-row-bg: color-mix(
-    in srgb,
-    var(--color-elevated) 64%,
-    var(--color-surface)
-  );
-  --settings-model-row-hover-bg: color-mix(
-    in srgb,
-    var(--color-elevated) 88%,
-    var(--color-selected)
-  );
-  --settings-model-row-editing-bg: color-mix(
-    in srgb,
-    var(--color-selected) 72%,
-    var(--color-elevated)
-  );
-  --settings-model-toolbelt-bg: color-mix(
-    in srgb,
-    var(--color-surface) 68%,
-    var(--color-app)
-  );
-  --settings-model-editor-bg: var(--color-elevated);
-  --settings-model-action-opacity: 0.45;
-}
-
-html[data-theme="dark"] .settings-model-provider-card {
-  --settings-model-provider-header-bg: color-mix(
-    in srgb,
-    var(--color-selected) 58%,
-    var(--color-surface)
-  );
-  --settings-model-provider-body-bg: color-mix(
-    in srgb,
-    var(--color-app) 58%,
-    var(--color-surface)
-  );
-  --settings-model-row-bg: color-mix(
-    in srgb,
-    var(--color-elevated) 70%,
-    var(--color-surface)
-  );
-  --settings-model-row-hover-bg: color-mix(
-    in srgb,
-    var(--color-elevated) 76%,
-    var(--color-hover)
-  );
-  --settings-model-row-editing-bg: color-mix(
-    in srgb,
-    var(--color-selected) 78%,
-    var(--color-elevated)
-  );
-  --settings-model-toolbelt-bg: color-mix(
-    in srgb,
-    var(--color-surface) 72%,
-    var(--color-app)
-  );
-  --settings-model-editor-bg: color-mix(
-    in srgb,
-    var(--color-elevated) 92%,
-    var(--color-brand)
-  );
-  --settings-model-action-opacity: 0.6;
 }
 
 @media (prefers-reduced-motion: reduce) {

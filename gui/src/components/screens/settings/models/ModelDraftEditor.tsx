@@ -57,7 +57,7 @@ export function ModelDraftEditor({
     <div
       className={cn(
         "space-y-3 rounded-sm border border-line-strong/70 border-l-brand",
-        "border-l-[3px] bg-[var(--settings-model-editor-bg)] px-3 py-3",
+        "border-l-[3px] bg-elevated px-3 py-3",
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
