@@ -1,5 +1,6 @@
 import {
   ArrowSquareOut,
+  CaretRight,
   CheckCircle,
   CircleNotch,
   CloudArrowDown,
@@ -83,6 +84,7 @@ export function StepModelConfig({
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [state, setState] = useState<SetupState>({ kind: "idle" });
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [codexLoginStart, setCodexLoginStart] =
     useState<CodexDeviceLoginStart | null>(null);
   const [verifiedFingerprint, setVerifiedFingerprint] = useState<string | null>(
@@ -377,11 +379,11 @@ export function StepModelConfig({
 
   return (
     <div className="max-w-[580px]">
-      <h1 className="m-0 text-[32px] font-semibold leading-tight tracking-[0.005em] text-ink">
-        {onboardingCopy.modelTitle}
+      <h1 className="m-0 font-serif text-[30px] font-medium leading-[1.1] tracking-[0.005em] text-ink [@media(max-height:719px)]:text-[26px]">
+        Galley
       </h1>
-      <p className="mb-7 mt-2.5 text-[15.5px] italic leading-[1.55] text-ink-soft">
-        {onboardingCopy.modelSubtitle}
+      <p className="mb-7 mt-3 font-serif text-[16px] italic leading-[1.55] text-ink-soft">
+        {onboardingCopy.modelWelcome}
       </p>
 
       <div className="space-y-4">
@@ -511,20 +513,6 @@ export function StepModelConfig({
               }
             />
             <SetupInput
-              label={modelCopy.apiUrl}
-              value={apiBase}
-              onChange={(value) => {
-                setApiBase(value);
-                resetConnectionTest();
-              }}
-              placeholder={
-                selectedPreset.apiBase ||
-                (protocol === "openai"
-                  ? "https://api.openai.com/v1"
-                  : "https://api.anthropic.com")
-              }
-            />
-            <SetupInput
               label={modelCopy.model}
               value={model}
               onChange={(value) => {
@@ -571,12 +559,46 @@ export function StepModelConfig({
             )}
 
             <div className="border-t border-line pt-3">
-              <SetupInput
-                label={modelCopy.providerName}
-                value={providerDisplayNameValue}
-                onChange={setProviderDisplayNameValue}
-                placeholder={modelCopy.providerNamePlaceholder}
-              />
+              <button
+                type="button"
+                onClick={() => setAdvancedOpen((open) => !open)}
+                aria-expanded={advancedOpen}
+                className="flex items-center gap-1 text-[12px] text-ink-muted transition-colors hover:text-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+              >
+                <CaretRight
+                  size={11}
+                  weight="bold"
+                  className={cn(
+                    "transition-transform duration-[120ms]",
+                    advancedOpen && "rotate-90",
+                  )}
+                />
+                {onboardingCopy.advanced}
+              </button>
+              {advancedOpen && (
+                <div className="mt-3 space-y-4">
+                  <SetupInput
+                    label={modelCopy.apiUrl}
+                    value={apiBase}
+                    onChange={(value) => {
+                      setApiBase(value);
+                      resetConnectionTest();
+                    }}
+                    placeholder={
+                      selectedPreset.apiBase ||
+                      (protocol === "openai"
+                        ? "https://api.openai.com/v1"
+                        : "https://api.anthropic.com")
+                    }
+                  />
+                  <SetupInput
+                    label={modelCopy.providerName}
+                    value={providerDisplayNameValue}
+                    onChange={setProviderDisplayNameValue}
+                    placeholder={modelCopy.providerNamePlaceholder}
+                  />
+                </div>
+              )}
             </div>
           </>
         )}
@@ -587,7 +609,7 @@ export function StepModelConfig({
           <button
             type="button"
             onClick={onAttachExisting}
-            className="inline-flex items-center gap-1 text-[12px] text-ink-muted transition-colors hover:text-brand-strong"
+            className="inline-flex items-center gap-1 rounded-sm text-[12px] text-ink-muted transition-colors hover:text-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
           >
             {onboardingCopy.connectExistingButton}
             <ArrowSquareOut size={11} weight="thin" />

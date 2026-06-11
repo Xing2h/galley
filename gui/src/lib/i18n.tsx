@@ -713,14 +713,8 @@ const zhCopy = {
     },
   },
   onboarding: {
-    welcomeTagline: "GenericAgent 的本地 agent team 编排器",
-    installGenericAgent: "帮我安装 GenericAgent",
-    comingLater: "敬请期待",
-    connectExisting: "接入已经安装的 GenericAgent",
-    attachTrust:
-      "Galley 不修改你的 GenericAgent。删除 Galley，它照常独立运行。",
-    modelTitle: "为 Galley 配置模型",
-    modelSubtitle: "选择提供商，填入密钥和模型。",
+    modelWelcome: "配置好模型就能开始，大约一分钟。",
+    advanced: "高级",
     connectExistingButton: "接入已有 GenericAgent",
     testAndStart: "测试并开始使用 Galley",
     startUsingGalley: "开始使用 Galley",
@@ -1802,14 +1796,8 @@ const enCopy: AppCopy = {
     },
   },
   onboarding: {
-    welcomeTagline: "A local Agent team orchestrator for GenericAgent",
-    installGenericAgent: "Help me install GenericAgent",
-    comingLater: "Coming later",
-    connectExisting: "Connect an existing GenericAgent",
-    attachTrust:
-      "Galley does not modify your GenericAgent. Remove Galley, and it still runs on its own.",
-    modelTitle: "Set up a model for Galley",
-    modelSubtitle: "Choose a provider, enter the API key and model.",
+    modelWelcome: "Set up a model and you're ready — about a minute.",
+    advanced: "Advanced",
     connectExistingButton: "Connect existing GenericAgent",
     testAndStart: "Test and start using Galley",
     startUsingGalley: "Start using Galley",
