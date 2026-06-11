@@ -178,17 +178,6 @@ export function SettingsModels({
     }
   };
 
-  const handleConfiguredModelActivate = (model: ManagedModelRecord) => {
-    const provider = providers.find((item) => item.id === model.providerId);
-    if (!provider) return;
-    const result = providerModelController.openModelDraft(provider, model);
-    if (result.kind === "blocked-dirty") {
-      focusProtectedDraft(result.modelId);
-      return;
-    }
-    setPendingFocusModelId(model.id);
-  };
-
   const confirmDeleteProvider = () => {
     const candidate = providerDeleteCandidate;
     if (!candidate) return;
@@ -207,22 +196,50 @@ export function SettingsModels({
 
       <ConfiguredModelsPanel
         models={orderedModels}
+        providers={providers}
         saving={saving}
         moveFeedback={modelMoveFeedback}
-        editingModelId={editingModelId}
+        modelDraft={providerModelController.modelDraft}
         onMoveModel={handleMoveConfiguredModel}
-        onActivateModel={handleConfiguredModelActivate}
+        onSetDefaultModel={(model) => void handleSetDefaultModel(model)}
+        onToggleModelDraft={(provider, model) => {
+          const result = providerModelController.toggleModelDraft(
+            provider,
+            model,
+          );
+          if (result.kind === "blocked-dirty") {
+            focusProtectedDraft(result.modelId);
+          }
+        }}
+        onChangeModelDraft={(providerId, patch) =>
+          providerModelController.changeModelDraft(providerId, patch)
+        }
+        onCancelModelDraft={providerModelController.resetModelDraft}
+        onTestModelDraft={(provider, draft) =>
+          void providerModelController.handleTestDraftModel(provider, draft)
+        }
+        onSaveModelDraft={(draft) =>
+          void providerModelController.handleSaveDraftModel(draft)
+        }
+        onTestModel={(model) =>
+          void providerModelController.handleTestSavedModel(model)
+        }
+        onDeleteModel={handleDeleteModel}
+        savedModelProbeStateFor={
+          providerModelController.savedModelProbeStateForModel
+        }
+        modelDraftProbeStateForProvider={
+          providerModelController.modelProbeStateForProvider
+        }
+        onRegisterModelRow={registerModelRow}
       />
 
       <div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <SettingsSectionLabel>
-              {modelCopy.connectedProviders}
+              {modelCopy.providersLabel}
             </SettingsSectionLabel>
-            <div className="mt-1 text-[11px] leading-none text-ink-muted/60">
-              {modelCopy.modelTestCostHint}
-            </div>
           </div>
           <Button
             variant="primary"
@@ -281,7 +298,6 @@ export function SettingsModels({
                 key={provider.id}
                 provider={provider}
                 models={modelsByProvider[provider.id] ?? []}
-                defaultModelId={orderedModels[0]?.id}
                 allModelCount={orderedModels.length}
                 saving={saving}
                 expanded={isProviderExpanded(provider.id)}
@@ -363,24 +379,6 @@ export function SettingsModels({
                   }
                   providerModelController.startModelDraft(provider);
                 }}
-                onOpenModelDraft={(model) => {
-                  const result = providerModelController.openModelDraft(
-                    provider,
-                    model,
-                  );
-                  if (result.kind === "blocked-dirty") {
-                    focusProtectedDraft(result.modelId);
-                  }
-                }}
-                onToggleModelDraft={(model) => {
-                  const result = providerModelController.toggleModelDraft(
-                    provider,
-                    model,
-                  );
-                  if (result.kind === "blocked-dirty") {
-                    focusProtectedDraft(result.modelId);
-                  }
-                }}
                 onChangeModelDraft={(patch) =>
                   providerModelController.changeModelDraft(provider.id, patch)
                 }
@@ -400,15 +398,6 @@ export function SettingsModels({
                     modelName,
                   )
                 }
-                onSetDefaultModel={(model) => void handleSetDefaultModel(model)}
-                onTestModel={(model) =>
-                  void providerModelController.handleTestSavedModel(model)
-                }
-                modelProbeStateFor={
-                  providerModelController.savedModelProbeStateForModel
-                }
-                onDeleteModel={handleDeleteModel}
-                onRegisterModelRow={registerModelRow}
               />
             ))}
         </div>

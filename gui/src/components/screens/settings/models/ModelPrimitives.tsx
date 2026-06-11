@@ -8,6 +8,7 @@ import {
 import type { ReactNode } from "react";
 
 import { TooltipLabel } from "@/components/ui/tooltip";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ManagedModelProtocol } from "@/types/managed-models";
@@ -57,41 +58,43 @@ export function ModelSelectionList({
           />
         </div>
       </div>
-      <div className="max-h-[220px] divide-y divide-line overflow-auto rounded-sm border border-line bg-surface">
-        {visibleOptions.length === 0 && (
-          <EmptyRow text={copy.noMatchingModels} />
-        )}
-        {visibleOptions.map((option) => {
-          const selected = option === selectedValue;
-          return (
-            <button
-              key={option}
-              type="button"
-              title={option}
-              aria-pressed={selected}
-              onClick={() => onChange(option)}
-              className={cn(
-                "flex w-full min-w-0 items-center gap-3 px-3 py-2 text-left transition-colors",
-                "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
-                selected ? "bg-brand-soft text-ink" : "text-ink hover:bg-hover",
-              )}
-            >
-              <span className="flex w-4 shrink-0 items-center justify-center">
-                {selected && (
-                  <CheckCircle
-                    size={12}
-                    weight="fill"
-                    className="text-brand-strong"
-                  />
+      <ScrollFade maxHeightClass="max-h-[220px]">
+        <div className="divide-y divide-line">
+          {visibleOptions.length === 0 && (
+            <EmptyRow text={copy.noMatchingModels} />
+          )}
+          {visibleOptions.map((option) => {
+            const selected = option === selectedValue;
+            return (
+              <button
+                key={option}
+                type="button"
+                title={option}
+                aria-pressed={selected}
+                onClick={() => onChange(option)}
+                className={cn(
+                  "flex w-full min-w-0 items-center gap-3 px-3 py-2 text-left transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
+                  selected ? "bg-brand-soft text-ink" : "text-ink hover:bg-hover",
                 )}
-              </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
-                {option}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+              >
+                <span className="flex w-4 shrink-0 items-center justify-center">
+                  {selected && (
+                    <CheckCircle
+                      size={12}
+                      weight="fill"
+                      className="text-brand-strong"
+                    />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
+                  {option}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </ScrollFade>
       {filteredOptions.length > visibleOptions.length && (
         <div className="text-[11.5px] text-ink-muted">
           {copy.visibleOptionsHint(visibleOptions.length)}
@@ -273,7 +276,7 @@ export function ProtocolBadge({
   const label = protocolLabel(protocol);
   return (
     <span
-      className="inline-flex max-w-[180px] shrink-0 truncate rounded-sm bg-ink-muted/10 px-1.5 py-px text-[10.5px] leading-4 text-ink-muted/80"
+      className="shrink-0 text-[10.5px] leading-4 text-ink-muted/55"
       title={`${label} · ${apiBase}`}
     >
       {label}

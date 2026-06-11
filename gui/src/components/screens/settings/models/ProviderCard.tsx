@@ -12,9 +12,10 @@ import {
   Plus,
   Trash,
 } from "@phosphor-icons/react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import { Button, IconButton } from "@/components/ui/button";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type {
@@ -35,10 +36,16 @@ import {
 } from "./ModelPrimitives";
 import type { ModelDraftState, ProbeAction, ProbeState } from "./types";
 
+/**
+ * Provider card — a model *source* (credentials + endpoint + protocol)
+ * and the place you enable which of its models exist. Per-model
+ * arrangement (order / default / edit / test / remove) lives in the
+ * "我的模型" list above; this card deliberately does not duplicate it,
+ * showing enabled models only as read-only chips.
+ */
 export function ProviderCard({
   provider,
   models,
-  defaultModelId,
   allModelCount,
   saving,
   expanded,
@@ -55,22 +62,14 @@ export function ProviderCard({
   onFetchModels,
   onSetModelFilter,
   onStartModelDraft,
-  onOpenModelDraft,
-  onToggleModelDraft,
   onChangeModelDraft,
   onCancelModelDraft,
   onTestModelDraft,
   onSaveModelDraft,
   onEnableDetectedModel,
-  onSetDefaultModel,
-  onTestModel,
-  modelProbeStateFor,
-  onDeleteModel,
-  onRegisterModelRow,
 }: {
   provider: ManagedModelProviderRecord;
   models: ManagedModelRecord[];
-  defaultModelId?: string;
   allModelCount: number;
   saving: boolean;
   expanded: boolean;
@@ -86,22 +85,12 @@ export function ProviderCard({
   onTestProvider: () => void;
   onFetchModels: () => void;
   onSetModelFilter: (value: string) => void;
-  onStartModelDraft: (model?: ManagedModelRecord) => void;
-  onOpenModelDraft: (model: ManagedModelRecord) => void;
-  onToggleModelDraft: (model: ManagedModelRecord) => void;
+  onStartModelDraft: () => void;
   onChangeModelDraft: (patch: Partial<ModelDraftState>) => void;
   onCancelModelDraft: () => void;
   onTestModelDraft: (draft: ModelDraftState) => void;
   onSaveModelDraft: (draft: ModelDraftState) => void;
   onEnableDetectedModel: (modelName: string) => void;
-  onSetDefaultModel: (model: ManagedModelRecord) => void;
-  onTestModel: (model: ManagedModelRecord) => void;
-  modelProbeStateFor: (modelId: string) => ProbeState;
-  onDeleteModel: (model: ManagedModelRecord) => void;
-  onRegisterModelRow?: (
-    modelId: string,
-    node: HTMLButtonElement | null,
-  ) => void;
 }) {
   const copy = useCopy().settings.models;
   const keyMissing = provider.credentialStatus === "missing";
@@ -274,53 +263,20 @@ export function ProviderCard({
               <>
                 {keyMissing && <ErrorLine message={copy.keyNeedsResave} />}
 
-                {models.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {models.map((model) => {
-                      const editing = modelDraft?.id === model.id;
-                      return (
-                        <div key={model.id}>
-                          <EnabledModelRow
-                            model={model}
-                            isDefault={model.id === defaultModelId}
-                            isEditing={editing}
-                            saving={saving}
-                            keyMissing={keyMissing}
-                            probeState={modelProbeStateFor(model.id)}
-                            rowRef={(node) =>
-                              onRegisterModelRow?.(model.id, node)
-                            }
-                            onActivate={() => onToggleModelDraft(model)}
-                            onEdit={() => onOpenModelDraft(model)}
-                            onSetDefault={() => onSetDefaultModel(model)}
-                            onTest={() => onTestModel(model)}
-                            onDelete={() => onDeleteModel(model)}
-                          />
-                          {editing && modelDraft && (
-                            <div className="px-2 pb-2 pt-1">
-                              <ModelDraftEditor
-                                draft={modelDraft}
-                                title={modelDisplayParts(model).title}
-                                protocol={provider.protocol}
-                                authKind={provider.authKind}
-                                saving={saving}
-                                keyMissing={keyMissing}
-                                modelProbeState={modelProbeState}
-                                allModelCount={allModelCount}
-                                onChange={onChangeModelDraft}
-                                onCancel={onCancelModelDraft}
-                                onTest={() => onTestModelDraft(modelDraft)}
-                                onSave={() => onSaveModelDraft(modelDraft)}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="py-1.5 text-[12.5px] text-ink-muted">
-                    {copy.noEnabledModels}
+                {models.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 py-0.5">
+                    <span className="text-[11.5px] text-ink-muted">
+                      {copy.enabledFromProvider}
+                    </span>
+                    {models.map((model) => (
+                      <span
+                        key={model.id}
+                        className="inline-flex max-w-[200px] shrink-0 truncate rounded-sm bg-ink-muted/10 px-1.5 py-px font-mono text-[11px] leading-4 text-ink-muted/85"
+                        title={model.model}
+                      >
+                        {modelDisplayParts(model).title}
+                      </span>
+                    ))}
                   </div>
                 )}
 
@@ -353,7 +309,7 @@ export function ProviderCard({
                     size="sm"
                     className="px-1.5 text-ink-muted/80 hover:text-ink"
                     disabled={keyMissing || saving}
-                    onClick={() => onStartModelDraft()}
+                    onClick={onStartModelDraft}
                     leadingIcon={<Plus size={12} weight="bold" />}
                   >
                     {copy.addManually}
@@ -400,20 +356,22 @@ export function ProviderCard({
                         />
                       </div>
                     </div>
-                    <div className="max-h-[260px] divide-y divide-line overflow-auto rounded-sm border border-line bg-surface">
-                      {visibleOptions.length === 0 && (
-                        <EmptyRow text={copy.noMatchingModels} />
-                      )}
-                      {visibleOptions.map((option) => (
-                        <DetectedModelRow
-                          key={option}
-                          modelName={option}
-                          enabled={enabledModelNames.has(option)}
-                          saving={saving}
-                          onEnable={() => onEnableDetectedModel(option)}
-                        />
-                      ))}
-                    </div>
+                    <ScrollFade maxHeightClass="max-h-[260px]">
+                      <div className="divide-y divide-line">
+                        {visibleOptions.length === 0 && (
+                          <EmptyRow text={copy.noMatchingModels} />
+                        )}
+                        {visibleOptions.map((option) => (
+                          <DetectedModelRow
+                            key={option}
+                            modelName={option}
+                            enabled={enabledModelNames.has(option)}
+                            saving={saving}
+                            onEnable={() => onEnableDetectedModel(option)}
+                          />
+                        ))}
+                      </div>
+                    </ScrollFade>
                     {filteredOptions.length > visibleOptions.length && (
                       <div className="text-[11.5px] text-ink-muted">
                         {copy.visibleOptionsHint(visibleOptions.length)}
@@ -421,188 +379,11 @@ export function ProviderCard({
                     )}
                   </div>
                 )}
-
               </>
             )}
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function EnabledModelRow({
-  model,
-  isDefault,
-  isEditing,
-  saving,
-  keyMissing,
-  probeState,
-  rowRef,
-  onActivate,
-  onEdit,
-  onSetDefault,
-  onTest,
-  onDelete,
-}: {
-  model: ManagedModelRecord;
-  isDefault: boolean;
-  isEditing: boolean;
-  saving: boolean;
-  keyMissing: boolean;
-  probeState: ProbeState;
-  rowRef?: (node: HTMLButtonElement | null) => void;
-  onActivate: () => void;
-  onEdit: () => void;
-  onSetDefault: () => void;
-  onTest: () => void;
-  onDelete: () => void;
-}) {
-  const appCopy = useCopy();
-  const copy = appCopy.settings.models;
-  const display = modelDisplayParts(model);
-  const [confirmingRemove, setConfirmingRemove] = useState(false);
-  const testing =
-    probeState.kind === "loading" && probeState.action === "model-test";
-  const showRemoveConfirm = confirmingRemove && !isDefault;
-
-  return (
-    <div
-      className={cn(
-        "group/model rounded-sm border px-2.5 py-2 transition-[background-color,border-color]",
-        isEditing
-          ? "border-brand/30 bg-[var(--settings-model-row-editing-bg)]"
-          : "border-transparent bg-[var(--settings-model-row-bg)] hover:border-line hover:bg-[var(--settings-model-row-hover-bg)] focus-within:border-line focus-within:bg-[var(--settings-model-row-hover-bg)]",
-      )}
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        <button
-          ref={rowRef}
-          type="button"
-          aria-expanded={isEditing}
-          aria-label={`${copy.editModel}: ${display.title}`}
-          onClick={() => {
-            setConfirmingRemove(false);
-            onActivate();
-          }}
-          className={cn(
-            "min-w-0 flex-1 rounded-sm pr-2 text-left",
-            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
-          )}
-        >
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div
-              className={cn(
-                "truncate text-[13px] font-medium transition-colors",
-                isEditing ? "text-brand-strong" : "text-ink",
-              )}
-            >
-              {display.title}
-            </div>
-            {isDefault && (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-brand/15 bg-brand-soft px-1.5 py-px text-[10.5px] leading-4 text-brand-strong">
-                <CheckCircle size={10} weight="fill" />
-                {copy.defaultModel}
-              </span>
-            )}
-          </div>
-          {display.subtitle && (
-            <div className="mt-0.5 truncate font-mono text-[11.5px] text-ink-muted">
-              {display.subtitle}
-            </div>
-          )}
-        </button>
-        <div className="ml-auto flex w-[164px] shrink-0 items-center justify-end gap-1">
-          <IconButton
-            ariaLabel={copy.testModel}
-            size="sm"
-            className="opacity-[var(--settings-model-action-opacity)] group-hover/model:opacity-100 group-focus-within/model:opacity-100"
-            disabled={keyMissing || saving || testing}
-            onClick={() => {
-              setConfirmingRemove(false);
-              onTest();
-            }}
-          >
-            {testing ? (
-              <span className="spin">
-                <CircleNotch size={13} weight="thin" />
-              </span>
-            ) : (
-              <PlugsConnected size={13} weight="thin" />
-            )}
-          </IconButton>
-          <InlineProbeStatus state={probeState} action="model-test" />
-          {!isDefault && (
-            <IconButton
-              ariaLabel={copy.setDefault}
-              size="sm"
-              className="opacity-[var(--settings-model-action-opacity)] group-hover/model:opacity-100 group-focus-within/model:opacity-100"
-              disabled={saving}
-              onClick={() => {
-                setConfirmingRemove(false);
-                onSetDefault();
-              }}
-            >
-              <CheckCircle size={13} weight="thin" />
-            </IconButton>
-          )}
-          <IconButton
-            ariaLabel={copy.editModel}
-            size="sm"
-            className="opacity-[var(--settings-model-action-opacity)] group-hover/model:opacity-100 group-focus-within/model:opacity-100"
-            onClick={() => {
-              setConfirmingRemove(false);
-              onEdit();
-            }}
-          >
-            <PencilSimple size={13} weight="thin" />
-          </IconButton>
-          {!isDefault && !showRemoveConfirm && (
-            <IconButton
-              ariaLabel={copy.removeModel}
-              variant="danger"
-              size="sm"
-              className="opacity-[var(--settings-model-action-opacity)] group-hover/model:opacity-100 group-focus-within/model:opacity-100"
-              disabled={saving}
-              onClick={() => setConfirmingRemove(true)}
-            >
-              <Trash size={13} weight="thin" />
-            </IconButton>
-          )}
-        </div>
-      </div>
-      {showRemoveConfirm && (
-        <div
-          className={cn(
-            "mt-2 flex items-center justify-end gap-2 rounded-sm border border-line/70",
-            "bg-surface/60 px-2 py-1.5 text-[12px] text-ink-soft",
-          )}
-        >
-          <span className="min-w-0 flex-1">
-            {copy.removeModelInlineConfirm}
-          </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={saving}
-            onClick={() => setConfirmingRemove(false)}
-          >
-            {appCopy.common.cancel}
-          </Button>
-          <Button
-            variant="destructive-soft"
-            size="sm"
-            disabled={saving}
-            onClick={() => {
-              setConfirmingRemove(false);
-              onDelete();
-            }}
-          >
-            {copy.removeModel}
-          </Button>
-        </div>
-      )}
-      <ProbeErrorLine state={probeState} action="model-test" />
     </div>
   );
 }

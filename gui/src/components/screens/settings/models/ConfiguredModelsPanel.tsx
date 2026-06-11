@@ -2,44 +2,97 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle,
+  CircleNotch,
   Info,
+  PencilSimple,
+  PlugsConnected,
+  Trash,
 } from "@phosphor-icons/react";
+import { useState } from "react";
 
-import { IconButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { TooltipLabel } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { ManagedModelRecord } from "@/types/managed-models";
+import type {
+  ManagedModelProviderRecord,
+  ManagedModelRecord,
+} from "@/types/managed-models";
 
+import { ModelDraftEditor } from "./ModelDraftEditor";
+import { InlineProbeStatus, ProbeErrorLine } from "./ModelPrimitives";
 import {
   modelDisplayParts,
   modelSwapAnimationClass,
 } from "./model-settings-utils";
-import type { ModelMoveDirection, ModelMoveFeedbackState } from "./types";
+import type {
+  ModelDraftState,
+  ModelMoveDirection,
+  ModelMoveFeedbackState,
+  ProbeState,
+} from "./types";
 
+/**
+ * "我的模型 / Your Models" — the primary, cross-provider, ordered model
+ * list. This is the single source of truth for what the user can
+ * switch between in the Composer: order = menu order, first = default.
+ * All per-model actions (reorder / set default / edit / test / remove)
+ * live here. Providers below own only credentials + which models exist.
+ */
 export function ConfiguredModelsPanel({
   models,
+  providers,
   saving,
   moveFeedback,
-  editingModelId,
+  modelDraft,
   onMoveModel,
-  onActivateModel,
+  onSetDefaultModel,
+  onToggleModelDraft,
+  onChangeModelDraft,
+  onCancelModelDraft,
+  onTestModelDraft,
+  onSaveModelDraft,
+  onTestModel,
+  onDeleteModel,
+  savedModelProbeStateFor,
+  modelDraftProbeStateForProvider,
+  onRegisterModelRow,
 }: {
   models: ManagedModelRecord[];
+  providers: ManagedModelProviderRecord[];
   saving: boolean;
   moveFeedback: ModelMoveFeedbackState | null;
-  editingModelId?: string;
+  modelDraft: ModelDraftState | null;
   onMoveModel: (modelId: string, direction: ModelMoveDirection) => void;
-  onActivateModel: (model: ManagedModelRecord) => void;
+  onSetDefaultModel: (model: ManagedModelRecord) => void;
+  onToggleModelDraft: (
+    provider: ManagedModelProviderRecord,
+    model: ManagedModelRecord,
+  ) => void;
+  onChangeModelDraft: (providerId: string, patch: Partial<ModelDraftState>) => void;
+  onCancelModelDraft: () => void;
+  onTestModelDraft: (
+    provider: ManagedModelProviderRecord,
+    draft: ModelDraftState,
+  ) => void;
+  onSaveModelDraft: (draft: ModelDraftState) => void;
+  onTestModel: (model: ManagedModelRecord) => void;
+  onDeleteModel: (model: ManagedModelRecord) => void;
+  savedModelProbeStateFor: (modelId: string) => ProbeState;
+  modelDraftProbeStateForProvider: (providerId: string) => ProbeState;
+  onRegisterModelRow?: (
+    modelId: string,
+    node: HTMLButtonElement | null,
+  ) => void;
 }) {
   const appCopy = useCopy();
   const copy = appCopy.settings.models;
   return (
     <div className="rounded-sm border border-line bg-surface">
-      <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <div className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            {copy.configuredModels}
+            {copy.myModels}
           </div>
           <ModelScopeHint copy={copy} />
           <span aria-hidden="true" className="text-[11.5px] text-ink-muted/45">
@@ -51,23 +104,55 @@ export function ConfiguredModelsPanel({
               : copy.noEnabledModels}
           </span>
         </div>
+        <div className="mt-0.5 text-[11px] leading-snug text-ink-muted/60">
+          {copy.myModelsSubtitle}
+        </div>
       </div>
-      {models.length > 0 && (
+      {models.length > 0 ? (
         <div className="divide-y divide-line border-t border-line">
-          {models.map((model, index) => (
-            <ConfiguredModelRow
-              key={model.id}
-              model={model}
-              isDefault={index === 0}
-              isEditing={model.id === editingModelId}
-              canMoveUp={!saving && index > 0}
-              canMoveDown={!saving && index < models.length - 1}
-              moveFeedback={moveFeedback}
-              onActivate={() => onActivateModel(model)}
-              onMoveUp={() => onMoveModel(model.id, "up")}
-              onMoveDown={() => onMoveModel(model.id, "down")}
-            />
-          ))}
+          {models.map((model, index) => {
+            const provider = providers.find((p) => p.id === model.providerId);
+            return (
+              <ConfiguredModelRow
+                key={model.id}
+                model={model}
+                provider={provider}
+                isDefault={index === 0}
+                isEditing={modelDraft?.id === model.id}
+                draft={modelDraft?.id === model.id ? modelDraft : null}
+                allModelCount={models.length}
+                saving={saving}
+                canMoveUp={!saving && index > 0}
+                canMoveDown={!saving && index < models.length - 1}
+                moveFeedback={moveFeedback}
+                probeState={savedModelProbeStateFor(model.id)}
+                draftProbeState={
+                  provider
+                    ? modelDraftProbeStateForProvider(provider.id)
+                    : savedModelProbeStateFor(model.id)
+                }
+                onToggleEdit={() => provider && onToggleModelDraft(provider, model)}
+                onSetDefault={() => onSetDefaultModel(model)}
+                onTest={() => onTestModel(model)}
+                onDelete={() => onDeleteModel(model)}
+                onMoveUp={() => onMoveModel(model.id, "up")}
+                onMoveDown={() => onMoveModel(model.id, "down")}
+                onChangeDraft={(patch) =>
+                  provider && onChangeModelDraft(provider.id, patch)
+                }
+                onCancelDraft={onCancelModelDraft}
+                onTestDraft={(draft) =>
+                  provider && onTestModelDraft(provider, draft)
+                }
+                onSaveDraft={onSaveModelDraft}
+                onRegisterRow={onRegisterModelRow}
+              />
+            );
+          })}
+        </div>
+      ) : (
+        <div className="border-t border-line px-3 py-3 text-[12.5px] text-ink-muted">
+          {copy.myModelsEmpty}
         </div>
       )}
     </div>
@@ -114,110 +199,243 @@ function ModelScopeHint({
 
 function ConfiguredModelRow({
   model,
+  provider,
   isDefault,
   isEditing,
+  draft,
+  allModelCount,
+  saving,
   canMoveUp,
   canMoveDown,
   moveFeedback,
-  onActivate,
+  probeState,
+  draftProbeState,
+  onToggleEdit,
+  onSetDefault,
+  onTest,
+  onDelete,
   onMoveUp,
   onMoveDown,
+  onChangeDraft,
+  onCancelDraft,
+  onTestDraft,
+  onSaveDraft,
+  onRegisterRow,
 }: {
   model: ManagedModelRecord;
+  provider?: ManagedModelProviderRecord;
   isDefault: boolean;
   isEditing: boolean;
+  draft: ModelDraftState | null;
+  allModelCount: number;
+  saving: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   moveFeedback: ModelMoveFeedbackState | null;
-  onActivate: () => void;
+  probeState: ProbeState;
+  draftProbeState: ProbeState;
+  onToggleEdit: () => void;
+  onSetDefault: () => void;
+  onTest: () => void;
+  onDelete: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onChangeDraft: (patch: Partial<ModelDraftState>) => void;
+  onCancelDraft: () => void;
+  onTestDraft: (draft: ModelDraftState) => void;
+  onSaveDraft: (draft: ModelDraftState) => void;
+  onRegisterRow?: (modelId: string, node: HTMLButtonElement | null) => void;
 }) {
   const appCopy = useCopy();
   const copy = appCopy.settings.models;
   const swapClass = modelSwapAnimationClass(model.id, moveFeedback);
-  const modelTitle = modelDisplayParts(model).title;
+  const display = modelDisplayParts(model);
+  const keyMissing = provider?.credentialStatus === "missing";
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const testing =
+    probeState.kind === "loading" && probeState.action === "model-test";
+  const showRemoveConfirm = confirmingRemove && !isDefault;
 
   return (
     <div
       className={cn(
-        "group flex min-w-0 items-center gap-3 px-3 py-2 transition-colors duration-150",
-        "hover:bg-elevated/55 focus-within:bg-elevated/55",
-        isEditing && "bg-selected/45 hover:bg-selected/55",
+        "group px-3 py-2 transition-colors duration-150",
+        isEditing
+          ? "bg-selected/45"
+          : "hover:bg-elevated/55 focus-within:bg-elevated/55",
         swapClass,
       )}
     >
-      <button
-        type="button"
-        aria-label={`${copy.editModel}: ${modelTitle}`}
-        onClick={onActivate}
-        className={cn(
-          "min-w-0 flex-1 rounded-sm text-left transition-colors",
-          "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
-        )}
-      >
-        <ConfiguredModelRowContent model={model} isDefault={isDefault} />
-      </button>
-      <div className="ml-auto flex shrink-0 items-center gap-0.5">
-        <IconButton
-          ariaLabel={copy.moveUp(modelTitle)}
-          size="xs"
-          disabled={!canMoveUp}
-          onClick={onMoveUp}
-          className="text-ink-muted/45 transition-colors group-hover:text-ink-muted group-focus-within:text-ink-muted hover:text-ink"
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          ref={(node) => onRegisterRow?.(model.id, node)}
+          type="button"
+          aria-expanded={isEditing}
+          aria-label={`${copy.editModel}: ${display.title}`}
+          onClick={() => {
+            setConfirmingRemove(false);
+            onToggleEdit();
+          }}
+          className={cn(
+            "min-w-0 flex-1 rounded-sm pr-2 text-left",
+            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
+          )}
         >
-          <ArrowUp size={11} weight="bold" />
-        </IconButton>
-        <IconButton
-          ariaLabel={copy.moveDown(modelTitle)}
-          size="xs"
-          disabled={!canMoveDown}
-          onClick={onMoveDown}
-          className="text-ink-muted/45 transition-colors group-hover:text-ink-muted group-focus-within:text-ink-muted hover:text-ink"
-        >
-          <ArrowDown size={11} weight="bold" />
-        </IconButton>
-      </div>
-    </div>
-  );
-}
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div
+              className={cn(
+                "truncate text-[13px] font-medium transition-colors",
+                isEditing ? "text-brand-strong" : "text-ink",
+              )}
+            >
+              {display.title}
+            </div>
+            {isDefault && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-brand/15 bg-brand-soft px-1.5 py-px text-[10.5px] leading-4 text-brand-strong">
+                <CheckCircle size={10} weight="fill" />
+                {copy.defaultModel}
+              </span>
+            )}
+            <span
+              className="inline-flex max-w-[180px] shrink-0 truncate rounded-sm bg-ink-muted/10 px-1.5 py-px text-[10.5px] leading-4 text-ink-muted/80"
+              title={model.providerDisplayName}
+            >
+              {model.providerDisplayName}
+            </span>
+          </div>
+          {display.subtitle && (
+            <div className="mt-0.5 truncate font-mono text-[11px] text-ink-muted/85">
+              {display.subtitle}
+            </div>
+          )}
+        </button>
 
-function ConfiguredModelRowContent({
-  model,
-  isDefault,
-  className,
-}: {
-  model: ManagedModelRecord;
-  isDefault: boolean;
-  className?: string;
-}) {
-  const copy = useCopy().settings.models;
-  const display = modelDisplayParts(model);
-
-  return (
-    <div className={cn("min-w-0 flex-1", className)}>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <div className="truncate text-[13px] font-medium text-ink">
-          {display.title}
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <div className="flex items-center gap-0.5 opacity-[var(--settings-model-action-opacity)] transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            <IconButton
+              ariaLabel={copy.testModel}
+              size="sm"
+              disabled={keyMissing || saving || testing}
+              onClick={() => {
+                setConfirmingRemove(false);
+                onTest();
+              }}
+            >
+              {testing ? (
+                <span className="spin">
+                  <CircleNotch size={13} weight="thin" />
+                </span>
+              ) : (
+                <PlugsConnected size={13} weight="thin" />
+              )}
+            </IconButton>
+            <InlineProbeStatus state={probeState} action="model-test" />
+            {!isDefault && (
+              <IconButton
+                ariaLabel={copy.setDefault}
+                size="sm"
+                disabled={saving}
+                onClick={() => {
+                  setConfirmingRemove(false);
+                  onSetDefault();
+                }}
+              >
+                <CheckCircle size={13} weight="thin" />
+              </IconButton>
+            )}
+            <IconButton
+              ariaLabel={copy.editModel}
+              size="sm"
+              onClick={() => {
+                setConfirmingRemove(false);
+                onToggleEdit();
+              }}
+            >
+              <PencilSimple size={13} weight="thin" />
+            </IconButton>
+            {!isDefault && !showRemoveConfirm && (
+              <IconButton
+                ariaLabel={copy.removeModel}
+                variant="danger"
+                size="sm"
+                disabled={saving}
+                onClick={() => setConfirmingRemove(true)}
+              >
+                <Trash size={13} weight="thin" />
+              </IconButton>
+            )}
+          </div>
+          <span className="mx-0.5 h-4 w-px shrink-0 bg-line" aria-hidden />
+          <IconButton
+            ariaLabel={copy.moveUp(display.title)}
+            size="xs"
+            disabled={!canMoveUp}
+            onClick={onMoveUp}
+            className="text-ink-muted/45 transition-colors group-hover:text-ink-muted group-focus-within:text-ink-muted hover:text-ink"
+          >
+            <ArrowUp size={11} weight="bold" />
+          </IconButton>
+          <IconButton
+            ariaLabel={copy.moveDown(display.title)}
+            size="xs"
+            disabled={!canMoveDown}
+            onClick={onMoveDown}
+            className="text-ink-muted/45 transition-colors group-hover:text-ink-muted group-focus-within:text-ink-muted hover:text-ink"
+          >
+            <ArrowDown size={11} weight="bold" />
+          </IconButton>
         </div>
-        {isDefault && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-brand/10 px-1.5 py-px text-[10.5px] leading-4 text-brand-strong/90">
-            <CheckCircle size={10} weight="fill" />
-            {copy.defaultModel}
-          </span>
-        )}
-        <span
-          className="inline-flex max-w-[180px] shrink-0 truncate rounded-sm bg-ink-muted/10 px-1.5 py-px text-[10.5px] leading-4 text-ink-muted/80"
-          title={model.providerDisplayName}
-        >
-          {model.providerDisplayName}
-        </span>
       </div>
-      {display.subtitle && (
-        <div className="mt-0.5 truncate font-mono text-[11px] text-ink-muted/85">
-          {display.subtitle}
+
+      {showRemoveConfirm && (
+        <div
+          className={cn(
+            "mt-2 flex items-center justify-end gap-2 rounded-sm border border-line/70",
+            "bg-surface/60 px-2 py-1.5 text-[12px] text-ink-soft",
+          )}
+        >
+          <span className="min-w-0 flex-1">{copy.removeModelInlineConfirm}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={saving}
+            onClick={() => setConfirmingRemove(false)}
+          >
+            {appCopy.common.cancel}
+          </Button>
+          <Button
+            variant="destructive-soft"
+            size="sm"
+            disabled={saving}
+            onClick={() => {
+              setConfirmingRemove(false);
+              onDelete();
+            }}
+          >
+            {copy.removeModel}
+          </Button>
         </div>
       )}
+
+      {isEditing && draft && provider && (
+        <div className="pt-2">
+          <ModelDraftEditor
+            draft={draft}
+            protocol={provider.protocol}
+            authKind={provider.authKind}
+            saving={saving}
+            keyMissing={keyMissing}
+            modelProbeState={draftProbeState}
+            allModelCount={allModelCount}
+            onChange={onChangeDraft}
+            onCancel={onCancelDraft}
+            onTest={() => onTestDraft(draft)}
+            onSave={() => onSaveDraft(draft)}
+          />
+        </div>
+      )}
+
+      <ProbeErrorLine state={probeState} action="model-test" />
     </div>
   );
 }
