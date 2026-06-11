@@ -4,6 +4,7 @@ export type SettingsTab =
   | "approval"
   | "integration"
   | "im"
+  | "browser"
   | "shortcuts"
   | "about";
 

@@ -7,7 +7,6 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { CommandPalette } from "@/components/overlay/CommandPalette";
 import { ThemeProvider } from "@/components/theme/ThemeContext";
-import { BrowserControlSetupDialog } from "@/components/screens/BrowserControlSetupDialog";
 import { BrowserControlAttentionSurface } from "@/components/screens/BrowserControlAttentionBanner";
 import { EmptyState } from "@/components/screens/EmptyState";
 import { MainView } from "@/components/screens/MainView";
@@ -102,13 +101,10 @@ function App() {
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("runtime");
   const browserControlStatus = useBrowserControlStore((s) => s.status);
-  const browserControlSetupOpen = useBrowserControlStore((s) => s.setupOpen);
   const ensureBrowserControlLayout = useBrowserControlStore(
     (s) => s.ensureLayout,
   );
   const probeBrowserControl = useBrowserControlStore((s) => s.probe);
-  const openBrowserControlSetup = useBrowserControlStore((s) => s.openSetup);
-  const closeBrowserControlSetup = useBrowserControlStore((s) => s.closeSetup);
 
   // Sidebar live-status comes from `sessions` directly: messagesStore's
   // `fireSessionMirror` writes sidebar-visible fields (status,
@@ -641,12 +637,6 @@ function App() {
       cancelled = true;
     };
   }, [activeRuntimeKind, ensureBrowserControlLayout, probeBrowserControl]);
-
-  useEffect(() => {
-    if (activeRuntimeKind === "managed") return;
-    if (!browserControlSetupOpen) return;
-    closeBrowserControlSetup();
-  }, [activeRuntimeKind, browserControlSetupOpen, closeBrowserControlSetup]);
 
   // Session creation is **lazy** — we no longer auto-create on
   // landing in the empty screen. Earlier versions did, which
@@ -1444,7 +1434,7 @@ function App() {
             browserControlStatus={
               activeRuntimeKind === "managed" ? browserControlStatus : null
             }
-            onOpenBrowserControl={openBrowserControlSetup}
+            onOpenBrowserControl={() => openSettings("browser")}
             channelsState={
               activeRuntimeKind === "managed"
                 ? (channelsStatus.status?.state ?? null)
@@ -1591,7 +1581,7 @@ function App() {
           <ThemeProvider theme={resolvedTheme}>
             <BrowserControlAttentionSurface
               show={showBrowserControlAttention}
-              onOpen={openBrowserControlSetup}
+              onOpen={() => openSettings("browser")}
             >
               {screen === "empty" ? (
                 <EmptyState
@@ -1941,6 +1931,10 @@ function App() {
           setSetupAssistantFromSettings(true);
           setScreen("onboarding");
         }}
+        onRunBrowserControlDemo={() => {
+          setSettingsOpen(false);
+          void runBrowserControlDemo();
+        }}
         languagePreference={languagePreference}
         resolvedLanguage={resolvedLanguage}
         onChangeLanguagePreference={(preference) => {
@@ -2014,20 +2008,6 @@ function App() {
           await deleteProject(deletingProject.id);
           setDeletingProjectId(null);
           setEditingProjectId(null);
-        }}
-      />
-
-      <BrowserControlSetupDialog
-        open={activeRuntimeKind === "managed" && browserControlSetupOpen}
-        onOpenChange={(open) => {
-          if (open) {
-            if (activeRuntimeKind === "managed") openBrowserControlSetup();
-          } else {
-            closeBrowserControlSetup();
-          }
-        }}
-        onRunDemo={() => {
-          void runBrowserControlDemo();
         }}
       />
 

@@ -1,4 +1,3 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowSquareOut,
   ArrowsClockwise,
@@ -10,12 +9,12 @@ import {
   FolderOpen,
   PuzzlePiece,
   Warning,
-  X,
 } from "@phosphor-icons/react";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
+import { SettingsPanelHeader } from "@/components/screens/settings/settings-ui";
+import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   openBrowserControlExtensionsPage,
@@ -25,12 +24,6 @@ import {
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useBrowserControlStore } from "@/stores/browser-control";
-
-interface BrowserControlSetupDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onRunDemo?: () => void;
-}
 
 type BrowserControlCopy = ReturnType<typeof useCopy>["browserControl"];
 
@@ -43,12 +36,24 @@ const BROWSER_LABELS: Record<BrowserControlBrowser, string> = {
   edge: "Edge",
 };
 
-export function BrowserControlSetupDialog({
-  open,
-  onOpenChange,
+/**
+ * Settings → Browser Control tab. Managed-runtime only (mirrors the
+ * Channels tab gating). The full setup / status / repair experience
+ * lives inline here — the same content the TopBar indicator and the
+ * attention banner now deep-link to, the way Channels works. There is
+ * no separate dialog: configuration has a single home.
+ *
+ * Elevation note: this renders on the Settings `bg-app` canvas, so its
+ * cards are `bg-surface` raised insets (not `bg-elevated`, which was
+ * right only when this was a floating dialog body).
+ */
+export function SettingsBrowserControl({
   onRunDemo,
-}: BrowserControlSetupDialogProps) {
-  const copy = useCopy().browserControl;
+}: {
+  onRunDemo?: () => void;
+}) {
+  const fullCopy = useCopy();
+  const copy = fullCopy.browserControl;
   const layout = useBrowserControlStore((s) => s.layout);
   const layoutError = useBrowserControlStore((s) => s.layoutError);
   const status = useBrowserControlStore((s) => s.status);
@@ -85,9 +90,9 @@ export function BrowserControlSetupDialog({
         : "";
 
   useEffect(() => {
-    if (!open || layoutReady || busy || layoutError) return;
+    if (layoutReady || busy || layoutError) return;
     void ensureLayout();
-  }, [busy, ensureLayout, layoutError, layoutReady, open]);
+  }, [busy, ensureLayout, layoutError, layoutReady]);
 
   const openExtensionsPage = async (target: BrowserControlBrowser) => {
     setOpenError(null);
@@ -137,118 +142,35 @@ export function BrowserControlSetupDialog({
     window.setTimeout(() => setCopied(false), 1200);
   };
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      setShowRepair(false);
-    }
-    onOpenChange(nextOpen);
-  };
-
   return (
-    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[60] bg-overlay" />
-        <Dialog.Content
-          aria-describedby={undefined}
-          className={cn(
-            "fixed left-1/2 top-1/2 z-[60] flex max-h-[calc(100vh-32px)] w-[680px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col",
-            "overflow-hidden rounded-lg border border-line bg-elevated shadow-elevated",
-          )}
-        >
-          <div className="relative shrink-0 px-6 pb-3 pt-5 [@media(max-height:640px)]:pb-2 [@media(max-height:640px)]:pt-4">
-            <IconButton
-              ariaLabel={copy.close}
-              tooltip={false}
-              className="absolute right-3 top-3"
-              variant="ghost"
-              onClick={() => handleOpenChange(false)}
-            >
-              <X size={14} weight="thin" />
-            </IconButton>
+    <div className="space-y-6">
+      <SettingsPanelHeader
+        title={fullCopy.settings.tabs.browser.label}
+        subtitle={copy.tabSubtitle}
+      />
 
-            <div className="flex items-start gap-3 pr-8">
-              <div
-                className={cn(
-                  "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm border",
-                  bridgeReady
-                    ? "border-success/[var(--opacity-medium)] bg-success/[var(--opacity-soft)] text-success"
-                    : "border-warning/[var(--opacity-strong)] bg-warning/[var(--opacity-soft)] text-warning",
-                )}
-              >
-                <PuzzlePiece size={18} weight="thin" />
-              </div>
-              <div className="min-w-0">
-                <Dialog.Title className="text-[18px] font-semibold leading-6 text-ink">
-                  {connected
-                    ? copy.connectedTitle
-                    : connectedNoTabs
-                      ? copy.connectedNoTabsTitle
-                      : offline
-                        ? copy.offlineTitle
-                        : copy.title}
-                </Dialog.Title>
-                <p className="mt-1 text-[12.5px] leading-[1.6] text-ink-soft">
-                  {connected
-                    ? copy.connectedDescription
-                    : connectedNoTabs
-                      ? copy.connectedNoTabsDescription
-                      : offline
-                        ? copy.offlineDescription
-                        : copy.description}
-                </p>
-              </div>
-            </div>
-          </div>
+      <div className="space-y-3">
+        {connected || needsWebpage ? (
+          <>
+            <ConnectionStatusCard
+              busy={busy}
+              connected={bridgeReady}
+              status={status}
+              statusDetail={statusDetail}
+              statusMessage={statusMessage}
+              actions={
+                needsWebpage ? (
+                  <TestPageActions
+                    copy={copy}
+                    openError={showRepair ? null : openError}
+                    openTestPage={openTestPage}
+                  />
+                ) : undefined
+              }
+            />
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3 [@media(max-height:640px)]:py-2">
-            {connected || needsWebpage ? (
-              <div className="grid gap-3">
-                <ConnectionStatusCard
-                  busy={busy}
-                  connected={bridgeReady}
-                  status={status}
-                  statusDetail={statusDetail}
-                  statusMessage={statusMessage}
-                  actions={
-                    needsWebpage ? (
-                      <TestPageActions
-                        copy={copy}
-                        openError={showRepair ? null : openError}
-                        openTestPage={openTestPage}
-                      />
-                    ) : undefined
-                  }
-                />
-
-                {showRepair && (
-                  <div className="rounded-callout border border-line bg-elevated p-3.5">
-                    <SetupGuide
-                      browser={browser}
-                      busy={busy}
-                      bridgeReady={bridgeReady}
-                      copied={copied}
-                      copy={copy}
-                      copyPath={copyPath}
-                      includeTest
-                      layoutError={layoutError}
-                      layoutReady={layoutReady}
-                      openError={openError}
-                      openExtensionsPage={openExtensionsPage}
-                      openGuide={openGuide}
-                      openTestPage={openTestPage}
-                      retryPrepare={ensureLayout}
-                      setBrowser={setBrowser}
-                      showFolder={showFolder}
-                      showTestStatus={false}
-                      status={status}
-                      statusDetail={statusDetail}
-                      statusMessage={statusMessage}
-                    />
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-callout border border-line bg-elevated p-3.5 [@media(max-height:640px)]:p-3">
+            {showRepair && (
+              <div className="rounded-callout border border-line bg-surface p-3.5">
                 <SetupGuide
                   browser={browser}
                   busy={busy}
@@ -266,83 +188,94 @@ export function BrowserControlSetupDialog({
                   retryPrepare={ensureLayout}
                   setBrowser={setBrowser}
                   showFolder={showFolder}
-                  showTestStatus
+                  showTestStatus={false}
                   status={status}
                   statusDetail={statusDetail}
                   statusMessage={statusMessage}
                 />
               </div>
             )}
+          </>
+        ) : (
+          <div className="rounded-callout border border-line bg-surface p-3.5">
+            <SetupGuide
+              browser={browser}
+              busy={busy}
+              bridgeReady={bridgeReady}
+              copied={copied}
+              copy={copy}
+              copyPath={copyPath}
+              includeTest
+              layoutError={layoutError}
+              layoutReady={layoutReady}
+              openError={openError}
+              openExtensionsPage={openExtensionsPage}
+              openGuide={openGuide}
+              openTestPage={openTestPage}
+              retryPrepare={ensureLayout}
+              setBrowser={setBrowser}
+              showFolder={showFolder}
+              showTestStatus
+              status={status}
+              statusDetail={statusDetail}
+              statusMessage={statusMessage}
+            />
           </div>
+        )}
 
-          <DialogActionRow
-            align="between"
-            className="mt-0 shrink-0 border-t border-line bg-elevated px-6 py-3 [@media(max-height:640px)]:py-2.5"
-          >
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={connected ? "ghost" : "secondary"}
-                size="md"
-                disabled={busy || !layoutReady}
-                onClick={() => void probe(needsWebpage ? "recheck" : "manual")}
-                leadingIcon={
-                  busy ? (
-                    <CircleNotch size={13} weight="thin" className="spin" />
-                  ) : connected ? (
-                    <ArrowsClockwise size={13} weight="thin" />
-                  ) : (
-                    <CursorClick size={13} weight="thin" />
-                  )
-                }
-              >
-                {busy
-                  ? copy.testing
-                  : connected
-                    ? copy.retest
-                    : needsWebpage
-                      ? copy.recheck
-                      : copy.test}
-              </Button>
-              {(connected || needsWebpage) && (
-                <Button
-                  variant="ghost"
-                  size="md"
-                  onClick={() => setShowRepair((show) => !show)}
-                  leadingIcon={<PuzzlePiece size={13} weight="thin" />}
-                >
-                  {showRepair
-                    ? copy.hideRepair
-                    : needsWebpage
-                      ? copy.reinstallOrRepair
-                      : copy.repairTitle}
-                </Button>
-              )}
-            </div>
-            {connected ? (
-              <Button
-                variant="accent-secondary"
-                size="md"
-                title={copy.runDemoTitle}
-                onClick={() => {
-                  handleOpenChange(false);
-                  onRunDemo?.();
-                }}
-              >
-                {copy.runDemo}
-              </Button>
-            ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={connected ? "ghost" : "secondary"}
+              size="md"
+              disabled={busy || !layoutReady}
+              onClick={() => void probe(needsWebpage ? "recheck" : "manual")}
+              leadingIcon={
+                busy ? (
+                  <CircleNotch size={13} weight="thin" className="spin" />
+                ) : connected ? (
+                  <ArrowsClockwise size={13} weight="thin" />
+                ) : (
+                  <CursorClick size={13} weight="thin" />
+                )
+              }
+            >
+              {busy
+                ? copy.testing
+                : connected
+                  ? copy.retest
+                  : needsWebpage
+                    ? copy.recheck
+                    : copy.test}
+            </Button>
+            {(connected || needsWebpage) && (
               <Button
                 variant="ghost"
                 size="md"
-                onClick={() => handleOpenChange(false)}
+                onClick={() => setShowRepair((show) => !show)}
+                leadingIcon={<PuzzlePiece size={13} weight="thin" />}
               >
-                {copy.later}
+                {showRepair
+                  ? copy.hideRepair
+                  : needsWebpage
+                    ? copy.reinstallOrRepair
+                    : copy.repairTitle}
               </Button>
             )}
-          </DialogActionRow>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          </div>
+          {connected && (
+            <Button
+              variant="accent-secondary"
+              size="md"
+              title={copy.runDemoTitle}
+              onClick={() => onRunDemo?.()}
+            >
+              {copy.runDemo}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -645,7 +578,7 @@ function ConnectionStatusCard({
           ? "border-line-subtle bg-transparent text-ink-muted"
           : status === "error"
             ? "border-error/20 bg-error/[var(--opacity-subtle)] text-error"
-            : "border-line bg-elevated text-ink-muted",
+            : "border-line bg-surface text-ink-muted",
       )}
     >
       <div className="flex items-start gap-2">

@@ -238,6 +238,7 @@ const zhCopy = {
     runDemoTitle: "新建一条对话，让 Galley 打开浏览器搜索天气",
     demoPrompt:
       "请打开百度，搜索今天的天气，并告诉我结果。不要用代码或外部 API 查询。",
+    tabSubtitle: "让 Galley 读取和操作你的浏览器，并沿用你的登录态。",
     openChromeTestPage: "Chrome",
     openEdgeTestPage: "Edge",
   },
@@ -315,6 +316,7 @@ const zhCopy = {
       approval: { label: "Approval", helper: "审批" },
       agent: { label: "Agent", helper: "智能体接入" },
       im: { label: "Channels", helper: "聊天软件" },
+      browser: { label: "Browser Control", helper: "浏览器控制" },
       shortcuts: { label: "Shortcuts", helper: "快捷键" },
       about: { label: "About", helper: "关于" },
     },
@@ -1307,6 +1309,8 @@ const enCopy: AppCopy = {
       "Create a chat that asks Galley to open the browser and search for weather",
     demoPrompt:
       "Open Baidu, search for today's weather, and tell me the result. Do not use code or external APIs.",
+    tabSubtitle:
+      "Let Galley read and operate your browser, using your existing login state.",
     openChromeTestPage: "Chrome",
     openEdgeTestPage: "Edge",
   },
@@ -1385,6 +1389,7 @@ const enCopy: AppCopy = {
       approval: { label: "Approval", helper: "审批" },
       agent: { label: "Agent", helper: "智能体接入" },
       im: { label: "Channels", helper: "Messaging" },
+      browser: { label: "Browser Control", helper: "Browser control" },
       shortcuts: { label: "Shortcuts", helper: "快捷键" },
       about: { label: "About", helper: "关于" },
     },

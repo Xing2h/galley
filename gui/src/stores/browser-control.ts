@@ -34,7 +34,6 @@ interface BrowserControlState {
   layout: BrowserControlLayout | null;
   layoutError: string | null;
   lastProbe: BrowserControlProbe | null;
-  setupOpen: boolean;
   busy: boolean;
   error: string | null;
   verified: boolean;
@@ -44,8 +43,6 @@ interface BrowserControlState {
   probe: (
     context?: BrowserControlProbeContext,
   ) => Promise<BrowserControlProbe | null>;
-  openSetup: () => void;
-  closeSetup: () => void;
 }
 
 export const useBrowserControlStore = create<BrowserControlState>(
@@ -54,7 +51,6 @@ export const useBrowserControlStore = create<BrowserControlState>(
     layout: null,
     layoutError: null,
     lastProbe: null,
-    setupOpen: false,
     busy: false,
     error: null,
     verified: false,
@@ -137,8 +133,5 @@ export const useBrowserControlStore = create<BrowserControlState>(
         return null;
       }
     },
-
-    openSetup: () => set({ setupOpen: true }),
-    closeSetup: () => set({ setupOpen: false }),
   }),
 );

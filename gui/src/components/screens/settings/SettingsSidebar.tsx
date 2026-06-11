@@ -5,6 +5,7 @@ import {
   Keyboard,
   Key,
   PlugsConnected,
+  PuzzlePiece,
   ShieldCheck,
 } from "@phosphor-icons/react";
 
@@ -31,6 +32,7 @@ export function SettingsSidebar({
   resolvedTheme,
   onChangeThemePreference,
   showImTab,
+  showBrowserTab,
 }: {
   tab: SettingsTab;
   onChange: (tab: SettingsTab) => void;
@@ -41,6 +43,7 @@ export function SettingsSidebar({
   resolvedTheme: ResolvedTheme;
   onChangeThemePreference: (preference: ThemePreference) => void;
   showImTab: boolean;
+  showBrowserTab: boolean;
 }) {
   const copy = useCopy();
   const showChineseHelpers = isChineseLanguage(resolvedLanguage);
@@ -83,6 +86,15 @@ export function SettingsSidebar({
             label={tabCopy.im.label}
             subLabel={showChineseHelpers ? tabCopy.im.helper : undefined}
             onClick={() => onChange("im")}
+          />
+        )}
+        {showBrowserTab && (
+          <SettingsTabButton
+            active={tab === "browser"}
+            Icon={PuzzlePiece}
+            label={tabCopy.browser.label}
+            subLabel={showChineseHelpers ? tabCopy.browser.helper : undefined}
+            onClick={() => onChange("browser")}
           />
         )}
         <SettingsTabButton

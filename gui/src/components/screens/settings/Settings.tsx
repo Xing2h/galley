@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { SettingsAbout } from "@/components/screens/settings/SettingsAbout";
 import { SettingsApproval } from "@/components/screens/settings/SettingsApproval";
+import { SettingsBrowserControl } from "@/components/screens/settings/SettingsBrowserControl";
 import { SettingsIM } from "@/components/screens/settings/SettingsIM";
 import { SettingsIntegration } from "@/components/screens/settings/SettingsIntegration";
 import { SettingsModels } from "@/components/screens/settings/SettingsModels";
@@ -51,6 +52,7 @@ export interface SettingsProps {
   onChangeBridgePython?: () => void;
   onReRunHealthCheck?: () => void;
   onOpenSetupAssistant?: () => void;
+  onRunBrowserControlDemo?: () => void;
   onToggleExternalPython?: (useExternal: boolean) => void;
   onCommitGAPath?: (path: string) => Promise<void>;
   onChangeRuntimeKind?: (kind: RuntimeKind) => void;
@@ -105,6 +107,7 @@ export function Settings({
   onChangeBridgePython,
   onReRunHealthCheck,
   onOpenSetupAssistant,
+  onRunBrowserControlDemo,
   onToggleExternalPython,
   onCommitGAPath,
   onChangeRuntimeKind,
@@ -127,6 +130,12 @@ export function Settings({
   useEffect(() => {
     if (!showImTab && tab === "im") setTab("runtime");
   }, [setTab, showImTab, tab]);
+
+  const showBrowserTab = activeRuntimeKind === "managed";
+
+  useEffect(() => {
+    if (!showBrowserTab && tab === "browser") setTab("runtime");
+  }, [setTab, showBrowserTab, tab]);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -165,6 +174,7 @@ export function Settings({
             resolvedTheme={resolvedTheme}
             onChangeThemePreference={onChangeThemePreference}
             showImTab={showImTab}
+            showBrowserTab={showBrowserTab}
           />
 
           <div className="min-w-0 flex-1 overflow-y-auto bg-app">
@@ -206,6 +216,9 @@ export function Settings({
                   hasManagedRuntimeConfigured={hasManagedRuntimeConfigured}
                   onOpenModels={() => setTab("models")}
                 />
+              )}
+              {showBrowserTab && tab === "browser" && (
+                <SettingsBrowserControl onRunDemo={onRunBrowserControlDemo} />
               )}
               {tab === "shortcuts" && <SettingsShortcuts />}
               {tab === "about" && (
