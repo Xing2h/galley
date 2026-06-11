@@ -764,7 +764,7 @@ Context Window / 价格 / token estimate（V0.1 拿不到 + 信息噪音）
 #### Approval Dock（Composer 上方 sticky）
 
 - **仅在有 pending approval 时存在**（不是 hide，是不渲染）
-- amber-tint `#F8EDDA` 背景 + 3px 深琥珀左竖条
+- warning 琥珀浅 tint 背景（`bg-warning/[opacity-subtle]`）+ 3px 深琥珀左竖条 —— 待审批是 caution 态，统一归到琥珀；杏沙留给功能与「已通过」正向态
 - 单行：`{count} pending approval · Next: {tool_name}` + Advance button
 - **不可 dismiss**（必处理状态必须 surface）
 - hover 显示 tooltip 预览

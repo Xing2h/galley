@@ -833,7 +833,7 @@ const zhCopy = {
     codeNoCommand: "(no command)",
     emptyContent: "(empty content)",
     fileWriteDeferred:
-      "内容由 LLM 当前回复决定，将写入此文件。do_file_write 在 dispatch 后才从 response 提取实际内容，所以这里看不到预览。",
+      "内容由 AI 这次的回复决定，确认后才会写入，所以这里暂时看不到预览。",
   },
   approval: {
     allow: "允许",
@@ -1921,7 +1921,7 @@ const enCopy: AppCopy = {
     codeNoCommand: "(no command)",
     emptyContent: "(empty content)",
     fileWriteDeferred:
-      "The content comes from the LLM's current response and will be written to this file. do_file_write extracts the actual content from the response after dispatch, so Galley cannot preview it here.",
+      "The content comes from the AI's current reply and is written only after you approve, so there's no preview here yet.",
   },
   approval: {
     allow: "Allow",

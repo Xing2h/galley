@@ -32,8 +32,8 @@ export function ApprovalDock({ pending, onAdvance }: ApprovalDockProps) {
   const next = pending[0];
 
   return (
-    <div className="mb-3 flex items-center gap-3 rounded-md border border-warning/30 border-l-[3px] border-l-warning bg-brand-soft px-3.5 py-2.5 text-[13px] text-ink">
-      <span className="inline-flex items-center gap-1.5 font-semibold">
+    <div className="mb-3 flex items-center gap-3 rounded-md border border-warning/30 border-l-[3px] border-l-warning bg-warning/[var(--opacity-subtle)] px-3.5 py-2.5 text-[13px] text-ink">
+      <span className="inline-flex shrink-0 items-center gap-1.5 font-semibold">
         <Pause
           size={14}
           weight="thin"
@@ -42,7 +42,7 @@ export function ApprovalDock({ pending, onAdvance }: ApprovalDockProps) {
         {copy.approval.pendingCount(pending.length)}
       </span>
 
-      <span className="text-[12.5px] text-ink-soft">
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-soft">
         {copy.approval.nextApproval}{" "}
         <span className="rounded-[4px] bg-hover px-1.5 py-px font-mono text-[12px] text-ink-soft">
           {next.toolName}
@@ -62,7 +62,7 @@ export function ApprovalDock({ pending, onAdvance }: ApprovalDockProps) {
         size="sm"
         onClick={() => onAdvance?.(next)}
         aria-label={copy.approval.goHandleApprovalAria(next.toolName)}
-        className="ml-auto text-[12.5px] font-medium text-ink"
+        className="shrink-0 text-[12.5px] font-medium text-ink"
         trailingIcon={<ArrowRight size={12} weight="thin" />}
       >
         {copy.approval.goHandleApproval}
