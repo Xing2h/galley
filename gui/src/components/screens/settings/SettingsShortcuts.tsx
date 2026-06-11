@@ -96,11 +96,11 @@ export function SettingsShortcuts() {
       {groups.map((g) => (
         <section key={g.title}>
           <SettingsSectionLabel>{g.title}</SettingsSectionLabel>
-          <ul className="mt-2 m-0 list-none space-y-0.5 p-0">
+          <ul className="m-0 mt-2 list-none divide-y divide-line overflow-hidden rounded-sm border border-line bg-surface p-0">
             {g.rows.map((r) => (
               <li
                 key={r.combo}
-                className="flex items-center gap-3 rounded-sm px-2 py-2 transition-colors hover:bg-hover"
+                className="flex items-center gap-3 px-3 py-2.5"
               >
                 <KbdCombo combo={r.combo} />
                 <div className="min-w-0 flex-1">
@@ -139,7 +139,7 @@ function KbdCombo({ combo }: { combo: string }) {
               {partIndex > 0 && (
                 <span className="text-[10.5px] text-ink-muted">+</span>
               )}
-              <kbd className="inline-flex min-w-[28px] items-center justify-center rounded-sm border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] text-ink">
+              <kbd className="inline-flex min-w-[28px] items-center justify-center rounded-sm border border-line bg-app px-1.5 py-0.5 font-mono text-[11px] text-ink">
                 {part}
               </kbd>
             </span>

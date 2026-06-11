@@ -53,33 +53,40 @@ export function SettingsAbout({
           heritage when they look; new users see a clean standalone
           brand on the welcome screen. The GA capitalization is a
           quiet bow, not a billboard. */}
-      <div className="rounded-md border border-line bg-elevated px-4 py-3 font-serif text-[13.5px] italic leading-[1.65] text-ink-soft">
+      <div className="rounded-callout border border-line bg-surface px-4 py-3 font-serif text-[13.5px] italic leading-[1.65] text-ink-soft">
         {copy.settings.about.origin}
       </div>
 
-      <dl className="m-0 grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
-        <dt className="text-ink-muted">{copy.settings.about.galleyVersion}</dt>
-        <dd className="m-0 min-w-0">
-          <SettingsUpdateControl
-            hasRunningSessions={hasRunningSessions}
-            leading={
-              <span className="font-mono text-ink">v{workbenchVersion}</span>
-            }
-          />
-        </dd>
+      <div>
+        <SettingsSectionLabel>
+          {copy.settings.about.version}
+        </SettingsSectionLabel>
+        <dl className="m-0 mt-2 grid grid-cols-[120px_1fr] gap-y-2 text-[12.5px]">
+          <dt className="text-ink-muted">
+            {copy.settings.about.galleyVersion}
+          </dt>
+          <dd className="m-0 min-w-0">
+            <SettingsUpdateControl
+              hasRunningSessions={hasRunningSessions}
+              leading={
+                <span className="font-mono text-ink">v{workbenchVersion}</span>
+              }
+            />
+          </dd>
 
-        <dt className="text-ink-muted">
-          {copy.settings.about.bundledGAVersion}
-        </dt>
-        <dd className="m-0 font-mono text-ink">
-          {managedKernelShort}
-          {managedKernelDate && (
-            <span className="text-ink-muted"> · {managedKernelDate}</span>
-          )}
-        </dd>
-      </dl>
+          <dt className="text-ink-muted">
+            {copy.settings.about.bundledGAVersion}
+          </dt>
+          <dd className="m-0 font-mono text-ink">
+            {managedKernelShort}
+            {managedKernelDate && (
+              <span className="text-ink-muted"> · {managedKernelDate}</span>
+            )}
+          </dd>
+        </dl>
+      </div>
 
-      <div className="mt-10">
+      <div>
         <SettingsSectionLabel>{copy.settings.about.links}</SettingsSectionLabel>
         <div className="mt-3 space-y-1">
           <ExternalLink

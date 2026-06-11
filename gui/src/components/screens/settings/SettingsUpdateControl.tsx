@@ -196,7 +196,7 @@ function updateActionView(
           : copy.updates.preparing,
         Icon: hasRunningSessions ? Warning : CircleNotch,
         className: hasRunningSessions
-          ? "border-warning/30 bg-warning/10 text-warning"
+          ? "border-warning/30 bg-warning/[var(--opacity-soft)] text-warning"
           : "border-line bg-elevated text-brand-strong",
         spin: !hasRunningSessions,
       };

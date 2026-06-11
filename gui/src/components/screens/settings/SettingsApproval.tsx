@@ -116,7 +116,7 @@ export function SettingsApproval({
           <SettingsSectionLabel>
             {approvalCopy.requiredTools}
           </SettingsSectionLabel>
-          <div className="mt-2 space-y-1">
+          <div className="mt-2 divide-y divide-line overflow-hidden rounded-sm border border-line bg-surface">
             {DEFAULT_TOOLS.map((tool) => {
               const required = config.requiredTools.includes(tool);
               return (
@@ -124,12 +124,12 @@ export function SettingsApproval({
                   key={tool}
                   checked={required}
                   onCheckedChange={(c) => toggleRequired(tool, c)}
-                  className="flex items-center gap-2.5 rounded-sm px-2 py-1.5 transition-colors hover:bg-hover"
+                  className="flex items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-hover"
                 >
                   <span className="font-mono text-[12.5px] text-ink">
                     {tool}
                   </span>
-                  <span className="ml-auto text-[11px] text-ink-muted">
+                  <span className="text-[11px] text-ink-muted">
                     {
                       (approvalCopy.toolDescriptions as Record<string, string>)[
                         tool
@@ -201,7 +201,7 @@ function YoloSection({
     <div
       className={cn(
         "rounded-callout border bg-surface px-4 py-3.5",
-        enabled ? "border-warning/30 bg-warning/5" : "border-line",
+        enabled ? "border-warning/30 bg-warning/[var(--opacity-subtle)]" : "border-line",
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -348,11 +348,11 @@ function RuleList({
     );
   }
   return (
-    <div className="mt-2 space-y-1">
+    <div className="mt-2 divide-y divide-line overflow-hidden rounded-sm border border-line bg-surface">
       {rules.map((tool) => (
         <div
           key={tool}
-          className="flex items-center justify-between rounded-sm bg-surface px-3 py-2 text-[12.5px]"
+          className="flex items-center justify-between px-3 py-2.5 text-[12.5px]"
         >
           <span className="font-mono text-ink">{tool}</span>
           <IconButton

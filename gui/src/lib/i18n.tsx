@@ -597,6 +597,7 @@ const zhCopy = {
     },
     about: {
       subtitle: "基于 GenericAgent 的开源本地 Agent 工作台",
+      version: "版本",
       links: "Links",
       feedback: "反馈建议",
       origin:
@@ -615,7 +616,7 @@ const zhCopy = {
         "Galley 启动时把 CLI 的绝对路径写进这个文件。Galley Supervisor SOP 第一步读它来定位 galley。",
       agentSop: "Galley Supervisor SOP",
       sopDescription:
-        "复制给你信任的本地 Agent，让它通过 Galley 调度 sessions。",
+        "复制给你的 Agent，让它学会用 Galley 调度 sessions。",
       sopCapabilities: [
         "继续现有 session",
         "新开单个 session",
@@ -1684,6 +1685,7 @@ const enCopy: AppCopy = {
     },
     about: {
       subtitle: "Open-source local Agent workbench built on GenericAgent",
+      version: "Version",
       links: "Links",
       feedback: "Feedback",
       origin:
@@ -1702,7 +1704,7 @@ const enCopy: AppCopy = {
         "Galley writes the absolute CLI path here on startup. Galley Supervisor SOP reads it first to locate galley.",
       agentSop: "Galley Supervisor SOP",
       sopDescription:
-        "Copy it to a local Agent you trust so it can coordinate Galley sessions.",
+        "Copy it to your Agent so it learns to drive Galley sessions.",
       sopCapabilities: [
         "Continue an existing session",
         "Start one focused session",

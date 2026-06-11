@@ -143,7 +143,7 @@ export function SettingsBrowserControl({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <SettingsPanelHeader
         title={fullCopy.settings.tabs.browser.label}
         subtitle={copy.tabSubtitle}
@@ -486,6 +486,7 @@ function SetupGuide({
                 status={status}
                 statusDetail={statusDetail}
                 statusMessage={statusMessage}
+                embedded
               />
             </div>
           )}
@@ -561,6 +562,7 @@ function ConnectionStatusCard({
   status,
   statusDetail,
   statusMessage,
+  embedded = false,
 }: {
   actions?: ReactNode;
   busy: boolean;
@@ -568,17 +570,27 @@ function ConnectionStatusCard({
   status: string;
   statusDetail?: string;
   statusMessage: string;
+  embedded?: boolean;
 }) {
   const offline = status === "offline";
   return (
     <div
       className={cn(
-        "rounded-sm border px-3 py-2 text-[12px] leading-[1.5]",
-        connected
-          ? "border-line-subtle bg-transparent text-ink-muted"
-          : status === "error"
-            ? "border-error/20 bg-error/[var(--opacity-subtle)] text-error"
-            : "border-line bg-surface text-ink-muted",
+        "text-[12px] leading-[1.5]",
+        embedded
+          ? connected
+            ? "text-ink-muted"
+            : status === "error"
+              ? "text-error"
+              : "text-ink-muted"
+          : cn(
+              "rounded-sm border px-3 py-2",
+              connected
+                ? "border-line-subtle bg-transparent text-ink-muted"
+                : status === "error"
+                  ? "border-error/20 bg-error/[var(--opacity-subtle)] text-error"
+                  : "border-line bg-surface text-ink-muted",
+            ),
       )}
     >
       <div className="flex items-start gap-2">

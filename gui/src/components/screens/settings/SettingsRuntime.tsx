@@ -1,6 +1,4 @@
 import {
-  CaretDown,
-  CaretRight,
   Check,
   CircleNotch,
   FolderOpen,
@@ -19,6 +17,7 @@ import { AdvancedRuntimeSettings } from "@/components/screens/settings/runtime/A
 import { BuiltinRuntimeCard } from "@/components/screens/settings/runtime/BuiltinRuntimeCard";
 import { GAVersionCard } from "@/components/screens/settings/runtime/GAVersionCard";
 import { HealthCheckSection } from "@/components/screens/settings/runtime/HealthCheckSection";
+import { RuntimeAccordionRow } from "@/components/screens/settings/runtime/RuntimeAccordionRow";
 import type { SettingsRuntimeProps } from "@/components/screens/settings/runtime/types";
 import { SettingsUpdateControl } from "@/components/screens/settings/SettingsUpdateControl";
 import { Button } from "@/components/ui/button";
@@ -98,7 +97,7 @@ export function SettingsRuntime({
   };
 
   const externalRuntimeDetails = (
-    <div className="space-y-7 border-t border-line pt-5">
+    <div className="space-y-7 border-t border-line pt-6">
       <PathField
         label={runtimeCopy.externalPath}
         value={info.gaPath}
@@ -293,88 +292,65 @@ function ManagedRuntimeCard({
           defaultModel ? ` · ${defaultModel.displayName}` : ""
         }`;
   return (
-    <div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setExpanded((v) => !v)}
-        className="px-0 text-[11.5px] hover:bg-transparent hover:underline"
-        leadingIcon={
-          expanded ? (
-            <CaretDown size={12} weight="bold" />
-          ) : (
-            <CaretRight size={12} weight="bold" />
-          )
-        }
-      >
-        {copy.advancedDiagnostics}
-      </Button>
-      {expanded && (
-        <>
-          <div className="mt-2 rounded-sm border border-line bg-surface px-3 py-2.5">
-            <RuntimeDiagnosticRow
-              label={copy.currentMode}
-              value={
-                activeRuntimeKind === "managed"
-                  ? copy.bundledGA
-                  : copy.externalGA
-              }
-            />
-            <RuntimeDiagnosticRow
-              label={copy.kernelVersion}
-              value={upstreamShort}
-            />
-            <RuntimeDiagnosticRow
-              label="Patch stack"
-              value={
-                diagnostics
-                  ? `${diagnostics.patchStackId} · ${diagnostics.patchCount} patches`
-                  : copy.notLoaded
-              }
-            />
-            <RuntimeDiagnosticRow
-              label="Code"
-              value={
-                diagnostics
-                  ? diagnostics.code.agentmainExists
-                    ? diagnostics.paths.codeRoot
-                    : `${diagnostics.paths.codeRoot} · ${copy.pendingPackage}`
-                  : copy.notLoaded
-              }
-            />
-            <RuntimeDiagnosticRow label="Prompts" value={promptStatus} />
-            <RuntimeDiagnosticRow
-              label={copy.memorySop}
-              value={memorySeedStatus}
-            />
-            <RuntimeDiagnosticRow
-              label="State"
-              value={
-                diagnostics
-                  ? diagnostics.state.initialized
-                    ? diagnostics.paths.stateRoot
-                    : `${diagnostics.paths.stateRoot} · ${copy.uninitialized}`
-                  : copy.notLoaded
-              }
-            />
-            <RuntimeDiagnosticRow label={copy.models} value={modelStatus} />
-            <RuntimeDiagnosticRow
-              label="Config file"
-              value={
-                diagnostics
-                  ? diagnostics.state.modelConfigExists
-                    ? diagnostics.paths.modelConfigPath
-                    : `${diagnostics.paths.modelConfigPath} · ${copy.notGenerated}`
-                  : copy.notLoaded
-              }
-            />
-          </div>
-          <p className="mt-2 text-[11.5px] leading-[1.55] text-ink-muted">
-            {copy.diagnosticsNote}
-          </p>
-        </>
-      )}
-    </div>
+    <RuntimeAccordionRow
+      title={copy.advancedDiagnostics}
+      expanded={expanded}
+      onToggle={() => setExpanded((v) => !v)}
+    >
+      <div>
+        <RuntimeDiagnosticRow
+          label={copy.currentMode}
+          value={
+            activeRuntimeKind === "managed" ? copy.bundledGA : copy.externalGA
+          }
+        />
+        <RuntimeDiagnosticRow label={copy.kernelVersion} value={upstreamShort} />
+        <RuntimeDiagnosticRow
+          label="Patch stack"
+          value={
+            diagnostics
+              ? `${diagnostics.patchStackId} · ${diagnostics.patchCount} patches`
+              : copy.notLoaded
+          }
+        />
+        <RuntimeDiagnosticRow
+          label="Code"
+          value={
+            diagnostics
+              ? diagnostics.code.agentmainExists
+                ? diagnostics.paths.codeRoot
+                : `${diagnostics.paths.codeRoot} · ${copy.pendingPackage}`
+              : copy.notLoaded
+          }
+        />
+        <RuntimeDiagnosticRow label="Prompts" value={promptStatus} />
+        <RuntimeDiagnosticRow label={copy.memorySop} value={memorySeedStatus} />
+        <RuntimeDiagnosticRow
+          label="State"
+          value={
+            diagnostics
+              ? diagnostics.state.initialized
+                ? diagnostics.paths.stateRoot
+                : `${diagnostics.paths.stateRoot} · ${copy.uninitialized}`
+              : copy.notLoaded
+          }
+        />
+        <RuntimeDiagnosticRow label={copy.models} value={modelStatus} />
+        <RuntimeDiagnosticRow
+          label="Config file"
+          value={
+            diagnostics
+              ? diagnostics.state.modelConfigExists
+                ? diagnostics.paths.modelConfigPath
+                : `${diagnostics.paths.modelConfigPath} · ${copy.notGenerated}`
+              : copy.notLoaded
+          }
+        />
+      </div>
+      <p className="mt-3 text-[11.5px] leading-[1.55] text-ink-muted">
+        {copy.diagnosticsNote}
+      </p>
+    </RuntimeAccordionRow>
   );
 }
 

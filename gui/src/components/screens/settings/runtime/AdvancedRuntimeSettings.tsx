@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 import { SettingsSectionLabel } from "@/components/screens/settings/settings-ui";
 import { useCopy } from "@/lib/i18n";
@@ -31,18 +31,13 @@ export function AdvancedRuntimeSettings({
   children: ReactNode;
 }) {
   const copy = useCopy().settings.runtime;
-  const [setupAssistantExpanded, setSetupAssistantExpanded] = useState(false);
   return (
     <div>
       <SettingsSectionLabel>{copy.more}</SettingsSectionLabel>
-      <div className="mt-2 space-y-3">
+      <div className="mt-2 divide-y divide-line overflow-hidden rounded-sm border border-line bg-surface">
         <SetupAssistantAccess
-          expanded={setupAssistantExpanded}
           hasRunningSessions={hasRunningSessions}
           onOpenSetupAssistant={onOpenSetupAssistant}
-          onToggleExpanded={() =>
-            setSetupAssistantExpanded((current) => !current)
-          }
         />
 
         <ExternalRuntimeAccess

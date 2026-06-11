@@ -39,7 +39,7 @@ export function GAVersionCard({
               className={cn(
                 "ml-1 inline-flex items-center gap-1 rounded-sm px-1.5 py-px text-[11px] not-italic",
                 isMatched
-                  ? "bg-success/10 text-success"
+                  ? "bg-success/[var(--opacity-soft)] text-success"
                   : "bg-hover text-ink-muted",
               )}
             >

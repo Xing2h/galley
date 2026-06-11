@@ -61,7 +61,7 @@ export function BuiltinRuntimeCard({
                   {copy.recommended}
                 </span>
                 {active && (
-                  <span className="rounded-sm bg-success/10 px-1.5 py-px text-[10.5px] text-success">
+                  <span className="rounded-sm bg-hover px-1.5 py-px text-[10.5px] text-ink-muted">
                     {copy.active}
                   </span>
                 )}

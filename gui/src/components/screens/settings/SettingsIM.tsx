@@ -339,36 +339,29 @@ function WeChatCard({
   return (
     <section
       className={cn(
-        "group/im overflow-hidden rounded-sm border border-line bg-surface",
-        "transition-[background-color,border-color,box-shadow,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
-        "hover:-translate-y-[0.5px] hover:border-line-strong hover:bg-hover/45 hover:shadow-card",
-        "active:translate-y-[0.5px] active:bg-hover/60 active:shadow-[var(--shadow-button-raised-active)]",
-        "focus-within:border-line-strong focus-within:bg-hover/45 focus-within:shadow-card",
-        expanded &&
-          "border-line-strong bg-selected/35 shadow-card hover:bg-selected/45 focus-within:bg-selected/35 active:bg-selected/50",
+        "group/im overflow-hidden rounded-sm border border-line bg-surface transition-colors",
+        expanded && "border-line-strong",
       )}
     >
       <div
         className={cn(
           "flex min-w-0 items-center gap-3 px-2 py-1.5 transition-colors",
-          expanded && "bg-selected/35",
+          expanded && "bg-hover/40",
         )}
       >
         <button
           type="button"
           aria-expanded={expanded}
           className={cn(
-            "group/toggle flex min-w-0 flex-1 items-center gap-3 rounded-sm px-1.5 py-0.5 text-left",
-            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
+            "group/toggle flex min-w-0 flex-1 items-center gap-3 rounded-sm px-1.5 py-0.5 text-left transition-colors",
+            "hover:bg-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
           )}
           onClick={() => setExpandedOverride(!expanded)}
         >
           <span
             className={cn(
-              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm transition-colors",
-              expanded
-                ? "bg-brand-soft text-brand-strong"
-                : "text-ink-muted group-hover/im:bg-brand-soft group-hover/im:text-brand-strong group-focus-within/im:bg-brand-soft group-focus-within/im:text-brand-strong",
+              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-soft transition-colors",
+              expanded && "text-ink",
             )}
           >
             {expanded ? (
@@ -380,11 +373,7 @@ function WeChatCard({
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <WeChatGlyph active={expanded} />
             <span
-              className={cn(
-                "min-w-0 truncate text-[13px] font-medium transition-colors",
-                "group-hover/im:text-brand-strong group-focus-within/im:text-brand-strong",
-                expanded ? "text-brand-strong" : "text-ink",
-              )}
+              className="min-w-0 truncate text-[13px] font-medium text-ink"
               title={imCopy.wechatTitle}
             >
               {imCopy.wechatTitle}
@@ -697,7 +686,7 @@ function ConnectionSteps({
       <ol className="space-y-1.5 text-[12.5px] leading-[1.5] text-ink-soft">
         {steps.map((step, index) => (
           <li key={step} className="flex gap-2.5">
-            <span className="mt-[1px] inline-flex size-5 shrink-0 items-center justify-center rounded-sm border border-line bg-elevated text-[10.5px] font-medium text-ink-muted">
+            <span className="mt-[1px] inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-line bg-app font-mono text-[11px] font-medium tabular-nums text-ink-soft">
               {index + 1}
             </span>
             <span className="min-w-0 pt-px">{step}</span>
@@ -715,9 +704,7 @@ function WeChatGlyph({ active }: { active: boolean }) {
       aria-hidden="true"
       className={cn(
         "inline-flex size-7 shrink-0 items-center justify-center rounded-sm transition-colors",
-        active
-          ? "bg-brand-soft text-brand-strong"
-          : "text-ink-muted group-hover/im:bg-brand-soft group-hover/im:text-brand-strong group-focus-within/im:bg-brand-soft group-focus-within/im:text-brand-strong",
+        active ? "text-ink" : "text-ink-soft",
       )}
     >
       <svg viewBox="0 0 24 24" className="size-5" fill="none">

@@ -35,7 +35,7 @@ export function ExternalRuntimeCard({
     <div>
       <div
         className={cn(
-          "flex flex-wrap items-center justify-between gap-3 rounded-sm border border-line bg-surface px-3 py-2.5",
+          "flex flex-wrap items-center justify-between gap-3 rounded-sm py-1.5",
           highlighted && "runtime-mode-highlight",
         )}
       >

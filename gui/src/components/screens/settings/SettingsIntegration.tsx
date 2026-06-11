@@ -276,8 +276,8 @@ export function SettingsIntegration() {
         <div className="mt-3 flex items-center gap-3">
           <Button
             type="button"
-            variant="secondary"
-            size="sm"
+            variant="primary"
+            size="md"
             disabled={sopState.kind === "pending" || !sopBody}
             onClick={() => void copySop()}
           >
@@ -308,7 +308,7 @@ export function SettingsIntegration() {
               variant="ghost"
               size="sm"
               aria-label={`${agentCopy.copyExample}: ${example}`}
-              className="group h-auto w-full items-start justify-start gap-1.5 rounded-none border-l border-transparent px-3 py-0.5 text-left hover:border-line hover:bg-transparent focus-visible:border-brand/40 focus-visible:bg-hover/50"
+              className="group h-auto w-full items-start justify-start gap-1.5 rounded-none border-l border-line px-3 py-1 text-left hover:border-brand/40 hover:bg-hover/50 focus-visible:border-brand/40 focus-visible:bg-hover/50"
               onClick={() => void copyExample(example, index)}
             >
               <span className="min-w-0 flex-1 whitespace-normal text-[12.5px] leading-[1.55] text-ink">
@@ -318,7 +318,7 @@ export function SettingsIntegration() {
                 className={`mt-[1px] flex size-5 shrink-0 items-center justify-center transition-opacity group-hover:text-ink ${
                   copiedExampleIndex === index
                     ? "text-ink opacity-100"
-                    : "text-ink-muted opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+                    : "text-ink-muted opacity-40 group-hover:opacity-100 group-focus-visible:opacity-100"
                 }`}
               >
                 {copiedExampleIndex === index ? (
@@ -332,24 +332,22 @@ export function SettingsIntegration() {
         </div>
       </section>
 
-      <section>
-        <Button
+      <section className="border-t border-line pt-2">
+        <button
           type="button"
-          variant="ghost"
-          size="sm"
-          className="px-0 text-[11.5px] hover:bg-transparent hover:underline"
-          leadingIcon={
-            advancedOpen ? (
-              <CaretDown size={12} weight="bold" />
-            ) : (
-              <CaretRight size={12} weight="bold" />
-            )
-          }
+          className="-mx-2 flex w-full items-center justify-between gap-3 rounded-sm px-2 py-2 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40"
           aria-expanded={advancedOpen}
           onClick={() => setAdvancedOpen((current) => !current)}
         >
-          {agentCopy.advanced}
-        </Button>
+          <span className="text-[12.5px] font-medium text-ink">
+            {agentCopy.advanced}
+          </span>
+          {advancedOpen ? (
+            <CaretDown size={12} weight="bold" className="shrink-0 text-ink-soft" />
+          ) : (
+            <CaretRight size={12} weight="bold" className="shrink-0 text-ink-soft" />
+          )}
+        </button>
 
         {advancedOpen && (
           <div className="mt-3 space-y-6">
@@ -363,7 +361,7 @@ export function SettingsIntegration() {
               <p className="mt-2 text-[12.5px] leading-[1.6] text-ink-soft">
                 {agentCopy.discoveryDescription}
               </p>
-              <dl className="mt-3 grid grid-cols-[150px_1fr] gap-x-3 text-[12.5px]">
+              <dl className="mt-3 grid grid-cols-[88px_1fr] gap-x-3 text-[12.5px]">
                 <dt className="text-ink-muted">{discoveryPlatformLabel}</dt>
                 <dd className="m-0 select-text break-all font-mono text-ink">
                   {discoveryFilePath}
