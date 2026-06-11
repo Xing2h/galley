@@ -98,12 +98,13 @@ const COMPOSER_ACTION_BUTTON = cn(
   // compression scale. Integer-pixel movement, never sub-pixel.
   "hover:-translate-y-px",
   "active:translate-y-[2px] active:scale-[0.97]",
+  "focus-visible:outline-none focus-visible:ring-2",
   "disabled:translate-y-0 disabled:scale-100 disabled:shadow-none",
 );
 
 const COMPOSER_SEND_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-brand-strong/40 bg-brand text-ink",
+  "border-brand-strong/40 bg-brand text-ink focus-visible:ring-brand/45",
   "shadow-[var(--shadow-brand-control)]",
   "hover:bg-brand-strong hover:text-elevated hover:shadow-[var(--shadow-brand-control-hover)]",
   "active:bg-brand-strong active:text-elevated active:shadow-[var(--shadow-control-press)]",
@@ -111,7 +112,7 @@ const COMPOSER_SEND_BUTTON = cn(
 
 const COMPOSER_STOP_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-warning/70 bg-warning text-elevated",
+  "border-warning/70 bg-warning text-elevated focus-visible:ring-warning/50",
   "shadow-[var(--shadow-composer-stop)]",
   "hover:bg-warning/90 hover:shadow-[var(--shadow-composer-stop-pulse)]",
   "active:shadow-[var(--shadow-control-press)]",
@@ -119,7 +120,7 @@ const COMPOSER_STOP_BUTTON = cn(
 
 const COMPOSER_CONFIG_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-line bg-surface text-ink-soft",
+  "border-line bg-surface text-ink-soft focus-visible:ring-brand/35",
   "shadow-[var(--shadow-neutral-control)]",
   "hover:border-brand/35 hover:bg-brand-soft hover:text-ink hover:shadow-[var(--shadow-neutral-control-hover)]",
   "active:shadow-[var(--shadow-control-press)]",
@@ -127,7 +128,7 @@ const COMPOSER_CONFIG_BUTTON = cn(
 
 const COMPOSER_GOAL_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-line bg-surface text-ink-soft",
+  "border-line bg-surface text-ink-soft focus-visible:ring-brand/40",
   "shadow-[var(--shadow-neutral-control)]",
   "hover:border-brand/45 hover:bg-brand-soft hover:text-brand-strong hover:shadow-[var(--shadow-neutral-control-hover)]",
   "active:shadow-[var(--shadow-control-press)]",
@@ -135,7 +136,7 @@ const COMPOSER_GOAL_BUTTON = cn(
 
 const COMPOSER_GOAL_BUTTON_ARMED = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-brand/45 bg-brand-soft text-brand-strong",
+  "border-brand/45 bg-brand-soft text-brand-strong focus-visible:ring-brand/45",
   "shadow-[var(--shadow-neutral-control)]",
   "hover:bg-brand/[var(--opacity-medium)] hover:shadow-[var(--shadow-neutral-control-hover)]",
   "active:shadow-[var(--shadow-control-press)]",
@@ -146,6 +147,7 @@ const COMPOSER_GOAL_SEND_BUTTON = cn(
   "text-[12.5px] font-semibold transition-[background-color,border-color,color,box-shadow,transform]",
   "duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
   "border-brand-strong/40 bg-brand text-ink",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/45",
   "shadow-[var(--shadow-brand-control)] hover:-translate-y-px hover:bg-brand-strong hover:text-elevated hover:shadow-[var(--shadow-brand-control-hover)]",
   "active:translate-y-[2px] active:scale-[0.97] active:bg-brand-strong active:text-elevated active:shadow-[var(--shadow-control-press)]",
   "disabled:translate-y-0 disabled:scale-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none",
@@ -813,7 +815,7 @@ function GoalConfirmDialog({
                     disabled={submitting}
                     aria-label={copy.composer.goalDurationCustomInput}
                     className={cn(
-                      "h-8 w-20 rounded-sm border bg-elevated px-2 text-[12.5px] font-medium text-ink outline-none transition-colors focus:border-brand",
+                      "h-8 w-20 rounded-sm border bg-app px-2 text-[12.5px] font-medium text-ink outline-none transition-colors focus:border-brand",
                       customBudgetValid ? "border-line" : "border-error/40",
                     )}
                   />
@@ -938,6 +940,7 @@ function LLMPill({
     "flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-[12.5px] text-ink-soft",
     "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
     "hover:bg-hover hover:text-ink",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
     disabled && "cursor-not-allowed opacity-60",
   );
 
@@ -988,7 +991,7 @@ function LLMPill({
           side="top"
           sideOffset={6}
           className={cn(
-            "z-50 min-w-[200px] max-w-[320px] rounded-md border border-line bg-elevated p-1 shadow-elevated",
+            "galley-pop-in z-50 min-w-[200px] max-w-[320px] rounded-md border border-line bg-elevated p-1 shadow-elevated",
           )}
         >
           {llms.map((llm) => {

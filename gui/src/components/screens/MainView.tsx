@@ -1,5 +1,5 @@
 import { ArrowDown } from "@phosphor-icons/react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { ApprovalDock } from "@/components/conversation/ApprovalDock";
 import { AskUserBubble } from "@/components/conversation/AskUserBubble";
@@ -748,7 +748,9 @@ export function MainView({
           />
 
           <div className="mt-1.5 text-[11px] text-ink-muted">
-            <span>{copy.composer.enterHint}</span>
+            {renderComposerHintWithKbd(
+              isRunning ? copy.composer.byTheWay : copy.composer.enterHint,
+            )}
           </div>
         </div>
       </div>
@@ -757,6 +759,26 @@ export function MainView({
 }
 
 const LIVE_STEP_STATUS_MAX_CHARS = 46;
+
+const COMPOSER_HINT_KBD = new Set(["Shift+Enter", "Enter", "/btw"]);
+
+/** Render a composer footer hint, styling known keyboard / command
+ * tokens (Enter, Shift+Enter, /btw) in mono so they read as keys
+ * rather than prose. The tokens are language-invariant, so one
+ * splitter works across zh / en copy. */
+function renderComposerHintWithKbd(text: string): ReactNode {
+  return text
+    .split(/(Shift\+Enter|Enter|\/btw)/g)
+    .map((part, i) =>
+      COMPOSER_HINT_KBD.has(part) ? (
+        <span key={i} className="font-mono text-ink-soft">
+          {part}
+        </span>
+      ) : (
+        part
+      ),
+    );
+}
 
 function compactLiveStepStatus(text?: string): string | undefined {
   if (!text) return undefined;
