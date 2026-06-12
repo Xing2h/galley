@@ -1,8 +1,9 @@
 import { Check, Prohibit, Target, Warning } from "@phosphor-icons/react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { useEffect, useState } from "react";
 
 import { LiveDots } from "@/components/conversation/LiveIndicators";
-import { goalStageLabel } from "@/lib/goals";
+import { goalStageLabel, goalWorkspaceHasFiles } from "@/lib/goals";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { GoalBrief, GoalStatus } from "@/types/goal";
@@ -103,6 +104,25 @@ export function GoalTerminalMarker({ goal }: { goal: GoalBrief }) {
   const tb = copy.topbar;
   const conv = copy.conversation;
   const minutes = elapsedMinutes(goal.startedAt, goal.endedAt);
+  // Gate the "open output folder" affordance on the workspace actually
+  // holding files — same check the TopBar popover uses. A purely textual
+  // goal gets a `workspacePath` (created lazily) but may never write to
+  // it, so keying off `workspacePath` alone would offer a button that
+  // opens an empty folder, and disagree with the popover. Checked once
+  // per terminal marker (rare) rather than on a poll.
+  const [workspaceHasFiles, setWorkspaceHasFiles] = useState(false);
+  useEffect(() => {
+    if (!goal.workspacePath) return;
+    let cancelled = false;
+    void goalWorkspaceHasFiles(goal.id)
+      .then((hasFiles) => {
+        if (!cancelled) setWorkspaceHasFiles(hasFiles);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [goal.id, goal.workspacePath]);
   const Icon =
     goal.status === "completed"
       ? Check
@@ -134,7 +154,7 @@ export function GoalTerminalMarker({ goal }: { goal: GoalBrief }) {
         </span>
       )}
       <span className="h-px min-w-4 flex-1 bg-line" aria-hidden />
-      {goal.workspacePath && (
+      {workspaceHasFiles && goal.workspacePath && (
         <button
           type="button"
           className={actionClass}
