@@ -15,40 +15,42 @@ audited against.
 
 ## Current Baseline
 
-Locked commit: `ba19018a6d84df7f530275fa4b9b0858843e932a`
+Locked commit: `0def744157916f0c88da69f710941e4c408b3768`
 
 - Source: `lsdefine/GenericAgent` upstream `main`
-- Date audited: 2026-06-09
-- Previous baseline: `5d122e20ea7e9dfd7941998acb902fbac4a2bc9a`
-- Delta: 16 commits
-- Result: no external bridge protocol or dependency break; `agent_loop.py` and
-  `pyproject.toml` did not change. Managed runtime needed refreshed
-  state-root and ChatGPT / Codex patch contexts because upstream moved nearby
-  `agentmain.py` and `llmcore.py` code. The managed build script now also
-  normalizes upstream trailing whitespace in `frontends/conductor.py` and
-  `memory/incubator_sop.md`.
-- Devlog: [GA upstream upgrade 5d122e20 -> ba19018a](./devlog/2026-06-09-ga-upstream-upgrade-5d122e20-to-ba19018a.md)
+- Date audited: 2026-06-12
+- Previous baseline: `ba19018a6d84df7f530275fa4b9b0858843e932a`
+- Delta: 23 commits
+- Result: no external bridge protocol or dependency break; `agent_loop.py`,
+  `agentmain.py`, and `pyproject.toml` did not change. Managed runtime needed
+  refreshed Project Mode state-root coverage, Browser Control recovery context,
+  and ChatGPT / Codex patch context because upstream moved nearby `ga.py` and
+  `llmcore.py` code. Galley keeps Browser Control test-page launching as an
+  explicit UI action instead of inheriting upstream's implicit
+  `example.com` opener from GA runtime.
+- Devlog: [GA upstream upgrade ba19018a -> 0def7441](./devlog/2026-06-12-ga-upstream-upgrade-ba19018a-to-0def7441.md)
 
 Relevant compatibility notes:
 
-- `agent_loop.py`: no diff in this range. The dispatch / hooks surface Galley
-  audits for attach mode did not move.
-- `agentmain.py`: upstream added SDK usage comments, removed the unused
-  `show_mode` field, and raised the long-prompt spill threshold from 1500 to
-  2000 chars. Managed mode preserves those changes while routing temp/log paths
-  through `GALLEY_GA_STATE_ROOT`.
-- `ga.py`: upstream suppresses the final info marker. Managed mode keeps that
-  while preserving Galley's non-interactive `code_run` stdin close and Browser
-  Control recovery diagnostics.
-- `llmcore.py`: upstream added `mykey.json` `remote_url` loading and generalized
-  OpenAI / Claude user-agent handling. Galley's ChatGPT / Codex managed backend
-  remains a managed patch because it is a Galley credential IPC contract, but it
-  now preserves upstream `sess.user_agent` for non-Codex OpenAI-like requests.
-- `frontends/conductor.py`, `frontends/tuiapp_v2.py`, and `frontends/tui_v3.py`:
-  upstream shipped conductor / IM plugin work and TUI fixes. These are bundled
-  in managed GA but do not move Galley's attach bridge contract.
-- `reflect/scheduler.py`: upstream ensures the scheduled-task directory exists
-  before cron import.
+- `agent_loop.py`, `agentmain.py`, and `pyproject.toml`: no diff in this range.
+  The dispatch / hooks surface and bundled dependency list Galley audits did
+  not move.
+- `ga.py`: upstream changed Browser Control startup to wait longer and open
+  `https://example.com` when no tab appears. Managed mode preserves Galley's
+  non-interactive `code_run` stdin close and Browser Control recovery
+  diagnostics, but does not keep the implicit page opener.
+- `llmcore.py`: upstream improved empty-response failover, Responses API Codex
+  client metadata, read timeout defaults, and native OpenAI user-agent handling.
+  Galley's ChatGPT / Codex managed backend remains a managed patch because it
+  is a Galley credential IPC contract.
+- `plugins/project_mode.py`: upstream added a default-loaded Project Mode
+  plugin. Managed mode routes its activation anchor and project memory files
+  through `GALLEY_GA_STATE_ROOT` so user state never lands in the shipped code
+  payload.
+- `frontends/continue_cmd.py`, `frontends/model_cmd.py`,
+  `frontends/plan_state.py`, and `frontends/tuiapp_v2.py`: upstream shipped
+  TUI `/continue`, `/model`, `/effort`, tool-card, and plan-card updates. These
+  are bundled in managed GA but do not move Galley's attach bridge contract.
 - `pyproject.toml`: no dependency diff in this range; bundled Python
   dependencies did not need changes.
 

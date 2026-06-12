@@ -70,6 +70,7 @@ rsync -a \
   "$SOURCE"/ "$DEST"/
 
 NORMALIZE_FILES=(
+  "$DEST/.gitignore"
   "$DEST/TMWebDriver.py"
   "$DEST/agentmain.py"
   "$DEST/ga.py"
@@ -98,7 +99,7 @@ for patch_name in "${MANAGED_PATCHES[@]}"; do
     echo "Managed GA patch listed in manifest is missing: $patch_name" >&2
     exit 2
   fi
-  (cd "$ROOT" && git apply --whitespace=nowarn --directory=managed-ga/code "$patch")
+  (cd "$ROOT" && git apply --whitespace=nowarn --recount --directory=managed-ga/code "$patch")
   echo "Applied managed GA patch: $patch_name"
 done
 

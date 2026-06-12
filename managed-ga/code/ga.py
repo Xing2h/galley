@@ -136,10 +136,6 @@ def first_init_driver():
             if driver.get_status().get('extension_connected'): break
         except Exception:
             pass
-    if len(sess) == 0: return
-    if len(sess) == 1:
-        #driver.newtab()
-        time.sleep(3)
 
 def web_scan(tabs_only=False, switch_tab_id=None, text_only=False, maxlen=35000):
     """获取当前页面的简化HTML内容和标签页列表。注意：简化过程会过滤边栏、浮动元素等非主体内容。

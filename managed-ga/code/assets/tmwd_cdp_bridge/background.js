@@ -244,13 +244,11 @@ function scheduleProbe() {
   }, PROBE_RETRY_MS);
   chrome.alarms.create('tmwd-ws-probe', { delayInMinutes: PROBE_ALARM_MINUTES });
 }
-
 function clearKeepaliveTimer() {
   if (!keepaliveTimer) return;
   clearTimeout(keepaliveTimer);
   keepaliveTimer = null;
 }
-
 function scheduleKeepalive() {
   clearKeepaliveTimer();
   keepaliveTimer = setTimeout(() => {

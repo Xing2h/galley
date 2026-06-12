@@ -1,7 +1,7 @@
-import os, json, re, time, requests, sys, threading, urllib3, base64, importlib, uuid, socket
+import os, json, re, time, requests, sys, threading, urllib3, base64, importlib, uuid, pathlib, socket
 from datetime import datetime
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-_RESP_CACHE_KEY = str(uuid.uuid4())
+_RESP_CACHE_KEY = str(uuid.uuid4()); _RESP_CODEX_KEY = str(uuid.uuid4())
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path: sys.path.append(_ROOT)
 
@@ -381,12 +381,13 @@ def _stream_with_retry(sess, url, headers, payload, parse_fn):
                     yield err; return [{"type": "text", "text": err}]
                 gen = parse_fn(r)
                 try:
-                    while True: streamed = True; yield next(gen)
+                    while True: chunk = next(gen); streamed = True; yield chunk
                 except StopIteration as e:
                     if not e.value and not streamed: raise requests.ConnectionError("empty response")
                     return e.value or []
         except (requests.Timeout, requests.ConnectionError) as e:
-            err = f"!!!Error: {type(e).__name__}"
+            #pathlib.Path(__file__).parent.joinpath('temp','bad_requests.json').write_text(json.dumps({"url":url,"headers":headers,"payload":payload,"err":str(e),"t":time.time()},ensure_ascii=False),encoding='utf-8')
+            err = f"!!!Error: {type(e).__name__}: {e}" if str(e) else f"!!!Error: {type(e).__name__}"
             if attempt < sess.max_retries:
                 d = _delay(None, attempt)
                 print(f"[LLM Retry] {type(e).__name__}, retry in {d:.1f}s ({attempt+1}/{sess.max_retries+1})")
@@ -457,7 +458,8 @@ def _openai_stream(sess, messages):
     if api_mode == "responses":
         url = f"{sess.api_base.rstrip('/')}/responses" if getattr(sess, 'codex_backend', False) else auto_make_url(sess.api_base, "responses")
         payload = {"model": model, "input": _to_responses_input(messages), "stream": sess.stream,
-                   "prompt_cache_key": _RESP_CACHE_KEY, "instructions": sess.system or "You are an Omnipotent Executor."}
+                   "prompt_cache_key": _RESP_CACHE_KEY, "instructions": sess.system or "You are an Omnipotent Executor.",
+                   "client_metadata": {"x-codex-window-id": f"{_RESP_CACHE_KEY}:0","x-codex-installation-id": _RESP_CODEX_KEY}}
         if getattr(sess, 'codex_backend', False): payload["store"] = False
         if sess.reasoning_effort: payload["reasoning"] = {"effort": sess.reasoning_effort}
         if sess.max_tokens and not getattr(sess, 'codex_backend', False): payload["max_output_tokens"] = sess.max_tokens
@@ -589,7 +591,7 @@ class BaseSession:
         self.max_retries = max(0, int(cfg.get('max_retries', 4)))
         self.verify = cfg.get('verify', True)
         self.stream = True if self.codex_backend else cfg.get('stream', True)
-        default_ct, default_rt = (5, 30) if self.stream else (10, 240)
+        default_ct, default_rt = (5, 40) if self.stream else (10, 240)
         self.connect_timeout = max(1, int(cfg.get('timeout', default_ct)))
         self.read_timeout = max(5, int(cfg.get('read_timeout', default_rt)))
         def _enum(key, valid):
@@ -716,6 +718,7 @@ def _fix_messages(messages):
     return merged
 
 class NativeClaudeSession(BaseSession):
+    native_ua = "claude-cli/2.1.152 (native, cli)"
     def __init__(self, cfg):
         super().__init__(cfg)
         self.fake_cc_system_prompt = cfg.get("fake_cc_system_prompt", False)
@@ -723,7 +726,7 @@ class NativeClaudeSession(BaseSession):
         self._account_uuid = str(uuid.uuid4())
         self._device_id = uuid.uuid4().hex + uuid.uuid4().hex[:32]
         self.tools = None
-        if self.user_agent == self.default_ua: self.user_agent = "claude-cli/2.1.152 (native, cli)"
+        if self.user_agent == self.default_ua: self.user_agent = self.native_ua
     def raw_ask(self, messages):
         if self.max_tokens is None: self.max_tokens = 8192
         model = self.model
@@ -740,7 +743,7 @@ class NativeClaudeSession(BaseSession):
         if self.api_key.startswith("sk-ant-"): headers["x-api-key"] = self.api_key
         else: headers["authorization"] = f"Bearer {self.api_key}"
         payload = {"model": model, "messages": messages, "max_tokens": self.max_tokens, "stream": self.stream}
-        if self.fake_cc_system_prompt: payload["max_tokens"] = 64000
+        #if self.fake_cc_system_prompt: payload["max_tokens"] = 64000
         if self.temperature != 1: payload["temperature"] = self.temperature
         self._apply_claude_thinking(payload)
         payload["context_management"] = {"edits": [{"type": "clear_thinking_20251015", "keep": "all"}]};
@@ -794,6 +797,7 @@ class NativeClaudeSession(BaseSession):
         return MockResponse(thinking, content, tool_calls, str(content_blocks))
 
 class NativeOAISession(NativeClaudeSession):
+    native_ua = "codex_exec/0.139.0 (Windows 10.0.26200; x86_64) unknown (codex_exec; 0.139.0)"
     def raw_ask(self, messages):
         messages = _fix_messages(messages)
         messages = _ensure_thinking_blocks(messages, self.model)

@@ -176,3 +176,13 @@ index 385338b..f48a351 100644
      os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
      ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
      with open(log_path, 'a', encoding='utf-8', errors='replace') as f:
+diff --git a/plugins/project_mode.py b/plugins/project_mode.py
+index 809b6e1..c43605a 100644
+--- a/plugins/project_mode.py
++++ b/plugins/project_mode.py
+@@ -22,3 +22,4 @@ import plugins.hooks as hooks
+ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+-_TEMP = os.path.join(_PROJECT_ROOT, 'temp')
++_STATE_ROOT = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or _PROJECT_ROOT)
++_TEMP = os.path.join(_STATE_ROOT, 'temp')
+ _ANCHOR = os.path.join(_TEMP, f'.active_project.{os.getpid()}')
