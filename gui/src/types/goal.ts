@@ -43,6 +43,12 @@ export interface StartDesktopGoalInput {
    * worker sessions) by the backend; a miss falls back to the GA
    * default and never blocks the launch. */
   llmName?: string;
+  /** Operator's resolved UI locale (`zh-CN` / `en-US`) at launch. Selects
+   * the language of the Galley-authored system narration that Core (launch
+   * ack) and the CLI controller (lifecycle checkpoints) persist into the
+   * master session — Rust can't read GUI i18n, so the resolved locale is
+   * handed down here. Omitted → Chinese (the surface's original behavior). */
+  locale?: string;
 }
 
 export interface GoalMasterMessage {

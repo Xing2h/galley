@@ -18,15 +18,18 @@
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use galley_core_lib::api::{
+    goal_checkpoint_deadline_reached, goal_checkpoint_first_material,
+    goal_checkpoint_planning_started, goal_checkpoint_workers_started, goal_synthesizing,
     ClaimGoalTaskInput, CreateGoalEventInput, CreateGoalProposalInput, CreateGoalTaskInput,
-    GalleyApi, GoalBrief, GoalEventBrief, GoalEventType, GoalId, GoalProposalId, GoalStatus,
-    GoalStatusSnapshot, GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode, MessageBrief,
-    MessageRole, Origin, ProjectBrief, RuntimeKind, SearchScope, SessionBrief, SessionFilter,
-    SessionId, SessionStatus, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS,
+    GalleyApi, GoalBrief, GoalEventBrief, GoalEventType, GoalId, GoalLocale, GoalProposalId,
+    GoalStatus, GoalStatusSnapshot, GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode,
+    MessageBrief, MessageRole, Origin, ProjectBrief, RuntimeKind, SearchScope, SessionBrief,
+    SessionFilter, SessionId, SessionStatus, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS,
     DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE,
 };
 use galley_core_lib::db::SqliteGalley;
@@ -230,6 +233,12 @@ enum GoalCmd {
         confirm_token: Option<String>,
         #[arg(long)]
         resume: bool,
+        /// Operator's resolved UI locale (`zh-CN` / `en-US`) for the
+        /// Galley-authored master-session narration this controller
+        /// writes. Optional; defaults to Chinese when omitted, matching
+        /// the surface's pre-localization behavior.
+        #[arg(long)]
+        locale: Option<String>,
         #[arg(long)]
         supervisor: Option<String>,
         #[arg(long)]
@@ -841,9 +850,10 @@ async fn run(cli: Cli) -> Result<(), GalleyError> {
             proposal,
             confirm_token,
             resume,
+            locale,
             supervisor,
             reason,
-        }) => goal_run(goal_id, proposal, confirm_token, resume, supervisor, reason).await,
+        }) => goal_run(goal_id, proposal, confirm_token, resume, locale, supervisor, reason).await,
         Command::Goal(GoalCmd::Status { goal_id }) => goal_status(goal_id).await,
         Command::Goal(GoalCmd::Stop {
             goal_id,
@@ -2142,14 +2152,34 @@ async fn goal_propose(
     Ok(())
 }
 
+/// Process-global resolved locale for the Galley-authored master-session
+/// narration this controller writes (planning / workers / progress /
+/// deadline checkpoints + the synthesis note). A `goal run` invocation is
+/// a single short-lived controller process, so the locale is set once at
+/// the top of [`goal_run`] from `--locale` and read at each narration
+/// site — avoiding threading it through the whole controller call graph.
+/// Unset (e.g. an older caller that omits `--locale`) reads as Chinese,
+/// matching the surface's pre-localization behavior.
+static GOAL_NARRATION_LOCALE: OnceLock<GoalLocale> = OnceLock::new();
+
+fn goal_narration_locale() -> GoalLocale {
+    GOAL_NARRATION_LOCALE
+        .get()
+        .copied()
+        .unwrap_or(GoalLocale::ZhCn)
+}
+
 async fn goal_run(
     goal_id: Option<String>,
     proposal: Option<String>,
     confirm_token: Option<String>,
     resume: bool,
+    locale: Option<String>,
     supervisor: Option<String>,
     reason: Option<String>,
 ) -> Result<(), GalleyError> {
+    // Set once for this controller process; ignore a redundant re-set.
+    let _ = GOAL_NARRATION_LOCALE.set(GoalLocale::parse(locale.as_deref()));
     let galley = SqliteGalley::open().await?;
     let goal = if let Some(proposal_id) = proposal {
         let token = confirm_token.ok_or_else(|| GalleyError::InvalidArgs {
@@ -2305,7 +2335,7 @@ async fn run_goal_controller(
                     galley,
                     &wave_start_snapshot,
                     GoalMasterCheckpointKind::FirstMaterial,
-                    "已有初步进展，正在继续核对和整理。".to_string(),
+                    goal_checkpoint_first_material(goal_narration_locale()).to_string(),
                     supervisor.clone(),
                     reason.clone(),
                 )
@@ -2315,7 +2345,7 @@ async fn run_goal_controller(
                 galley,
                 &wave_start_snapshot,
                 GoalMasterCheckpointKind::DeadlineReached,
-                "运行时间已到，正在等待当前任务收尾并整理结果。".to_string(),
+                goal_checkpoint_deadline_reached(goal_narration_locale()).to_string(),
                 supervisor.clone(),
                 reason.clone(),
             )
@@ -2423,7 +2453,7 @@ async fn run_goal_controller(
                     galley,
                     &checkpoint_snapshot,
                     GoalMasterCheckpointKind::WorkersStarted,
-                    format!("已启动 {} 个 Agent，正在执行已分配任务。", worker_slots.len()),
+                    goal_checkpoint_workers_started(goal_narration_locale(), worker_slots.len()),
                     supervisor.clone(),
                     reason.clone(),
                 )
@@ -2495,7 +2525,7 @@ async fn run_goal_controller(
                 galley,
                 &snapshot,
                 GoalMasterCheckpointKind::FirstMaterial,
-                "已有初步进展，正在继续核对和整理。".to_string(),
+                goal_checkpoint_first_material(goal_narration_locale()).to_string(),
                 supervisor.clone(),
                 reason.clone(),
             )
@@ -2506,7 +2536,7 @@ async fn run_goal_controller(
                 galley,
                 &snapshot,
                 GoalMasterCheckpointKind::DeadlineReached,
-                "运行时间已到，正在等待当前任务收尾并整理结果。".to_string(),
+                goal_checkpoint_deadline_reached(goal_narration_locale()).to_string(),
                 supervisor.clone(),
                 reason.clone(),
             )
@@ -2902,7 +2932,7 @@ async fn run_goal_master_planning_turn(
         galley,
         snapshot,
         GoalMasterCheckpointKind::PlanningStarted,
-        "Galley 正在拆分任务。".to_string(),
+        goal_checkpoint_planning_started(goal_narration_locale()).to_string(),
         supervisor.clone(),
         reason.clone(),
     )
@@ -3839,7 +3869,7 @@ async fn wait_goal_worker_sessions(
                 galley,
                 &snapshot,
                 GoalMasterCheckpointKind::FirstMaterial,
-                "已有初步进展，正在继续核对和整理。".to_string(),
+                goal_checkpoint_first_material(goal_narration_locale()).to_string(),
                 supervisor.clone(),
                 reason.clone(),
             )
@@ -3896,7 +3926,7 @@ async fn wait_goal_worker_sessions(
                 galley,
                 &snapshot,
                 GoalMasterCheckpointKind::DeadlineReached,
-                "运行时间已到，正在等待当前任务收尾并整理结果。".to_string(),
+                goal_checkpoint_deadline_reached(goal_narration_locale()).to_string(),
                 supervisor.clone(),
                 reason.clone(),
             )
@@ -4240,7 +4270,7 @@ async fn finish_goal_with_master(
         build_goal_synthesis_prompt(galley, &snapshot, worker_session_ids).await?;
     session_goal_synthesize_value(
         master_session_id.0.clone(),
-        "正在生成最终汇总。".to_string(),
+        goal_synthesizing(goal_narration_locale()).to_string(),
         dispatch_content,
         supervisor.clone(),
         reason

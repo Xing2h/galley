@@ -289,3 +289,120 @@ pub struct CreateGoalEventInput {
     pub event_type: GoalEventType,
     pub body: String,
 }
+
+/// Resolved UI locale for the Goal *system narration* that Rust persists
+/// into the master session — the Core launch acknowledgement and the CLI
+/// controller's lifecycle checkpoints.
+///
+/// These rows are written by Rust (Core + the detached CLI controller),
+/// which cannot reach the GUI's i18n. Following the same precedent as the
+/// background close-hint copy, the operator's *resolved* locale is handed
+/// down at launch (`start_desktop_goal` input → `--locale` on the spawned
+/// controller) and the narration text is selected from this table.
+///
+/// Defaults to `ZhCn` so a caller that omits the locale keeps the
+/// pre-localization behavior (the surface shipped Chinese-only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GoalLocale {
+    ZhCn,
+    EnUs,
+}
+
+impl GoalLocale {
+    /// Parse a GUI locale tag (`zh-CN` / `en-US`, case-insensitive). Any
+    /// `en*` tag resolves to English; everything else (including `None`)
+    /// falls back to Chinese to preserve the original behavior.
+    pub fn parse(tag: Option<&str>) -> Self {
+        match tag {
+            Some(t) if t.trim().to_ascii_lowercase().starts_with("en") => GoalLocale::EnUs,
+            _ => GoalLocale::ZhCn,
+        }
+    }
+
+    /// Canonical tag, e.g. for forwarding to the controller via `--locale`.
+    pub fn as_tag(self) -> &'static str {
+        match self {
+            GoalLocale::ZhCn => "zh-CN",
+            GoalLocale::EnUs => "en-US",
+        }
+    }
+}
+
+/// Master-session launch acknowledgement (Core `start_desktop_goal`).
+pub fn goal_launch_ack(locale: GoalLocale) -> &'static str {
+    match locale {
+        GoalLocale::ZhCn => "Goal 已启动 · 完成后会在这个对话汇总结果",
+        GoalLocale::EnUs => {
+            "Goal started · the result will be summarized in this conversation when it's done"
+        }
+    }
+}
+
+/// Controller checkpoint: master has started planning / splitting work.
+pub fn goal_checkpoint_planning_started(locale: GoalLocale) -> &'static str {
+    match locale {
+        GoalLocale::ZhCn => "Galley 正在拆分任务。",
+        GoalLocale::EnUs => "Galley is breaking the work into tasks.",
+    }
+}
+
+/// Controller checkpoint: `count` worker agents have started.
+pub fn goal_checkpoint_workers_started(locale: GoalLocale, count: usize) -> String {
+    match locale {
+        GoalLocale::ZhCn => format!("已启动 {count} 个 Agent，正在执行已分配任务。"),
+        GoalLocale::EnUs => {
+            let noun = if count == 1 { "agent" } else { "agents" };
+            format!("Started {count} {noun}; they're working on the assigned tasks.")
+        }
+    }
+}
+
+/// Controller checkpoint: first worker material has appeared.
+pub fn goal_checkpoint_first_material(locale: GoalLocale) -> &'static str {
+    match locale {
+        GoalLocale::ZhCn => "已有初步进展，正在继续核对和整理。",
+        GoalLocale::EnUs => "Early progress is in; Galley is checking and organizing it.",
+    }
+}
+
+/// Controller checkpoint: run time reached; draining current work.
+pub fn goal_checkpoint_deadline_reached(locale: GoalLocale) -> &'static str {
+    match locale {
+        GoalLocale::ZhCn => "运行时间已到，正在等待当前任务收尾并整理结果。",
+        GoalLocale::EnUs => {
+            "Run time is up; Galley is letting current work finish and preparing the result."
+        }
+    }
+}
+
+/// Master-session visible note dispatched alongside final synthesis.
+pub fn goal_synthesizing(locale: GoalLocale) -> &'static str {
+    match locale {
+        GoalLocale::ZhCn => "正在生成最终汇总。",
+        GoalLocale::EnUs => "Generating the final summary.",
+    }
+}
+
+#[cfg(test)]
+mod goal_locale_tests {
+    use super::*;
+
+    #[test]
+    fn parse_resolves_english_tags_and_defaults_to_chinese() {
+        assert_eq!(GoalLocale::parse(Some("en-US")), GoalLocale::EnUs);
+        assert_eq!(GoalLocale::parse(Some("EN")), GoalLocale::EnUs);
+        assert_eq!(GoalLocale::parse(Some("zh-CN")), GoalLocale::ZhCn);
+        assert_eq!(GoalLocale::parse(Some("")), GoalLocale::ZhCn);
+        assert_eq!(GoalLocale::parse(None), GoalLocale::ZhCn);
+    }
+
+    #[test]
+    fn workers_started_pluralizes_english() {
+        assert_eq!(
+            goal_checkpoint_workers_started(GoalLocale::EnUs, 1),
+            "Started 1 agent; they're working on the assigned tasks."
+        );
+        assert!(goal_checkpoint_workers_started(GoalLocale::EnUs, 3).contains("3 agents"));
+        assert!(goal_checkpoint_workers_started(GoalLocale::ZhCn, 3).contains("3 个 Agent"));
+    }
+}

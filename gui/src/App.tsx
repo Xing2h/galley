@@ -1040,6 +1040,7 @@ function App() {
         workerLimit: config.workerLimit,
         budgetSeconds: config.budgetSeconds,
         llmName: llmDisplayName,
+        locale: resolvedLanguage,
       });
       const { goal, objectiveMessage, masterMessage } = result;
       appendUserTurnExternal(

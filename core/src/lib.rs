@@ -24,10 +24,10 @@ pub mod sop_install;
 
 use api::{
     CreateGoalProposalInput, CreateProjectInput, CreateSessionInput, GalleyApi, GoalBrief, GoalId,
-    GoalStatus, GoalStatusSnapshot, GoalWriteMode, ManagedModelAuthKind, ManagedModelProbeInput,
-    MessageBrief, MessageVisibility, Origin, ProjectBrief, ProjectId, ProjectPatch,
-    ReorderManagedModelsInput, RuntimeKind, SaveManagedModelInput, SaveManagedProviderInput,
-    SessionBrief, SessionFilter, SessionId,
+    GoalLocale, GoalStatus, GoalStatusSnapshot, GoalWriteMode, ManagedModelAuthKind,
+    ManagedModelProbeInput, MessageBrief, MessageVisibility, Origin, ProjectBrief, ProjectId,
+    ProjectPatch, ReorderManagedModelsInput, RuntimeKind, SaveManagedModelInput,
+    SaveManagedProviderInput, SessionBrief, SessionFilter, SessionId,
 };
 use db::{
     MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
@@ -132,6 +132,13 @@ struct StartDesktopGoalInput {
     /// default. Resolution failure never blocks the launch.
     #[serde(default)]
     llm_name: Option<String>,
+    /// Operator's resolved UI locale (`zh-CN` / `en-US`) at launch.
+    /// Selects the language of the Galley-authored system narration the
+    /// Core launch ack and the CLI controller persist into the master
+    /// session, which Rust can't pull from GUI i18n. Omitted → Chinese
+    /// (the surface's original behavior).
+    #[serde(default)]
+    locale: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1298,6 +1305,7 @@ async fn start_desktop_goal(
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     let master_session_id = input.master_session_id.clone();
     let launch_llm_name = input.llm_name.clone();
+    let locale = GoalLocale::parse(input.locale.as_deref());
     let proposal = galley
         .create_goal_proposal(
             CreateGoalProposalInput {
@@ -1366,13 +1374,13 @@ async fn start_desktop_goal(
     let master_message = galley
         .send_system_message(
             master_session_id,
-            "Goal 已启动 · 完成后会在这个对话汇总结果".to_string(),
+            api::goal_launch_ack(locale).to_string(),
             Origin::gui(),
         )
         .await
         .map_err(stringify_error)?;
 
-    if let Err(message) = spawn_goal_controller(&goal) {
+    if let Err(message) = spawn_goal_controller(&goal, locale) {
         let _ = galley
             .update_goal_state(goal.id.clone(), GoalStatus::Failed, Some(message.clone()))
             .await;
@@ -1386,7 +1394,7 @@ async fn start_desktop_goal(
     })
 }
 
-fn spawn_goal_controller(goal: &GoalBrief) -> std::result::Result<(), String> {
+fn spawn_goal_controller(goal: &GoalBrief, locale: GoalLocale) -> std::result::Result<(), String> {
     let cli = discovery::locate_cli_binary().ok_or_else(|| {
         "Galley CLI binary was not found next to the desktop app; cannot start Goal controller."
             .to_string()
@@ -1396,6 +1404,8 @@ fn spawn_goal_controller(goal: &GoalBrief) -> std::result::Result<(), String> {
         .arg("run")
         .arg(goal.id.as_str())
         .arg("--resume")
+        .arg("--locale")
+        .arg(locale.as_tag())
         .arg("--supervisor")
         .arg("galley-desktop")
         .arg("--reason")
