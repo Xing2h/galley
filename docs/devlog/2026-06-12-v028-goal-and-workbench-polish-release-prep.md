@@ -3,9 +3,8 @@
 ## Date / Status / Related
 
 - Date: 2026-06-12
-- Status: Stable patch release prep for `v0.2.8`; `v0.2.7` remains published
-  GitHub Latest and the live update-channel target until `v0.2.8` artifacts pass
-  smoke and are promoted.
+- Status: `v0.2.8` published as stable GitHub Latest and promoted to the default
+  update channel.
 - Related:
   - [Project status](../project-status.md)
   - [Release / update SOP](../release-update-sop.md)
@@ -69,6 +68,16 @@ and smoke path before it can be treated as a supported stable asset.
   - `cargo test --manifest-path cli/Cargo.toml`
   - `node scripts/check-managed-ga-payload.mjs`
   - `git diff --check`
+- Release state:
+  - GitHub Actions `release.yml` run `27406851173` completed successfully on
+    macOS Apple Silicon, macOS Intel, Windows x64, and draft Release creation.
+  - GitHub Release `v0.2.8` is published, non-prerelease, and GitHub Latest.
+  - Release assets include both macOS DMGs, Windows setup, updater archives,
+    updater signatures, and `latest.json`.
+  - `promote-update-channel.yml` run `27408494572` promoted `stable` and the
+    legacy `beta` alias.
+  - `node scripts/check-update-channel.mjs --repo wangjc683/galley --tag v0.2.8 --channel stable --cache-bust --retries 6 --retry-delay-ms 10000`
+  - `node scripts/check-update-channel.mjs --repo wangjc683/galley --tag v0.2.8 --channel beta --cache-bust --retries 6 --retry-delay-ms 10000`
 
 ## Rejected alternatives
 
@@ -85,7 +94,5 @@ and smoke path before it can be treated as a supported stable asset.
 
 ## Next
 
-Run local release-prep gates, commit the version/docs prep, then tag `v0.2.8`
-only when ready to let `release.yml` build a draft GitHub Release. Do not
-publish or promote the update channel until the draft assets and installer smoke
-pass.
+Dogfood update from an installed `v0.2.7` or older build. Keep Windows ARM as a
+separate platform-support task instead of retrofitting it into this stable patch.
