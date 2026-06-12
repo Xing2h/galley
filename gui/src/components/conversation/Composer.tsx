@@ -15,6 +15,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 
 import { Button, DialogActionRow } from "@/components/ui/button";
@@ -89,6 +90,7 @@ const PASTE_FOLD_THRESHOLD_LINES = 10;
  * manual edits should trump the silent re-expansion.
  */
 const PASTE_PLACEHOLDER_RE = /\[Pasted text #(\d+) \+\d+ lines\]/g;
+const COMPOSER_HINT_KBD = new Set(["Shift+Enter", "Enter", "/btw"]);
 
 const COMPOSER_ACTION_BUTTON = cn(
   "flex size-8 items-center justify-center rounded-full border transition-[background-color,border-color,color,box-shadow,transform]",
@@ -211,6 +213,8 @@ export interface ComposerProps {
   onOpenLLMSwitcher?: () => void;
   /** Active Goal in this Composer's Project context, if any. */
   goal?: GoalBrief;
+  /** Show the compact keyboard/state hint below the Composer. */
+  showFooterHint?: boolean;
 }
 
 /**
@@ -242,6 +246,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       onOpenLLMSwitcher,
       goal,
       onGoalSubmit,
+      showFooterHint = false,
     },
     ref,
   ) {
@@ -256,6 +261,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [goalConfirmationObjective, setGoalConfirmationObjective] =
       useState("");
     const [goalSubmitting, setGoalSubmitting] = useState(false);
+    const [showByTheWayRequiredHint, setShowByTheWayRequiredHint] =
+      useState(false);
     const isControlled = value !== undefined;
     const text = isControlled ? value : internal;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -347,6 +354,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const next = e.target.value;
       if (!isControlled) setInternal(next);
+      if (showByTheWayRequiredHint) setShowByTheWayRequiredHint(false);
       onChange?.(next);
     };
 
@@ -419,6 +427,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const resolvedPlaceholder = effectiveGoalArmed
       ? copy.composer.goalPlaceholder
       : (placeholder ?? copy.composer.askAnything);
+    const shouldShowByTheWayRequiredHint =
+      showByTheWayRequiredHint && stopMode && !isSideQuestion;
+    const footerHint = showFooterHint
+      ? shouldShowByTheWayRequiredHint
+        ? copy.composer.byTheWayPrefixHint
+        : copy.composer.enterHint
+      : null;
+
+    useEffect(() => {
+      if (!showByTheWayRequiredHint) return;
+      const timer = window.setTimeout(() => {
+        setShowByTheWayRequiredHint(false);
+      }, 1600);
+      return () => window.clearTimeout(timer);
+    }, [showByTheWayRequiredHint]);
 
     const handleGoalArmToggle = () => {
       if (!canShowGoalEntry) return;
@@ -470,7 +493,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         return;
       }
       // Allow /btw through stopMode; everything else stays gated.
-      if (stopMode && !isSideQuestion) return;
+      if (stopMode && !isSideQuestion) {
+        setShowByTheWayRequiredHint(true);
+        return;
+      }
       if (effectiveGoalArmed) {
         openGoalConfirmation();
         return;
@@ -492,182 +518,205 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     };
 
     return (
-      <div
-        className={cn(
-          "rounded-md border border-line bg-elevated px-3.5 pb-2 pt-3.5 shadow-card transition-[border-color,box-shadow] duration-150",
-          "focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand/20",
-          disabled && "opacity-60",
-        )}
-      >
-        <textarea
-          ref={textareaRef}
-          rows={2}
-          disabled={disabled}
-          value={text}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={resolvedPlaceholder}
-          style={{ maxHeight: COMPOSER_MAX_HEIGHT_PX }}
-          // `resize-none` keeps the corner grab handle hidden — the
-          // height auto-grows via the effect above, so manual resize
-          // would just fight it. `overflow-y-auto` handles the rare
-          // case where content exceeds the max-height cap.
-          className="block w-full resize-none overflow-y-auto border-0 bg-transparent p-0 text-[14.5px] leading-[1.55] text-ink outline-none placeholder:text-ink-muted"
-        />
-
-        <div className="mt-2 flex items-center gap-2">
-          <LLMPill
-            llmDisplayName={llmDisplayName}
-            llms={llms}
-            onSelectLLM={onSelectLLM}
-            llmConfigHint={llmConfigHint}
-            onConfigureModels={onConfigureModels}
-            onOpenLLMSwitcher={onOpenLLMSwitcher}
-            disabled={disabled || stopMode}
-            stopMode={stopMode}
+      <>
+        <div
+          className={cn(
+            "rounded-md border border-line bg-elevated px-3.5 pb-2 pt-3.5 shadow-card transition-[border-color,box-shadow] duration-150",
+            "focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand/20",
+            disabled && "opacity-60",
+          )}
+        >
+          <textarea
+            ref={textareaRef}
+            rows={2}
+            disabled={disabled}
+            value={text}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            placeholder={resolvedPlaceholder}
+            style={{ maxHeight: COMPOSER_MAX_HEIGHT_PX }}
+            // `resize-none` keeps the corner grab handle hidden — the
+            // height auto-grows via the effect above, so manual resize
+            // would just fight it. `overflow-y-auto` handles the rare
+            // case where content exceeds the max-height cap.
+            className="block w-full resize-none overflow-y-auto border-0 bg-transparent p-0 text-[14.5px] leading-[1.55] text-ink outline-none placeholder:text-ink-muted"
           />
-          {goal && <GoalContextBadge goal={goal} />}
 
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            {effectiveGoalArmed && (
-              <span className="hidden min-w-0 truncate text-[11px] font-medium text-ink-soft sm:inline">
-                {copy.composer.goalArmedHint}
-              </span>
-            )}
-            {canShowGoalEntry && (
-              <TooltipLabel
-                text={
-                  requiresModelConfig
-                    ? copy.composer.configureModelBeforeSending
-                    : effectiveGoalArmed
-                      ? copy.composer.cancelGoalMode
-                      : copy.composer.goalTooltip
-                }
-              >
-                <button
-                  type="button"
-                  onClick={handleGoalArmToggle}
-                  disabled={goalEntryDisabled && !requiresModelConfig}
-                  aria-label={
-                    effectiveGoalArmed
-                      ? copy.composer.cancelGoalMode
-                      : copy.composer.goalButton
-                  }
-                  className={cn(
-                    effectiveGoalArmed
-                      ? COMPOSER_GOAL_BUTTON_ARMED
-                      : COMPOSER_GOAL_BUTTON,
-                    goalEntryDisabled &&
-                      !requiresModelConfig &&
-                      "cursor-not-allowed opacity-50 hover:translate-y-0 hover:shadow-none",
-                  )}
-                >
-                  <Target
-                    size={15}
-                    weight={effectiveGoalArmed ? "fill" : "thin"}
-                  />
-                </button>
-              </TooltipLabel>
-            )}
+          <div className="mt-2 flex items-center gap-2">
+            <LLMPill
+              llmDisplayName={llmDisplayName}
+              llms={llms}
+              onSelectLLM={onSelectLLM}
+              llmConfigHint={llmConfigHint}
+              onConfigureModels={onConfigureModels}
+              onOpenLLMSwitcher={onOpenLLMSwitcher}
+              disabled={disabled || stopMode}
+              stopMode={stopMode}
+            />
+            {goal && <GoalContextBadge goal={goal} />}
 
-            <span
-              key={`composer-action-${submitAckTick}`}
-              className={cn(
-                "relative inline-flex shrink-0 items-center justify-center",
-                effectiveGoalArmed
-                  ? "h-8 min-w-[112px]"
-                  : "size-8 rounded-full",
-                submitAckTick > 0 && "composer-submit-ack",
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              {effectiveGoalArmed && (
+                <span className="hidden min-w-0 truncate text-[11px] font-medium text-ink-soft sm:inline">
+                  {copy.composer.goalArmedHint}
+                </span>
               )}
-            >
-              {stopMode && !isSideQuestion ? (
-                <TooltipLabel text={copy.composer.stop}>
-                  <button
-                    type="button"
-                    onClick={onStop}
-                    aria-label={copy.composer.stop}
-                    className={COMPOSER_STOP_BUTTON}
-                  >
-                    <Stop size={14} weight="fill" />
-                  </button>
-                </TooltipLabel>
-              ) : (
+              {canShowGoalEntry && (
                 <TooltipLabel
                   text={
                     requiresModelConfig
                       ? copy.composer.configureModelBeforeSending
                       : effectiveGoalArmed
-                        ? copy.composer.startGoalWithEnter
-                        : copy.composer.sendWithEnter
+                        ? copy.composer.cancelGoalMode
+                        : copy.composer.goalTooltip
                   }
                 >
                   <button
                     type="button"
-                    onClick={handleSubmit}
-                    disabled={
-                      disabled ||
-                      !text?.trim() ||
-                      goalSubmitting ||
-                      (requiresModelConfig && !onConfigureModels)
-                    }
+                    onClick={handleGoalArmToggle}
+                    disabled={goalEntryDisabled && !requiresModelConfig}
                     aria-label={
-                      requiresModelConfig
-                        ? copy.composer.configureModelBeforeSending
-                        : effectiveGoalArmed
-                          ? copy.composer.startGoal
-                          : copy.composer.send
+                      effectiveGoalArmed
+                        ? copy.composer.cancelGoalMode
+                        : copy.composer.goalButton
                     }
                     className={cn(
-                      requiresModelConfig
-                        ? COMPOSER_CONFIG_BUTTON
-                        : effectiveGoalArmed
-                          ? COMPOSER_GOAL_SEND_BUTTON
-                          : COMPOSER_SEND_BUTTON,
-                      (disabled ||
-                        !text?.trim() ||
-                        goalSubmitting ||
-                        (requiresModelConfig && !onConfigureModels)) &&
+                      effectiveGoalArmed
+                        ? COMPOSER_GOAL_BUTTON_ARMED
+                        : COMPOSER_GOAL_BUTTON,
+                      goalEntryDisabled &&
+                        !requiresModelConfig &&
                         "cursor-not-allowed opacity-50 hover:translate-y-0 hover:shadow-none",
                     )}
                   >
-                    {requiresModelConfig ? (
-                      <Gear size={15} weight="thin" />
-                    ) : effectiveGoalArmed ? (
-                      <>
-                        <Target size={14} weight="fill" />
-                        <span>{copy.composer.startGoal}</span>
-                      </>
-                    ) : (
-                      <ArrowUp size={16} weight="bold" />
-                    )}
+                    <Target
+                      size={15}
+                      weight={effectiveGoalArmed ? "fill" : "thin"}
+                    />
                   </button>
                 </TooltipLabel>
               )}
-            </span>
+
+              <span
+                key={`composer-action-${submitAckTick}`}
+                className={cn(
+                  "relative inline-flex shrink-0 items-center justify-center",
+                  effectiveGoalArmed
+                    ? "h-8 min-w-[112px]"
+                    : "size-8 rounded-full",
+                  submitAckTick > 0 && "composer-submit-ack",
+                )}
+              >
+                {stopMode && !isSideQuestion ? (
+                  <TooltipLabel text={copy.composer.stop}>
+                    <button
+                      type="button"
+                      onClick={onStop}
+                      aria-label={copy.composer.stop}
+                      className={COMPOSER_STOP_BUTTON}
+                    >
+                      <Stop size={14} weight="fill" />
+                    </button>
+                  </TooltipLabel>
+                ) : (
+                  <TooltipLabel
+                    text={
+                      requiresModelConfig
+                        ? copy.composer.configureModelBeforeSending
+                        : effectiveGoalArmed
+                          ? copy.composer.startGoalWithEnter
+                          : copy.composer.sendWithEnter
+                    }
+                  >
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={
+                        disabled ||
+                        !text?.trim() ||
+                        goalSubmitting ||
+                        (requiresModelConfig && !onConfigureModels)
+                      }
+                      aria-label={
+                        requiresModelConfig
+                          ? copy.composer.configureModelBeforeSending
+                          : effectiveGoalArmed
+                            ? copy.composer.startGoal
+                            : copy.composer.send
+                      }
+                      className={cn(
+                        requiresModelConfig
+                          ? COMPOSER_CONFIG_BUTTON
+                          : effectiveGoalArmed
+                            ? COMPOSER_GOAL_SEND_BUTTON
+                            : COMPOSER_SEND_BUTTON,
+                        (disabled ||
+                          !text?.trim() ||
+                          goalSubmitting ||
+                          (requiresModelConfig && !onConfigureModels)) &&
+                          "cursor-not-allowed opacity-50 hover:translate-y-0 hover:shadow-none",
+                      )}
+                    >
+                      {requiresModelConfig ? (
+                        <Gear size={15} weight="thin" />
+                      ) : effectiveGoalArmed ? (
+                        <>
+                          <Target size={14} weight="fill" />
+                          <span>{copy.composer.startGoal}</span>
+                        </>
+                      ) : (
+                        <ArrowUp size={16} weight="bold" />
+                      )}
+                    </button>
+                  </TooltipLabel>
+                )}
+              </span>
+            </div>
           </div>
+          <GoalConfirmDialog
+            key={goalConfirmationObjective || "goal-confirm-closed"}
+            open={effectiveGoalConfirmOpen}
+            objective={goalConfirmationObjective}
+            submitting={goalSubmitting}
+            onOpenChange={(open) => {
+              if (goalSubmitting) return;
+              setGoalConfirmOpen(open);
+              if (!open) {
+                setGoalArmed(false);
+                setGoalConfirmationObjective("");
+              }
+            }}
+            onConfirm={(config) => {
+              void handleConfirmGoal(config);
+            }}
+          />
         </div>
-        <GoalConfirmDialog
-          key={goalConfirmationObjective || "goal-confirm-closed"}
-          open={effectiveGoalConfirmOpen}
-          objective={goalConfirmationObjective}
-          submitting={goalSubmitting}
-          onOpenChange={(open) => {
-            if (goalSubmitting) return;
-            setGoalConfirmOpen(open);
-            if (!open) {
-              setGoalArmed(false);
-              setGoalConfirmationObjective("");
-            }
-          }}
-          onConfirm={(config) => {
-            void handleConfirmGoal(config);
-          }}
-        />
-      </div>
+        {footerHint && (
+          <div className="mt-1.5 text-[11px] text-ink-muted">
+            {renderComposerHintWithKbd(footerHint)}
+          </div>
+        )}
+      </>
     );
   },
 );
+
+/** Render a composer footer hint, styling known keyboard / command
+ * tokens (Enter, Shift+Enter, /btw) in mono so they read as keys
+ * rather than prose. The tokens are language-invariant, so one
+ * splitter works across zh / en copy. */
+function renderComposerHintWithKbd(text: string): ReactNode {
+  return text.split(/(Shift\+Enter|Enter|\/btw)/g).map((part, i) =>
+    COMPOSER_HINT_KBD.has(part) ? (
+      <span key={i} className="font-mono text-ink-soft">
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
 
 function GoalConfirmDialog({
   open,
@@ -860,11 +909,7 @@ function GoalConfirmDialog({
                   budgetSeconds: budgetMinutes * 60,
                 })
               }
-              disabled={
-                submitting ||
-                !objective ||
-                !customBudgetValid
-              }
+              disabled={submitting || !objective || !customBudgetValid}
               leadingIcon={<Target size={13} weight="fill" />}
             >
               {submitting

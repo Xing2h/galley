@@ -207,6 +207,10 @@ the task is explicitly web-only. Do not spend verification time opening the
 Vite-only app in a browser for Settings, updater, IPC, database, menu/tray, or
 other Tauri-dependent flows: it lacks the Tauri runtime and will produce
 expected API errors. Use `pnpm --dir gui tauri dev` or static checks instead.
+For small GUI copy / polish changes on Tauri-dependent or stateful desktop
+surfaces, prefer `pnpm --dir gui typecheck`, `pnpm --dir gui lint`, and
+`git diff --check`; JC will do final visual acceptance in the real app unless
+explicitly asking the agent to run desktop/browser dogfood.
 
 ## Documentation Discipline
 

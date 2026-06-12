@@ -1,0 +1,779 @@
+use super::*;
+
+impl SqliteGalley {
+    pub async fn persisted_message_rows(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Vec<PersistedMessageRow>> {
+        sqlx::query_as::<_, PersistedMessageRow>(
+            "SELECT id, session_id, turn_index, sequence, role, content, \
+                    tool_calls, tool_results, thinking, final_answer, summary, \
+                    preamble, created_via, supervisor, origin_note, visibility, created_at \
+             FROM messages \
+             WHERE session_id = ? AND visibility = 'visible' \
+             ORDER BY turn_index ASC, sequence ASC",
+        )
+        .bind(session_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)
+    }
+
+    pub async fn session_messages_including_internal(
+        &self,
+        id: SessionId,
+        tail: Option<usize>,
+    ) -> Result<Vec<MessageBrief>> {
+        self.session_messages_inner(id, tail, true).await
+    }
+
+    pub(super) async fn session_messages_inner(
+        &self,
+        id: SessionId,
+        tail: Option<usize>,
+        include_internal: bool,
+    ) -> Result<Vec<MessageBrief>> {
+        let visibility_clause = if include_internal {
+            ""
+        } else {
+            " AND visibility = 'visible'"
+        };
+        let rows = if let Some(n) = tail {
+            let limit = i64::try_from(n).unwrap_or(i64::MAX);
+            let sql = format!(
+                "SELECT id, session_id, turn_index, role, content, final_answer, summary, \
+                        created_via, supervisor, origin_note, visibility, created_at \
+                 FROM messages \
+                 WHERE session_id = ?{visibility_clause} \
+                 ORDER BY turn_index DESC, sequence DESC \
+                 LIMIT ?"
+            );
+            let mut rows: Vec<MessageRow> = sqlx::query_as::<_, MessageRow>(&sql)
+                .bind(id.as_str())
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx_err)?;
+            rows.reverse();
+            rows
+        } else {
+            let sql = format!(
+                "SELECT id, session_id, turn_index, role, content, final_answer, summary, \
+                        created_via, supervisor, origin_note, visibility, created_at \
+                 FROM messages \
+                 WHERE session_id = ?{visibility_clause} \
+                 ORDER BY turn_index ASC, sequence ASC"
+            );
+            sqlx::query_as::<_, MessageRow>(&sql)
+                .bind(id.as_str())
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx_err)?
+        };
+        rows.into_iter().map(MessageRow::into_brief).collect()
+    }
+
+    pub async fn persist_gui_user_message(
+        &self,
+        session_id: SessionId,
+        turn_index: u32,
+        content: String,
+        origin: Origin,
+    ) -> Result<()> {
+        let id = format!("msg_{}_{}_user", session_id.as_str(), turn_index);
+        let created_at = chrono_now_iso();
+        sqlx::query(
+            "INSERT INTO messages (
+               id, session_id, turn_index, sequence, role, content,
+               tool_calls, tool_results, thinking, final_answer, created_at,
+               created_via, supervisor, origin_note, visibility
+             ) VALUES (?, ?, ?, 0, 'user', ?,
+                       NULL, NULL, NULL, NULL, ?,
+                       ?, ?, ?, 'visible')
+             ON CONFLICT(id) DO UPDATE SET
+               content = excluded.content,
+               created_via = excluded.created_via,
+               supervisor = excluded.supervisor,
+               origin_note = excluded.origin_note",
+        )
+        .bind(&id)
+        .bind(session_id.as_str())
+        .bind(i64::from(turn_index))
+        .bind(&content)
+        .bind(&created_at)
+        .bind(origin.via.as_sql())
+        .bind(&origin.supervisor)
+        .bind(&origin.reason)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        self.index_message_fts(&id, session_id.as_str(), "user", turn_index, &content)
+            .await;
+        Ok(())
+    }
+
+    pub async fn persist_gui_assistant_message(&self, p: PersistAssistantMessage) -> Result<()> {
+        let id = format!("msg_{}_{}_assistant", p.session_id.as_str(), p.turn_index);
+        let created_at = chrono_now_iso();
+        sqlx::query(
+            "INSERT INTO messages (
+               id, session_id, turn_index, sequence, role, content,
+               tool_calls, tool_results, thinking, final_answer, summary,
+               preamble, created_at, visibility
+             ) VALUES (?, ?, ?, 1, 'assistant', ?,
+                       ?, ?, ?, ?, ?,
+                       ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+               content       = excluded.content,
+               tool_calls    = excluded.tool_calls,
+               tool_results  = excluded.tool_results,
+               thinking      = excluded.thinking,
+               final_answer  = excluded.final_answer,
+               summary       = excluded.summary,
+               preamble      = excluded.preamble,
+               visibility    = excluded.visibility",
+        )
+        .bind(&id)
+        .bind(p.session_id.as_str())
+        .bind(i64::from(p.turn_index))
+        .bind(&p.content)
+        .bind(&p.tool_calls)
+        .bind(&p.tool_results)
+        .bind(&p.thinking)
+        .bind(&p.final_answer)
+        .bind(&p.summary)
+        .bind(&p.preamble)
+        .bind(&created_at)
+        .bind(message_visibility_sql(p.visibility))
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        if p.visibility == MessageVisibility::Visible {
+            if let Some(body) = p.final_answer.as_deref().filter(|s| !s.trim().is_empty()) {
+                self.index_message_fts(&id, p.session_id.as_str(), "assistant", p.turn_index, body)
+                    .await;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl SqliteGalley {
+    pub(super) async fn list_sessions_db(
+        &self,
+        filter: SessionFilter,
+    ) -> Result<Vec<SessionBrief>> {
+        // Hand-build WHERE so we can bind only the filters that are
+        // set. sqlx doesn't have a fluent builder; query_builder works
+        // but verbose for this scale.
+        let mut sql = format!("SELECT {SESSIONS_SELECT_COLS} FROM sessions WHERE 1=1");
+        if filter.project_id.is_some() {
+            sql.push_str(" AND project_id = ?");
+        }
+        if filter.status.is_some() {
+            sql.push_str(" AND status = ?");
+        }
+        if filter.runtime_kind.is_some() {
+            sql.push_str(" AND ga_runtime_kind = ?");
+        }
+        // Standard Option<bool> filter semantics:
+        //   None        → no archived filter (active + archived both returned)
+        //   Some(false) → exclude archived
+        //   Some(true)  → only archived
+        // The CLI's `--all` flag passes None for this; the CLI default
+        // and the GUI sidebar pass Some(false). GUI's `loadSessions`
+        // historically returned everything (no filter) — matches None.
+        match filter.archived {
+            Some(false) => sql.push_str(" AND status != 'archived'"),
+            Some(true) => sql.push_str(" AND status = 'archived'"),
+            None => {}
+        }
+        sql.push_str(" ORDER BY pinned DESC, last_activity_at DESC");
+
+        let mut q = sqlx::query_as::<_, SessionRow>(&sql);
+        if let Some(pid) = filter.project_id.as_deref() {
+            q = q.bind(pid);
+        }
+        if let Some(status) = filter.status {
+            q = q.bind(session_status_sql(status));
+        }
+        if let Some(kind) = filter.runtime_kind {
+            q = q.bind(runtime_kind_sql(kind));
+        }
+        let rows = q.fetch_all(&self.pool).await.map_err(map_sqlx_err)?;
+        rows.into_iter().map(SessionRow::into_brief).collect()
+    }
+
+    pub(super) async fn session_brief_db(&self, id: SessionId) -> Result<SessionBrief> {
+        let row = sqlx::query_as::<_, SessionRow>(&format!(
+            "SELECT {SESSIONS_SELECT_COLS} FROM sessions WHERE id = ? LIMIT 1"
+        ))
+        .bind(id.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?
+        .ok_or_else(|| GalleyError::NotFound {
+            message: format!("session {id} not found"),
+        })?;
+        row.into_brief()
+    }
+
+    pub(super) async fn session_messages_db(
+        &self,
+        id: SessionId,
+        tail: Option<usize>,
+    ) -> Result<Vec<MessageBrief>> {
+        self.session_messages_inner(id, tail, false).await
+    }
+
+    pub(super) async fn status_db(&self) -> Result<StatusSummary> {
+        // Persistence reality check: GUI only persists durable statuses
+        // (archived / completed / cancelled), coercing transient ones
+        // (running / waiting_approval / error) to "idle" before write
+        // (see gui/src/lib/db.ts `persistableStatus`). So running/
+        // waiting_input/errored will usually read as 0 here unless we
+        // catch a write race. Real runtime counts will land via the
+        // runner-manager (B2+); B1 surfaces the persisted truth.
+        let counts: StatusCounts = sqlx::query_as(
+            "SELECT \
+               COUNT(*) AS total, \
+               SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) AS running, \
+               SUM(CASE WHEN status='waiting_approval' THEN 1 ELSE 0 END) AS waiting_input, \
+               SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS errored \
+             FROM sessions \
+             WHERE status != 'archived'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        Ok(StatusSummary {
+            total: counts.total.max(0) as u32,
+            running: counts.running.max(0) as u32,
+            waiting_input: counts.waiting_input.max(0) as u32,
+            errored: counts.errored.max(0) as u32,
+        })
+    }
+
+    pub(super) async fn health_db(&self) -> Result<HealthReport> {
+        // B1 partial: filesystem / SQLite-only checks. Python /
+        // agentmain / LLM-config probes need to spawn a runner sub-
+        // process and are deferred to B4 daemon stage (see playbook G8 +
+        // running note for T3.9 decision).
+        let mut checks: Vec<HealthCheck> = Vec::new();
+
+        // 1. DB readable — the fact this call ran means the pool
+        // opened. Surface it explicitly so absent-DB scenarios still
+        // produce a useful report.
+        let probe: i64 = sqlx::query_scalar("SELECT 1")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(0);
+        checks.push(HealthCheck {
+            id: "db_readable".into(),
+            status: if probe == 1 {
+                HealthStatus::Ok
+            } else {
+                HealthStatus::Fail
+            },
+            detail: db_path().map(|p| p.display().to_string()),
+        });
+
+        // 2. GA path (from prefs.ga_config JSON, field `gaPath`).
+        // The pref key is snake_case (`ga_config`) but the inner JSON
+        // uses camelCase to match the TS gaConfig shape — see
+        // gui/src/stores/useAppStore.ts setPref("ga_config", ...).
+        let ga_path: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT json_extract(value, '$.gaPath') FROM prefs WHERE key = 'ga_config' LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?
+        .flatten();
+        match ga_path.as_deref() {
+            Some(p) if std::path::Path::new(p).is_dir() => {
+                checks.push(HealthCheck {
+                    id: "ga_path".into(),
+                    status: HealthStatus::Ok,
+                    detail: Some(p.to_string()),
+                });
+            }
+            Some(p) => {
+                checks.push(HealthCheck {
+                    id: "ga_path".into(),
+                    status: HealthStatus::Fail,
+                    detail: Some(format!("not a directory: {p}")),
+                });
+            }
+            None => {
+                checks.push(HealthCheck {
+                    id: "ga_path".into(),
+                    status: HealthStatus::Warn,
+                    detail: Some("not set — finish Onboarding to attach a GA install".into()),
+                });
+            }
+        }
+
+        // 3. mykey.py — readability gated on ga_path being valid.
+        match ga_path.as_deref() {
+            Some(p) if std::path::Path::new(p).is_dir() => {
+                let mykey = std::path::Path::new(p).join("mykey.py");
+                if mykey.is_file() {
+                    checks.push(HealthCheck {
+                        id: "mykey_py".into(),
+                        status: HealthStatus::Ok,
+                        detail: Some(mykey.display().to_string()),
+                    });
+                } else {
+                    checks.push(HealthCheck {
+                        id: "mykey_py".into(),
+                        status: HealthStatus::Fail,
+                        detail: Some(format!("missing: {}", mykey.display())),
+                    });
+                }
+            }
+            _ => {
+                checks.push(HealthCheck {
+                    id: "mykey_py".into(),
+                    status: HealthStatus::DeferredB4,
+                    detail: Some("gated on ga_path".into()),
+                });
+            }
+        }
+
+        // 4. agentmain importable — needs a Python spawn. B4.
+        checks.push(HealthCheck {
+            id: "agentmain_import".into(),
+            status: HealthStatus::DeferredB4,
+            detail: Some("requires runner spawn — see B4 daemon".into()),
+        });
+
+        // 5. LLM session init — also a Python probe. B4.
+        checks.push(HealthCheck {
+            id: "llm_session_init".into(),
+            status: HealthStatus::DeferredB4,
+            detail: Some("requires runner spawn — see B4 daemon".into()),
+        });
+
+        Ok(HealthReport { checks })
+    }
+
+    pub(super) async fn send_message_db(
+        &self,
+        session_id: SessionId,
+        content: String,
+        origin: crate::api::Origin,
+    ) -> Result<MessageBrief> {
+        // Thin wrapper: acquire a pool connection and delegate to the
+        // shared inner helper. The `_in_tx` sibling reuses the same
+        // helper so SQL + validation lives in one place. See
+        // [insert_user_message_inner] for the body.
+        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
+        insert_user_message_inner(
+            &mut conn,
+            session_id,
+            content,
+            origin,
+            MessageVisibility::Visible,
+        )
+        .await
+    }
+
+    pub(super) async fn send_message_with_visibility_db(
+        &self,
+        session_id: SessionId,
+        content: String,
+        origin: crate::api::Origin,
+        visibility: MessageVisibility,
+    ) -> Result<MessageBrief> {
+        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
+        insert_user_message_inner(&mut conn, session_id, content, origin, visibility).await
+    }
+
+    pub(super) async fn send_system_message_db(
+        &self,
+        session_id: SessionId,
+        content: String,
+        origin: crate::api::Origin,
+    ) -> Result<MessageBrief> {
+        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
+        insert_message_inner(
+            &mut conn,
+            session_id,
+            MessageRole::System,
+            content,
+            origin,
+            MessageVisibility::Visible,
+        )
+        .await
+    }
+
+    pub(super) async fn create_session_db(
+        &self,
+        input: CreateSessionInput,
+        origin: Origin,
+    ) -> Result<SessionBrief> {
+        // Thin wrapper: acquire a pool connection and delegate to the
+        // shared inner helper. The `_in_tx` sibling reuses the same
+        // helper so SQL + validation lives in one place. See
+        // [insert_session_row_inner] for the body.
+        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
+        insert_session_row_inner(&mut conn, &input, &origin).await
+    }
+
+    pub(super) async fn archive_session_db(
+        &self,
+        id: SessionId,
+        _origin: Origin,
+    ) -> Result<SessionBrief> {
+        let now = chrono_now_iso();
+        let res =
+            sqlx::query("UPDATE sessions SET status = 'archived', updated_at = ? WHERE id = ?")
+                .bind(&now)
+                .bind(id.as_str())
+                .execute(&self.pool)
+                .await
+                .map_err(map_sqlx_err)?;
+        if res.rows_affected() == 0 {
+            return Err(GalleyError::NotFound {
+                message: format!("session {id} not found"),
+            });
+        }
+        self.session_brief(id).await
+    }
+
+    pub(super) async fn unarchive_session_db(
+        &self,
+        id: SessionId,
+        _origin: Origin,
+    ) -> Result<SessionBrief> {
+        let now = chrono_now_iso();
+        // Only flip rows that are currently archived. A no-op on a
+        // non-archived row is still a success (returns the unchanged
+        // brief) so the GUI doesn't have to pre-check status.
+        let _ = sqlx::query(
+            "UPDATE sessions SET status = 'idle', updated_at = ? \
+             WHERE id = ? AND status = 'archived'",
+        )
+        .bind(&now)
+        .bind(id.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        // Confirm the row exists — UPDATE returns 0 rows_affected for
+        // both "row missing" AND "row not archived"; we need a real
+        // existence probe to distinguish NotFound from no-op.
+        self.session_brief(id).await
+    }
+
+    pub(super) async fn rename_session_db(
+        &self,
+        id: SessionId,
+        title: String,
+        _origin: Origin,
+    ) -> Result<SessionBrief> {
+        let trimmed = title.trim();
+        let final_title: &str = if trimmed.is_empty() {
+            DEFAULT_NEW_SESSION_TITLE
+        } else {
+            trimmed
+        };
+        let now = chrono_now_iso();
+        let res = sqlx::query("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?")
+            .bind(final_title)
+            .bind(&now)
+            .bind(id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+        if res.rows_affected() == 0 {
+            return Err(GalleyError::NotFound {
+                message: format!("session {id} not found"),
+            });
+        }
+        self.session_brief(id).await
+    }
+
+    pub(super) async fn set_session_pinned_db(
+        &self,
+        id: SessionId,
+        pinned: bool,
+        _origin: Origin,
+    ) -> Result<SessionBrief> {
+        // Reject pin on archived rows up-front so the caller gets a
+        // distinct error category instead of a silent no-op.
+        let current_status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM sessions WHERE id = ?")
+                .bind(id.as_str())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(map_sqlx_err)?;
+        let status = current_status.ok_or_else(|| GalleyError::NotFound {
+            message: format!("session {id} not found"),
+        })?;
+        if status == "archived" {
+            return Err(GalleyError::InvalidArgs {
+                message: format!("session {id} is archived; cannot change pinned"),
+            });
+        }
+        let now = chrono_now_iso();
+        sqlx::query("UPDATE sessions SET pinned = ?, updated_at = ? WHERE id = ?")
+            .bind(if pinned { 1_i64 } else { 0_i64 })
+            .bind(&now)
+            .bind(id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+        self.session_brief(id).await
+    }
+
+    pub(super) async fn delete_session_db(&self, id: SessionId, _origin: Origin) -> Result<()> {
+        let res = sqlx::query("DELETE FROM sessions WHERE id = ?")
+            .bind(id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+        if res.rows_affected() == 0 {
+            return Err(GalleyError::NotFound {
+                message: format!("session {id} not found"),
+            });
+        }
+        Ok(())
+    }
+
+    pub(super) async fn assign_session_to_project_db(
+        &self,
+        session_id: SessionId,
+        project_id: Option<String>,
+        _origin: Origin,
+    ) -> Result<SessionBrief> {
+        let now = chrono_now_iso();
+        let res = sqlx::query("UPDATE sessions SET project_id = ?, updated_at = ? WHERE id = ?")
+            .bind(&project_id)
+            .bind(&now)
+            .bind(session_id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| map_constraint_err("assign_session_to_project", e))?;
+        if res.rows_affected() == 0 {
+            return Err(GalleyError::NotFound {
+                message: format!("session {session_id} not found"),
+            });
+        }
+        self.session_brief(session_id).await
+    }
+
+    pub(super) async fn set_session_llm_db(
+        &self,
+        id: SessionId,
+        index: Option<u32>,
+        key: Option<String>,
+        display_name: Option<String>,
+    ) -> Result<SessionBrief> {
+        let now = chrono_now_iso();
+        let idx: Option<i64> = index.map(|v| v as i64);
+        let res = sqlx::query(
+            "UPDATE sessions SET llm_index = ?, llm_key = ?, llm_display_name = ?, updated_at = ? \
+             WHERE id = ?",
+        )
+        .bind(idx)
+        .bind(&key)
+        .bind(&display_name)
+        .bind(&now)
+        .bind(id.as_str())
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        if res.rows_affected() == 0 {
+            return Err(GalleyError::NotFound {
+                message: format!("session {id} not found"),
+            });
+        }
+        self.session_brief(id).await
+    }
+
+    pub(super) async fn bump_session_after_turn_db(
+        &self,
+        id: SessionId,
+        summary: Option<String>,
+        step_number: Option<u32>,
+        mark_unread: bool,
+    ) -> Result<SessionBrief> {
+        let now = chrono_now_iso();
+        // Only refresh summary when caller passed a non-empty value.
+        // Bridge sometimes emits turn_end with empty summary (no recap
+        // generated this round); we keep the previous summary so the
+        // sidebar row doesn't blank out mid-conversation.
+        let new_summary: Option<String> = summary
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(truncate_summary);
+        let step = step_number.map(|n| n as i64);
+
+        // bumpSessionAfterTurn historically didn't touch
+        // `last_step_index` if the bridge didn't send `stepNumber`.
+        // Sqlite COALESCE keeps the previous value when the bind is NULL.
+        if let Some(s) = new_summary {
+            let res = sqlx::query(
+                "UPDATE sessions SET \
+                    turn_count = turn_count + 1, \
+                    summary = ?, \
+                    last_activity_at = ?, \
+                    updated_at = ?, \
+                    has_unread = CASE WHEN ? = 1 THEN 1 ELSE has_unread END \
+                 WHERE id = ?",
+            )
+            .bind(&s)
+            .bind(&now)
+            .bind(&now)
+            .bind(if mark_unread { 1_i64 } else { 0_i64 })
+            .bind(id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+            if res.rows_affected() == 0 {
+                return Err(GalleyError::NotFound {
+                    message: format!("session {id} not found"),
+                });
+            }
+        } else {
+            let res = sqlx::query(
+                "UPDATE sessions SET \
+                    turn_count = turn_count + 1, \
+                    last_activity_at = ?, \
+                    updated_at = ?, \
+                    has_unread = CASE WHEN ? = 1 THEN 1 ELSE has_unread END \
+                 WHERE id = ?",
+            )
+            .bind(&now)
+            .bind(&now)
+            .bind(if mark_unread { 1_i64 } else { 0_i64 })
+            .bind(id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+            if res.rows_affected() == 0 {
+                return Err(GalleyError::NotFound {
+                    message: format!("session {id} not found"),
+                });
+            }
+        }
+
+        // last_step_index isn't a column on the sessions table — it's
+        // a transient runtime field the GUI computes from per-turn
+        // events. Persisting it here was discussed in the M4 sub-plan
+        // but rejected: bumpSessionAfterTurn's GUI counterpart only
+        // mirrors it into in-memory state, not SQLite. Suppress the
+        // unused param to keep the signature stable for B4+ where a
+        // future audit table may pick it up.
+        let _ = step;
+        self.session_brief(id).await
+    }
+
+    pub(super) async fn clear_session_unread_db(&self, id: SessionId) -> Result<()> {
+        let now = chrono_now_iso();
+        let res = sqlx::query("UPDATE sessions SET has_unread = 0, updated_at = ? WHERE id = ?")
+            .bind(&now)
+            .bind(id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+        if res.rows_affected() == 0 {
+            return Err(GalleyError::NotFound {
+                message: format!("session {id} not found"),
+            });
+        }
+        Ok(())
+    }
+
+    pub(super) async fn bulk_archive_sessions_db(
+        &self,
+        ids: Vec<SessionId>,
+        _origin: Origin,
+    ) -> Result<u32> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
+        let placeholders = vec!["?"; ids.len()].join(",");
+        let now = chrono_now_iso();
+        let sql = format!(
+            "UPDATE sessions SET status = 'archived', updated_at = ? \
+             WHERE id IN ({placeholders}) AND status != 'archived'",
+        );
+        let mut q = sqlx::query(&sql).bind(&now);
+        for id in &ids {
+            q = q.bind(id.as_str());
+        }
+        let res = q.execute(&mut *tx).await.map_err(map_sqlx_err)?;
+        tx.commit().await.map_err(map_sqlx_err)?;
+        Ok(res.rows_affected() as u32)
+    }
+
+    pub(super) async fn bulk_unarchive_sessions_db(
+        &self,
+        ids: Vec<SessionId>,
+        _origin: Origin,
+    ) -> Result<u32> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
+        let placeholders = vec!["?"; ids.len()].join(",");
+        let now = chrono_now_iso();
+        let sql = format!(
+            "UPDATE sessions SET status = 'idle', updated_at = ? \
+             WHERE id IN ({placeholders}) AND status = 'archived'",
+        );
+        let mut q = sqlx::query(&sql).bind(&now);
+        for id in &ids {
+            q = q.bind(id.as_str());
+        }
+        let res = q.execute(&mut *tx).await.map_err(map_sqlx_err)?;
+        tx.commit().await.map_err(map_sqlx_err)?;
+        Ok(res.rows_affected() as u32)
+    }
+
+    pub(super) async fn bulk_delete_sessions_db(
+        &self,
+        ids: Vec<SessionId>,
+        _origin: Origin,
+    ) -> Result<u32> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
+        let placeholders = vec!["?"; ids.len()].join(",");
+        let sql = format!("DELETE FROM sessions WHERE id IN ({placeholders})");
+        let mut q = sqlx::query(&sql);
+        for id in &ids {
+            q = q.bind(id.as_str());
+        }
+        let res = q.execute(&mut *tx).await.map_err(map_sqlx_err)?;
+        tx.commit().await.map_err(map_sqlx_err)?;
+        Ok(res.rows_affected() as u32)
+    }
+
+    pub(super) async fn create_session_in_tx_db<'c>(
+        &self,
+        tx: &mut Transaction<'c, Sqlite>,
+        input: CreateSessionInput,
+        origin: Origin,
+    ) -> Result<SessionBrief> {
+        insert_session_row_inner(tx, &input, &origin).await
+    }
+
+    pub(super) async fn send_message_in_tx_db<'c>(
+        &self,
+        tx: &mut Transaction<'c, Sqlite>,
+        session_id: SessionId,
+        content: String,
+        origin: Origin,
+    ) -> Result<MessageBrief> {
+        insert_user_message_inner(tx, session_id, content, origin, MessageVisibility::Visible).await
+    }
+
+    pub(super) async fn begin_tx_db(&self) -> Result<Transaction<'_, Sqlite>> {
+        self.pool.begin().await.map_err(map_sqlx_err)
+    }
+}

@@ -1,0 +1,164 @@
+import { useEffect, useRef, useState } from "react";
+
+import type { AppCopy } from "@/lib/i18n";
+import {
+  getGoalStatus,
+  listGoalsForSession,
+  listVisibleGoals,
+  markGoalResultSeen,
+} from "@/lib/goals";
+import { useSessionsStore } from "@/stores/sessions";
+import { makeAppError, type AppError } from "@/types/app-error";
+import type { GoalBrief, GoalStatus } from "@/types/goal";
+import type { Screen } from "@/stores/ui";
+
+export function useGoalEffects({
+  activeSessionId,
+  copy,
+  pushToast,
+  screen,
+}: {
+  activeSessionId: string | undefined;
+  copy: AppCopy;
+  pushToast: (e: AppError) => void;
+  screen: Screen;
+}): {
+  activeGoals: GoalBrief[];
+  sessionGoals: GoalBrief[];
+  setActiveGoals: React.Dispatch<React.SetStateAction<GoalBrief[]>>;
+} {
+  const [activeGoals, setActiveGoals] = useState<GoalBrief[]>([]);
+  const [sessionGoals, setSessionGoals] = useState<GoalBrief[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const hydrateGoalProjects = async (goals: GoalBrief[]) => {
+      const knownProjectIds = new Set(
+        useSessionsStore.getState().projects.map((project) => project.id),
+      );
+      await Promise.all(
+        goals
+          .filter((goal) => !knownProjectIds.has(goal.projectId))
+          .map(async (goal) => {
+            try {
+              const snapshot = await getGoalStatus(goal.id);
+              if (snapshot.project) {
+                useSessionsStore
+                  .getState()
+                  .applyExternalProjectCreated(snapshot.project);
+              }
+            } catch (e) {
+              console.debug("[goals] hydrate project failed.", e);
+            }
+          }),
+      );
+    };
+    const refreshGoals = async () => {
+      try {
+        const goals = await listVisibleGoals();
+        if (cancelled) return;
+        setActiveGoals(goals);
+        void hydrateGoalProjects(goals);
+      } catch (e) {
+        console.debug("[goals] list_visible_goals failed.", e);
+      }
+    };
+    void refreshGoals();
+    const timer = window.setInterval(() => {
+      void refreshGoals();
+    }, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const visibleResultGoal = activeGoals.find(
+      (goal) =>
+        goal.masterSessionId === activeSessionId &&
+        (goal.status === "completed" || goal.status === "failed") &&
+        !goal.resultSeenAt,
+    );
+    if (!visibleResultGoal) return;
+    void markGoalResultSeen(visibleResultGoal.id)
+      .then((next) => {
+        setActiveGoals((goals) =>
+          goals
+            .map((goal) => (goal.id === next.id ? next : goal))
+            .filter(
+              (goal) =>
+                !(
+                  goal.id === next.id &&
+                  (goal.status === "completed" || goal.status === "failed")
+                ),
+            ),
+        );
+      })
+      .catch((e) => {
+        console.debug("[goals] mark result seen failed.", e);
+      });
+  }, [activeGoals, activeSessionId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sid = screen === "main" ? activeSessionId : undefined;
+    const load = sid
+      ? listGoalsForSession(sid)
+      : Promise.resolve<GoalBrief[]>([]);
+    void load
+      .then((goals) => {
+        if (!cancelled) setSessionGoals(goals);
+      })
+      .catch((e) => {
+        console.debug("[goals] list goals for session failed.", e);
+        if (!cancelled) setSessionGoals([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, screen, activeGoals]);
+
+  const goalStatusRef = useRef<Map<string, GoalStatus>>(new Map());
+  const notifyGoalTerminalRef = useRef<(goal: GoalBrief) => void>(() => {});
+  useEffect(() => {
+    notifyGoalTerminalRef.current = (goal: GoalBrief) => {
+      const done = goal.status === "completed";
+      pushToast(
+        makeAppError({
+          category: "business",
+          severity: done ? "info" : "error",
+          title: done ? copy.toasts.goalCompleted : copy.toasts.goalFailed,
+          message: goal.objective,
+          hint: null,
+          retryable: false,
+          context: "goal_terminal",
+          traceback: null,
+          action: {
+            kind: "view_goal",
+            label: done
+              ? copy.toasts.viewGoalResult
+              : copy.toasts.viewGoalDetails,
+            goalId: goal.id,
+          },
+          autoDismissMs: 6000,
+        }),
+      );
+    };
+  });
+  useEffect(() => {
+    const prev = goalStatusRef.current;
+    const next = new Map<string, GoalStatus>();
+    for (const goal of activeGoals) {
+      next.set(goal.id, goal.status);
+      const before = prev.get(goal.id);
+      const terminal = goal.status === "completed" || goal.status === "failed";
+      const wasActive = before === "running" || before === "wrapping";
+      if (terminal && wasActive) notifyGoalTerminalRef.current(goal);
+    }
+    goalStatusRef.current = next;
+  }, [activeGoals]);
+
+  return { activeGoals, sessionGoals, setActiveGoals };
+}
