@@ -824,6 +824,9 @@ const zhCopy = {
     expandLines: (count: number) => `展开（共 ${count} 行）`,
     supervisorMessage: "Supervisor 添加的消息",
     questionIndex: "提问索引",
+    questionEmpty: "（空消息）",
+    railStatusRunning: "进行中",
+    railStatusWaiting: "等你回应",
     jumpToQuestion: (index: number) => `跳到第 ${index} 条提问`,
     jumpToQuestionCluster: (first: number, last: number, count: number) =>
       `第 ${first} 到 ${last} 条提问组，共 ${count} 条，点击跳到第 ${first} 条`,
@@ -1915,6 +1918,9 @@ const enCopy: AppCopy = {
     expandLines: (count) => `Expand (${count} lines)`,
     supervisorMessage: "Message added by Supervisor",
     questionIndex: "Question index",
+    questionEmpty: "(empty message)",
+    railStatusRunning: "in progress",
+    railStatusWaiting: "waiting for you",
     jumpToQuestion: (index) => `Jump to question ${index}`,
     jumpToQuestionCluster: (first, last, count) =>
       `Questions ${first} to ${last}, ${count} total. Click to jump to question ${first}`,

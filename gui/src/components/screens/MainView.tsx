@@ -675,6 +675,14 @@ export function MainView({
         <UserQuestionRail
           turns={turns}
           scrollContainerRef={scrollContainerRef}
+          tailStatus={
+            stillWaiting || pendingAskUser
+              ? "waiting"
+              : isRunning
+                ? "running"
+                : null
+          }
+          onJump={() => setAtBottom(false)}
         />
         <SelectionCopyToolbar scrollContainerRef={scrollContainerRef} />
 

@@ -62,6 +62,16 @@ function getTopInScrollContent(
 interface UserQuestionRailProps {
   turns: Turn[];
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  /** Live state of the latest exchange, surfaced on the tail dot so a
+   * user scrolled up during a long run still sees whether the agent is
+   * working ("running") or it's their move — pending approval /
+   * ask_user ("waiting"). null = idle, no marker. */
+  tailStatus?: "running" | "waiting" | null;
+  /** Called when the user jumps via the rail. MainView uses it to
+   * break follow-the-bottom (setAtBottom(false)) so a streaming chunk
+   * doesn't immediately snap the jump back down — mirrors the ⌥↑/⌥↓
+   * keyboard nav, which already does this. */
+  onJump?: () => void;
 }
 
 interface QuestionPosition {
@@ -98,6 +108,26 @@ type RailItem = SingleRailItem | ClusterRailItem;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Turn a raw user-message into a clean one-line preview for the rail
+ * tooltip / cluster list. Collapses all whitespace (newlines in
+ * multi-line messages, runs of spaces) to single spaces, strips a
+ * leading markdown marker run (heading #, blockquote >, list bullet,
+ * code fence) so the preview reads as prose rather than syntax, then
+ * truncates. Returns "" for whitespace-only content; callers render a
+ * placeholder for that case.
+ */
+function buildPreview(raw: string): string {
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  const stripped = normalized
+    .replace(/^(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+\.\s+|`{1,3})/, "")
+    .trim();
+  if (stripped.length === 0) return "";
+  return stripped.length > PREVIEW_CHARS
+    ? stripped.slice(0, PREVIEW_CHARS).trimEnd() + "…"
+    : stripped;
 }
 
 function buildRailItems(
@@ -165,6 +195,8 @@ function buildRailItems(
 export function UserQuestionRail({
   turns,
   scrollContainerRef,
+  tailStatus = null,
+  onJump,
 }: UserQuestionRailProps) {
   const copy = useCopy();
   // Extract user-msg text in turn order. Indices in this array
@@ -231,11 +263,7 @@ export function UserQuestionRail({
         const topInContent = getTopInScrollContent(containerTop, scrollTop, el);
         const topPercent = (topInContent / scrollHeight) * 100;
         const topPx = (topPercent / 100) * railHeightPx;
-        const raw = userContents[i] ?? "";
-        const preview =
-          raw.length > PREVIEW_CHARS
-            ? raw.slice(0, PREVIEW_CHARS).trimEnd() + "…"
-            : raw;
+        const preview = buildPreview(userContents[i] ?? "");
         positions.push({ index: i, topPercent, topPx, preview });
       });
       setRailItems(buildRailItems(positions, railHeightPx));
@@ -296,7 +324,16 @@ export function UserQuestionRail({
       target.getBoundingClientRect().top -
       container.getBoundingClientRect().top -
       TOP_PADDING;
-    container.scrollBy({ top: delta, behavior: "smooth" });
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    container.scrollBy({
+      top: delta,
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+    });
+    // Break follow-the-bottom so an incoming streaming chunk doesn't
+    // snap the jump straight back down (mirrors MainView's ⌥↑/⌥↓ nav).
+    onJump?.();
   };
 
   return (
@@ -320,6 +357,15 @@ export function UserQuestionRail({
         {railItems.map((item) => {
           const isClusterOpen =
             item.kind === "cluster" && openItemId === item.id;
+          const isTail =
+            item.kind === "single"
+              ? item.question.index === userContents.length - 1
+              : item.lastIndex === userContents.length - 1;
+          const showStatus = isTail && tailStatus != null;
+          const statusLabel =
+            tailStatus === "waiting"
+              ? copy.conversation.railStatusWaiting
+              : copy.conversation.railStatusRunning;
 
           return (
             <div
@@ -349,18 +395,36 @@ export function UserQuestionRail({
                   <button
                     type="button"
                     onClick={() => handleJump(item.question.index)}
-                    aria-label={copy.conversation.jumpToQuestion(
-                      item.question.index + 1,
-                    )}
-                    className="grid size-5 place-items-center focus:outline-none"
+                    aria-label={
+                      showStatus
+                        ? `${copy.conversation.jumpToQuestion(
+                            item.question.index + 1,
+                          )} · ${statusLabel}`
+                        : copy.conversation.jumpToQuestion(
+                            item.question.index + 1,
+                          )
+                    }
+                    className="group/dot relative grid size-5 place-items-center outline-none"
                   >
+                    {showStatus && (
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "pointer-events-none absolute left-1/2 top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full motion-safe:animate-pulse",
+                          tailStatus === "waiting"
+                            ? "bg-warning/35"
+                            : "bg-brand/35",
+                        )}
+                      />
+                    )}
                     {/* Active = filled apricot disc; inactive = hollow ring.
                       Single-axis state (fill vs no-fill) at fixed 8px
                       size — same visual weight slot for both states, the
                       ink reading does all the work. */}
                     <span
                       className={cn(
-                        "block size-2 rounded-full border-[1.5px] transition-colors",
+                        "relative block size-2 rounded-full border-[1.5px] transition-colors",
+                        "group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-brand/40",
                         item.question.index === activeIndex
                           ? "border-brand-strong bg-brand-strong"
                           : "border-line-strong bg-transparent group-hover:border-ink-soft",
@@ -369,12 +433,32 @@ export function UserQuestionRail({
                   </button>
                   <span
                     role="tooltip"
-                    className="pointer-events-none absolute right-full top-1/2 z-10 mr-2 flex max-w-[320px] -translate-y-1/2 items-baseline gap-1.5 truncate whitespace-nowrap rounded-sm border border-line bg-elevated px-2 py-1 text-[11.5px] text-ink-soft opacity-0 shadow-sm transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                    className={cn(
+                      "pointer-events-none absolute right-full z-10 mr-2 flex max-w-[320px] items-center gap-2 truncate whitespace-nowrap rounded-sm border border-line bg-elevated px-2 py-1 text-[11.5px] text-ink-soft opacity-0 shadow-sm transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100",
+                      item.topPercent < 6
+                        ? "top-0"
+                        : item.topPercent > 94
+                          ? "bottom-0"
+                          : "top-1/2 -translate-y-1/2",
+                    )}
                   >
-                    <span className="font-mono text-[10.5px] text-ink-muted">
+                    <span
+                      className={cn(
+                        "shrink-0 font-mono text-[10.5px] tabular-nums",
+                        item.question.index === activeIndex
+                          ? "text-brand-strong"
+                          : "text-ink-muted",
+                      )}
+                    >
                       {item.question.index + 1}
                     </span>
-                    <span className="truncate">{item.question.preview}</span>
+                    <span
+                      aria-hidden
+                      className="h-2.5 w-px shrink-0 bg-line"
+                    />
+                    <span className="truncate">
+                      {item.question.preview || copy.conversation.questionEmpty}
+                    </span>
                   </span>
                 </>
               ) : (
@@ -382,19 +466,40 @@ export function UserQuestionRail({
                   <button
                     type="button"
                     onClick={() => handleJump(item.firstIndex)}
-                    aria-label={copy.conversation.jumpToQuestionCluster(
-                      item.firstIndex + 1,
-                      item.lastIndex + 1,
-                      item.questions.length,
-                    )}
-                    className="grid size-5 place-items-center focus:outline-none"
+                    aria-label={
+                      showStatus
+                        ? `${copy.conversation.jumpToQuestionCluster(
+                            item.firstIndex + 1,
+                            item.lastIndex + 1,
+                            item.questions.length,
+                          )} · ${statusLabel}`
+                        : copy.conversation.jumpToQuestionCluster(
+                            item.firstIndex + 1,
+                            item.lastIndex + 1,
+                            item.questions.length,
+                          )
+                    }
+                    className="group/dot relative grid size-5 place-items-center outline-none"
                   >
+                    {showStatus && (
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "pointer-events-none absolute left-1/2 top-1/2 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full motion-safe:animate-pulse",
+                          tailStatus === "waiting"
+                            ? "bg-warning/35"
+                            : "bg-brand/35",
+                        )}
+                        style={{ height: item.markerHeightPx + 6 }}
+                      />
+                    )}
                     <span
                       className={cn(
-                        "block w-2 rounded-full border-[1.5px] transition-colors",
+                        "relative block w-2 rounded-full border-[1.5px] transition-colors",
+                        "group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-brand/40",
                         activeIndex >= item.firstIndex &&
                           activeIndex <= item.lastIndex
-                          ? "border-brand-strong bg-brand-soft"
+                          ? "border-brand-strong bg-brand-strong"
                           : "border-line-strong bg-surface group-hover:border-ink-soft group-hover:bg-elevated",
                       )}
                       style={{ height: item.markerHeightPx }}
@@ -417,7 +522,7 @@ export function UserQuestionRail({
                       item.questions.length,
                     )}
                     className={cn(
-                      "absolute right-full z-10 mr-2 w-[320px] max-w-[calc(100vw-80px)] rounded-sm border border-line bg-elevated py-1 text-[11.5px] text-ink-soft shadow-sm transition-opacity duration-100",
+                      "absolute right-full z-10 mr-2 w-max max-w-[min(320px,calc(100vw-80px))] rounded-sm border border-line bg-elevated py-1 text-[11.5px] text-ink-soft shadow-sm transition-opacity duration-100",
                       isClusterOpen
                         ? "pointer-events-auto opacity-100"
                         : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100",
@@ -435,12 +540,25 @@ export function UserQuestionRail({
                           type="button"
                           onClick={() => handleJump(question.index)}
                           tabIndex={isClusterOpen ? 0 : -1}
-                          className="flex w-full items-baseline gap-1.5 px-2 py-1 text-left text-ink-soft transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none"
+                          className="flex w-full items-center gap-2 px-2 py-1 text-left text-ink-soft transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none"
                         >
-                          <span className="shrink-0 font-mono text-[10.5px] text-ink-muted">
+                          <span
+                            className={cn(
+                              "shrink-0 font-mono text-[10.5px] tabular-nums",
+                              question.index === activeIndex
+                                ? "text-brand-strong"
+                                : "text-ink-muted",
+                            )}
+                          >
                             {question.index + 1}
                           </span>
-                          <span className="truncate">{question.preview}</span>
+                          <span
+                            aria-hidden
+                            className="h-2.5 w-px shrink-0 bg-line"
+                          />
+                          <span className="truncate">
+                            {question.preview || copy.conversation.questionEmpty}
+                          </span>
                         </button>
                       ))}
                     </div>
