@@ -30,6 +30,11 @@
   --color-app: #fbfaf7;
   --color-surface: #fdfcf9;
   --color-elevated: #ffffff;
+  /* Recessed warm-grey fill for block code (DESIGN.md §4.3). Distinct
+     from the paper the prose floats on (darker than --color-app), and
+     in the same family as inline code (--color-hover) so code reads as
+     one embedded medium rather than a lighter-than-paper card. */
+  --color-code-surface: #f3f0e9;
 
   /* --- borders / dividers (named "line" to avoid border-border) --- */
   --color-line: #eae6de;
@@ -136,6 +141,10 @@ html[data-theme="dark"] {
   --color-app: #171411;
   --color-surface: #1d1915;
   --color-elevated: #24201b;
+  /* Dark code fill: a touch lighter than the near-black page (mirrors
+     inline code's --color-hover relationship in dark) so the block
+     separates as a distinct code medium without a harsh outline. */
+  --color-code-surface: #221d18;
 
   --color-line: #332c25;
   --color-line-strong: #4c4035;

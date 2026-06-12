@@ -321,6 +321,38 @@ interface CodeBlockProps {
 }
 
 /**
+ * Language ids that carry no information as a label — a fenced block
+ * tagged ```text``` / ```plaintext``` says nothing the mono register
+ * doesn't already. We suppress the floating tag for these so plain
+ * snippets show no label at all (the copy / wrap controls still float
+ * in on hover), rather than stamping "TEXT" noise on every block.
+ */
+const UNINFORMATIVE_CODE_LABELS = new Set(["text", "txt", "plaintext", "plain"]);
+
+function displayCodeLabel(language: string | null): string {
+  if (!language) return "";
+  return UNINFORMATIVE_CODE_LABELS.has(language.toLowerCase()) ? "" : language;
+}
+
+/**
+ * Strip blank edge lines from fenced content. react-markdown hands us
+ * the code with a single trailing newline, but LLMs also routinely emit
+ * a leading blank line (and sometimes extra trailing ones) inside the
+ * fence; rendered verbatim those read as wasted space at the top/bottom
+ * of the block. Line-based (not a single regex) so it survives `\r\n`
+ * endings and whitespace-only blank lines; internal lines and the
+ * indentation of real content are preserved.
+ */
+function trimCodeBlankEdges(code: string): string {
+  const lines = code.replace(/\r\n?/g, "\n").split("\n");
+  let start = 0;
+  let end = lines.length;
+  while (start < end && lines[start].trim() === "") start += 1;
+  while (end > start && lines[end - 1].trim() === "") end -= 1;
+  return lines.slice(start, end).join("\n");
+}
+
+/**
  * Highlighted code block. Async render: while Shiki loads / when an
  * unsupported language is supplied, falls back to the plain mono
  * block (same chrome, no colors). The plain fallback is rendered
@@ -381,43 +413,52 @@ function CodeBlock({ code, language }: CodeBlockProps) {
     };
   }, [code, highlightKey, lang, shikiTheme]);
 
+  const label = displayCodeLabel(language);
+
   return (
-    <div className="group/codeblock relative my-3.5 overflow-hidden rounded-md border border-line bg-surface">
-      {/* Header row: language label + Copy button. Always render the
-          row so the Copy button has a stable home; if no language is
-          known, the left side stays empty but the button keeps its
-          position. */}
-      <div className="flex items-center justify-between border-b border-line bg-elevated px-3 py-1.5">
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-muted">
-          {language ?? ""}
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            aria-pressed={wrapped}
-            onClick={() => setWrapped((value) => !value)}
-            className={cn(
-              "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10.5px] uppercase tracking-[0.08em]",
-              "transition-[background-color,color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
-              wrapped
-                ? "bg-hover text-ink-soft opacity-100"
-                : "text-ink-muted opacity-0 hover:bg-hover hover:text-ink-soft group-hover/codeblock:opacity-100 focus-visible:opacity-100",
-            )}
-          >
-            {wrapLabel}
-          </button>
-          <CodeCopyButton code={code} />
-        </div>
+    <div className="group/codeblock relative my-3 overflow-hidden rounded-md border border-line-strong bg-code-surface">
+      {/* No header bar: it wasted a full row (and read as a dead white
+          strip once the language label was suppressed). The language
+          tag + controls float in the top-right corner instead, so the
+          box is just the code. Top-right rather than top-left because
+          code starts flush-left — a left tag would sit on the first
+          line. The language tag is always shown (dim); wrap / copy
+          fade in on hover to its left. */}
+      <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1">
+        <button
+          type="button"
+          aria-pressed={wrapped}
+          onClick={() => setWrapped((value) => !value)}
+          className={cn(
+            "inline-flex items-center rounded-sm bg-code-surface/85 px-1.5 py-0.5 text-[10.5px] uppercase tracking-[0.08em] backdrop-blur-sm",
+            "transition-[background-color,color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
+            wrapped
+              ? "text-ink-soft opacity-100"
+              : "text-ink-muted opacity-0 hover:text-ink-soft group-hover/codeblock:opacity-100 focus-visible:opacity-100",
+            "hover:bg-hover",
+          )}
+        >
+          {wrapLabel}
+        </button>
+        <CodeCopyButton code={code} />
+        {label && (
+          <span className="pointer-events-none select-none font-mono text-[10px] uppercase tracking-[0.08em] text-ink-muted/70">
+            {label}
+          </span>
+        )}
       </div>
       <div
         className={cn(
-          "px-3.5 py-3 font-mono text-[13px] leading-[1.55] text-ink",
+          "px-3.5 py-1.5 font-mono text-[13px] leading-[1.45] text-ink",
           wrapped
             ? "overflow-x-hidden break-words [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap"
             : "overflow-x-auto [&_code]:whitespace-pre [&_pre]:whitespace-pre",
-          // Shiki's own .shiki/.shiki span colors come through the
-          // dangerouslySetInnerHTML payload; no override needed.
-          "[&_pre]:m-0 [&_pre]:bg-transparent [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-[13px]",
+          // Shiki's colored spans arrive via the innerHTML payload. Zero
+          // out every box-model contribution from pre/code so the only
+          // vertical space is this wrapper's py-1.5 — no UA / Shiki
+          // line-box padding leaking in and inflating the block.
+          "[&_pre]:m-0 [&_pre]:p-0 [&_pre]:bg-transparent [&_pre]:leading-[1.45]",
+          "[&_code]:m-0 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-[13px]",
         )}
       >
         {html ? (
@@ -465,7 +506,7 @@ function CodeCopyButton({ code }: { code: string }) {
       type="button"
       onClick={onCopy}
       className={cn(
-        "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10.5px] uppercase tracking-[0.08em]",
+        "inline-flex items-center gap-1 rounded-sm bg-code-surface/85 px-1.5 py-0.5 text-[10.5px] uppercase tracking-[0.08em] backdrop-blur-sm",
         "transition-[background-color,color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
         // Hidden until hover, but stays put once you've clicked
         // (focus-visible) so keyboard users can still see feedback.
@@ -539,7 +580,7 @@ const COMPONENTS: Components = {
     if (!codeProps) return <pre>{children}</pre>;
 
     const match = /language-([\w-]+)/.exec(codeProps.className ?? "");
-    const text = String(codeProps.children ?? "").replace(/\n$/, "");
+    const text = trimCodeBlankEdges(String(codeProps.children ?? ""));
     return <CodeBlock code={text} language={match?.[1] ?? null} />;
   },
   code({ className, children }) {
