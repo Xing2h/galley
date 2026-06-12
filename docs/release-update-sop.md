@@ -47,7 +47,8 @@ RELEASE_TAG=v0.2.1
 Replace the example value before every release.
 
 - [ ] `main` is the intended release commit.
-- [ ] Latest `check.yml` run is green on macOS and Windows.
+- [ ] Latest `check.yml` run is green on supported release targets: macOS Apple
+      Silicon, macOS Intel, and Windows x64.
 - [ ] Local verification passed for the change scope:
   - `pnpm --dir gui typecheck`
   - `pnpm --dir gui lint`
@@ -74,6 +75,11 @@ Replace the example value before every release.
   - tester / early-adopter release: manual download only by default
   - exception: `manual-download only` or `hold updater`, documented in notes and
     project status
+
+Supported release targets are macOS Apple Silicon, macOS Intel, and Windows
+x64. Windows ARM is not part of the default release matrix until
+`release.yml`, `bundle-python.sh`, updater manifest generation / validation, and
+the Windows smoke path all support `aarch64-pc-windows-msvc`.
 
 Expected default endpoint:
 

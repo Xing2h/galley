@@ -39,6 +39,12 @@ stable / patch：继续运行 Promote Update Channel → 默认更新通道 mani
 
 **Mac Intel CI 路径**（v0.1.2 起）：macos-15 arm64 runner + cross-compile + Rosetta 2，详细 trial 验证见 [trial run 26016317898](https://github.com/wangjc683/galley/actions/runs/26016317898)。Rosetta 装载 ~3min，cross-compile 跟 native build 相比多约 2-3min。比保 GitHub macos-13 deprecated runner 更长寿（macos-13 在 2026-27 deprecation 路径上）。本地 build 路径仍然是兜底（CI 不可用 / 紧急 hotfix 时走 [Manual fallback](#manual-fallback-ci-stalled-or-skipped) 方案 B）。
 
+**Windows ARM 状态**：当前正式 release matrix 只支持 Windows x64。
+Windows ARM 需要先补 `windows-11-arm` / `aarch64-pc-windows-msvc` workflow
+job、`bundle-python.sh win-arm64`、updater manifest `windows-aarch64` 生成与
+校验，以及对应 smoke path。未完成这些前，不把 Windows ARM 作为稳定版
+release asset。
+
 ## 版本号策略
 
 Semver 0.x.y，pre-1.0 阶段：
@@ -641,6 +647,11 @@ repo script。workflow 会上传 updater artifacts：
 
 - macOS: `Galley_<version>_macOS_<arch>.app.tar.gz` 和 `.sig`
 - Windows: `Galley_<version>_Windows_x64-setup.exe` 和 `.sig`
+
+Windows ARM updater artifacts 暂不生成；启用前必须同步更新
+`scripts/generate-tauri-update-manifest.mjs` 和
+`scripts/check-update-channel.mjs`，否则 live manifest 验证会与 release
+assets 脱节。
 
 Release workflow 还会把 `latest.json` candidate 放进 draft Release，方便 review。
 真正对用户生效的 manifest 由 `promote-update-channel.yml` 手动发布到默认
