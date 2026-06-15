@@ -174,6 +174,12 @@ export interface ComposerProps {
 
   /** When true, hide submit and show the deep-amber stop button. */
   stopMode?: boolean;
+  /**
+   * True after the user clicks Stop, until the bridge confirms the run
+   * ended. The Stop button shows a persistent pulse halo + "停止中…"
+   * label and ignores further clicks so a second abort can't stack.
+   */
+  isStopping?: boolean;
   onStop?: () => void;
 
   /**
@@ -233,6 +239,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       onChange,
       onSubmit,
       stopMode = false,
+      isStopping = false,
       onStop,
       submitAckTick = 0,
       disabled = false,
@@ -609,12 +616,29 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 )}
               >
                 {stopMode && !isSideQuestion ? (
-                  <TooltipLabel text={copy.composer.stop}>
+                  <TooltipLabel
+                    text={isStopping ? copy.composer.stopping : copy.composer.stop}
+                  >
                     <button
                       type="button"
-                      onClick={onStop}
-                      aria-label={copy.composer.stop}
-                      className={COMPOSER_STOP_BUTTON}
+                      onClick={() => {
+                        if (isStopping) return;
+                        onStop?.();
+                      }}
+                      aria-disabled={isStopping || undefined}
+                      aria-label={
+                        isStopping ? copy.composer.stopping : copy.composer.stop
+                      }
+                      className={cn(
+                        COMPOSER_STOP_BUTTON,
+                        // Resting pulse halo + no hover lift while the
+                        // abort is in flight: reads as "acknowledged,
+                        // locked" without going fully disabled — disabled
+                        // would wipe the halo via COMPOSER_ACTION_BUTTON's
+                        // disabled:shadow-none.
+                        isStopping &&
+                          "cursor-default shadow-[var(--shadow-composer-stop-pulse)] hover:translate-y-0",
+                      )}
                     >
                       <Stop size={14} weight="fill" />
                     </button>

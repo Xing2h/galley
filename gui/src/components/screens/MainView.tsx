@@ -60,6 +60,12 @@ export interface MainViewProps {
    * shows Stop, the LLM switcher disables. */
   isRunning?: boolean;
   /**
+   * True between the user clicking Stop and the bridge's run_complete /
+   * error. Forwarded to the Composer so the Stop button shows its
+   * "停止中…" acknowledged state and won't fire a second abort.
+   */
+  isStopping?: boolean;
+  /**
    * GA-side turn currently being run, surfaced into the thinking
    * placeholder (Turn N · 思考中…) and into pending Approval Card
    * headers when the agent has a request mid-turn. `null` / undefined
@@ -155,6 +161,7 @@ export function MainView({
   onApprove,
   onStop,
   isRunning = false,
+  isStopping = false,
   currentTurnIndex,
   userSubmitTick = 0,
   inFlightContent = "",
@@ -749,6 +756,7 @@ export function MainView({
             onSubmit={onSubmit}
             onGoalSubmit={onGoalSubmit}
             stopMode={isRunning}
+            isStopping={isStopping}
             onStop={onStop}
             submitAckTick={userSubmitTick}
             disabled={false}

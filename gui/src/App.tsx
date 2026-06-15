@@ -323,6 +323,9 @@ function App() {
   const agentRunning = useMessagesStore((s) =>
     activeSessionId ? (s.byId[activeSessionId]?.agentRunning ?? false) : false,
   );
+  const isStopping = useMessagesStore((s) =>
+    activeSessionId ? (s.byId[activeSessionId]?.isStopping ?? false) : false,
+  );
   const hasRunningSessions = useMessagesStore((s) =>
     Object.values(s.byId).some((messages) => messages.agentRunning),
   );
@@ -1306,9 +1309,13 @@ function App() {
                     if (!activeSessionId) return;
                     if (bridgeStatus === "connected") {
                       sendIPCCommand(activeSessionId, { kind: "abort" });
+                      useMessagesStore
+                        .getState()
+                        .setStopping(activeSessionId, true);
                     }
                   }}
                   isRunning={isRunning}
+                  isStopping={isStopping}
                   currentTurnIndex={currentTurnIndex}
                   userSubmitTick={userSubmitTick}
                   inFlightContent={inFlightContent}

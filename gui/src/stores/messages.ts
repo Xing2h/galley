@@ -113,6 +113,14 @@ export interface PerSessionMessages {
   approvalDecisions: Record<string, ApprovalDecision>;
   pendingAskUser: PendingAskUser | null;
   sendPhase: SendPhase | null;
+  /**
+   * True between the user clicking Stop (abort dispatched to the
+   * bridge) and the bridge signalling run_complete / error. Drives
+   * the Stop button's "停止中…" acknowledged state so the user sees
+   * the click registered and can't fire a second abort into the same
+   * run. Cleared together with agentRunning at run end.
+   */
+  isStopping: boolean;
   turnIndexOffset: number;
   lastUserPersistRequestId: number;
 }
@@ -126,6 +134,7 @@ export const EMPTY_MESSAGES: PerSessionMessages = Object.freeze({
   approvalDecisions: EMPTY_DECISIONS,
   pendingAskUser: null,
   sendPhase: null,
+  isStopping: false,
   turnIndexOffset: 0,
   lastUserPersistRequestId: 0,
 }) as PerSessionMessages;
@@ -142,6 +151,7 @@ function emptyMessages(): PerSessionMessages {
     approvalDecisions: {},
     pendingAskUser: null,
     sendPhase: null,
+    isStopping: false,
     turnIndexOffset: 0,
     lastUserPersistRequestId: 0,
   };
@@ -245,6 +255,7 @@ interface MessagesActions {
   setAgentRunning: (sid: string, running: boolean) => void;
   setCurrentTurnIndex: (sid: string, idx: number | null) => void;
   setSendPhase: (sid: string, phase: SendPhase | null) => void;
+  setStopping: (sid: string, stopping: boolean) => void;
   appendInFlightDelta: (sid: string, delta: string) => void;
   clearInFlightContent: (sid: string) => void;
   /**
@@ -350,6 +361,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       currentTurnIndex: null,
       inFlightContent: "",
       sendPhase: null,
+      isStopping: false,
     }));
     set({ byId });
     fireSessionMirror(sid, next);
@@ -428,6 +440,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       // so the conversation reverts to normal running visuals.
       pendingAskUser: null,
       sendPhase: "saving",
+      isStopping: false,
       turnIndexOffset: currentTurnCount,
       lastUserPersistRequestId: persistRequestId,
     }));
@@ -579,6 +592,10 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       ...m,
       agentRunning: running,
       sendPhase: running ? m.sendPhase : null,
+      // run_complete / error / bridge-close all land here as the run's
+      // terminal signal — clear isStopping in lockstep so a finished
+      // (or aborted-then-finished) run never leaves the button stuck.
+      isStopping: running ? m.isStopping : false,
     }));
     set({ byId });
     fireSessionMirror(sid, next);
@@ -600,6 +617,16 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
       sendPhase: phase,
+    }));
+    set({ byId });
+    fireSessionMirror(sid, next);
+  },
+
+  setStopping: (sid, stopping) => {
+    const state = get();
+    const { byId, next } = patchMessages(state, sid, (m) => ({
+      ...m,
+      isStopping: stopping,
     }));
     set({ byId });
     fireSessionMirror(sid, next);
