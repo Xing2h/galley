@@ -1150,8 +1150,9 @@ class NativeToolClient:
         for tid in self._pending_tool_ids:
             if tid not in tr_id_set: tool_result_blocks.append({"type": "tool_result", "tool_use_id": tid, "content": ""})
         self._pending_tool_ids = []
-        # Filter whitespace-only text blocks that cause 400 on strict API proxies
-        filtered_content = [c for c in combined_content if c.get("text", "").strip()]
+        # Filter whitespace-only text blocks that cause 400 on strict API proxies,
+        # but keep non-text blocks such as images.
+        filtered_content = [c for c in combined_content if c.get("type") != "text" or c.get("text", "").strip()]
         final_content = tool_result_blocks + filtered_content
         if not final_content: final_content = [{"type": "text", "text": "."}]
         merged = {"role": "user", "content": final_content}

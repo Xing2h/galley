@@ -420,12 +420,32 @@ Conversation messages for a session, oldest first. NDJSON, one
 | `turnIndex`   | int?            | which user-message-turn this message belongs to                       |
 | `origin`      | `Origin`?       | source of this message (B2+; omitted on rows from before migration 006) |
 | `visibility`  | `visible/internal`? | additive field for internal controller/audit turns; ordinary session reads and GUI rendering return `visible` rows only |
+| `attachments` | `MessageAttachment[]`? | optional additive read metadata for Galley-owned message attachments; V1 supports image attachments created by the GUI only |
+
+`MessageAttachment` fields:
+
+| Field       | Type            | Notes                                                                       |
+| ----------- | --------------- | --------------------------------------------------------------------------- |
+| `id`        | string          | attachment identifier                                                       |
+| `messageId` | string          | parent message id                                                           |
+| `sessionId` | string          | parent session id                                                           |
+| `kind`      | string enum     | currently `image`                                                           |
+| `path`      | string          | absolute local path under Galley's app data directory                       |
+| `mimeType`  | string          | `image/png`, `image/jpeg`, or `image/webp`                                  |
+| `byteSize`  | int             | original pasted byte count                                                  |
+| `width`     | int?            | image width when provided by the GUI                                        |
+| `height`    | int?            | image height when provided by the GUI                                       |
+| `createdAt` | string (ISO8601)|                                                                             |
 
 ### 5.5a · `galley session send <id> "<content>" [--supervisor=<x>] [--reason=<y>]`
 
 **Write command** — persists a user message into a session and dispatches
 it to the live runner subprocess. Requires Galley Core to be running
 (exit `4 db_unavailable` if the socket isn't reachable).
+
+V1 is text-only for CLI writes. Image attachments may appear in read
+metadata when created from the GUI, but `galley session send` does not
+accept or dispatch images inside `schemaVersion: 1`.
 
 | Flag           | Default                                  | Notes                                                                |
 | -------------- | ---------------------------------------- | -------------------------------------------------------------------- |

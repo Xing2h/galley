@@ -10,11 +10,15 @@ import { Epigraph } from "@/components/screens/Epigraph";
 import type { EpigraphCondition } from "@/lib/epigraphs";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import type { PendingImageAttachment } from "@/types/conversation";
 import type { GoalLaunchConfig } from "@/types/goal";
 
 export interface EmptyStateProps {
   llmDisplayName: string;
-  onSubmit?: (text: string) => void;
+  onSubmit?: (
+    text: string,
+    attachments: PendingImageAttachment[],
+  ) => boolean | void;
   onGoalSubmit?: (
     text: string,
     config: GoalLaunchConfig,
@@ -53,6 +57,7 @@ export interface EmptyStateProps {
    * job, not this quiet line's. Defaults to `quiet`.
    */
   epigraphCondition?: EpigraphCondition;
+  onImageSubmitBlocked?: (kind: "goal") => void;
 }
 
 /**
@@ -82,6 +87,7 @@ export function EmptyState({
   projectName,
   focusTick = 0,
   epigraphCondition = "quiet",
+  onImageSubmitBlocked,
 }: EmptyStateProps) {
   const copy = useCopy();
   const composerRef = useRef<ComposerHandle>(null);
@@ -125,6 +131,7 @@ export function EmptyState({
           onConfigureModels={onConfigureModels}
           requiresModelConfig={requiresModelConfig}
           onOpenLLMSwitcher={onOpenLLMSwitcher}
+          onImageSubmitBlocked={onImageSubmitBlocked}
         />
 
         {projectName && (

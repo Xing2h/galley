@@ -1,11 +1,15 @@
 """Managed GenericAgent parser compatibility tests."""
 from __future__ import annotations
 
+import importlib
 import json
+import os
 import sys
 import types
 from pathlib import Path
 from typing import Any, cast
+
+import pytest
 
 _MANAGED_GA_CODE = Path(__file__).resolve().parents[2] / "managed-ga" / "code"
 if str(_MANAGED_GA_CODE) not in sys.path:
@@ -76,3 +80,83 @@ def test_tryparse_does_not_normalize_non_path_string_fields() -> None:
     parsed = llmcore.tryparse(raw)
 
     assert parsed["arguments"]["script"] == r'print("D:\new\test.md")'
+
+
+def _exhaust(gen: Any) -> Any:
+    try:
+        while True:
+            next(gen)
+    except StopIteration as e:
+        return e.value
+
+
+def test_native_tool_client_keeps_non_text_image_blocks(tmp_path: Path) -> None:
+    class FakeBackend:
+        def __init__(self) -> None:
+            self.history: list[dict[str, Any]] = []
+            self.name = "fake"
+            self.merged: dict[str, Any] | None = None
+
+        def ask(self, merged: dict[str, Any]) -> Any:
+            self.merged = merged
+            if False:
+                yield ""
+            return llmcore.MockResponse("", "ok", [], "{}")
+
+    backend = FakeBackend()
+    client = llmcore.NativeToolClient(backend)
+    client.log_path = str(tmp_path / "llm.log")
+    image_block = {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": "aA=="},
+    }
+
+    _exhaust(
+        client.chat(
+            [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "   "}, image_block],
+                }
+            ]
+        )
+    )
+
+    assert backend.merged == {"role": "user", "content": [image_block]}
+
+
+def test_agentmain_image_content_blocks_encodes_local_images(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GALLEY_GA_STATE_ROOT", str(tmp_path / "state"))
+    plugins_stub = types.ModuleType("plugins")
+    plugins_typed = cast(Any, plugins_stub)
+    plugins_typed.__path__ = []
+    hooks_stub = types.ModuleType("plugins.hooks")
+    hooks_typed = cast(Any, hooks_stub)
+    hooks_typed.discover_and_load = lambda: None
+    monkeypatch.setitem(sys.modules, "plugins", plugins_stub)
+    monkeypatch.setitem(sys.modules, "plugins.hooks", hooks_stub)
+    sys.modules.pop("agentmain", None)
+    previous_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        agentmain = importlib.import_module("agentmain")
+    finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
+
+    image_path = tmp_path / "paste.webp"
+    image_path.write_bytes(b"image-bytes")
+
+    blocks = agentmain.image_content_blocks("look", [os.fspath(image_path)])
+
+    assert blocks[0] == {"type": "text", "text": "look"}
+    assert blocks[1] == {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": "image/webp",
+            "data": "aW1hZ2UtYnl0ZXM=",
+        },
+    }

@@ -637,6 +637,7 @@ pub(super) async fn insert_message_inner(
         summary: None,
         turn_index: Some(next_turn.max(0) as u32),
         visibility: Some(visibility),
+        attachments: Vec::new(),
         origin: Some(origin),
     })
 }

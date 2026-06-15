@@ -1,11 +1,22 @@
-import { CaretDown, CaretUp, Check, Copy, PlugsConnected } from "@phosphor-icons/react";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import {
+  CaretDown,
+  CaretUp,
+  Check,
+  Copy,
+  PlugsConnected,
+} from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ActionChip } from "@/components/conversation/ActionChip";
+import {
+  ImagePreviewDialog,
+  type ImagePreviewItem,
+} from "@/components/conversation/ImagePreviewDialog";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useCopy, type AppCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { Origin } from "@/types/conversation";
+import type { MessageAttachment, Origin } from "@/types/conversation";
 
 /**
  * User message — document-style callout, NOT a chat bubble.
@@ -106,6 +117,7 @@ function formatRelativeTime(
 
 export interface MessageUserProps {
   content: string;
+  attachments?: MessageAttachment[];
   /**
    * Audit origin for this user message (B4 M7). When `origin.via ===
    * "supervisor"`, a small robot provenance icon renders by the left
@@ -122,7 +134,12 @@ export interface MessageUserProps {
   createdAt?: string;
 }
 
-export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
+export function MessageUser({
+  content,
+  attachments = [],
+  origin,
+  createdAt,
+}: MessageUserProps) {
   const copy = useCopy();
   const lineCount = useMemo(() => content.split("\n").length, [content]);
   const isLong =
@@ -240,6 +257,9 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
         >
           {content}
         </span>
+        {attachments.length > 0 && (
+          <UserImageAttachments attachments={attachments} />
+        )}
         {/* Transient copy — a floating chip (same design as the
             selection-copy chip) that fades in on hover at the block's
             top-right. Overlaid on the block so it unambiguously belongs
@@ -270,5 +290,71 @@ export function MessageUser({ content, origin, createdAt }: MessageUserProps) {
         </div>
       )}
     </div>
+  );
+}
+
+function UserImageAttachments({
+  attachments,
+}: {
+  attachments: MessageAttachment[];
+}) {
+  const copy = useCopy();
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const previewImages: ImagePreviewItem[] = useMemo(
+    () =>
+      attachments
+        .filter((item) => item.kind === "image")
+        .map((attachment) => {
+          const isDataUrl = attachment.path.startsWith("data:");
+          return {
+            id: attachment.id,
+            src: isDataUrl ? attachment.path : convertFileSrc(attachment.path),
+            alt: copy.conversation.image,
+            openOriginalPath: isDataUrl ? undefined : attachment.path,
+          };
+        }),
+    [attachments, copy.conversation.image],
+  );
+  const openOriginal = (item: ImagePreviewItem) => {
+    if (!item.openOriginalPath) return;
+    void invoke("open_conversation_image", {
+      kind: "local",
+      source: item.openOriginalPath,
+    }).catch((e) => {
+      console.warn("[MessageUser] open image failed", e);
+    });
+  };
+
+  if (previewImages.length === 0) return null;
+  return (
+    <>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {previewImages.map((image, imageIndex) => (
+          <button
+            key={image.id}
+            type="button"
+            onClick={() => setPreviewIndex(imageIndex)}
+            className={cn(
+              "h-24 w-24 overflow-hidden rounded-md border border-brand-strong/25 bg-surface shadow-[var(--shadow-neutral-control)]",
+              "transition-[border-color,box-shadow,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
+              "hover:-translate-y-px hover:border-brand-strong/50 hover:shadow-[var(--shadow-neutral-control-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35",
+            )}
+            aria-label={copy.conversation.previewImage}
+          >
+            <img
+              src={image.src}
+              alt={image.alt}
+              className="h-full w-full object-cover"
+            />
+          </button>
+        ))}
+      </div>
+      <ImagePreviewDialog
+        images={previewImages}
+        index={previewIndex}
+        onIndexChange={setPreviewIndex}
+        onOpenOriginal={openOriginal}
+      />
+    </>
   );
 }

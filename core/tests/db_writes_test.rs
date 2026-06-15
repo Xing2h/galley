@@ -43,6 +43,7 @@ const MIG_016: &str = include_str!("../migrations/016_goal_master_session.sql");
 const MIG_017: &str = include_str!("../migrations/017_message_visibility.sql");
 const MIG_018: &str = include_str!("../migrations/018_goal_deliverable.sql");
 const MIG_019: &str = include_str!("../migrations/019_goal_workspace.sql");
+const MIG_020: &str = include_str!("../migrations/020_message_attachments.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -81,7 +82,7 @@ async fn fresh_file_pool() -> (tempfile::TempDir, SqlitePool) {
 async fn run_migrations(pool: &SqlitePool) {
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
-        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019,
+        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019, MIG_020,
     ] {
         sqlx::raw_sql(sql)
             .execute(pool)
@@ -1035,7 +1036,7 @@ async fn delete_session_removes_row() {
 }
 
 #[tokio::test]
-async fn delete_session_cascades_messages() {
+async fn delete_session_cascades_messages_and_attachments() {
     let pool = fresh_pool().await;
     seed_session_idle(&pool, "s1").await;
     sqlx::query(
@@ -1048,12 +1049,29 @@ async fn delete_session_cascades_messages() {
     .execute(&pool)
     .await
     .unwrap();
+    sqlx::query(
+        "INSERT INTO message_attachments (
+           id, message_id, session_id, kind, file_path, mime_type, byte_size, created_at
+         ) VALUES (
+           'att_1', 'm1', 's1', 'image', '/tmp/paste.png', 'image/png', 3, ?
+         )",
+    )
+    .bind("2026-05-19T00:00:00Z")
+    .execute(&pool)
+    .await
+    .unwrap();
     let galley = SqliteGalley::from_pool(pool.clone());
     galley
         .delete_session(sid("s1"), Origin::gui())
         .await
         .expect("delete");
     let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE session_id = ?")
+        .bind("s1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_attachments WHERE session_id = ?")
         .bind("s1")
         .fetch_one(&pool)
         .await

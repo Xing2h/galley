@@ -23,15 +23,16 @@ use sqlx::{FromRow, Sqlite, SqliteConnection, SqlitePool, Transaction};
 
 use crate::api::{
     ClaimGoalTaskInput, CreateGoalEventInput, CreateGoalProposalInput, CreateGoalTaskInput,
-    CreateProjectInput, CreateSessionInput, DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT,
-    GOAL_CONFIRMATION_PHRASE, GalleyApi, GoalBrief, GoalDeliverable, GoalEventBrief, GoalEventType,
-    GoalId, GoalProposalBrief, GoalProposalId, GoalProposalStatus, GoalStatus, GoalStatusSnapshot,
-    GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode, HealthCheck, HealthReport,
-    HealthStatus, MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT, ManagedModelAuthKind,
-    ManagedModelCredentialStatus, ManagedModelProtocol, ManagedModelProviderRecord,
-    ManagedModelRecord, MessageBrief, MessageId, MessageRole, MessageVisibility, Origin, OriginVia,
-    ProjectBrief, ProjectId, ProjectPatch, RuntimeKind, SearchHit, SearchScope, SessionBrief,
-    SessionFilter, SessionId, SessionStatus, StatusSummary, UpdateGoalTaskInput,
+    CreateProjectInput, CreateSessionInput, GalleyApi, GoalBrief, GoalDeliverable, GoalEventBrief,
+    GoalEventType, GoalId, GoalProposalBrief, GoalProposalId, GoalProposalStatus, GoalStatus,
+    GoalStatusSnapshot, GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode, HealthCheck,
+    HealthReport, HealthStatus, ManagedModelAuthKind, ManagedModelCredentialStatus,
+    ManagedModelProtocol, ManagedModelProviderRecord, ManagedModelRecord, MessageAttachmentBrief,
+    MessageBrief, MessageId, MessageRole, MessageVisibility, Origin, OriginVia, ProjectBrief,
+    ProjectId, ProjectPatch, RuntimeKind, SearchHit, SearchScope, SessionBrief, SessionFilter,
+    SessionId, SessionStatus, StatusSummary, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS,
+    DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE, MAX_GOAL_WORKER_LIMIT,
+    MIN_GOAL_WORKER_LIMIT,
 };
 use crate::app_paths;
 use crate::error::{GalleyError, Result};
@@ -110,7 +111,7 @@ use helpers::*;
 use rows::*;
 
 pub use rows::{
-    ManagedModelSecretRow, MessageSearchHit, PersistAssistantMessage, PersistToolEventPending,
-    PersistedMessageRow, ToolEventRow, UpsertManagedModelMetadata,
+    ManagedModelSecretRow, MessageAttachmentCreate, MessageSearchHit, PersistAssistantMessage,
+    PersistToolEventPending, PersistedMessageRow, ToolEventRow, UpsertManagedModelMetadata,
     UpsertManagedModelProviderMetadata,
 };

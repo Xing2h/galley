@@ -58,6 +58,7 @@ import { useRuntimeStore } from "@/stores/runtime";
 import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
 import { makeAppError } from "@/types/app-error";
+import type { PendingImageAttachment } from "@/types/conversation";
 import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
 
 function goalMasterSessionTitle(objective: string): string {
@@ -259,6 +260,21 @@ function App() {
     setSettingsOpen(true);
   };
   const openModelsForMissingConfig = () => openSettings("models");
+  const showImageBlockedToast = (message: string) => {
+    pushToast(
+      makeAppError({
+        category: "business",
+        severity: "error",
+        title: copy.toasts.imageBlocked,
+        message,
+        hint: null,
+        retryable: false,
+        context: "imagePaste",
+        traceback: null,
+        autoDismissMs: 4200,
+      }),
+    );
+  };
   const openModelConfigFromSwitcher =
     activeRuntimeKind === "managed" ? () => openSettings("models") : undefined;
   const openLLMSwitcherFallback = () => {
@@ -385,10 +401,11 @@ function App() {
       demoSid = sid;
       await activateSession(sid);
       setScreen("main");
-      const absoluteTurnIndex = await appendUserTurn(
+      const persisted = await appendUserTurn(
         sid,
         copy.browserControl.demoPrompt,
       );
+      const absoluteTurnIndex = persisted.turnIndex;
       await sendIPCCommand(sid, {
         kind: "user_message",
         text: copy.browserControl.demoPrompt,
@@ -1100,13 +1117,21 @@ function App() {
                   }}
                   onOpenLLMSwitcher={openLLMSwitcherFallback}
                   onGoalSubmit={startGoalFromComposer}
-                  onSubmit={(t) => {
+                  onImageSubmitBlocked={() =>
+                    showImageBlockedToast(copy.toasts.imageBlockedGoal)
+                  }
+                  onSubmit={(t, images) => {
                     if (requiresManagedModelConfig) {
                       openModelsForMissingConfig();
                       return;
                     }
+                    if (images.length > 0 && activeRuntimeKind !== "managed") {
+                      showImageBlockedToast(copy.toasts.imageBlockedExternal);
+                      return false;
+                    }
                     void submitOnEmpty(
                       t,
+                      images,
                       activeSessionId,
                       createSessionPersisted,
                       activateSession,
@@ -1159,9 +1184,12 @@ function App() {
                   goal={activeSessionGoal}
                   sessionGoals={sessionGoals}
                   onGoalSubmit={startGoalFromComposer}
+                  onImageSubmitBlocked={() =>
+                    showImageBlockedToast(copy.toasts.imageBlockedGoal)
+                  }
                   pendingApprovals={pendingApprovals}
                   approvalDecisions={approvalDecisions}
-                  onSubmit={(t) => {
+                  onSubmit={(t, images) => {
                     if (requiresManagedModelConfig) {
                       openModelsForMissingConfig();
                       return;
@@ -1249,6 +1277,20 @@ function App() {
                     // user_message command and runs the btw worker
                     // independently of the task queue.
                     const trimmed = t.trimStart();
+                    if (images.length > 0) {
+                      if (activeSession?.gaRuntimeKind !== "managed") {
+                        showImageBlockedToast(copy.toasts.imageBlockedExternal);
+                        return false;
+                      }
+                      if (
+                        trimmed === "/btw" ||
+                        trimmed.startsWith("/btw ") ||
+                        pendingAskUser !== null
+                      ) {
+                        showImageBlockedToast(copy.toasts.imageBlockedGoal);
+                        return false;
+                      }
+                    }
                     if (trimmed === "/btw" || trimmed.startsWith("/btw ")) {
                       appendSideQuestionUserTurn(sid, t);
                       void ensureBridgeThenSend(
@@ -1271,7 +1313,8 @@ function App() {
                     // question" vs "this was a fresh prompt".
                     const wasAskUser = pendingAskUser !== null;
                     void (async () => {
-                      const absoluteTurnIndex = await appendUserTurn(sid, t);
+                      const persisted = await appendUserTurn(sid, t, images);
+                      const absoluteTurnIndex = persisted.turnIndex;
                       if (wasAskUser) {
                         await ensureBridgeThenSend({
                           kind: "ask_user_response",
@@ -1282,7 +1325,9 @@ function App() {
                         await ensureBridgeThenSend({
                           kind: "user_message",
                           text: t,
-                          images: [],
+                          images: persisted.attachments.map(
+                            (attachment) => attachment.path,
+                          ),
                           absoluteTurnIndex,
                         });
                       }
@@ -1599,10 +1644,18 @@ export default App;
  */
 async function submitOnEmpty(
   text: string,
+  attachments: PendingImageAttachment[],
   existingId: string | undefined,
   createSessionPersisted: (projectId?: string) => Promise<string>,
   activateSession: (id: string) => Promise<void>,
-  appendUserTurn: (sessionId: string, text: string) => Promise<number>,
+  appendUserTurn: (
+    sessionId: string,
+    text: string,
+    attachments?: PendingImageAttachment[],
+  ) => Promise<{
+    turnIndex: number;
+    attachments: { path: string }[];
+  }>,
   sendIPCCommand: (
     sessionId: string,
     cmd: {
@@ -1633,7 +1686,8 @@ async function submitOnEmpty(
       id = await createSessionPersisted(inheritProjectId);
     }
     setScreen("main");
-    const absoluteTurnIndex = await appendUserTurn(id, text);
+    const persisted = await appendUserTurn(id, text, attachments);
+    const absoluteTurnIndex = persisted.turnIndex;
     const messages = useMessagesStore.getState();
     const runtime = useRuntimeStore.getState();
     const status = runtime.byId[id]?.bridgeStatus ?? "idle";
@@ -1653,7 +1707,7 @@ async function submitOnEmpty(
     await sendIPCCommand(id, {
       kind: "user_message",
       text,
-      images: [],
+      images: persisted.attachments.map((attachment) => attachment.path),
       absoluteTurnIndex,
     });
     messages.setSendPhase(id, "sent");

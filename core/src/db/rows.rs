@@ -38,7 +38,11 @@ impl SessionRow {
             has_unread: Some(self.has_unread != 0),
             selected_llm_index: self.llm_index.and_then(
                 |n| {
-                    if n < 0 { None } else { Some(n as u32) }
+                    if n < 0 {
+                        None
+                    } else {
+                        Some(n as u32)
+                    }
                 },
             ),
             selected_llm_key: self.llm_key,
@@ -80,6 +84,7 @@ impl MessageRow {
             summary: self.summary,
             turn_index: Some(self.turn_index.max(0) as u32),
             visibility: Some(parse_message_visibility(&self.visibility)?),
+            attachments: Vec::new(),
             origin: self
                 .created_via
                 .map(|via| {
@@ -95,6 +100,27 @@ impl MessageRow {
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]
+pub(super) struct PersistedMessageRowRecord {
+    pub id: String,
+    pub session_id: String,
+    pub turn_index: i64,
+    pub sequence: i64,
+    pub role: String,
+    pub content: String,
+    pub tool_calls: Option<String>,
+    pub tool_results: Option<String>,
+    pub thinking: Option<String>,
+    pub final_answer: Option<String>,
+    pub summary: Option<String>,
+    pub preamble: Option<String>,
+    pub created_via: Option<String>,
+    pub supervisor: Option<String>,
+    pub origin_note: Option<String>,
+    pub visibility: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct PersistedMessageRow {
     pub id: String,
     pub session_id: String,
@@ -113,6 +139,75 @@ pub struct PersistedMessageRow {
     pub origin_note: Option<String>,
     pub visibility: String,
     pub created_at: String,
+    pub attachments: Vec<MessageAttachmentBrief>,
+}
+
+impl PersistedMessageRowRecord {
+    pub(super) fn into_persisted(self) -> PersistedMessageRow {
+        PersistedMessageRow {
+            id: self.id,
+            session_id: self.session_id,
+            turn_index: self.turn_index,
+            sequence: self.sequence,
+            role: self.role,
+            content: self.content,
+            tool_calls: self.tool_calls,
+            tool_results: self.tool_results,
+            thinking: self.thinking,
+            final_answer: self.final_answer,
+            summary: self.summary,
+            preamble: self.preamble,
+            created_via: self.created_via,
+            supervisor: self.supervisor,
+            origin_note: self.origin_note,
+            visibility: self.visibility,
+            created_at: self.created_at,
+            attachments: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub(super) struct MessageAttachmentRow {
+    pub id: String,
+    pub message_id: String,
+    pub session_id: String,
+    pub kind: String,
+    pub file_path: String,
+    pub mime_type: String,
+    pub byte_size: i64,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub created_at: String,
+}
+
+impl MessageAttachmentRow {
+    pub(super) fn into_brief(self) -> MessageAttachmentBrief {
+        MessageAttachmentBrief {
+            id: self.id,
+            message_id: MessageId(self.message_id),
+            session_id: SessionId(self.session_id),
+            kind: self.kind,
+            path: self.file_path,
+            mime_type: self.mime_type,
+            byte_size: self.byte_size.max(0) as u64,
+            width: self
+                .width
+                .and_then(|n| if n < 0 { None } else { Some(n as u32) }),
+            height: self
+                .height
+                .and_then(|n| if n < 0 { None } else { Some(n as u32) }),
+            created_at: self.created_at,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct MessageAttachmentCreate {
+    pub mime_type: String,
+    pub bytes: Vec<u8>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 pub struct PersistAssistantMessage {

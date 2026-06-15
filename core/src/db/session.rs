@@ -1,22 +1,35 @@
 use super::*;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 impl SqliteGalley {
     pub async fn persisted_message_rows(
         &self,
         session_id: &SessionId,
     ) -> Result<Vec<PersistedMessageRow>> {
-        sqlx::query_as::<_, PersistedMessageRow>(
-            "SELECT id, session_id, turn_index, sequence, role, content, \
+        let records: Vec<PersistedMessageRowRecord> =
+            sqlx::query_as::<_, PersistedMessageRowRecord>(
+                "SELECT id, session_id, turn_index, sequence, role, content, \
                     tool_calls, tool_results, thinking, final_answer, summary, \
                     preamble, created_via, supervisor, origin_note, visibility, created_at \
              FROM messages \
              WHERE session_id = ? AND visibility = 'visible' \
              ORDER BY turn_index ASC, sequence ASC",
-        )
-        .bind(session_id.as_str())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_sqlx_err)
+            )
+            .bind(session_id.as_str())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+        let message_ids: Vec<String> = records.iter().map(|row| row.id.clone()).collect();
+        let attachments = self.attachment_map_for_message_ids(&message_ids).await?;
+        Ok(records
+            .into_iter()
+            .map(|row| {
+                let mut row = row.into_persisted();
+                row.attachments = attachments.get(&row.id).cloned().unwrap_or_default();
+                row
+            })
+            .collect())
     }
 
     pub async fn session_messages_including_internal(
@@ -70,7 +83,12 @@ impl SqliteGalley {
                 .await
                 .map_err(map_sqlx_err)?
         };
-        rows.into_iter().map(MessageRow::into_brief).collect()
+        let mut briefs: Vec<MessageBrief> = rows
+            .into_iter()
+            .map(MessageRow::into_brief)
+            .collect::<Result<Vec<_>>>()?;
+        self.attach_message_attachments(&mut briefs).await?;
+        Ok(briefs)
     }
 
     pub async fn persist_gui_user_message(
@@ -384,6 +402,55 @@ impl SqliteGalley {
         Ok(msg)
     }
 
+    pub(crate) async fn send_message_with_attachments_db(
+        &self,
+        session_id: SessionId,
+        content: String,
+        origin: crate::api::Origin,
+        attachments: Vec<MessageAttachmentCreate>,
+    ) -> Result<MessageBrief> {
+        if attachments.is_empty() {
+            return self.send_message_db(session_id, content, origin).await;
+        }
+
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(map_sqlx_err)?;
+        let mut msg = insert_user_message_inner(
+            &mut tx,
+            session_id.clone(),
+            content,
+            origin,
+            MessageVisibility::Visible,
+        )
+        .await?;
+
+        let dir = crate::app_paths::conversation_attachment_dir(session_id.as_str(), &msg.id.0)
+            .ok_or_else(|| GalleyError::Internal {
+                message: "conversation attachment directory unavailable".into(),
+            })?;
+        let write_result = self
+            .write_message_attachments(&mut tx, &session_id, &msg.id.0, &dir, attachments)
+            .await;
+
+        let saved = match write_result {
+            Ok(saved) => saved,
+            Err(e) => {
+                cleanup_attachment_dir(&dir).await;
+                return Err(e);
+            }
+        };
+
+        if let Err(e) = tx.commit().await.map_err(map_sqlx_err) {
+            cleanup_attachment_dir(&dir).await;
+            return Err(e);
+        }
+        msg.attachments = saved;
+        Ok(msg)
+    }
+
     pub(super) async fn send_message_with_visibility_db(
         &self,
         session_id: SessionId,
@@ -546,6 +613,7 @@ impl SqliteGalley {
     }
 
     pub(super) async fn delete_session_db(&self, id: SessionId, _origin: Origin) -> Result<()> {
+        let attachment_dir = crate::app_paths::conversation_attachment_session_dir(id.as_str());
         let res = sqlx::query("DELETE FROM sessions WHERE id = ?")
             .bind(id.as_str())
             .execute(&self.pool)
@@ -555,6 +623,9 @@ impl SqliteGalley {
             return Err(GalleyError::NotFound {
                 message: format!("session {id} not found"),
             });
+        }
+        if let Some(dir) = attachment_dir {
+            cleanup_attachment_dir(&dir).await;
         }
         Ok(())
     }
@@ -761,6 +832,10 @@ impl SqliteGalley {
         if ids.is_empty() {
             return Ok(0);
         }
+        let attachment_dirs: Vec<PathBuf> = ids
+            .iter()
+            .filter_map(|id| crate::app_paths::conversation_attachment_session_dir(id.as_str()))
+            .collect();
         let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
         let placeholders = vec!["?"; ids.len()].join(",");
         let sql = format!("DELETE FROM sessions WHERE id IN ({placeholders})");
@@ -770,6 +845,9 @@ impl SqliteGalley {
         }
         let res = q.execute(&mut *tx).await.map_err(map_sqlx_err)?;
         tx.commit().await.map_err(map_sqlx_err)?;
+        for dir in attachment_dirs {
+            cleanup_attachment_dir(&dir).await;
+        }
         Ok(res.rows_affected() as u32)
     }
 
@@ -795,4 +873,122 @@ impl SqliteGalley {
     pub(super) async fn begin_tx_db(&self) -> Result<Transaction<'_, Sqlite>> {
         self.pool.begin().await.map_err(map_sqlx_err)
     }
+
+    async fn write_message_attachments<'c>(
+        &self,
+        tx: &mut Transaction<'c, Sqlite>,
+        session_id: &SessionId,
+        message_id: &str,
+        dir: &Path,
+        attachments: Vec<MessageAttachmentCreate>,
+    ) -> Result<Vec<MessageAttachmentBrief>> {
+        tokio::fs::create_dir_all(dir)
+            .await
+            .map_err(|e| GalleyError::Internal {
+                message: format!("create attachment directory: {e}"),
+            })?;
+        let created_at = chrono_now_iso();
+        let mut saved = Vec::with_capacity(attachments.len());
+        for (idx, attachment) in attachments.into_iter().enumerate() {
+            let ext = image_extension_for_mime(&attachment.mime_type).ok_or_else(|| {
+                GalleyError::InvalidArgs {
+                    message: format!("unsupported image mime type: {}", attachment.mime_type),
+                }
+            })?;
+            let attachment_id = format!("att_{message_id}_{}", idx + 1);
+            let path = dir.join(format!("{attachment_id}.{ext}"));
+            tokio::fs::write(&path, &attachment.bytes)
+                .await
+                .map_err(|e| GalleyError::Internal {
+                    message: format!("write attachment image: {e}"),
+                })?;
+            let path_str = path.to_string_lossy().into_owned();
+            sqlx::query(
+                "INSERT INTO message_attachments (
+                   id, message_id, session_id, kind, file_path, mime_type,
+                   byte_size, width, height, created_at
+                 ) VALUES (?, ?, ?, 'image', ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&attachment_id)
+            .bind(message_id)
+            .bind(session_id.as_str())
+            .bind(&path_str)
+            .bind(&attachment.mime_type)
+            .bind(i64::try_from(attachment.bytes.len()).unwrap_or(i64::MAX))
+            .bind(attachment.width.map(i64::from))
+            .bind(attachment.height.map(i64::from))
+            .bind(&created_at)
+            .execute(&mut **tx)
+            .await
+            .map_err(map_sqlx_err)?;
+            saved.push(MessageAttachmentBrief {
+                id: attachment_id,
+                message_id: MessageId(message_id.to_string()),
+                session_id: session_id.clone(),
+                kind: "image".into(),
+                path: path_str,
+                mime_type: attachment.mime_type,
+                byte_size: attachment.bytes.len() as u64,
+                width: attachment.width,
+                height: attachment.height,
+                created_at: created_at.clone(),
+            });
+        }
+        Ok(saved)
+    }
+
+    async fn attach_message_attachments(&self, messages: &mut [MessageBrief]) -> Result<()> {
+        let ids: Vec<String> = messages
+            .iter()
+            .map(|message| message.id.0.clone())
+            .collect();
+        let attachments = self.attachment_map_for_message_ids(&ids).await?;
+        for message in messages {
+            message.attachments = attachments.get(&message.id.0).cloned().unwrap_or_default();
+        }
+        Ok(())
+    }
+
+    async fn attachment_map_for_message_ids(
+        &self,
+        message_ids: &[String],
+    ) -> Result<HashMap<String, Vec<MessageAttachmentBrief>>> {
+        if message_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let placeholders = vec!["?"; message_ids.len()].join(",");
+        let sql = format!(
+            "SELECT id, message_id, session_id, kind, file_path, mime_type, \
+                    byte_size, width, height, created_at \
+             FROM message_attachments \
+             WHERE message_id IN ({placeholders}) \
+             ORDER BY message_id ASC, id ASC"
+        );
+        let mut query = sqlx::query_as::<_, MessageAttachmentRow>(&sql);
+        for id in message_ids {
+            query = query.bind(id);
+        }
+        let rows = query.fetch_all(&self.pool).await.map_err(map_sqlx_err)?;
+        let mut grouped: HashMap<String, Vec<MessageAttachmentBrief>> = HashMap::new();
+        for row in rows {
+            grouped
+                .entry(row.message_id.clone())
+                .or_default()
+                .push(row.into_brief());
+        }
+        Ok(grouped)
+    }
+}
+
+fn image_extension_for_mime(mime_type: &str) -> Option<&'static str> {
+    match mime_type {
+        "image/png" => Some("png"),
+        "image/jpeg" => Some("jpg"),
+        "image/webp" => Some("webp"),
+        _ => None,
+    }
+}
+
+async fn cleanup_attachment_dir(path: &PathBuf) {
+    let _ = tokio::fs::remove_dir_all(path).await;
 }

@@ -32,7 +32,9 @@ pub use goal::{
     GOAL_CONFIRMATION_PHRASE, MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT,
 };
 pub use health::{HealthCheck, HealthReport, HealthStatus};
-pub use message::{MessageBrief, MessageId, MessageRole, MessageVisibility};
+pub use message::{
+    MessageAttachmentBrief, MessageBrief, MessageId, MessageRole, MessageVisibility,
+};
 pub use model::{
     ManagedModelAuthKind, ManagedModelConnectionResult, ManagedModelCredentialStatus,
     ManagedModelListResult, ManagedModelProbeInput, ManagedModelProtocol,

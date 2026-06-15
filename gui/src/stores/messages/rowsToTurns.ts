@@ -52,6 +52,7 @@ export function rowsToTurns(rows: MessageRow[]): Turn[] {
       const userTurn: UserTurn = {
         role: "user",
         content: row.content,
+        attachments: row.attachments,
         createdAt: row.created_at,
       };
       const origin = originFromRow(row);

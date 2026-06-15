@@ -591,6 +591,12 @@ pub fn run() {
             sql: include_str!("../migrations/019_goal_workspace.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 20,
+            description: "add message attachments",
+            sql: include_str!("../migrations/020_message_attachments.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —

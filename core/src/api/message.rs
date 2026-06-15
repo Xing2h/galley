@@ -26,6 +26,23 @@ pub enum MessageVisibility {
     Internal,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageAttachmentBrief {
+    pub id: String,
+    pub message_id: MessageId,
+    pub session_id: SessionId,
+    pub kind: String,
+    pub path: String,
+    pub mime_type: String,
+    pub byte_size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    pub created_at: String,
+}
+
 /// Summary of one persisted message. Full conversation rendering needs
 /// more fields (tool calls, approvals, etc.); B1's read APIs surface
 /// just enough for sidebar peek + agent CLI display.
@@ -52,6 +69,8 @@ pub struct MessageBrief {
     pub turn_index: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visibility: Option<MessageVisibility>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<MessageAttachmentBrief>,
     /// Where this message came from (B2 M5+). Optional on read APIs to
     /// keep backward-compatible JSON shape; always present on
     /// `send_message` responses.

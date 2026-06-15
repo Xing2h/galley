@@ -60,6 +60,38 @@ fn goal_runtime_dir_from_base(base: &Path) -> PathBuf {
     base.join("goal-runtime")
 }
 
+/// Galley-owned durable media directory for conversation attachments.
+/// Kept next to `workbench.db` so backups and `GALLEY_DB_PATH`-based test
+/// runs keep the database and attachment files together.
+pub(crate) fn conversation_attachment_session_dir(session_id: &str) -> Option<PathBuf> {
+    let db = db_path()?;
+    let base = db.parent()?;
+    Some(conversation_attachment_session_dir_from_base(
+        base, session_id,
+    ))
+}
+
+pub(crate) fn conversation_attachment_dir(session_id: &str, message_id: &str) -> Option<PathBuf> {
+    let db = db_path()?;
+    let base = db.parent()?;
+    Some(conversation_attachment_dir_from_base(
+        base, session_id, message_id,
+    ))
+}
+
+fn conversation_attachment_session_dir_from_base(base: &Path, session_id: &str) -> PathBuf {
+    base.join("conversation-attachments").join(session_id)
+}
+
+fn conversation_attachment_dir_from_base(
+    base: &Path,
+    session_id: &str,
+    message_id: &str,
+) -> PathBuf {
+    conversation_attachment_session_dir_from_base(base, session_id)
+        .join(message_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,9 +124,21 @@ mod tests {
     #[test]
     fn goal_runtime_dir_sits_next_to_db() {
         let base = Path::new("/tmp/galley-config/app.galley");
+        assert_eq!(goal_runtime_dir_from_base(base), base.join("goal-runtime"),);
+    }
+
+    #[test]
+    fn conversation_attachment_dir_is_message_scoped_next_to_db() {
+        let base = Path::new("/tmp/galley-config/app.galley");
         assert_eq!(
-            goal_runtime_dir_from_base(base),
-            base.join("goal-runtime"),
+            conversation_attachment_session_dir_from_base(base, "sess_1"),
+            base.join("conversation-attachments").join("sess_1"),
+        );
+        assert_eq!(
+            conversation_attachment_dir_from_base(base, "sess_1", "msg_1"),
+            base.join("conversation-attachments")
+                .join("sess_1")
+                .join("msg_1"),
         );
     }
 }

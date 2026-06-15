@@ -15,7 +15,8 @@
       "0004-managed-wechat-state-paths.patch",
       "0005-code-run-noninteractive-stdin.patch",
       "0006-managed-browser-control-recovery.patch",
-      "0007-managed-codex-backend.patch"
+      "0007-managed-codex-backend.patch",
+      "0008-managed-image-attachments.patch"
     ]
   },
   "stateSchemaVersion": 1

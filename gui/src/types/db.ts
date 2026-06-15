@@ -77,7 +77,21 @@ export interface MessageRow {
   /** visible by default; internal rows are retained for audit but hidden
    * from normal conversation rendering/search. Added in migration 017. */
   visibility: "visible" | "internal";
+  attachments: MessageAttachmentRow[];
   created_at: string;
+}
+
+export interface MessageAttachmentRow {
+  id: string;
+  messageId: string;
+  sessionId: string;
+  kind: "image" | string;
+  path: string;
+  mimeType: string;
+  byteSize: number;
+  width?: number;
+  height?: number;
+  createdAt: string;
 }
 
 export interface ToolEventRow {

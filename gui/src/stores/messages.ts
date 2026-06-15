@@ -12,9 +12,11 @@ import { useSessionsStore } from "@/stores/sessions";
 import { rowsToTurns } from "@/stores/messages/rowsToTurns";
 import type {
   AgentTurn,
+  MessageAttachment,
   Origin,
   PendingApproval,
   PendingAskUser,
+  PendingImageAttachment,
   SendPhase,
   SystemTurn,
   Turn,
@@ -206,7 +208,11 @@ interface MessagesActions {
   restoreSessionTurns: (sid: string) => Promise<void>;
 
   // ---- conversation writes ----
-  appendUserTurn: (sid: string, text: string) => Promise<number>;
+  appendUserTurn: (
+    sid: string,
+    text: string,
+    attachments?: PendingImageAttachment[],
+  ) => Promise<PersistedUserTurn>;
   /**
    * Append a user turn that was persisted out-of-band by Rust core
    * (`socket_listener::dispatch_session_send`). Skips the SQLite write
@@ -279,6 +285,11 @@ interface MessagesActions {
 
 export type MessagesStore = MessagesState & MessagesActions;
 
+export interface PersistedUserTurn {
+  turnIndex: number;
+  attachments: MessageAttachment[];
+}
+
 // ============================================================
 // Internal helpers
 // ============================================================
@@ -324,6 +335,23 @@ function fireSessionMirror(sid: string, next: PerSessionMessages): void {
     pendingApprovalCount: next.pendingApprovals.length,
     hasPendingAskUser: next.pendingAskUser !== null,
   });
+}
+
+function replaceLastPendingUserAttachments(
+  turns: Turn[],
+  content: string,
+  attachments: MessageAttachment[],
+): Turn[] {
+  if (attachments.length === 0) return turns;
+  const next = turns.slice();
+  for (let i = next.length - 1; i >= 0; i -= 1) {
+    const turn = next[i];
+    if (turn.role !== "user") continue;
+    if (turn.content !== content) break;
+    next[i] = { ...turn, attachments };
+    return next;
+  }
+  return turns;
 }
 
 // ============================================================
@@ -394,7 +422,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
 
   // ---- conversation writes ----
 
-  appendUserTurn: (sid, text) => {
+  appendUserTurn: (sid, text, attachments = []) => {
     // Optimistically snapshot turnCount before any state mutation. Core is
     // still the authority for the durable turn_index; this value is only the
     // temporary UI offset until persistUserMessage returns the real row.
@@ -421,9 +449,28 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       sessionsState.sessions.find((s) => s.id === sid)?.turnCount ?? 0;
     const state = get();
     const persistRequestId = state.userSubmitTick + 1;
+    const optimisticAttachments: MessageAttachment[] = attachments.map((image) => ({
+      id: image.id,
+      messageId: "",
+      sessionId: sid,
+      kind: "image",
+      path: image.dataUrl,
+      mimeType: image.mimeType,
+      byteSize: image.byteSize,
+      width: image.width,
+      height: image.height,
+      createdAt: new Date().toISOString(),
+    }));
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
-      turns: [...m.turns, { role: "user", content: text } as UserTurn],
+      turns: [
+        ...m.turns,
+        {
+          role: "user",
+          content: text,
+          attachments: optimisticAttachments,
+        } as UserTurn,
+      ],
       // The agent will start running on the bridge shortly. Set
       // synchronously rather than wait for `turn_start` over IPC —
       // the round-trip would re-introduce the latency we're
@@ -457,6 +504,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     return persistUserMessage({
       sessionId: sid,
       content: text,
+      attachments,
     })
       .then((message) => {
         const persistedTurnIndex =
@@ -465,6 +513,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
           throw new Error("Core did not return a durable turnIndex.");
         }
         const persistedOffset = persistedTurnIndex - 1;
+        const persistedAttachments = message.attachments ?? [];
         const latest = get();
         const latestMessages = latest.byId[sid];
         if (
@@ -473,6 +522,11 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
         ) {
           const { byId: adjusted } = patchMessages(latest, sid, (m) => ({
             ...m,
+            turns: replaceLastPendingUserAttachments(
+              m.turns,
+              text,
+              persistedAttachments,
+            ),
             turnIndexOffset: persistedOffset,
             sendPhase: m.sendPhase === "saving" ? "starting" : m.sendPhase,
           }));
@@ -480,11 +534,19 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
         } else if (latestMessages?.lastUserPersistRequestId === persistRequestId) {
           const { byId: adjusted } = patchMessages(latest, sid, (m) => ({
             ...m,
+            turns: replaceLastPendingUserAttachments(
+              m.turns,
+              text,
+              persistedAttachments,
+            ),
             sendPhase: m.sendPhase === "saving" ? "starting" : m.sendPhase,
           }));
           set({ byId: adjusted });
         }
-        return persistedTurnIndex;
+        return {
+          turnIndex: persistedTurnIndex,
+          attachments: persistedAttachments,
+        };
       });
   },
 

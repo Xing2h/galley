@@ -1,4 +1,4 @@
-import os, sys, threading, queue, time, json, re, random, locale
+import os, sys, threading, queue, time, json, re, random, locale, base64, mimetypes
 os.environ.setdefault('GA_LANG', 'zh' if any(k in (locale.getlocale()[0] or '').lower() for k in ('zh', 'chinese')) else 'en')
 if sys.stdout is None: sys.stdout = open(os.devnull, "w")
 elif hasattr(sys.stdout, 'reconfigure'): sys.stdout.reconfigure(errors='replace')
@@ -19,6 +19,29 @@ def state_path(*parts):
     return os.path.join(state_dir, *parts)
 def asset_path(*parts):
     return os.path.join(script_dir, 'assets', *parts)
+
+SUPPORTED_IMAGE_MIMES = {'image/png', 'image/jpeg', 'image/webp'}
+def image_mime_for_path(path):
+    mime, _ = mimetypes.guess_type(path)
+    if mime in SUPPORTED_IMAGE_MIMES: return mime
+    ext = os.path.splitext(path)[1].lower()
+    if ext in ('.jpg', '.jpeg'): return 'image/jpeg'
+    if ext == '.png': return 'image/png'
+    if ext == '.webp': return 'image/webp'
+    return None
+
+def image_content_blocks(text, image_paths):
+    blocks = []
+    if text: blocks.append({'type': 'text', 'text': text})
+    for path in image_paths or []:
+        if not isinstance(path, str) or not os.path.isfile(path): continue
+        mime = image_mime_for_path(path)
+        if mime is None: continue
+        try:
+            with open(path, 'rb') as f: data = base64.b64encode(f.read()).decode('ascii')
+        except OSError: continue
+        blocks.append({'type': 'image', 'source': {'type': 'base64', 'media_type': mime, 'data': data}})
+    return blocks or [{'type': 'text', 'text': text or '.'}]
 
 def load_tool_schema(suffix=''):
     global TOOLS_SCHEMA
@@ -142,6 +165,7 @@ class GenericAgent:
             task = self.task_queue.get()
             if isinstance(task, str): break
             raw_query, source, display_queue = task["query"], task["source"], task["output"]
+            images = task.get("images") or []
             raw_query = self._handle_slash_cmd(raw_query, display_queue)
             if raw_query is None:
                 self.task_queue.task_done(); continue
@@ -167,8 +191,9 @@ class GenericAgent:
             if self.force_non_stream:
                 self.llmclient.backend.stream = False
                 self.llmclient.backend.read_timeout = max(self.llmclient.backend.read_timeout, 1200)
+            initial_user_content = image_content_blocks(raw_query, images) if images else None
             gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query, handler, TOOLS_SCHEMA,
-                                    max_turns=80, verbose=self.verbose, yield_info=True)
+                                    max_turns=80, verbose=self.verbose, initial_user_content=initial_user_content, yield_info=True)
             try:
                 full_resp = ""; last_pos = 0; curr_turn = 0; turn_resps = []
                 for chunk in gen:

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { MessageRow, ToolEventRow } from "@/types/db";
 import type { ApprovalDecision } from "@/types/ipc";
 import type { RuntimeKind } from "@/types/session";
+import type { MessageAttachment, PendingImageAttachment } from "@/types/conversation";
 
 /**
  * Thin GUI wrappers over Galley Core Tauri commands. The GUI does not
@@ -83,10 +84,12 @@ export async function deleteDemoSessions(): Promise<number> {
 export interface PersistUserMessageParams {
   sessionId: string;
   content: string;
+  attachments?: PendingImageAttachment[];
 }
 
 export interface PersistedUserMessage {
   turnIndex?: number | null;
+  attachments?: MessageAttachment[];
 }
 
 export async function persistUserMessage(
@@ -96,6 +99,7 @@ export async function persistUserMessage(
     sessionId: p.sessionId,
     content: p.content,
     origin: { via: "gui" },
+    attachments: p.attachments ?? [],
   });
 }
 

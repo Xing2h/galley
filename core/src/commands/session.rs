@@ -1,4 +1,9 @@
 use super::*;
+use base64::Engine as _;
+
+const MAX_MESSAGE_IMAGES: usize = 4;
+const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+const MAX_MESSAGE_IMAGE_BYTES: usize = 25 * 1024 * 1024;
 
 /// B1 M3 read — first GalleyApi method exposed through the Tauri
 /// invoke transport. Validates the end-to-end path
@@ -169,12 +174,157 @@ pub(crate) async fn persist_user_message(
     session_id: SessionId,
     content: String,
     origin: Origin,
+    attachments: Option<Vec<PersistUserMessageAttachmentInput>>,
 ) -> std::result::Result<api::MessageBrief, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+    let attachments =
+        decode_message_attachments(attachments.unwrap_or_default()).map_err(stringify_error)?;
     galley
-        .send_message(session_id, content, origin)
+        .send_message_with_attachments_db(session_id, content, origin, attachments)
         .await
         .map_err(stringify_error)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PersistUserMessageAttachmentInput {
+    data_url: String,
+    width: Option<u32>,
+    height: Option<u32>,
+}
+
+fn decode_message_attachments(
+    inputs: Vec<PersistUserMessageAttachmentInput>,
+) -> error::Result<Vec<MessageAttachmentCreate>> {
+    if inputs.len() > MAX_MESSAGE_IMAGES {
+        return Err(error::GalleyError::InvalidArgs {
+            message: format!("too many images: max {MAX_MESSAGE_IMAGES}"),
+        });
+    }
+    let mut total = 0usize;
+    let mut decoded = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let (mime_type, encoded) = parse_image_data_url(&input.data_url)?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|e| error::GalleyError::InvalidArgs {
+                message: format!("invalid image data: {e}"),
+            })?;
+        if bytes.is_empty() {
+            return Err(error::GalleyError::InvalidArgs {
+                message: "image data is empty".into(),
+            });
+        }
+        if bytes.len() > MAX_IMAGE_BYTES {
+            return Err(error::GalleyError::InvalidArgs {
+                message: format!("image too large: max {} MB", MAX_IMAGE_BYTES / 1024 / 1024),
+            });
+        }
+        total = total.saturating_add(bytes.len());
+        if total > MAX_MESSAGE_IMAGE_BYTES {
+            return Err(error::GalleyError::InvalidArgs {
+                message: format!(
+                    "message images too large: max {} MB total",
+                    MAX_MESSAGE_IMAGE_BYTES / 1024 / 1024
+                ),
+            });
+        }
+        decoded.push(MessageAttachmentCreate {
+            mime_type,
+            bytes,
+            width: input.width,
+            height: input.height,
+        });
+    }
+    Ok(decoded)
+}
+
+fn parse_image_data_url(data_url: &str) -> error::Result<(String, &str)> {
+    let (header, encoded) =
+        data_url
+            .split_once(',')
+            .ok_or_else(|| error::GalleyError::InvalidArgs {
+                message: "image data URL is missing a base64 payload".into(),
+            })?;
+    let Some(meta) = header.strip_prefix("data:") else {
+        return Err(error::GalleyError::InvalidArgs {
+            message: "image data URL must start with data:".into(),
+        });
+    };
+    let mut parts = meta.split(';');
+    let mime_type = parts.next().unwrap_or_default();
+    if !matches!(mime_type, "image/png" | "image/jpeg" | "image/webp") {
+        return Err(error::GalleyError::InvalidArgs {
+            message: format!("unsupported image type: {mime_type}"),
+        });
+    }
+    if !parts.any(|part| part.eq_ignore_ascii_case("base64")) {
+        return Err(error::GalleyError::InvalidArgs {
+            message: "image data URL must be base64 encoded".into(),
+        });
+    }
+    Ok((mime_type.to_string(), encoded))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image_input(data_url: &str) -> PersistUserMessageAttachmentInput {
+        PersistUserMessageAttachmentInput {
+            data_url: data_url.into(),
+            width: Some(2),
+            height: Some(1),
+        }
+    }
+
+    #[test]
+    fn decode_message_attachments_accepts_supported_image_data_url() {
+        let decoded =
+            decode_message_attachments(vec![image_input("data:image/png;base64,aGVsbG8=")])
+                .expect("decode image attachment");
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].mime_type, "image/png");
+        assert_eq!(decoded[0].bytes, b"hello");
+        assert_eq!(decoded[0].width, Some(2));
+        assert_eq!(decoded[0].height, Some(1));
+    }
+
+    #[test]
+    fn decode_message_attachments_rejects_unsupported_mime() {
+        let err = decode_message_attachments(vec![image_input("data:image/gif;base64,aGVsbG8=")])
+            .expect_err("reject gif");
+
+        assert!(matches!(
+            err,
+            error::GalleyError::InvalidArgs { message } if message.contains("unsupported image type")
+        ));
+    }
+
+    #[test]
+    fn decode_message_attachments_rejects_invalid_base64() {
+        let err = decode_message_attachments(vec![image_input("data:image/png;base64,not base64")])
+            .expect_err("reject invalid base64");
+
+        assert!(matches!(
+            err,
+            error::GalleyError::InvalidArgs { message } if message.contains("invalid image data")
+        ));
+    }
+
+    #[test]
+    fn decode_message_attachments_rejects_too_many_images() {
+        let inputs = (0..=MAX_MESSAGE_IMAGES)
+            .map(|_| image_input("data:image/png;base64,aA=="))
+            .collect();
+        let err = decode_message_attachments(inputs).expect_err("reject too many images");
+
+        assert!(matches!(
+            err,
+            error::GalleyError::InvalidArgs { message } if message.contains("too many images")
+        ));
+    }
 }
 
 #[derive(Debug, Deserialize)]

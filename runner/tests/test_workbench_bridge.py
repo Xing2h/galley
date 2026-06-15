@@ -8,18 +8,20 @@ from __future__ import annotations
 import json
 import time
 from io import StringIO
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 import runner.managed_runtime as managed_runtime
-from runner.ipc import AskUserResponseCommand
+from runner.ipc import AskUserResponseCommand, UserMessageCommand
 from runner.workbench_bridge import (
     Bridge,
     _classify_error,
     _FenceFilter,
     _llm_display_name,
     _managed_model_config_from_env,
+    _message_to_content_blocks,
 )
 
 # ---------------- _classify_error ----------------
@@ -336,6 +338,7 @@ def test_ask_user_response_resets_visibility_to_visible() -> None:
         stdin=StringIO(),
     )
     bridge.agent = FakeAgent()
+    bridge._btw_handler = None
     bridge._start_progress_drain = lambda _queue: None  # type: ignore[assignment]
     bridge._current_message_visibility = "hidden"
 
@@ -345,6 +348,68 @@ def test_ask_user_response_resets_visibility_to_visible() -> None:
     assert bridge._current_message_turn_base == 4
     assert bridge._last_emitted_turn == 0
     assert bridge.agent.tasks == [("yes", "workbench")]
+
+
+def test_user_message_command_passes_images_to_agent() -> None:
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.tasks: list[dict[str, Any]] = []
+
+        def put_task(
+            self,
+            text: str,
+            source: str,
+            images: list[str],
+            **_kwargs: Any,
+        ) -> object:
+            self.tasks.append({"text": text, "source": source, "images": images})
+            return object()
+
+    bridge = Bridge(
+        ga_path="/tmp/ga",
+        session_id="s1",
+        cwd=None,
+        llm_no=0,
+        llm_name=None,
+        stdout=StringIO(),
+        stdin=StringIO(),
+    )
+    bridge.agent = FakeAgent()
+    bridge._start_progress_drain = lambda _queue: None  # type: ignore[assignment]
+
+    bridge.dispatch_command(
+        UserMessageCommand(
+            text="describe",
+            images=["/tmp/galley/image.png"],
+            absoluteTurnIndex=7,
+        )
+    )
+
+    assert bridge.agent.tasks == [
+        {"text": "describe", "source": "workbench", "images": ["/tmp/galley/image.png"]}
+    ]
+    assert bridge._current_message_turn_base == 7
+
+
+def test_message_to_content_blocks_adds_image_blocks(tmp_path: Path) -> None:
+    image_path = tmp_path / "paste.png"
+    image_path.write_bytes(b"png-bytes")
+
+    blocks = _message_to_content_blocks("look", [str(image_path)])
+
+    assert blocks[0] == {"type": "text", "text": "look"}
+    assert blocks[1]["type"] == "image"
+    assert blocks[1]["source"]["type"] == "base64"
+    assert blocks[1]["source"]["media_type"] == "image/png"
+    assert blocks[1]["source"]["data"] == "cG5nLWJ5dGVz"
+
+
+def test_message_to_content_blocks_skips_missing_images(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.png"
+
+    blocks = _message_to_content_blocks("look", [str(missing)])
+
+    assert blocks == [{"type": "text", "text": "look"}]
 
 
 # ---------------- _extract_ask_user ----------------

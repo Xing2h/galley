@@ -5,8 +5,9 @@ use crate::api::{
     SaveManagedProviderInput, SessionBrief, SessionFilter, SessionId,
 };
 use crate::db::{
-    MessageSearchHit, PersistAssistantMessage, PersistToolEventPending, PersistedMessageRow,
-    SqliteGalley, ToolEventRow, UpsertManagedModelMetadata, UpsertManagedModelProviderMetadata,
+    MessageAttachmentCreate, MessageSearchHit, PersistAssistantMessage, PersistToolEventPending,
+    PersistedMessageRow, SqliteGalley, ToolEventRow, UpsertManagedModelMetadata,
+    UpsertManagedModelProviderMetadata,
 };
 use crate::{
     browser_control, codex_oauth, credential_store, error, im_supervisor, managed_model_config,

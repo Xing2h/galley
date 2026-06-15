@@ -19,7 +19,9 @@ writes to the captured fd.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import mimetypes
 import os
 import queue
 import re
@@ -127,6 +129,59 @@ def _compact_args(args: dict[str, Any], max_len: int = 200) -> str:
 
 
 _managed_model_config_from_env = managed_runtime.managed_model_config_from_env
+
+_SUPPORTED_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp"}
+
+
+def _mime_for_image_path(path: Path) -> str | None:
+    mime, _ = mimetypes.guess_type(path.name)
+    if mime in _SUPPORTED_IMAGE_MIMES:
+        return mime
+    suffix = path.suffix.lower()
+    if suffix == ".jpg":
+        return "image/jpeg"
+    if suffix == ".jpeg":
+        return "image/jpeg"
+    if suffix == ".png":
+        return "image/png"
+    if suffix == ".webp":
+        return "image/webp"
+    return None
+
+
+def _image_path_to_content_block(path_value: Any) -> dict[str, Any] | None:
+    if not isinstance(path_value, str) or not path_value:
+        return None
+    path = Path(path_value)
+    if not path.is_file():
+        return None
+    mime = _mime_for_image_path(path)
+    if mime is None:
+        return None
+    try:
+        data = base64.b64encode(path.read_bytes()).decode("ascii")
+    except OSError:
+        return None
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": mime, "data": data},
+    }
+
+
+def _message_to_content_blocks(content: Any, images: Any = None) -> list[Any]:
+    if isinstance(content, str):
+        blocks: list[Any] = [{"type": "text", "text": content}]
+    elif isinstance(content, list):
+        blocks = list(content)  # assume already native shape
+    else:
+        blocks = [{"type": "text", "text": str(content)}]
+
+    if isinstance(images, list):
+        for image_path in images:
+            block = _image_path_to_content_block(image_path)
+            if block is not None:
+                blocks.append(block)
+    return blocks
 
 
 def _llm_display_name(raw: str) -> str:
@@ -421,6 +476,7 @@ class Bridge:
         # Resolved during start():
         self.agent: Any = None
         self.agentmain: Any = None
+        self._btw_handler: Any = None
         # Desktop Pet subprocess handle (when attached). None when not
         # running. Only one pet can be attached at a time per bridge —
         # and effectively globally across all bridges, because the pet
@@ -1376,13 +1432,10 @@ class Bridge:
         adapted = []
         for m in messages:
             role = m.get("role")
-            content = m.get("content", "")
-            if isinstance(content, str):
-                blocks: list[Any] = [{"type": "text", "text": content}]
-            elif isinstance(content, list):
-                blocks = content  # assume already native shape
-            else:
-                blocks = [{"type": "text", "text": str(content)}]
+            blocks = _message_to_content_blocks(
+                m.get("content", ""),
+                m.get("images", []),
+            )
             adapted.append({"role": role, "content": blocks})
         self.agent.llmclient.backend.history = adapted
 

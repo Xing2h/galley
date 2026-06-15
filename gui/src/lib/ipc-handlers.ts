@@ -1181,9 +1181,17 @@ function rowsToConversationMessages(
       role: r.role as "user" | "assistant",
       content: r.content,
     };
+    if (r.role === "user" && r.attachments.length > 0) {
+      next.images = r.attachments
+        .filter((attachment) => attachment.kind === "image")
+        .map((attachment) => attachment.path);
+    }
     const prev = messages[messages.length - 1];
     if (prev?.role === next.role) {
       prev.content = `${prev.content}\n\n${next.content}`;
+      if (next.images && next.images.length > 0) {
+        prev.images = [...(prev.images ?? []), ...next.images];
+      }
     } else {
       messages.push(next);
     }

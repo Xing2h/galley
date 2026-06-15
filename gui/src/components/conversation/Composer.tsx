@@ -8,22 +8,29 @@ import {
   Gear,
   Stop,
   Target,
+  X,
 } from "@phosphor-icons/react";
 import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 
+import {
+  ImagePreviewDialog,
+  type ImagePreviewItem,
+} from "@/components/conversation/ImagePreviewDialog";
 import { Button, DialogActionRow } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { TooltipLabel } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
 import { goalPillLabel } from "@/lib/goals";
 import { cn } from "@/lib/utils";
+import type { PendingImageAttachment } from "@/types/conversation";
 import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
 
 export interface ComposerLLMOption {
@@ -91,6 +98,12 @@ const PASTE_FOLD_THRESHOLD_LINES = 10;
  */
 const PASTE_PLACEHOLDER_RE = /\[Pasted text #(\d+) \+\d+ lines\]/g;
 const COMPOSER_HINT_KBD = new Set(["Shift+Enter", "Enter", "/btw"]);
+const SUPPORTED_PASTE_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+const MAX_PENDING_IMAGES = 4;
 
 const COMPOSER_ACTION_BUTTON = cn(
   "flex size-8 items-center justify-center rounded-full border transition-[background-color,border-color,color,box-shadow,transform]",
@@ -165,7 +178,10 @@ export interface ComposerProps {
 
   /** Submit handler. Triggered by Enter (without Shift) or clicking the
    * submit button. Receives the trimmed text. */
-  onSubmit?: (text: string) => void;
+  onSubmit?: (
+    text: string,
+    attachments: PendingImageAttachment[],
+  ) => boolean | void;
   /** Start the current text as a desktop Goal instead of sending it to GA. */
   onGoalSubmit?: (
     text: string,
@@ -221,6 +237,8 @@ export interface ComposerProps {
   goal?: GoalBrief;
   /** Show the compact keyboard/state hint below the Composer. */
   showFooterHint?: boolean;
+  /** Called when an attached image blocks a non-message path. */
+  onImageSubmitBlocked?: (kind: "goal") => void;
 }
 
 /**
@@ -254,6 +272,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       goal,
       onGoalSubmit,
       showFooterHint = false,
+      onImageSubmitBlocked,
     },
     ref,
   ) {
@@ -270,6 +289,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [goalSubmitting, setGoalSubmitting] = useState(false);
     const [showByTheWayRequiredHint, setShowByTheWayRequiredHint] =
       useState(false);
+    const [pendingImages, setPendingImages] = useState<PendingImageAttachment[]>(
+      [],
+    );
+    const [previewIndex, setPreviewIndex] = useState<number | null>(null);
     const isControlled = value !== undefined;
     const text = isControlled ? value : internal;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -314,6 +337,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           // the registry doesn't carry stale entries.
           pastesRef.current.clear();
           pasteCounterRef.current = 0;
+          setPendingImages([]);
           // Focus + caret at end on the next frame, after React has
           // committed the new textarea value. setSelectionRange before
           // the commit lands at the old text length.
@@ -373,6 +397,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       }
       pastesRef.current.clear();
       pasteCounterRef.current = 0;
+      setPendingImages([]);
+      setPreviewIndex(null);
     };
 
     /**
@@ -389,6 +415,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       });
 
     const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const imageItems = Array.from(e.clipboardData.items).filter((item) =>
+        SUPPORTED_PASTE_IMAGE_TYPES.has(item.type),
+      );
+      if (imageItems.length > 0) {
+        e.preventDefault();
+        const remaining = MAX_PENDING_IMAGES - pendingImages.length;
+        if (remaining <= 0) return;
+        for (const item of imageItems.slice(0, remaining)) {
+          const file = item.getAsFile();
+          if (!file) continue;
+          void readPastedImage(file)
+            .then((image) => {
+              setPendingImages((current) =>
+                current.length >= MAX_PENDING_IMAGES
+                  ? current
+                  : [...current, image],
+              );
+            })
+            .catch((err) => {
+              console.warn("[Composer] failed to read pasted image", err);
+            });
+        }
+        return;
+      }
       // Controlled callers manage their own state; can't intercept
       // paste without their cooperation, so fall through to default.
       if (isControlled) return;
@@ -424,6 +474,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       text.trimStart().startsWith("/btw\t");
 
     const hasText = text.trim().length > 0;
+    const hasPendingImages = pendingImages.length > 0;
+    const hasSendableContent = hasText || hasPendingImages;
+    const previewImages: ImagePreviewItem[] = useMemo(
+      () =>
+        pendingImages.map((image) => ({
+          id: image.id,
+          src: image.dataUrl,
+          alt: copy.composer.pastedImage,
+        })),
+      [copy.composer.pastedImage, pendingImages],
+    );
     const canShowGoalEntry = Boolean(onGoalSubmit) && !goal;
     const goalModeBlocked = disabled || stopMode;
     const goalEntryDisabled = goalModeBlocked || goalSubmitting;
@@ -462,6 +523,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     };
 
     const openGoalConfirmation = () => {
+      if (hasPendingImages) {
+        onImageSubmitBlocked?.("goal");
+        return;
+      }
       const trimmed = expandPastePlaceholders(text).trim();
       if (!trimmed || disabled) return;
       if (requiresModelConfig) {
@@ -494,7 +559,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const handleSubmit = () => {
       const expanded = expandPastePlaceholders(text);
       const trimmed = expanded.trim();
-      if (!trimmed || disabled) return;
+      if ((!trimmed && !hasPendingImages) || disabled) return;
       if (requiresModelConfig) {
         onConfigureModels?.();
         return;
@@ -505,10 +570,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         return;
       }
       if (effectiveGoalArmed) {
+        if (hasPendingImages) {
+          onImageSubmitBlocked?.("goal");
+          return;
+        }
         openGoalConfirmation();
         return;
       }
-      onSubmit?.(trimmed);
+      const submittedText = trimmed || copy.composer.imageOnlyFallback;
+      const accepted = onSubmit?.(submittedText, pendingImages);
+      if (accepted === false) return;
       resetDraftAfterSubmit();
     };
 
@@ -549,6 +620,54 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             // case where content exceeds the max-height cap.
             className="block w-full resize-none overflow-y-auto border-0 bg-transparent p-0 text-[14.5px] leading-[1.55] text-ink outline-none placeholder:text-ink-muted"
           />
+
+          {pendingImages.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {pendingImages.map((image, imageIndex) => (
+                <div
+                  key={image.id}
+                  className="group/image relative h-16 w-16 overflow-hidden rounded-md border border-line bg-surface shadow-[var(--shadow-neutral-control)]"
+                >
+                  <button
+                    type="button"
+                    aria-label={copy.conversation.previewImage}
+                    onClick={() => setPreviewIndex(imageIndex)}
+                    className="block h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35"
+                  >
+                    <img
+                      src={image.dataUrl}
+                      alt={copy.composer.pastedImage}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                  <TooltipLabel text={copy.composer.removeImage}>
+                    <button
+                      type="button"
+                      aria-label={copy.composer.removeImage}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPendingImages((current) =>
+                          current.filter((item) => item.id !== image.id),
+                        );
+                        setPreviewIndex((current) => {
+                          if (current == null) return null;
+                          if (current === imageIndex) return null;
+                          return current > imageIndex ? current - 1 : current;
+                        });
+                      }}
+                      className={cn(
+                        "absolute right-1 top-1 flex size-5 items-center justify-center rounded-full",
+                        "bg-elevated/95 text-ink shadow-[var(--shadow-neutral-control)]",
+                        "opacity-0 transition-opacity duration-120 hover:bg-hover focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35 group-hover/image:opacity-100",
+                      )}
+                    >
+                      <X size={12} weight="bold" />
+                    </button>
+                  </TooltipLabel>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="mt-2 flex items-center gap-2">
             <LLMPill
@@ -658,7 +777,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       onClick={handleSubmit}
                       disabled={
                         disabled ||
-                        !text?.trim() ||
+                        !hasSendableContent ||
                         goalSubmitting ||
                         (requiresModelConfig && !onConfigureModels)
                       }
@@ -676,7 +795,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                             ? COMPOSER_GOAL_SEND_BUTTON
                             : COMPOSER_SEND_BUTTON,
                         (disabled ||
-                          !text?.trim() ||
+                          !hasSendableContent ||
                           goalSubmitting ||
                           (requiresModelConfig && !onConfigureModels)) &&
                           "cursor-not-allowed opacity-50 hover:translate-y-0 hover:shadow-none",
@@ -721,10 +840,53 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             {renderComposerHintWithKbd(footerHint)}
           </div>
         )}
+        <ImagePreviewDialog
+          images={previewImages}
+          index={previewIndex}
+          onIndexChange={setPreviewIndex}
+        />
       </>
     );
   },
 );
+
+function readPastedImage(file: File): Promise<PendingImageAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      if (!dataUrl) {
+        reject(new Error("empty image data URL"));
+        return;
+      }
+      const image: PendingImageAttachment = {
+        id: randomImageId(),
+        dataUrl,
+        mimeType: file.type as PendingImageAttachment["mimeType"],
+        byteSize: file.size,
+      };
+      const probe = new Image();
+      probe.onload = () => {
+        resolve({
+          ...image,
+          width: probe.naturalWidth || undefined,
+          height: probe.naturalHeight || undefined,
+        });
+      };
+      probe.onerror = () => resolve(image);
+      probe.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function randomImageId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `img-${crypto.randomUUID()}`;
+  }
+  return `img-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
 
 /** Render a composer footer hint, styling known keyboard / command
  * tokens (Enter, Shift+Enter, /btw) in mono so they read as keys

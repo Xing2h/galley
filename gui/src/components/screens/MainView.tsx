@@ -29,6 +29,7 @@ import type {
   ConversationToolEvent,
   PendingApproval,
   PendingAskUser,
+  PendingImageAttachment,
   SendPhase,
   Turn,
 } from "@/types/conversation";
@@ -49,7 +50,10 @@ export interface MainViewProps {
    * component doesn't read or display the id, just uses identity
    * change as the trigger. Undefined during pre-session screens. */
   activeSessionId?: string;
-  onSubmit?: (text: string) => void;
+  onSubmit?: (
+    text: string,
+    attachments: PendingImageAttachment[],
+  ) => boolean | void;
   onGoalSubmit?: (
     text: string,
     config: GoalLaunchConfig,
@@ -134,6 +138,7 @@ export interface MainViewProps {
    * predictable across all screens.
    */
   conversationWidth?: "compact" | "wide";
+  onImageSubmitBlocked?: (kind: "goal") => void;
 }
 
 /**
@@ -176,6 +181,7 @@ export function MainView({
   sessionGoals,
   pendingAskUser,
   conversationWidth = "compact",
+  onImageSubmitBlocked,
 }: MainViewProps) {
   const copy = useCopy();
   const stillWaiting = pendingApprovals.length > 0;
@@ -671,7 +677,7 @@ export function MainView({
             {pendingAskUser && (
               <AskUserBubble
                 pending={pendingAskUser}
-                onPickCandidate={(text) => onSubmit?.(text)}
+                onPickCandidate={(text) => onSubmit?.(text, [])}
               />
             )}
             {/* Ambient liveness for a running Goal master thread: the
@@ -768,6 +774,7 @@ export function MainView({
             onOpenLLMSwitcher={onOpenLLMSwitcher}
             goal={goal}
             showFooterHint
+            onImageSubmitBlocked={onImageSubmitBlocked}
           />
         </div>
       </div>

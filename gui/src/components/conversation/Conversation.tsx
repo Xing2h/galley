@@ -77,6 +77,7 @@ export function Conversation({
           ) : item.turn.role === "user" ? (
             <MessageUser
               content={item.turn.content}
+              attachments={item.turn.attachments}
               origin={item.turn.origin}
               createdAt={item.turn.createdAt}
             />

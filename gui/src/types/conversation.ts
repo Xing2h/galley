@@ -82,9 +82,32 @@ export interface Origin {
   reason?: string;
 }
 
+export interface MessageAttachment {
+  id: string;
+  messageId: string;
+  sessionId: string;
+  kind: "image" | string;
+  path: string;
+  mimeType: string;
+  byteSize: number;
+  width?: number;
+  height?: number;
+  createdAt: string;
+}
+
+export interface PendingImageAttachment {
+  id: string;
+  dataUrl: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  byteSize: number;
+  width?: number;
+  height?: number;
+}
+
 export interface UserTurn {
   role: "user";
   content: string;
+  attachments?: MessageAttachment[];
   /** Audit origin for the user message. When `origin.via ===
    * "supervisor"`, MessageUser renders a small provenance icon (B4 M7).
    * Absent / `gui` means the local user typed it directly. */
