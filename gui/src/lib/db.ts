@@ -62,19 +62,19 @@ export async function deleteDemoSessions(): Promise<number> {
 // for conversation history that survives restart. The two logical writers
 // are still:
 //
-//   - `persistUserMessage` (this file, routed through Rust Core) — called from store
-//     `appendUserTurn` the moment the user submits, so a crash before
-//     turn_end doesn't lose the question.
+//   - `persistUserMessage` (this file, routed through Rust Core) — called from
+//     store `appendUserTurn` the moment the user submits, so a crash before
+//     turn_end doesn't lose the question. Core assigns the durable
+//     `turn_index` and returns it to the GUI.
 //   - `persistTurnEndToMessages` (lib/ipc-handlers.ts, routed through Rust Core) — called on
 //     `turn_end`, writes the assistant row with thinking / tool_calls /
 //     tool_results / final_answer + GA's raw responseContent (the latter
 //     is what the bridge replays on `load_history`).
 //
-// `turn_index` is GA's 1-based turn counter. Store derives the user
-// row's turn_index from `session.turnCount + 1` because the user
-// message is submitted *before* GA emits turn_start. GA's turn_end
-// later writes the assistant row at the matching turn_index — they
-// align because GA always pairs one user message with one turn cycle.
+// `turn_index` is the absolute message-loop index Core persisted for this
+// session. GA still emits 1-based per-loop step numbers; the GUI sends the
+// Core-assigned `absoluteTurnIndex` to the runner so assistant rows land beside
+// the matching user row.
 //
 // `sequence` is the order *within* a turn: user is always 0, assistant
 // always 1. Tool rows would be 2+ but V0.1 collapses them into the
@@ -82,16 +82,18 @@ export async function deleteDemoSessions(): Promise<number> {
 
 export interface PersistUserMessageParams {
   sessionId: string;
-  turnIndex: number;
   content: string;
+}
+
+export interface PersistedUserMessage {
+  turnIndex?: number | null;
 }
 
 export async function persistUserMessage(
   p: PersistUserMessageParams,
-): Promise<void> {
-  await invoke("persist_user_message", {
+): Promise<PersistedUserMessage> {
+  return invoke<PersistedUserMessage>("persist_user_message", {
     sessionId: p.sessionId,
-    turnIndex: p.turnIndex,
     content: p.content,
     origin: { via: "gui" },
   });
@@ -273,7 +275,6 @@ export async function loadToolEventsBySession(
 ): Promise<ToolEventRow[]> {
   return invoke<ToolEventRow[]>("load_tool_events_by_session", { sessionId });
 }
-
 
 // ---------------- prefs ----------------
 //

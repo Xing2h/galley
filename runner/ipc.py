@@ -306,6 +306,7 @@ class ApprovalResponseCommand:
 @dataclass
 class AskUserResponseCommand:
     text: str
+    absoluteTurnIndex: int | None = None
     kind: str = "ask_user_response"
 
 
@@ -468,7 +469,9 @@ _USER_MESSAGE_PREFIX_RE = re.compile(
     r'^\{\s*"kind"\s*:\s*"user_message"\s*,\s*"text"\s*:\s*"'
 )
 _USER_MESSAGE_IMAGES_SUFFIX_RE = re.compile(
-    r'"\s*,\s*"images"\s*:\s*(?P<images>\[[\s\S]*?\])\s*\}\s*$'
+    r'"\s*,\s*"images"\s*:\s*(?P<images>\[[\s\S]*?\])'
+    r'(?P<tail>\s*,\s*"absoluteTurnIndex"\s*:\s*(?P<absolute_turn_index>-?\d+|null))?'
+    r"\s*\}\s*$"
 )
 
 
@@ -495,11 +498,19 @@ def _repair_malformed_user_message_command(line: str) -> dict[str, Any] | None:
         return None
     if not isinstance(images, list) or not all(isinstance(item, str) for item in images):
         return None
-    return {
+    payload: dict[str, Any] = {
         "kind": "user_message",
         "text": line[prefix.end() : suffix.start()],
         "images": images,
     }
+    raw_absolute_turn_index = suffix.group("absolute_turn_index")
+    if raw_absolute_turn_index is not None:
+        payload["absoluteTurnIndex"] = (
+            None
+            if raw_absolute_turn_index == "null"
+            else int(raw_absolute_turn_index)
+        )
+    return payload
 
 
 def _decode(line: str, registry: dict[str, type], label: str) -> Any:

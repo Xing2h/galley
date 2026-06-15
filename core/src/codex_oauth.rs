@@ -1,10 +1,12 @@
-//! ChatGPT / Codex OAuth support for Galley-owned managed runtime.
+//! ChatGPT / Codex OAuth and managed credential IPC support.
 //!
-//! This module is intentionally Core-owned: refresh tokens stay in Galley's
-//! encrypted local store and managed GA can only request short-lived access
-//! tokens over a localhost-only IPC channel.
+//! This module is intentionally Core-owned: refresh/API keys stay in Galley's
+//! encrypted local store and managed GA requests runtime credentials over a
+//! localhost-only IPC channel.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -80,6 +82,8 @@ pub struct CodexCredentialIpcConfig {
     pub token: String,
 }
 
+pub type CredentialIpcAllowlist = HashMap<String, ManagedModelAuthKind>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CodexOAuthSecret {
@@ -131,14 +135,66 @@ struct TokenResponse {
 struct CredentialIpcRequest {
     token: String,
     api_key_ref: String,
+    #[serde(default)]
+    credential_kind: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CredentialIpcResponse {
-    access_token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    api_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    access_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     expires_at: Option<i64>,
+}
+
+impl CredentialIpcResponse {
+    fn api_key(api_key: String) -> Self {
+        Self {
+            api_key: Some(api_key),
+            access_token: None,
+            account_id: None,
+            expires_at: None,
+        }
+    }
+
+    fn codex_access_token(resolved: ResolvedCodexAccessToken) -> Self {
+        Self {
+            api_key: None,
+            access_token: Some(resolved.access_token),
+            account_id: resolved.account_id,
+            expires_at: resolved.expires_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CredentialKind {
+    ApiKey,
+    ChatgptCodexOauth,
+}
+
+impl CredentialKind {
+    fn parse(raw: Option<&str>) -> Result<Self> {
+        match raw.unwrap_or("chatgpt_codex_oauth") {
+            "api_key" => Ok(Self::ApiKey),
+            "chatgpt_codex_oauth" => Ok(Self::ChatgptCodexOauth),
+            other => Err(GalleyError::InvalidArgs {
+                message: format!("credential IPC credentialKind is unsupported: {other}"),
+            }),
+        }
+    }
+
+    fn expected_auth_kind(self) -> ManagedModelAuthKind {
+        match self {
+            Self::ApiKey => ManagedModelAuthKind::ApiKey,
+            Self::ChatgptCodexOauth => ManagedModelAuthKind::ChatgptCodexOauth,
+        }
+    }
 }
 
 pub async fn start_device_login() -> Result<CodexDeviceLoginStart> {
@@ -268,9 +324,11 @@ pub struct ResolvedCodexAccessToken {
     pub expires_at: Option<i64>,
 }
 
-pub async fn start_credential_ipc() -> Result<CodexCredentialIpcConfig> {
+pub async fn start_credential_ipc(
+    allowed_credentials: CredentialIpcAllowlist,
+) -> Result<CodexCredentialIpcConfig> {
     let token = random_hex(24)?;
-    start_platform_credential_ipc(token).await
+    start_platform_credential_ipc(token, Arc::new(allowed_credentials)).await
 }
 
 async fn persist_probe_and_return(secret: CodexOAuthSecret) -> Result<CodexAuthSetupResult> {
@@ -654,8 +712,23 @@ fn random_hex(bytes_len: usize) -> Result<String> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
+fn credential_token_matches(actual: &str, expected: &str) -> bool {
+    let actual = actual.as_bytes();
+    let expected = expected.as_bytes();
+    let mut diff = actual.len() ^ expected.len();
+    for (idx, expected_byte) in expected.iter().copied().enumerate() {
+        let actual_byte = actual.get(idx).copied().unwrap_or(0);
+        diff |= usize::from(actual_byte ^ expected_byte);
+    }
+    diff == 0
+}
+
 #[cfg(unix)]
-async fn start_platform_credential_ipc(token: String) -> Result<CodexCredentialIpcConfig> {
+async fn start_platform_credential_ipc(
+    token: String,
+    allowed_credentials: Arc<CredentialIpcAllowlist>,
+) -> Result<CodexCredentialIpcConfig> {
+    use std::os::unix::fs::PermissionsExt;
     use tokio::net::UnixListener;
 
     let address = std::env::temp_dir().join(format!(
@@ -667,6 +740,11 @@ async fn start_platform_credential_ipc(token: String) -> Result<CodexCredentialI
     let listener = UnixListener::bind(&address).map_err(|e| GalleyError::Internal {
         message: format!("binding credential IPC socket failed: {e}"),
     })?;
+    std::fs::set_permissions(&address, std::fs::Permissions::from_mode(0o600)).map_err(|e| {
+        GalleyError::Internal {
+            message: format!("securing credential IPC socket permissions failed: {e}"),
+        }
+    })?;
     let token_for_task = token.clone();
     tokio::spawn(async move {
         loop {
@@ -674,8 +752,9 @@ async fn start_platform_credential_ipc(token: String) -> Result<CodexCredentialI
                 break;
             };
             let token = token_for_task.clone();
+            let allowed_credentials = allowed_credentials.clone();
             tokio::spawn(async move {
-                let _ = handle_credential_ipc_stream(stream, token).await;
+                let _ = handle_credential_ipc_stream(stream, token, allowed_credentials).await;
             });
         }
     });
@@ -687,9 +766,10 @@ async fn start_platform_credential_ipc(token: String) -> Result<CodexCredentialI
 }
 
 #[cfg(windows)]
-async fn start_platform_credential_ipc(token: String) -> Result<CodexCredentialIpcConfig> {
-    use tokio::net::windows::named_pipe::ServerOptions;
-
+async fn start_platform_credential_ipc(
+    token: String,
+    allowed_credentials: Arc<CredentialIpcAllowlist>,
+) -> Result<CodexCredentialIpcConfig> {
     let address = format!(
         r"\\.\pipe\galley-codex-{}-{}",
         std::process::id(),
@@ -699,15 +779,16 @@ async fn start_platform_credential_ipc(token: String) -> Result<CodexCredentialI
     let token_for_task = token.clone();
     tokio::spawn(async move {
         loop {
-            let Ok(server) = ServerOptions::new().create(&pipe_name) else {
+            let Ok(server) = create_secure_credential_pipe(&pipe_name) else {
                 break;
             };
             if server.connect().await.is_err() {
                 continue;
             }
             let token = token_for_task.clone();
+            let allowed_credentials = allowed_credentials.clone();
             tokio::spawn(async move {
-                let _ = handle_credential_ipc_stream(server, token).await;
+                let _ = handle_credential_ipc_stream(server, token, allowed_credentials).await;
             });
         }
     });
@@ -718,7 +799,62 @@ async fn start_platform_credential_ipc(token: String) -> Result<CodexCredentialI
     })
 }
 
-async fn handle_credential_ipc_stream<S>(stream: S, expected_token: String) -> Result<()>
+#[cfg(windows)]
+fn create_secure_credential_pipe(
+    pipe_name: &str,
+) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeServer> {
+    use std::ffi::c_void;
+    use std::mem;
+    use std::ptr;
+    use tokio::net::windows::named_pipe::ServerOptions;
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+    use windows_sys::Win32::System::Memory::LocalFree;
+
+    // Owner Rights (OW) resolves to the creating user for this new kernel
+    // object. BA/SY keep administrators and LocalSystem unblocked for normal
+    // service/debug scenarios while excluding other authenticated users.
+    let sddl: Vec<u16> = "D:P(A;;GA;;;OW)(A;;GA;;;BA)(A;;GA;;;SY)"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut security_descriptor: *mut c_void = ptr::null_mut();
+    let ok = unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &mut security_descriptor,
+            ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    let mut attrs = SECURITY_ATTRIBUTES {
+        nLength: mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: security_descriptor,
+        bInheritHandle: 0,
+    };
+    let result = unsafe {
+        ServerOptions::new().create_with_security_attributes_raw(
+            pipe_name,
+            (&mut attrs as *mut SECURITY_ATTRIBUTES).cast(),
+        )
+    };
+    unsafe {
+        LocalFree(security_descriptor);
+    }
+    result
+}
+
+async fn handle_credential_ipc_stream<S>(
+    stream: S,
+    expected_token: String,
+    allowed_credentials: Arc<CredentialIpcAllowlist>,
+) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -731,22 +867,16 @@ where
         .map_err(|e| GalleyError::RunnerError {
             message: format!("reading credential IPC request failed: {e}"),
         })?;
-    let req: CredentialIpcRequest =
-        serde_json::from_str(&line).map_err(|e| GalleyError::InvalidArgs {
+    let response = match serde_json::from_str::<CredentialIpcRequest>(&line) {
+        Ok(req) => build_credential_ipc_response(req, &expected_token, &allowed_credentials).await,
+        Err(e) => Err(GalleyError::InvalidArgs {
             message: format!("credential IPC request is invalid JSON: {e}"),
-        })?;
-    if req.token != expected_token {
-        return Err(GalleyError::InvalidArgs {
-            message: "credential IPC token mismatch".into(),
-        });
+        }),
+    };
+    let body = match response {
+        Ok(response) => serde_json::to_vec(&response),
+        Err(err) => serde_json::to_vec(&err),
     }
-    let galley = SqliteGalley::open().await?;
-    let resolved = resolve_access_token(&galley, &req.api_key_ref).await?;
-    let body = serde_json::to_vec(&CredentialIpcResponse {
-        access_token: resolved.access_token,
-        account_id: resolved.account_id,
-        expires_at: resolved.expires_at,
-    })
     .map_err(|e| GalleyError::Internal {
         message: format!("serializing credential IPC response failed: {e}"),
     })?;
@@ -765,9 +895,67 @@ where
     Ok(())
 }
 
+async fn build_credential_ipc_response(
+    req: CredentialIpcRequest,
+    expected_token: &str,
+    allowed_credentials: &CredentialIpcAllowlist,
+) -> Result<CredentialIpcResponse> {
+    let (api_key_ref, requested_kind) =
+        validate_credential_ipc_request(req, expected_token, allowed_credentials)?;
+    let galley = SqliteGalley::open().await?;
+    fulfill_credential_ipc_request(&galley, api_key_ref, requested_kind).await
+}
+
+fn validate_credential_ipc_request(
+    req: CredentialIpcRequest,
+    expected_token: &str,
+    allowed_credentials: &CredentialIpcAllowlist,
+) -> Result<(String, CredentialKind)> {
+    if !credential_token_matches(&req.token, expected_token) {
+        return Err(GalleyError::InvalidArgs {
+            message: "credential IPC token mismatch".into(),
+        });
+    }
+    let requested_kind = CredentialKind::parse(req.credential_kind.as_deref())?;
+    let Some(actual_auth_kind) = allowed_credentials.get(&req.api_key_ref).copied() else {
+        return Err(GalleyError::InvalidArgs {
+            message: "credential IPC apiKeyRef is not allowed for this runner".into(),
+        });
+    };
+    let expected_auth_kind = requested_kind.expected_auth_kind();
+    if actual_auth_kind != expected_auth_kind {
+        return Err(GalleyError::InvalidArgs {
+            message: format!(
+                "credential IPC credentialKind does not match apiKeyRef auth kind: requested {:?}, actual {:?}",
+                expected_auth_kind, actual_auth_kind
+            ),
+        });
+    }
+    Ok((req.api_key_ref, requested_kind))
+}
+
+async fn fulfill_credential_ipc_request(
+    galley: &SqliteGalley,
+    api_key_ref: String,
+    requested_kind: CredentialKind,
+) -> Result<CredentialIpcResponse> {
+    match requested_kind {
+        CredentialKind::ApiKey => {
+            let api_key = credential_store::get_secret(galley, &api_key_ref).await?;
+            Ok(CredentialIpcResponse::api_key(api_key))
+        }
+        CredentialKind::ChatgptCodexOauth => {
+            let resolved = resolve_access_token(galley, &api_key_ref).await?;
+            Ok(CredentialIpcResponse::codex_access_token(resolved))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::SqlitePool;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     #[test]
     fn codex_probe_payload_includes_required_instructions() {
@@ -797,5 +985,154 @@ mod tests {
         let payload = codex_probe_payload("gpt-5.5", "surprise");
 
         assert_eq!(payload["reasoning"]["effort"], CODEX_DEFAULT_REASONING);
+    }
+
+    #[test]
+    fn credential_ipc_rejects_api_key_request_for_codex_ref() {
+        let mut allowlist = CredentialIpcAllowlist::new();
+        allowlist.insert(
+            "managed-provider:mp_chatgpt_codex".into(),
+            ManagedModelAuthKind::ChatgptCodexOauth,
+        );
+
+        let err = validate_credential_ipc_request(
+            CredentialIpcRequest {
+                token: "expected".into(),
+                api_key_ref: "managed-provider:mp_chatgpt_codex".into(),
+                credential_kind: Some("api_key".into()),
+            },
+            "expected",
+            &allowlist,
+        )
+        .expect_err("api_key must not be accepted for a Codex OAuth ref");
+
+        assert!(matches!(err, GalleyError::InvalidArgs { .. }));
+        assert!(err.to_string().contains("credentialKind does not match"));
+    }
+
+    #[tokio::test]
+    async fn credential_ipc_token_mismatch_returns_json_error() {
+        let mut allowlist = CredentialIpcAllowlist::new();
+        allowlist.insert(
+            "managed-provider:mp_test".into(),
+            ManagedModelAuthKind::ApiKey,
+        );
+        let (mut client, server) = tokio::io::duplex(1024);
+        let task = tokio::spawn(handle_credential_ipc_stream(
+            server,
+            "expected".into(),
+            Arc::new(allowlist),
+        ));
+
+        client
+            .write_all(
+                br#"{"token":"bad","apiKeyRef":"managed-provider:mp_test","credentialKind":"api_key"}"#,
+            )
+            .await
+            .unwrap();
+        client.write_all(b"\n").await.unwrap();
+        let mut reader = BufReader::new(client);
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+
+        let value: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["error"], "invalid_args");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("token mismatch"));
+        task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn credential_ipc_disallowed_ref_returns_json_error() {
+        let allowlist = CredentialIpcAllowlist::new();
+        let (mut client, server) = tokio::io::duplex(1024);
+        let task = tokio::spawn(handle_credential_ipc_stream(
+            server,
+            "expected".into(),
+            Arc::new(allowlist),
+        ));
+
+        client
+            .write_all(
+                br#"{"token":"expected","apiKeyRef":"managed-provider:mp_test","credentialKind":"api_key"}"#,
+            )
+            .await
+            .unwrap();
+        client.write_all(b"\n").await.unwrap();
+        let mut reader = BufReader::new(client);
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+
+        let value: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["error"], "invalid_args");
+        assert!(value["message"].as_str().unwrap().contains("not allowed"));
+        task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn credential_ipc_codex_response_never_includes_refresh_token() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../migrations/012_managed_model_local_secrets.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let galley = SqliteGalley::from_pool(pool);
+        let access_token = fake_codex_access_token();
+        let secret = CodexOAuthSecret::new(access_token.clone(), "refresh-long-term".into())
+            .expect("build test secret");
+        let api_key_ref = "managed-provider:mp_chatgpt_codex";
+        credential_store::set_secret(
+            &galley,
+            api_key_ref,
+            &serde_json::to_string(&secret).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let response = fulfill_credential_ipc_request(
+            &galley,
+            api_key_ref.into(),
+            CredentialKind::ChatgptCodexOauth,
+        )
+        .await
+        .unwrap();
+        let value = serde_json::to_value(response).unwrap();
+
+        assert_eq!(value["accessToken"], access_token);
+        assert!(value.get("refreshToken").is_none());
+        assert!(value.get("apiKey").is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn credential_ipc_unix_socket_is_0600() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let config = start_credential_ipc(CredentialIpcAllowlist::new())
+            .await
+            .expect("start credential ipc");
+        let mode = std::fs::metadata(&config.address)
+            .expect("socket metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+
+        assert_eq!(mode, 0o600);
+        let _ = std::fs::remove_file(&config.address);
+    }
+
+    fn fake_codex_access_token() -> String {
+        let payload = serde_json::json!({
+            "exp": Utc::now().timestamp() + 3600,
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "acct_test"
+            }
+        });
+        let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap());
+        format!("header.{encoded}.sig")
     }
 }

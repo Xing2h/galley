@@ -321,6 +321,7 @@ export interface ApprovalResponseCommand {
 export interface AskUserResponseCommand {
   kind: "ask_user_response";
   text: string;
+  absoluteTurnIndex?: number | null;
 }
 
 export interface AbortCommand {

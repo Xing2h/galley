@@ -45,7 +45,7 @@ export function rowsToTurns(rows: MessageRow[]): Turn[] {
   // user row's turn_index as the base of the current user_message
   // "block". Each assistant row's display step is then
   // `absolute - base + 1`.
-  let currentMessageBase = 0;
+  let currentMessageBase: number | null = null;
   for (const row of rows) {
     if (row.role === "user") {
       currentMessageBase = row.turn_index;
@@ -75,9 +75,10 @@ export function rowsToTurns(rows: MessageRow[]): Turn[] {
           resultPreview,
         };
       });
-      const displayStep = currentMessageBase
-        ? row.turn_index - currentMessageBase + 1
-        : row.turn_index; // defensive: no preceding user row found
+      const displayStep =
+        currentMessageBase !== null
+          ? row.turn_index - currentMessageBase + 1
+          : row.turn_index; // defensive: no preceding user row found
       // Normalize empty-string final_answer back to null (same as
       // ipc-handlers turnFromTurnEnd does for live events). Old rows
       // written before commit 1d0c404's fix may have stored "" for

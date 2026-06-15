@@ -115,6 +115,7 @@ experiments = ["dep:anyhow"]
 # Mac builds never fetch or compile this crate.
 [target.'cfg(target_os = "windows")'.dependencies]
 window-shadows-v2 = "0.1"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Memory"] }
 
 # Throwaway prototype binary. Validates Rust-owned Python subprocess equivalence
 # vs current TS ownership. Required for B1 go/no-go (see refactor cursor).

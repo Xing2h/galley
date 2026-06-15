@@ -6,9 +6,14 @@ that don't need a GA subprocess: error classification and LLM display names.
 from __future__ import annotations
 
 import json
+import time
+from io import StringIO
+from typing import Any
 
 import pytest
 
+import runner.managed_runtime as managed_runtime
+from runner.ipc import AskUserResponseCommand
 from runner.workbench_bridge import (
     Bridge,
     _classify_error,
@@ -147,6 +152,129 @@ def test_managed_model_config_maps_connect_timeout_to_ga_timeout(
     assert cfg["read_timeout"] == 180
 
 
+def test_managed_model_config_fetches_api_key_from_credential_ipc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[dict[str, object], str, str]] = []
+
+    def fake_credential_from_ipc(
+        ipc: dict[str, object],
+        api_key_ref: str,
+        credential_kind: str,
+    ) -> dict[str, object]:
+        calls.append((ipc, api_key_ref, credential_kind))
+        return {"apiKey": "sk-from-ipc"}
+
+    monkeypatch.setattr(
+        managed_runtime,
+        "_credential_from_ipc",
+        fake_credential_from_ipc,
+    )
+    monkeypatch.setenv(
+        "GALLEY_MANAGED_MODEL_CONFIG_JSON",
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "protocol": "openai",
+                        "authKind": "api_key",
+                        "displayName": "Test Model",
+                        "apiKey": "galley-managed-api-key",
+                        "apiKeyRef": "managed-provider:mp_test",
+                        "apiBase": "https://example.test/v1/",
+                        "model": "test-model",
+                        "credentialIpc": {
+                            "kind": "unix",
+                            "address": "/tmp/galley.sock",
+                            "token": "secret",
+                        },
+                    }
+                ]
+            }
+        ),
+    )
+
+    cfg = _managed_model_config_from_env()["native_oai_config_0"]
+
+    assert cfg["apikey"] == "sk-from-ipc"
+    assert calls == [
+        (
+            {"kind": "unix", "address": "/tmp/galley.sock", "token": "secret"},
+            "managed-provider:mp_test",
+            "api_key",
+        )
+    ]
+
+
+def test_credential_from_ipc_surfaces_structured_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_read_windows_named_pipe(
+        address: str,
+        req: bytes,
+        timeout_secs: float,
+    ) -> bytes:
+        return (
+            b'{"error":"invalid_args",'
+            b'"message":"credential IPC token mismatch"}\n'
+        )
+
+    monkeypatch.setattr(
+        managed_runtime,
+        "_read_windows_named_pipe",
+        fake_read_windows_named_pipe,
+    )
+
+    with pytest.raises(RuntimeError, match="token mismatch"):
+        managed_runtime._credential_from_ipc(
+            {"kind": "windows_named_pipe", "address": r"\\.\pipe\galley", "token": "bad"},
+            "managed-provider:mp_test",
+            "api_key",
+        )
+
+
+def test_credential_from_ipc_reports_empty_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        managed_runtime,
+        "_read_windows_named_pipe",
+        lambda _address, _req, _timeout_secs: b"",
+    )
+
+    with pytest.raises(RuntimeError, match="empty response"):
+        managed_runtime._credential_from_ipc(
+            {"kind": "windows_named_pipe", "address": r"\\.\pipe\galley", "token": "t"},
+            "managed-provider:mp_test",
+            "api_key",
+        )
+
+
+def test_read_windows_named_pipe_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    class BlockingPipe:
+        def __enter__(self) -> BlockingPipe:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def write(self, _req: bytes) -> None:
+            return None
+
+        def readline(self) -> bytes:
+            time.sleep(1)
+            return b""
+
+    monkeypatch.setattr("builtins.open", lambda *_args, **_kwargs: BlockingPipe())
+
+    with pytest.raises(TimeoutError, match="timed out"):
+        managed_runtime._read_windows_named_pipe(
+            r"\\.\pipe\galley",
+            b"{}\n",
+            0.01,
+        )
+
+
 def test_managed_model_config_maps_codex_oauth_to_ga_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -187,6 +315,36 @@ def test_managed_model_config_maps_codex_oauth_to_ga_config(
     assert cfg["reasoning_effort"] == "medium"
     assert cfg["galley_api_key_ref"] == "managed-provider:mp_chatgpt_codex"
     assert cfg["galley_credential_ipc"]["token"] == "secret"
+
+
+def test_ask_user_response_resets_visibility_to_visible() -> None:
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.tasks: list[tuple[str, str]] = []
+
+        def put_task(self, text: str, source: str, **_kwargs: Any) -> object:
+            self.tasks.append((text, source))
+            return object()
+
+    bridge = Bridge(
+        ga_path="/tmp/ga",
+        session_id="s1",
+        cwd=None,
+        llm_no=0,
+        llm_name=None,
+        stdout=StringIO(),
+        stdin=StringIO(),
+    )
+    bridge.agent = FakeAgent()
+    bridge._start_progress_drain = lambda _queue: None  # type: ignore[assignment]
+    bridge._current_message_visibility = "hidden"
+
+    bridge.dispatch_command(AskUserResponseCommand(text="yes", absoluteTurnIndex=4))
+
+    assert bridge._current_message_visibility == "visible"
+    assert bridge._current_message_turn_base == 4
+    assert bridge._last_emitted_turn == 0
+    assert bridge.agent.tasks == [("yes", "workbench")]
 
 
 # ---------------- _extract_ask_user ----------------

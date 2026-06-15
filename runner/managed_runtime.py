@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import json
 import os
+import queue
+import socket
+import threading
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -17,6 +20,7 @@ GALLEY_MANAGED_MODEL_CONFIG_ENV = "GALLEY_MANAGED_MODEL_CONFIG_JSON"
 GALLEY_MANAGED_MODEL_CONFIG_PATH_ENV = "GALLEY_MANAGED_MODEL_CONFIG_PATH"
 GALLEY_RUNTIME_PROMPT_TEXT_ENV = "GALLEY_RUNTIME_PROMPT_TEXT"
 GALLEY_PERSONA_PROMPT_TEXT_ENV = "GALLEY_PERSONA_PROMPT_TEXT"
+_CREDENTIAL_IPC_TIMEOUT_SECS = 10
 
 
 def is_managed_runtime() -> bool:
@@ -25,6 +29,87 @@ def is_managed_runtime() -> bool:
 
 def managed_state_root() -> str | None:
     return os.environ.get(GALLEY_MANAGED_STATE_ROOT_ENV)
+
+
+def _credential_from_ipc(
+    ipc: dict[str, Any],
+    api_key_ref: str,
+    credential_kind: str,
+) -> dict[str, Any]:
+    req = (
+        json.dumps(
+            {
+                "token": str(ipc.get("token") or ""),
+                "apiKeyRef": api_key_ref,
+                "credentialKind": credential_kind,
+            },
+            ensure_ascii=False,
+        ).encode()
+        + b"\n"
+    )
+    kind = str(ipc.get("kind") or "")
+    address = str(ipc.get("address") or "")
+    try:
+        if kind == "unix":
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(_CREDENTIAL_IPC_TIMEOUT_SECS)
+                s.connect(address)
+                s.sendall(req)
+                chunks: list[bytes] = []
+                while True:
+                    chunk = s.recv(65536)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    if b"\n" in chunk:
+                        break
+        elif kind == "windows_named_pipe":
+            chunks = [
+                _read_windows_named_pipe(address, req, _CREDENTIAL_IPC_TIMEOUT_SECS)
+            ]
+        else:
+            raise RuntimeError(f"unsupported credential IPC kind {kind!r}")
+        raw = b"".join(chunks).decode("utf-8").strip()
+        if not raw:
+            raise RuntimeError("credential IPC returned an empty response")
+        data = json.loads(raw)
+    except Exception as e:
+        raise RuntimeError(f"Galley credential IPC failed: {e}") from e
+    if not isinstance(data, dict):
+        raise RuntimeError("Galley credential IPC response is not an object.")
+    error = data.get("error")
+    if isinstance(error, str):
+        message = data.get("message")
+        detail = f": {message}" if isinstance(message, str) and message else ""
+        raise RuntimeError(f"Galley credential IPC rejected request ({error}{detail})")
+    return data
+
+
+def _read_windows_named_pipe(address: str, req: bytes, timeout_secs: float) -> bytes:
+    result: queue.Queue[bytes | BaseException] = queue.Queue(maxsize=1)
+
+    def worker() -> None:
+        try:
+            with open(address, "r+b", buffering=0) as f:
+                f.write(req)
+                result.put(f.readline())
+        except BaseException as e:
+            result.put(e)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout_secs)
+    if thread.is_alive():
+        raise TimeoutError(
+            f"credential IPC named pipe timed out after {timeout_secs:g}s"
+        )
+    try:
+        value = result.get_nowait()
+    except queue.Empty as e:
+        raise RuntimeError("credential IPC named pipe returned no result") from e
+    if isinstance(value, BaseException):
+        raise value
+    return value
 
 
 def managed_model_config_from_env() -> dict[str, Any]:
@@ -51,18 +136,25 @@ def managed_model_config_from_env() -> dict[str, Any]:
             key = f"native_oai_config_{idx}"
         else:
             continue
+        auth_kind = str(model.get("authKind") or "api_key").strip().lower()
+        api_key = str(model.get("apiKey") or "")
+        api_key_ref = str(model.get("apiKeyRef") or "")
+        credential_ipc = model.get("credentialIpc")
+        if auth_kind == "api_key" and api_key_ref and isinstance(credential_ipc, dict):
+            api_key = str(
+                _credential_from_ipc(credential_ipc, api_key_ref, "api_key").get("apiKey")
+                or ""
+            )
         cfg: dict[str, Any] = {
             "name": str(model.get("displayName") or model.get("model") or key),
-            "apikey": str(model.get("apiKey") or ""),
+            "apikey": api_key,
             "apibase": str(model.get("apiBase") or "").rstrip("/"),
             "model": str(model.get("model") or ""),
         }
-        auth_kind = str(model.get("authKind") or "api_key").strip().lower()
         if auth_kind == "chatgpt_codex_oauth":
             cfg["codex_backend"] = True
             cfg["api_mode"] = "responses"
-            cfg["galley_api_key_ref"] = str(model.get("apiKeyRef") or "")
-            credential_ipc = model.get("credentialIpc")
+            cfg["galley_api_key_ref"] = api_key_ref
             if isinstance(credential_ipc, dict):
                 cfg["galley_credential_ipc"] = credential_ipc
         advanced = model.get("advancedOptions") or {}

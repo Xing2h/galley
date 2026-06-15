@@ -34,6 +34,7 @@ export function useExternalCoreEvents(): void {
         message: {
           content: string;
           createdAt?: string;
+          turnIndex?: number;
           role?: "user" | "agent" | "system";
           origin?: {
             via: "gui" | "cli" | "supervisor" | "system";
@@ -57,6 +58,7 @@ export function useExternalCoreEvents(): void {
           message.origin,
           message.createdAt,
           dispatch === undefined ? true : dispatch === "dispatched",
+          message.turnIndex,
         );
       });
       if (cancelled) {

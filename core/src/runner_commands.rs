@@ -50,6 +50,7 @@ use crate::{
     process_command,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -200,38 +201,35 @@ pub(crate) async fn prepare_managed_runtime_context(
             detail: format!("loading managed model records failed: {e}"),
         }
     })?;
-    let needs_codex_ipc = models
-        .iter()
-        .any(|model| model.auth_kind == ManagedModelAuthKind::ChatgptCodexOauth);
-    let credential_ipc = if needs_codex_ipc {
-        Some(codex_oauth::start_credential_ipc().await.map_err(|e| {
-            RunnerSpawnError::ManagedRuntimeInvalid {
-                detail: format!("starting Codex credential IPC failed: {e}"),
-            }
-        })?)
-    } else {
-        None
-    };
+    let mut credential_allowlist: codex_oauth::CredentialIpcAllowlist = HashMap::new();
+    let mut usable_models = Vec::new();
+    for model in models {
+        let has_secret = credential_store::get_secret(&galley, &model.api_key_ref)
+            .await
+            .map(|secret| !secret.trim().is_empty())
+            .unwrap_or(false);
+        if !has_secret {
+            continue;
+        }
+        credential_allowlist.insert(model.api_key_ref.clone(), model.auth_kind);
+        usable_models.push(model);
+    }
+    let mut credential_ipc: Option<codex_oauth::CodexCredentialIpcConfig> = None;
     let mut runtime_models = Vec::new();
     let mut requested_model_index: Option<i64> = None;
-    for model in models {
+    for model in usable_models {
         let (api_key, model_credential_ipc) = match model.auth_kind {
             ManagedModelAuthKind::ApiKey => {
-                match credential_store::get_secret(&galley, &model.api_key_ref).await {
-                    Ok(secret) if !secret.trim().is_empty() => (secret, None),
-                    _ => continue,
-                }
+                let config =
+                    shared_credential_ipc_config(&mut credential_ipc, &credential_allowlist)
+                        .await?;
+                ("galley-managed-api-key".into(), Some(config))
             }
             ManagedModelAuthKind::ChatgptCodexOauth => {
-                if credential_store::get_secret(&galley, &model.api_key_ref)
-                    .await
-                    .map(|secret| !secret.trim().is_empty())
-                    .unwrap_or(false)
-                {
-                    ("galley-codex-oauth".into(), credential_ipc.clone())
-                } else {
-                    continue;
-                }
+                let config =
+                    shared_credential_ipc_config(&mut credential_ipc, &credential_allowlist)
+                        .await?;
+                ("galley-codex-oauth".into(), Some(config))
             }
         };
         if requested_model_id == Some(model.id.as_str()) {
@@ -311,6 +309,22 @@ pub(crate) async fn prepare_managed_runtime_context(
         env,
         requested_model_index,
     })
+}
+
+async fn shared_credential_ipc_config(
+    credential_ipc: &mut Option<codex_oauth::CodexCredentialIpcConfig>,
+    allowlist: &codex_oauth::CredentialIpcAllowlist,
+) -> Result<codex_oauth::CodexCredentialIpcConfig, RunnerSpawnError> {
+    if let Some(config) = credential_ipc.clone() {
+        return Ok(config);
+    }
+    let config = codex_oauth::start_credential_ipc(allowlist.clone())
+        .await
+        .map_err(|e| RunnerSpawnError::ManagedRuntimeInvalid {
+            detail: format!("starting credential IPC failed: {e}"),
+        })?;
+    *credential_ipc = Some(config.clone());
+    Ok(config)
 }
 
 pub(crate) async fn prepare_managed_spawn_args(

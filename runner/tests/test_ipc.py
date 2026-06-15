@@ -289,7 +289,7 @@ def test_approval_response_round_trip() -> None:
 
 
 def test_ask_user_response_round_trip() -> None:
-    cmd = AskUserResponseCommand(text="yes")
+    cmd = AskUserResponseCommand(text="yes", absoluteTurnIndex=3)
     assert decode_command(encode(cmd)) == cmd
 
 
@@ -389,6 +389,20 @@ def test_decode_command_repairs_unescaped_quotes_with_images() -> None:
     assert isinstance(decoded, UserMessageCommand)
     assert decoded.text == r'看 "D:\a\b.md"'
     assert decoded.images == [r"C:\shot.png"]
+
+
+def test_decode_command_repairs_legacy_line_with_absolute_turn_index() -> None:
+    line = (
+        r'{"kind":"user_message","text":"看 "D:\a\b.md"",'
+        r'"images":["C:\\shot.png"],"absoluteTurnIndex":7}'
+    )
+
+    decoded = decode_command(line)
+
+    assert isinstance(decoded, UserMessageCommand)
+    assert decoded.text == r'看 "D:\a\b.md"'
+    assert decoded.images == [r"C:\shot.png"]
+    assert decoded.absoluteTurnIndex == 7
 
 
 def test_decode_empty_line() -> None:

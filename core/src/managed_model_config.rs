@@ -1,8 +1,8 @@
 //! Non-secret managed model config generation.
 //!
 //! The generated file is a Galley-owned runtime artifact. It deliberately
-//! contains `apiKeyRef` only; session start resolves the real key from the
-//! local encrypted credential store and injects it in memory.
+//! contains `apiKeyRef` only; session start exposes the real key to the
+//! managed runner through Core-owned credential IPC.
 
 use std::fs;
 use std::path::Path;

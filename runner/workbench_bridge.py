@@ -969,6 +969,8 @@ class Bridge:
             # Same as UserMessage above — ask_user response triggers a
             # fresh agent_runner_loop with turn counter restarting at 1.
             self._last_emitted_turn = 0
+            self._current_message_visibility = "visible"
+            self._current_message_turn_base = cmd.absoluteTurnIndex
             self.run_in_progress.set()
             display_queue = self.agent.put_task(cmd.text, source="workbench")
             self._start_progress_drain(display_queue)

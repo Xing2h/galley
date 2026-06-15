@@ -361,6 +361,8 @@ pub struct ApprovalResponseCommand {
 #[serde(rename_all = "camelCase")]
 pub struct AskUserResponseCommand {
     pub text: String,
+    #[serde(default)]
+    pub absolute_turn_index: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

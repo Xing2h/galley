@@ -58,7 +58,7 @@ export const EMPTY_DECISIONS: Record<string, ApprovalDecision> = Object.freeze(
  * `turnIndexOffset` deserves the long comment — see the docblock on
  * `appendUserTurn` for full rationale. TL;DR: GA's
  * `agent_runner_loop` resets `turn=1` on every `put_task`, so we add
- * this offset before persisting to SQLite to keep
+ * this offset when a runner event lacks `absoluteTurnIndex` to keep
  * `msg_${sessionId}_${turnIndex}_assistant` primary keys distinct
  * across consecutive user messages.
  */
@@ -71,6 +71,7 @@ export interface PerSessionMessages {
   approvalDecisions: Record<string, ApprovalDecision>;
   pendingAskUser: PendingAskUser | null;
   turnIndexOffset: number;
+  lastUserPersistRequestId: number;
 }
 
 export const EMPTY_MESSAGES: PerSessionMessages = Object.freeze({
@@ -82,6 +83,7 @@ export const EMPTY_MESSAGES: PerSessionMessages = Object.freeze({
   approvalDecisions: EMPTY_DECISIONS,
   pendingAskUser: null,
   turnIndexOffset: 0,
+  lastUserPersistRequestId: 0,
 }) as PerSessionMessages;
 
 function emptyMessages(): PerSessionMessages {
@@ -96,6 +98,7 @@ function emptyMessages(): PerSessionMessages {
     approvalDecisions: {},
     pendingAskUser: null,
     turnIndexOffset: 0,
+    lastUserPersistRequestId: 0,
   };
 }
 
@@ -148,7 +151,7 @@ interface MessagesActions {
   restoreSessionTurns: (sid: string) => Promise<void>;
 
   // ---- conversation writes ----
-  appendUserTurn: (sid: string, text: string) => void;
+  appendUserTurn: (sid: string, text: string) => Promise<number>;
   /**
    * Append a user turn that was persisted out-of-band by Rust core
    * (`socket_listener::dispatch_session_send`). Skips the SQLite write
@@ -167,6 +170,7 @@ interface MessagesActions {
     origin?: Origin,
     createdAt?: string,
     dispatched?: boolean,
+    turnIndex?: number | null,
   ) => void;
   /**
    * Append a transient user message for `/btw` side questions.
@@ -324,9 +328,9 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
   // ---- conversation writes ----
 
   appendUserTurn: (sid, text) => {
-    // Snapshot turnCount before any state mutation; this is the
-    // offset that should map GA's 1-based per-loop turn indices
-    // onto absolute session-wide indices.
+    // Optimistically snapshot turnCount before any state mutation. Core is
+    // still the authority for the durable turn_index; this value is only the
+    // temporary UI offset until persistUserMessage returns the real row.
     //
     // Why: GA's `agent_runner_loop` (agent_loop.py) declares
     // `turn = 0` locally and increments per LLM call within one
@@ -341,14 +345,15 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     // manifesting as "the conversation lost some replies and the
     // rest is out of order".
     //
-    // Offset = current turnCount means turn 1 of a new user_message
-    // lands at `turnCount + 1`, which equals the user row's own
-    // turn_index (also `turnCount + 1`) — pairing them correctly in
-    // the (turn_index, sequence) ordering used by restore.
+    // For old rows and bridge events that do not carry absoluteTurnIndex,
+    // offset = userRowTurnIndex - 1 maps GA step 1 back onto the user row's
+    // absolute turn_index. Core now returns that userRowTurnIndex after the
+    // write; until then, currentTurnCount remains the best visual guess.
     const sessionsState = useSessionsStore.getState();
     const currentTurnCount =
       sessionsState.sessions.find((s) => s.id === sid)?.turnCount ?? 0;
     const state = get();
+    const persistRequestId = state.userSubmitTick + 1;
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
       turns: [...m.turns, { role: "user", content: text } as UserTurn],
@@ -368,6 +373,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       // so the conversation reverts to normal running visuals.
       pendingAskUser: null,
       turnIndexOffset: currentTurnCount,
+      lastUserPersistRequestId: persistRequestId,
     }));
     set({ byId, userSubmitTick: state.userSubmitTick + 1 });
     fireSessionMirror(sid, next);
@@ -376,22 +382,44 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     // placeholder. sessionsStore handles the trim / fallback / Rust
     // persist; this call is a no-op when the title has been edited.
     useSessionsStore.getState().maybeDeriveTitle(sid, text);
-    // Persist the user message to SQLite for Session Restore. turnIndex
-    // is derived as `turnCount + 1` because GA hasn't emitted turn_start
-    // yet — that event arrives after the bridge starts processing
-    // user_message and confirms our local guess. The pairing holds
-    // because GA always assigns one turn per user message.
-    const nextTurnIndex = currentTurnCount + 1;
-    void persistUserMessage({
+    // Persist the user message to SQLite for Session Restore. Core assigns
+    // the durable turn_index and returns it so the runner command can carry
+    // the same absoluteTurnIndex.
+    return persistUserMessage({
       sessionId: sid,
-      turnIndex: nextTurnIndex,
       content: text,
-    }).catch((e) => {
-      console.debug("[messages] appendUserTurn persistUserMessage failed.", e);
-    });
+    })
+      .then((message) => {
+        const persistedTurnIndex =
+          typeof message.turnIndex === "number" ? message.turnIndex : null;
+        if (persistedTurnIndex === null) {
+          throw new Error("Core did not return a durable turnIndex.");
+        }
+        const persistedOffset = persistedTurnIndex - 1;
+        const latest = get();
+        const latestMessages = latest.byId[sid];
+        if (
+          persistedOffset !== currentTurnCount &&
+          latestMessages?.lastUserPersistRequestId === persistRequestId
+        ) {
+          const { byId: adjusted } = patchMessages(latest, sid, (m) => ({
+            ...m,
+            turnIndexOffset: persistedOffset,
+          }));
+          set({ byId: adjusted });
+        }
+        return persistedTurnIndex;
+      });
   },
 
-  appendUserTurnExternal: (sid, text, origin, createdAt, dispatched = true) => {
+  appendUserTurnExternal: (
+    sid,
+    text,
+    origin,
+    createdAt,
+    dispatched = true,
+    turnIndex,
+  ) => {
     // Mirror of appendUserTurn — see that action's comments for
     // rationale on each field. Difference: skips `persistUserMessage`
     // because Rust already wrote the row before emitting
@@ -402,6 +430,8 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     const currentTurnCount =
       useSessionsStore.getState().sessions.find((s) => s.id === sid)
         ?.turnCount ?? 0;
+    const offset =
+      typeof turnIndex === "number" ? turnIndex - 1 : currentTurnCount;
     const userTurn: UserTurn = { role: "user", content: text };
     if (origin) userTurn.origin = origin;
     if (createdAt) userTurn.createdAt = createdAt;
@@ -413,7 +443,8 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       inFlightContent: "",
       currentTurnIndex: null,
       pendingAskUser: null,
-      turnIndexOffset: currentTurnCount,
+      turnIndexOffset: offset,
+      lastUserPersistRequestId: 0,
     }));
     set({ byId, userSubmitTick: state.userSubmitTick + 1 });
     fireSessionMirror(sid, next);

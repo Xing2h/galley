@@ -1,4 +1,4 @@
-use super::common::{SocketResponseLite, map_galley_err, origin_from_args};
+use super::common::{map_galley_err, origin_from_args, SocketResponseLite};
 use super::llm_cmds::resolve_llm_selection;
 use super::*;
 
@@ -131,7 +131,7 @@ pub(super) async fn dispatch_session_send(
                 text: parsed.content,
                 images: vec![],
                 visibility: None,
-                absolute_turn_index: None,
+                absolute_turn_index: brief.turn_index.map(i64::from),
             }),
         )
         .await
@@ -284,7 +284,7 @@ pub(super) async fn dispatch_session_goal_synthesize(
                 text: dispatch_content,
                 images: vec![],
                 visibility: None,
-                absolute_turn_index: None,
+                absolute_turn_index: brief.turn_index.map(i64::from),
             }),
         )
         .await
@@ -707,7 +707,11 @@ fn resolve_python_for_socket(
 }
 
 fn default_python_name() -> &'static str {
-    if cfg!(windows) { "python" } else { "python3" }
+    if cfg!(windows) {
+        "python"
+    } else {
+        "python3"
+    }
 }
 
 fn resolve_python_alias(raw: &str) -> Option<String> {
@@ -1014,7 +1018,7 @@ async fn dispatch_session_new_inner(
                 text: task,
                 images: vec![],
                 visibility: None,
-                absolute_turn_index: None,
+                absolute_turn_index: msg.turn_index.map(i64::from),
             }),
         )
         .await

@@ -20,6 +20,7 @@ use galley_core_lib::db::{
 };
 use galley_core_lib::error::GalleyError;
 use galley_core_lib::managed_runtime;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
 // Migration SQL — keep in sync with `core/src/lib.rs::run()`.
@@ -54,16 +55,39 @@ async fn fresh_pool() -> SqlitePool {
         .execute(&pool)
         .await
         .expect("enable foreign keys");
+    run_migrations(&pool).await;
+    pool
+}
+
+async fn fresh_file_pool() -> (tempfile::TempDir, SqlitePool) {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let path = dir.path().join("galley-test.db");
+    let opts = SqliteConnectOptions::new()
+        .filename(&path)
+        .create_if_missing(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(4)
+        .connect_with(opts)
+        .await
+        .expect("open file-backed sqlite");
+    sqlx::raw_sql("PRAGMA foreign_keys = ON;")
+        .execute(&pool)
+        .await
+        .expect("enable foreign keys");
+    run_migrations(&pool).await;
+    (dir, pool)
+}
+
+async fn run_migrations(pool: &SqlitePool) {
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
         MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019,
     ] {
         sqlx::raw_sql(sql)
-            .execute(&pool)
+            .execute(pool)
             .await
             .expect("run migration");
     }
-    pool
 }
 
 fn sid(s: &str) -> SessionId {
@@ -412,7 +436,12 @@ async fn goal_deliverable_versions_increment_and_surface_in_status() {
     assert!(snapshot.deliverable.is_none());
 
     let v1 = galley
-        .set_goal_deliverable(goal.id.clone(), "draft one".into(), Some("first".into()), None)
+        .set_goal_deliverable(
+            goal.id.clone(),
+            "draft one".into(),
+            Some("first".into()),
+            None,
+        )
         .await
         .expect("set v1");
     assert_eq!(v1.version, 1);
@@ -1763,6 +1792,106 @@ async fn socket_user_message_ids_are_session_scoped() {
             .await
             .unwrap();
     assert_eq!(fts_count, 2, "socket user messages should be searchable");
+}
+
+#[tokio::test]
+async fn gui_user_message_allocation_does_not_overwrite_socket_message() {
+    let pool = fresh_pool().await;
+    seed_session_idle(&pool, "sess_mixed").await;
+    let galley = SqliteGalley::from_pool(pool.clone());
+    let initial_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE session_id = ?")
+            .bind("sess_mixed")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(initial_count, 0, "fixture should not pre-seed messages");
+
+    let socket_msg = galley
+        .send_message(
+            sid("sess_mixed"),
+            "from supervisor".into(),
+            Origin::cli(Some("ga-test".into()), Some("mixed path".into())),
+        )
+        .await
+        .expect("socket send");
+    let gui_msg = galley
+        .send_message(sid("sess_mixed"), "from gui".into(), Origin::gui())
+        .await
+        .expect("gui send");
+
+    assert_eq!(socket_msg.id.0, "msg_sess_mixed_0_user");
+    assert_eq!(socket_msg.turn_index, Some(0));
+    assert_eq!(gui_msg.id.0, "msg_sess_mixed_1_user");
+    assert_eq!(gui_msg.turn_index, Some(1));
+
+    let rows: Vec<(String, i64, String)> = sqlx::query_as(
+        "SELECT id, turn_index, content FROM messages WHERE session_id = ? ORDER BY turn_index",
+    )
+    .bind("sess_mixed")
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            (
+                "msg_sess_mixed_0_user".to_string(),
+                0,
+                "from supervisor".to_string()
+            ),
+            (
+                "msg_sess_mixed_1_user".to_string(),
+                1,
+                "from gui".to_string()
+            ),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_send_message_allocates_unique_turn_indexes() {
+    let (_dir, pool) = fresh_file_pool().await;
+    seed_session_idle(&pool, "sess_concurrent").await;
+    let galley = SqliteGalley::from_pool(pool.clone());
+
+    let mut handles = Vec::new();
+    for i in 0..12 {
+        let galley = galley.clone();
+        handles.push(tokio::spawn(async move {
+            galley
+                .send_message(
+                    sid("sess_concurrent"),
+                    format!("message {i}"),
+                    Origin::cli(None, Some(format!("concurrent {i}"))),
+                )
+                .await
+        }));
+    }
+
+    let mut turn_indexes = Vec::new();
+    for handle in handles {
+        let msg = handle
+            .await
+            .expect("task joins")
+            .expect("send_message succeeds");
+        turn_indexes.push(msg.turn_index.expect("turn index"));
+    }
+    turn_indexes.sort_unstable();
+
+    assert_eq!(turn_indexes, (0..12).collect::<Vec<_>>());
+    let rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT turn_index, content FROM messages WHERE session_id = ? ORDER BY turn_index",
+    )
+    .bind("sess_concurrent")
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 12);
+    for (idx, (turn_index, content)) in rows.into_iter().enumerate() {
+        assert_eq!(turn_index, idx as i64);
+        assert!(content.starts_with("message "));
+    }
 }
 
 #[tokio::test]

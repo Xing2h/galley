@@ -167,13 +167,12 @@ pub(crate) async fn session_message_rows(
 #[tauri::command]
 pub(crate) async fn persist_user_message(
     session_id: SessionId,
-    turn_index: u32,
     content: String,
     origin: Origin,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<api::MessageBrief, String> {
     let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
-        .persist_gui_user_message(session_id, turn_index, content, origin)
+        .send_message(session_id, content, origin)
         .await
         .map_err(stringify_error)
 }

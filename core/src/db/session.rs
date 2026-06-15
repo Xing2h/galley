@@ -367,15 +367,21 @@ impl SqliteGalley {
         // shared inner helper. The `_in_tx` sibling reuses the same
         // helper so SQL + validation lives in one place. See
         // [insert_user_message_inner] for the body.
-        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
-        insert_user_message_inner(
-            &mut conn,
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(map_sqlx_err)?;
+        let msg = insert_user_message_inner(
+            &mut tx,
             session_id,
             content,
             origin,
             MessageVisibility::Visible,
         )
-        .await
+        .await?;
+        tx.commit().await.map_err(map_sqlx_err)?;
+        Ok(msg)
     }
 
     pub(super) async fn send_message_with_visibility_db(
@@ -385,8 +391,15 @@ impl SqliteGalley {
         origin: crate::api::Origin,
         visibility: MessageVisibility,
     ) -> Result<MessageBrief> {
-        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
-        insert_user_message_inner(&mut conn, session_id, content, origin, visibility).await
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(map_sqlx_err)?;
+        let msg =
+            insert_user_message_inner(&mut tx, session_id, content, origin, visibility).await?;
+        tx.commit().await.map_err(map_sqlx_err)?;
+        Ok(msg)
     }
 
     pub(super) async fn send_system_message_db(
@@ -395,16 +408,22 @@ impl SqliteGalley {
         content: String,
         origin: crate::api::Origin,
     ) -> Result<MessageBrief> {
-        let mut conn = self.pool.acquire().await.map_err(map_sqlx_err)?;
-        insert_message_inner(
-            &mut conn,
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(map_sqlx_err)?;
+        let msg = insert_message_inner(
+            &mut tx,
             session_id,
             MessageRole::System,
             content,
             origin,
             MessageVisibility::Visible,
         )
-        .await
+        .await?;
+        tx.commit().await.map_err(map_sqlx_err)?;
+        Ok(msg)
     }
 
     pub(super) async fn create_session_db(

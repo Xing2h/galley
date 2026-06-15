@@ -377,11 +377,15 @@ function App() {
       demoSid = sid;
       await activateSession(sid);
       setScreen("main");
-      appendUserTurn(sid, copy.browserControl.demoPrompt);
+      const absoluteTurnIndex = await appendUserTurn(
+        sid,
+        copy.browserControl.demoPrompt,
+      );
       await sendIPCCommand(sid, {
         kind: "user_message",
         text: copy.browserControl.demoPrompt,
         images: [],
+        absoluteTurnIndex,
       });
     } catch (e) {
       if (demoSid) {
@@ -530,6 +534,7 @@ function App() {
         objectiveMessage.origin,
         objectiveMessage.createdAt,
         false,
+        objectiveMessage.turnIndex,
       );
       appendSystemTurn(masterSessionId, {
         role: "system",
@@ -1161,8 +1166,13 @@ function App() {
                             kind: "user_message";
                             text: string;
                             images: string[];
+                            absoluteTurnIndex?: number | null;
                           }
-                        | { kind: "ask_user_response"; text: string },
+                        | {
+                            kind: "ask_user_response";
+                            text: string;
+                            absoluteTurnIndex?: number | null;
+                          },
                     ) => {
                       const runtime = useRuntimeStore.getState();
                       const latestStatus =
@@ -1219,19 +1229,23 @@ function App() {
                     // "this user message was a reply to a specific
                     // question" vs "this was a fresh prompt".
                     const wasAskUser = pendingAskUser !== null;
-                    appendUserTurn(sid, t);
-                    if (wasAskUser) {
-                      void ensureBridgeThenSend({
-                        kind: "ask_user_response",
-                        text: t,
-                      }).catch(reportSendFailure);
-                    } else {
-                      void ensureBridgeThenSend({
-                        kind: "user_message",
-                        text: t,
-                        images: [],
-                      }).catch(reportSendFailure);
-                    }
+                    void (async () => {
+                      const absoluteTurnIndex = await appendUserTurn(sid, t);
+                      if (wasAskUser) {
+                        await ensureBridgeThenSend({
+                          kind: "ask_user_response",
+                          text: t,
+                          absoluteTurnIndex,
+                        });
+                      } else {
+                        await ensureBridgeThenSend({
+                          kind: "user_message",
+                          text: t,
+                          images: [],
+                          absoluteTurnIndex,
+                        });
+                      }
+                    })().catch(reportSendFailure);
                   }}
                   onApprove={(approvalId, decision) => {
                     if (!activeSessionId) return;
@@ -1543,10 +1557,15 @@ async function submitOnEmpty(
   existingId: string | undefined,
   createSession: (projectId?: string) => string,
   activateSession: (id: string) => Promise<void>,
-  appendUserTurn: (sessionId: string, text: string) => void,
+  appendUserTurn: (sessionId: string, text: string) => Promise<number>,
   sendIPCCommand: (
     sessionId: string,
-    cmd: { kind: "user_message"; text: string; images?: string[] },
+    cmd: {
+      kind: "user_message";
+      text: string;
+      images?: string[];
+      absoluteTurnIndex?: number | null;
+    },
   ) => Promise<void>,
   setScreen: (s: import("@/stores/ui").Screen) => void,
   reportSendFailure: (
@@ -1566,12 +1585,13 @@ async function submitOnEmpty(
     await activateSession(id);
   }
   setScreen("main");
-  appendUserTurn(id, text);
+  const absoluteTurnIndex = await appendUserTurn(id, text);
   try {
     await sendIPCCommand(id, {
       kind: "user_message",
       text,
       images: [],
+      absoluteTurnIndex,
     });
   } catch (e) {
     reportSendFailure(id, "send_user_message", e);
