@@ -31,6 +31,13 @@ export type ToolEventStatus =
 
 export type RiskLevel = "low" | "medium" | "high";
 
+export type SendPhase =
+  | "saving"
+  | "starting"
+  | "restoring"
+  | "waiting_agent"
+  | "sent";
+
 export interface ConversationToolEvent {
   id: string;
   /** Tool name like "file_read" / "file_patch" / "code_run". Mono font. */

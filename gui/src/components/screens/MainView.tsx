@@ -29,6 +29,7 @@ import type {
   ConversationToolEvent,
   PendingApproval,
   PendingAskUser,
+  SendPhase,
   Turn,
 } from "@/types/conversation";
 import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
@@ -78,6 +79,7 @@ export interface MainViewProps {
    * string when no streaming is active.
    */
   inFlightContent?: string;
+  sendPhase?: SendPhase | null;
   /** LLM list for the Composer's inline picker. */
   llms?: ComposerLLMOption[];
   /** Called when the user picks an LLM from the inline dropdown. */
@@ -156,6 +158,7 @@ export function MainView({
   currentTurnIndex,
   userSubmitTick = 0,
   inFlightContent = "",
+  sendPhase = null,
   llms,
   onSelectLLM,
   llmConfigHint,
@@ -195,9 +198,12 @@ export function MainView({
   const livePreamble = inFlightContent
     ? extractPreamble(inFlightContent)
     : undefined;
+  const sendPhaseStatus = sendPhase
+    ? sendPhaseToStatus(sendPhase, copy)
+    : undefined;
   const liveStepStatus = visiblePartial
     ? copy.conversation.answering
-    : compactLiveStepStatus(livePreamble);
+    : (sendPhaseStatus ?? compactLiveStepStatus(livePreamble));
   // Fake-typewriter pass to smooth over GA's ~50-char chunked
   // delta pushes. See useTypewriter docs for the mitigation
   // rationale. When the GA-side throttle is eventually fixed and
@@ -759,6 +765,22 @@ export function MainView({
       </div>
     </div>
   );
+}
+
+function sendPhaseToStatus(
+  phase: SendPhase,
+  copy: ReturnType<typeof useCopy>,
+): string {
+  switch (phase) {
+    case "saving":
+      return copy.conversation.sendReceived;
+    case "starting":
+    case "restoring":
+      return copy.conversation.sendGettingReady;
+    case "waiting_agent":
+    case "sent":
+      return copy.conversation.sendWorking;
+  }
 }
 
 const LIVE_STEP_STATUS_MAX_CHARS = 46;

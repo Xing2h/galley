@@ -12,10 +12,12 @@ import {
 } from "@/lib/managed-model-options";
 import { copyForLanguage } from "@/lib/i18n";
 import { resolveLanguagePreference } from "@/lib/language";
+import { logPerf, perfNow } from "@/lib/perf";
 import { useManagedModelsStore } from "@/stores/managed-models";
 import { useMessagesStore } from "@/stores/messages";
 import { usePrefsStore } from "@/stores/prefs";
 import { useRuntimeStore } from "@/stores/runtime";
+import type { LLMOption } from "@/stores/runtime";
 import { useUiStore } from "@/stores/ui";
 import { makeAppError } from "@/types/app-error";
 import type {
@@ -155,6 +157,12 @@ interface CreateProjectInputWire {
   color?: string;
 }
 
+interface LlmSelectionSnapshot {
+  index: number;
+  key: string;
+  displayName: string;
+}
+
 // ---------------- helpers (private) ----------------
 
 /**
@@ -238,6 +246,41 @@ function projectFromBrief(b: ProjectBriefWire): Project {
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };
+}
+
+function llmStableKey(llm: LLMOption): string {
+  return llm.key ?? llm.name ?? llm.displayName;
+}
+
+function currentSelectionFromLLMs(
+  llms: LLMOption[] | undefined,
+): LlmSelectionSnapshot | undefined {
+  const current = llms?.find((llm) => llm.isCurrent);
+  if (!current) return undefined;
+  const key = llmStableKey(current).trim();
+  if (!key) return undefined;
+  const displayName = current.displayName.trim() || key;
+  return { index: current.index, key, displayName };
+}
+
+function currentLLMSelectionForNewSession(
+  runtimeKind: RuntimeKind,
+  activeSessionId: string | undefined,
+): LlmSelectionSnapshot | undefined {
+  const runtimeState = useRuntimeStore.getState();
+  if (runtimeKind === "managed") {
+    return currentSelectionFromLLMs(
+      managedModelsToLLMs(
+        useManagedModelsStore.getState().models,
+        runtimeState.pendingLLMIndex,
+      ),
+    );
+  }
+  return currentSelectionFromLLMs(
+    activeSessionId
+      ? (runtimeState.byId[activeSessionId]?.llms ?? runtimeState.cachedLLMs)
+      : runtimeState.cachedLLMs,
+  );
 }
 
 /**
@@ -444,6 +487,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
   },
 
   activateSession: async (id) => {
+    const activateStartedAt = perfNow();
     // Step 1: refresh the active session pointer (clears unread on
     // the row via Rust + sets activeSessionId).
     get().setActiveSession(id);
@@ -480,6 +524,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     const looksFresh = !msgs || msgs.turns.length === 0;
     const hasHistory = (session?.turnCount ?? 0) > 0;
     if (looksFresh && hasHistory) {
+      const restoreStartedAt = perfNow();
       try {
         await messagesStore.restoreSessionTurns(id);
       } catch (e) {
@@ -487,6 +532,11 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
           "[sessions] activateSession restoreSessionTurns failed.",
           e,
         );
+      } finally {
+        logPerf("sessions.activateSession.restore", restoreStartedAt, {
+          sessionId: id,
+          turnCount: session?.turnCount ?? 0,
+        });
       }
     }
     // Step 5: auto-spawn the bridge when this session has no live
@@ -512,12 +562,11 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       //
       // EmptyState's inline LLM picker stashes `pendingLLMIndex`
       // because there was no live bridge to set_llm against. Apply
-      // it here as `--llm-no` only when the session is genuinely
-      // fresh — re-activating an existing session must respect that
-      // session's own `set_llm` history. Always clear pending after
-      // this activation so an abandoned pick (user picked LLM, then
-      // clicked an existing session) doesn't leak into a later
-      // unrelated spawn.
+      // it here only when the session is genuinely fresh. Otherwise
+      // use the session row's own persisted choice. Always clear
+      // pending after this activation so an abandoned pick (user
+      // picked LLM, then clicked an existing session) doesn't leak
+      // into a later unrelated spawn.
       const runtimeStoreSnap = useRuntimeStore.getState();
       const pendingLLMIndex = runtimeStoreSnap.pendingLLMIndex;
       const msgsNow = useMessagesStore.getState().byId[id];
@@ -528,30 +577,42 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       if (pendingLLMIndex !== undefined) {
         useRuntimeStore.setState({ pendingLLMIndex: undefined });
       }
-      // Restore the persisted LLM choice on respawn of an existing
-      // session. Without this `set_llm` is in-memory only — bridge
-      // exits, mykey.py default takes over on next spawn. Pending
+      // Restore the persisted LLM choice on spawn. Without this a
+      // fresh session created after the user switched models still
+      // boots the bridge with mykey.py's default, and a respawned
+      // historical session loses its own `set_llm` history. Pending
       // pick (Empty State LLM picker) wins when present because the
-      // user just made a fresh choice that hasn't reached SQLite yet.
+      // user just made a fresh choice.
       const restoredLlmIndex =
-        !consumePending && !isFreshSession && !session?.selectedLlmKey
+        !consumePending && !session?.selectedLlmKey
           ? session?.selectedLlmIndex
           : undefined;
-      const restoredLlmKey =
-        !consumePending && !isFreshSession ? session?.selectedLlmKey : undefined;
+      const restoredLlmKey = !consumePending
+        ? session?.selectedLlmKey
+        : undefined;
       // prefsStore is a leaf in the slice DAG (AD-09) — no cycle
       // concern with the cross-store static import block at the
       // top of this file.
       const gaConfig = usePrefsStore.getState().gaConfig;
+      const spawnStartedAt = perfNow();
       await useRuntimeStore.getState().spawnBridge({
         ...gaConfig,
         sessionId: id,
         cwd: undefined,
         llmIndex: consumePending ? pendingLLMIndex : restoredLlmIndex,
-        llmKey: restoredLlmKey,
+        llmKey: consumePending ? session?.selectedLlmKey : restoredLlmKey,
+        runtimeKind,
+      });
+      logPerf("sessions.activateSession.spawnBridge", spawnStartedAt, {
+        sessionId: id,
         runtimeKind,
       });
     }
+    logPerf("sessions.activateSession", activateStartedAt, {
+      sessionId: id,
+      hasHistory,
+      needsSpawn,
+    });
     // Already alive — runtimeStore.spawnBridge internally LRU-touches
     // on each call, so the alive-bridge branch is now a no-op here.
   },
@@ -562,6 +623,10 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       .slice(2, 6)}`;
     const now = new Date().toISOString();
     const gaRuntimeKind = usePrefsStore.getState().activeRuntimeKind;
+    const llmSelection = currentLLMSelectionForNewSession(
+      gaRuntimeKind,
+      get().activeSessionId,
+    );
     const promptProfile =
       gaRuntimeKind === "managed" ? MANAGED_PROMPT_PROFILE : undefined;
     const newSession: Session = {
@@ -578,6 +643,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       runtimeLabel: gaRuntimeKind === "managed" ? "内置 GA" : "外部 GA",
       gaRuntimeKind,
       promptProfile,
+      selectedLlmIndex: llmSelection?.index,
+      selectedLlmKey: llmSelection?.key,
+      selectedLlmDisplayName: llmSelection?.displayName,
     };
     set((state) => ({
       sessions: [newSession, ...state.sessions],
@@ -588,6 +656,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
         id,
         title: DEFAULT_NEW_SESSION_TITLE,
         projectId,
+        selectedLlmIndex: llmSelection?.index,
+        selectedLlmKey: llmSelection?.key,
+        selectedLlmDisplayName: llmSelection?.displayName,
         gaRuntimeKind,
         promptProfile,
       } as CreateSessionInputWire,
@@ -604,6 +675,10 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       .slice(2, 6)}`;
     const now = new Date().toISOString();
     const gaRuntimeKind = usePrefsStore.getState().activeRuntimeKind;
+    const llmSelection = currentLLMSelectionForNewSession(
+      gaRuntimeKind,
+      get().activeSessionId,
+    );
     const promptProfile =
       gaRuntimeKind === "managed" ? MANAGED_PROMPT_PROFILE : undefined;
     const sessionTitle = title?.trim() || DEFAULT_NEW_SESSION_TITLE;
@@ -621,6 +696,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       runtimeLabel: gaRuntimeKind === "managed" ? "内置 GA" : "外部 GA",
       gaRuntimeKind,
       promptProfile,
+      selectedLlmIndex: llmSelection?.index,
+      selectedLlmKey: llmSelection?.key,
+      selectedLlmDisplayName: llmSelection?.displayName,
     };
     set((state) => ({
       sessions: [newSession, ...state.sessions],
@@ -632,6 +710,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
           id,
           title: sessionTitle,
           projectId,
+          selectedLlmIndex: llmSelection?.index,
+          selectedLlmKey: llmSelection?.key,
+          selectedLlmDisplayName: llmSelection?.displayName,
           gaRuntimeKind,
           promptProfile,
         } as CreateSessionInputWire,

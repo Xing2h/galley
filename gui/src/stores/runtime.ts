@@ -12,6 +12,7 @@ import {
 import { setPref } from "@/lib/db";
 import { copyForLanguage } from "@/lib/i18n";
 import { resolveLanguagePreference } from "@/lib/language";
+import { logPerf, perfNow } from "@/lib/perf";
 import {
   DEFAULT_LLM_DISPLAY_NAME,
   DEFAULT_LLMS,
@@ -240,6 +241,7 @@ export type RuntimeStore = RuntimeState & RuntimeActions;
 
 const _bridgeClients = new Map<string, BridgeClient>();
 const _stderrTails = new Map<string, string[]>();
+const _bridgeSpawnStartedAt = new Map<string, number>();
 const _STDERR_TAIL_MAX = 8;
 const _lruOrder: string[] = [];
 const LRU_CAP = 20;
@@ -487,6 +489,7 @@ function makeBridgeHandlers(sessionId: string): BridgeHandlers {
       }
       _stderrTails.delete(sessionId);
       _bridgeClients.delete(sessionId);
+      _bridgeSpawnStartedAt.delete(sessionId);
       _lruRemove(sessionId);
       useRuntimeStore.setState((state) => ({
         byId: {
@@ -618,6 +621,7 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
     let picked: LLMOption | null = null;
     set((state) => {
       const existing = state.byId[sid];
+      const shouldCache = shouldCacheLLMListForSession(sid);
       const selected = selectLLMInList(
         existing?.llms?.length
           ? existing.llms
@@ -635,7 +639,13 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
         bridgeError: existing?.bridgeError ?? null,
         bridgePid: existing?.bridgePid ?? null,
       };
-      return { byId: { ...state.byId, [sid]: next } };
+      return {
+        byId: { ...state.byId, [sid]: next },
+        cachedLLMs: shouldCache ? selected.llms : state.cachedLLMs,
+        cachedLLMDisplayName: shouldCache
+          ? selected.current.displayName
+          : state.cachedLLMDisplayName,
+      };
     });
     if (picked) {
       void mirrorSelectedLLMOnSession(sid, picked).catch((e) => {
@@ -721,22 +731,33 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
 
   setPetAttachedSession: (sid) => set({ petAttachedSessionId: sid }),
 
-  setBridgeStatus: (sid, status) =>
+  setBridgeStatus: (sid, status) => {
+    if (status === "connected") {
+      const startedAt = _bridgeSpawnStartedAt.get(sid);
+      if (startedAt !== undefined) {
+        logPerf("runtime.bridgeReady", startedAt, { sessionId: sid });
+        _bridgeSpawnStartedAt.delete(sid);
+      }
+    }
     set((state) => ({
       byId: {
         ...state.byId,
         [sid]: _bridgeFieldsUpdate(state.byId[sid], { bridgeStatus: status }),
       },
-    })),
+    }));
+  },
 
   spawnBridge: async (args) => {
     const sessionId = args.sessionId;
+    let spawnStartedAt = perfNow();
     if (_bridgeClients.has(sessionId)) {
       console.warn(
         `[runtime] spawnBridge(${sessionId}) called while a bridge for that session is alive; shutting down first.`,
       );
       await useRuntimeStore.getState().shutdownBridge(sessionId);
+      spawnStartedAt = perfNow();
     }
+    _bridgeSpawnStartedAt.set(sessionId, spawnStartedAt);
     set((state) => ({
       byId: {
         ...state.byId,
@@ -748,10 +769,15 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
     }));
 
     try {
+      const processStartedAt = perfNow();
       const client = await spawnBridgeProcess(
         args,
         makeBridgeHandlers(sessionId),
       );
+      logPerf("runtime.spawnBridge.process", processStartedAt, {
+        sessionId,
+        pid: client.pid,
+      });
       _bridgeClients.set(sessionId, client);
       _lruTouch(sessionId);
       // Status flips to "connected" only after the bridge sends its
@@ -766,9 +792,15 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
         },
       }));
       void _enforceLRUCap();
+      logPerf("runtime.spawnBridge", spawnStartedAt, {
+        sessionId,
+        pid: client.pid,
+        result: "spawned",
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       _bridgeClients.delete(sessionId);
+      _bridgeSpawnStartedAt.delete(sessionId);
       set((state) => ({
         byId: {
           ...state.byId,
@@ -779,6 +811,10 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
           }),
         },
       }));
+      logPerf("runtime.spawnBridge", spawnStartedAt, {
+        sessionId,
+        result: "failed",
+      });
     }
   },
 
@@ -835,6 +871,7 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
       }
     } finally {
       _bridgeClients.delete(sessionId);
+      _bridgeSpawnStartedAt.delete(sessionId);
       _lruRemove(sessionId);
       set((state) => ({
         byId: {
@@ -849,17 +886,22 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
   },
 
   sendIPCCommand: async (sessionId, cmd) => {
+    const sendStartedAt = perfNow();
     const userVisibleCommand = shouldFailWhenBridgeMissing(cmd);
     let client = _bridgeClients.get(sessionId);
+    let clientWaitMs = 0;
+    let readyWaitMs = 0;
     if (!client) {
       const status = get().byId[sessionId]?.bridgeStatus ?? "idle";
       if (status === "spawning" || status === "connected") {
+        const clientWaitStartedAt = perfNow();
         client = await _waitForBridgeClient(
           sessionId,
           status === "connected"
             ? CONNECTED_CLIENT_WAIT_MS
             : BRIDGE_CLIENT_WAIT_MS,
         );
+        clientWaitMs = Math.round((perfNow() - clientWaitStartedAt) * 10) / 10;
       }
     }
     if (!client) {
@@ -876,7 +918,9 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
       return;
     }
     if (userVisibleCommand) {
+      const readyWaitStartedAt = perfNow();
       const ready = await _waitForBridgeReady(sessionId);
+      readyWaitMs = Math.round((perfNow() - readyWaitStartedAt) * 10) / 10;
       if (!ready) {
         const slot = get().byId[sessionId];
         if (slot?.bridgeError) {
@@ -896,6 +940,13 @@ export const useRuntimeStore = create<RuntimeStore>((set, get) => ({
       }
     }
     await client.send(cmd);
+    logPerf("runtime.sendIPCCommand", sendStartedAt, {
+      sessionId,
+      command: cmd.kind,
+      userVisibleCommand,
+      clientWaitMs,
+      readyWaitMs,
+    });
   },
 
   hasBridgeClient: (sid) => _bridgeClients.has(sid),

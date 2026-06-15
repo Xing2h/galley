@@ -37,6 +37,7 @@ import {
 import { restartEnabledImSupervisors } from "@/lib/im-supervisor";
 import { ensureHistoryReplayComplete } from "@/lib/ipc-handlers";
 import { resolveLanguagePreference } from "@/lib/language";
+import { logPerf, perfNow } from "@/lib/perf";
 import {
   currentLLMDisplayName,
   managedModelsToLLMs,
@@ -337,6 +338,9 @@ function App() {
   const pendingAskUser = useMessagesStore((s) =>
     activeSessionId ? (s.byId[activeSessionId]?.pendingAskUser ?? null) : null,
   );
+  const sendPhase = useMessagesStore((s) =>
+    activeSessionId ? (s.byId[activeSessionId]?.sendPhase ?? null) : null,
+  );
   const appendUserTurn = useMessagesStore((s) => s.appendUserTurn);
   const appendSideQuestionUserTurn = useMessagesStore(
     (s) => s.appendSideQuestionUserTurn,
@@ -351,6 +355,7 @@ function App() {
     const m = useMessagesStore.getState();
     m.setAgentRunning(sid, false);
     m.setCurrentTurnIndex(sid, null);
+    m.setSendPhase(sid, null);
     m.clearInFlightContent(sid);
     useUiStore.getState().pushToast(
       makeAppError({
@@ -1100,12 +1105,14 @@ function App() {
                     void submitOnEmpty(
                       t,
                       activeSessionId,
-                      createSession,
+                      createSessionPersisted,
                       activateSession,
                       appendUserTurn,
                       sendIPCCommand,
                       setScreen,
                       reportUserSendFailure,
+                      copy.errors.sendFailed,
+                      copy.app.restoreTimeout,
                       activeProjectFilter,
                     ).then(() => {
                       if (activeProjectFilter)
@@ -1173,7 +1180,23 @@ function App() {
                             text: string;
                             absoluteTurnIndex?: number | null;
                           },
+                      options: { showPhase?: boolean } = {},
                     ) => {
+                      const sendStartedAt = perfNow();
+                      const showPhase = options.showPhase ?? true;
+                      const setSendPhase = (
+                        phase:
+                          | "starting"
+                          | "restoring"
+                          | "waiting_agent"
+                          | "sent",
+                      ) => {
+                        if (showPhase) {
+                          useMessagesStore
+                            .getState()
+                            .setSendPhase(sid, phase);
+                        }
+                      };
                       const runtime = useRuntimeStore.getState();
                       const latestStatus =
                         runtime.byId[sid]?.bridgeStatus ?? "idle";
@@ -1182,9 +1205,11 @@ function App() {
                         (latestStatus !== "connected" ||
                           !runtime.hasBridgeClient(sid))
                       ) {
+                        setSendPhase("starting");
                         await activateSession(sid);
                       }
                       if (cmd.kind === "user_message") {
+                        setSendPhase("restoring");
                         let historyReady =
                           await ensureHistoryReplayComplete(sid);
                         if (!historyReady) {
@@ -1193,14 +1218,24 @@ function App() {
                             { sid },
                           );
                           await shutdownBridge(sid);
+                          setSendPhase("starting");
                           await activateSession(sid);
-                          historyReady = await ensureHistoryReplayComplete(sid);
+                          setSendPhase("restoring");
+                          historyReady =
+                            await ensureHistoryReplayComplete(sid);
                           if (!historyReady) {
                             throw new Error(copy.app.restoreTimeout);
                           }
                         }
                       }
+                      setSendPhase("waiting_agent");
                       await sendIPCCommand(sid, cmd);
+                      setSendPhase("sent");
+                      logPerf("app.ensureBridgeThenSend", sendStartedAt, {
+                        sessionId: sid,
+                        command: cmd.kind,
+                        phaseVisible: showPhase,
+                      });
                     };
                     const reportSendFailure = (e: unknown) =>
                       reportUserSendFailure(sid, "send_user_message", e);
@@ -1213,11 +1248,14 @@ function App() {
                     const trimmed = t.trimStart();
                     if (trimmed === "/btw" || trimmed.startsWith("/btw ")) {
                       appendSideQuestionUserTurn(sid, t);
-                      void ensureBridgeThenSend({
-                        kind: "user_message",
-                        text: t,
-                        images: [],
-                      }).catch(reportSendFailure);
+                      void ensureBridgeThenSend(
+                        {
+                          kind: "user_message",
+                          text: t,
+                          images: [],
+                        },
+                        { showPhase: false },
+                      ).catch(reportSendFailure);
                       return;
                     }
                     // Snapshot pendingAskUser **before** appendUserTurn
@@ -1274,6 +1312,7 @@ function App() {
                   currentTurnIndex={currentTurnIndex}
                   userSubmitTick={userSubmitTick}
                   inFlightContent={inFlightContent}
+                  sendPhase={sendPhase}
                   pendingAskUser={pendingAskUser}
                   conversationWidth={conversationWidth}
                   activeSessionId={activeSessionId}
@@ -1541,12 +1580,11 @@ export default App;
  *
  * Flow:
  *   1. If there's already an active session id, reuse it.
- *   2. Otherwise createSession + activateSession (which awaits the
- *      process spawn). sendIPCCommand then waits for the bridge `ready`
- *      event before writing the user message.
- *   3. Append the user turn locally and send the IPC message.
- *   4. Transition to main view so the user sees the thinking
- *      placeholder appear under their message.
+ *   2. Otherwise create a persisted session row first so the user
+ *      message write cannot race the async session create.
+ *   3. Transition to main view + append the user turn before bridge
+ *      startup, so cold runner spawn doesn't look like a frozen UI.
+ *   4. Activate the session, replay history, then send the IPC message.
  *
  * sendIPCCommand waits for the bridge `ready` event before writing
  * user-visible commands. This keeps first-run Windows startup stalls from
@@ -1555,7 +1593,7 @@ export default App;
 async function submitOnEmpty(
   text: string,
   existingId: string | undefined,
-  createSession: (projectId?: string) => string,
+  createSessionPersisted: (projectId?: string) => Promise<string>,
   activateSession: (id: string) => Promise<void>,
   appendUserTurn: (sessionId: string, text: string) => Promise<number>,
   sendIPCCommand: (
@@ -1573,28 +1611,67 @@ async function submitOnEmpty(
     context: string,
     error: unknown,
   ) => void,
+  sendFailedTitle: string,
+  restoreTimeoutMessage: string,
   inheritProjectId?: string,
 ): Promise<void> {
+  const submitStartedAt = perfNow();
   let id = existingId;
-  if (!id) {
-    // Inherit project assignment when the EmptyState composer was
-    // opened from a project's inline +. The context is one-shot:
-    // after the first message creates the session, App clears the
-    // pending project id.
-    id = createSession(inheritProjectId);
-    await activateSession(id);
-  }
-  setScreen("main");
-  const absoluteTurnIndex = await appendUserTurn(id, text);
   try {
+    if (!id) {
+      // Inherit project assignment when the EmptyState composer was
+      // opened from a project's inline +. The context is one-shot:
+      // after the first message creates the session, App clears the
+      // pending project id.
+      id = await createSessionPersisted(inheritProjectId);
+    }
+    setScreen("main");
+    const absoluteTurnIndex = await appendUserTurn(id, text);
+    const messages = useMessagesStore.getState();
+    const runtime = useRuntimeStore.getState();
+    const status = runtime.byId[id]?.bridgeStatus ?? "idle";
+    if (
+      status !== "spawning" &&
+      (status !== "connected" || !runtime.hasBridgeClient(id))
+    ) {
+      messages.setSendPhase(id, "starting");
+      await activateSession(id);
+    }
+    messages.setSendPhase(id, "restoring");
+    const historyReady = await ensureHistoryReplayComplete(id);
+    if (!historyReady) {
+      throw new Error(restoreTimeoutMessage);
+    }
+    messages.setSendPhase(id, "waiting_agent");
     await sendIPCCommand(id, {
       kind: "user_message",
       text,
       images: [],
       absoluteTurnIndex,
     });
+    messages.setSendPhase(id, "sent");
+    logPerf("app.submitOnEmpty", submitStartedAt, {
+      sessionId: id,
+      createdSession: existingId === undefined,
+    });
   } catch (e) {
-    reportSendFailure(id, "send_user_message", e);
+    if (id) {
+      reportSendFailure(id, "send_user_message", e);
+    } else {
+      console.warn("[main] empty submit failed before session creation", e);
+      useUiStore.getState().pushToast(
+        makeAppError({
+          category: "business",
+          severity: "error",
+          title: sendFailedTitle,
+          message: e instanceof Error ? e.message : String(e),
+          hint: null,
+          retryable: true,
+          context: "create_session_for_send",
+          traceback: null,
+        }),
+      );
+    }
   }
 }
 

@@ -53,7 +53,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::broadcast::error::RecvError;
 
@@ -411,16 +411,22 @@ fn expand_home_relative_path(raw: &str, home_dir: Option<&Path>) -> Option<PathB
     }
 }
 
+fn elapsed_ms(started_at: Instant) -> f64 {
+    started_at.elapsed().as_secs_f64() * 1000.0
+}
+
 #[tauri::command]
 pub async fn spawn_runner(
     args: SpawnRunnerArgs,
     manager: State<'_, std::sync::Arc<RunnerManager>>,
     app: AppHandle,
 ) -> Result<u32, String> {
+    let total_started_at = Instant::now();
     let active = args.active_session_id.clone();
     let session_id = args.session_id.clone();
     let runtime_kind = args.runtime_kind.unwrap_or(RuntimeKind::External);
     let mut spawn_args: SpawnArgs = args.into();
+    let prepare_started_at = Instant::now();
     if runtime_kind == RuntimeKind::Managed {
         spawn_args = prepare_managed_spawn_args(spawn_args, &app)
             .await
@@ -429,11 +435,24 @@ pub async fn spawn_runner(
         spawn_args = prepare_external_spawn_args(spawn_args, &app)
             .map_err(err_to_json::<RunnerSpawnError>)?;
     }
+    eprintln!(
+        "[perf] core.spawn_runner.prepare session_id={} runtime_kind={:?} elapsed_ms={:.1}",
+        session_id,
+        runtime_kind,
+        elapsed_ms(prepare_started_at)
+    );
 
+    let process_started_at = Instant::now();
     let pid = manager
         .spawn(spawn_args, active.as_deref())
         .await
         .map_err(err_to_json::<RunnerSpawnError>)?;
+    eprintln!(
+        "[perf] core.spawn_runner.process session_id={} pid={} elapsed_ms={:.1}",
+        session_id,
+        pid,
+        elapsed_ms(process_started_at)
+    );
 
     // Subscribe BEFORE returning so the receiver is registered against the
     // broadcast channel — guarantees we don't miss the `Ready` event that
@@ -446,6 +465,13 @@ pub async fn spawn_runner(
         .ok_or_else(|| "subscribe failed after spawn (race?)".to_string())?;
 
     spawn_emit_task(app, session_id.clone(), rx);
+
+    eprintln!(
+        "[perf] core.spawn_runner.total session_id={} pid={} elapsed_ms={:.1}",
+        session_id,
+        pid,
+        elapsed_ms(total_started_at)
+    );
 
     Ok(pid)
 }

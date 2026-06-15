@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import { logPerf, perfNow } from "@/lib/perf";
 import { isWindows } from "@/lib/platform";
 import { findCandidateByAlias } from "@/lib/python-probe";
 import type { IPCCommand, IPCEvent } from "@/types/ipc";
@@ -141,13 +142,19 @@ export async function spawnBridge(
   args: BridgeSpawnArgs,
   handlers: BridgeHandlers,
 ): Promise<BridgeClient> {
+  const startedAt = perfNow();
   // Resolve python path: in production + bundled mode, point at the
   // packaged interpreter; otherwise honor the caller's choice. This is
   // a TS-side resolution because Tauri's $RESOURCE token is a build-
   // time bundle path and the JS side already knows whether bundling
   // happened (PROD env).
   const wantBundled = import.meta.env.PROD && !args.useExternalPython;
+  const resolvePythonStartedAt = perfNow();
   const python = await resolvePythonPath(args.python, wantBundled);
+  logPerf("bridge.resolvePythonPath", resolvePythonStartedAt, {
+    sessionId: args.sessionId,
+    wantBundled,
+  });
 
   // Rust Core is authoritative for bridge cwd: dev resolves to the
   // repo root and production resolves to the packaged resource dir.
@@ -227,7 +234,13 @@ export async function spawnBridge(
 
   let pid: number;
   try {
+    const invokeStartedAt = perfNow();
     pid = await invoke<number>("spawn_runner", { args: spawnArgs });
+    logPerf("bridge.spawnRunnerInvoke", invokeStartedAt, {
+      sessionId,
+      runtimeKind: args.runtimeKind ?? "external",
+      pid,
+    });
   } catch (e) {
     teardown();
     const msg = formatInvokeError(e);
@@ -239,6 +252,11 @@ export async function spawnBridge(
     // eslint-disable-next-line preserve-caught-error
     throw new Error(msg);
   }
+  logPerf("bridge.spawnBridge", startedAt, {
+    sessionId,
+    runtimeKind: args.runtimeKind ?? "external",
+    pid,
+  });
 
   return {
     pid,

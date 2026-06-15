@@ -5,6 +5,7 @@ import {
   persistToolEventApprovalDecision,
   persistUserMessage,
 } from "@/lib/db";
+import { logPerf, perfNow } from "@/lib/perf";
 import { deriveSessionStatus } from "@/lib/sessions";
 import { useRuntimeStore } from "@/stores/runtime";
 import { useSessionsStore } from "@/stores/sessions";
@@ -14,6 +15,7 @@ import type {
   Origin,
   PendingApproval,
   PendingAskUser,
+  SendPhase,
   SystemTurn,
   Turn,
   UserTurn,
@@ -48,6 +50,46 @@ export const EMPTY_DECISIONS: Record<string, ApprovalDecision> = Object.freeze(
   {} as Record<string, ApprovalDecision>,
 ) as Record<string, ApprovalDecision>;
 
+type MessageRowsCacheEntry = {
+  completedTurnCount: number;
+  rows: MessageRow[];
+};
+
+const _messageRowsCache = new Map<string, MessageRowsCacheEntry>();
+
+function sessionCompletedTurnCount(sid: string): number {
+  return (
+    useSessionsStore.getState().sessions.find((session) => session.id === sid)
+      ?.turnCount ?? 0
+  );
+}
+
+export function rememberMessageRowsForSession(
+  sid: string,
+  rows: MessageRow[],
+  completedTurnCount: number = sessionCompletedTurnCount(sid),
+): void {
+  _messageRowsCache.set(sid, {
+    completedTurnCount,
+    rows: rows.slice(),
+  });
+}
+
+export function getCachedMessageRowsForSession(
+  sid: string,
+  completedTurnCount: number,
+): MessageRow[] | null {
+  const cached = _messageRowsCache.get(sid);
+  if (!cached || cached.completedTurnCount !== completedTurnCount) {
+    return null;
+  }
+  return cached.rows.slice();
+}
+
+export function invalidateMessageRowsCache(sid: string): void {
+  _messageRowsCache.delete(sid);
+}
+
 // ============================================================
 // Per-session conversation state
 // ============================================================
@@ -70,6 +112,7 @@ export interface PerSessionMessages {
   inFlightContent: string;
   approvalDecisions: Record<string, ApprovalDecision>;
   pendingAskUser: PendingAskUser | null;
+  sendPhase: SendPhase | null;
   turnIndexOffset: number;
   lastUserPersistRequestId: number;
 }
@@ -82,6 +125,7 @@ export const EMPTY_MESSAGES: PerSessionMessages = Object.freeze({
   inFlightContent: "",
   approvalDecisions: EMPTY_DECISIONS,
   pendingAskUser: null,
+  sendPhase: null,
   turnIndexOffset: 0,
   lastUserPersistRequestId: 0,
 }) as PerSessionMessages;
@@ -97,6 +141,7 @@ function emptyMessages(): PerSessionMessages {
     inFlightContent: "",
     approvalDecisions: {},
     pendingAskUser: null,
+    sendPhase: null,
     turnIndexOffset: 0,
     lastUserPersistRequestId: 0,
   };
@@ -199,6 +244,7 @@ interface MessagesActions {
 
   setAgentRunning: (sid: string, running: boolean) => void;
   setCurrentTurnIndex: (sid: string, idx: number | null) => void;
+  setSendPhase: (sid: string, phase: SendPhase | null) => void;
   appendInFlightDelta: (sid: string, delta: string) => void;
   clearInFlightContent: (sid: string) => void;
   /**
@@ -288,6 +334,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
 
   clearSessionMessages: (sid) =>
     set((state) => {
+      invalidateMessageRowsCache(sid);
       if (!state.byId[sid]) return {};
       const byId = { ...state.byId };
       delete byId[sid];
@@ -302,6 +349,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       agentRunning: false,
       currentTurnIndex: null,
       inFlightContent: "",
+      sendPhase: null,
     }));
     set({ byId });
     fireSessionMirror(sid, next);
@@ -310,6 +358,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
   // ---- read path ----
 
   restoreSessionTurns: async (sid) => {
+    const startedAt = perfNow();
     let rows: MessageRow[];
     try {
       rows = await loadMessagesBySession(sid);
@@ -317,6 +366,12 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       console.debug("[messages] restoreSessionTurns: SQLite unavailable.", e);
       return;
     }
+    rememberMessageRowsForSession(sid, rows);
+    logPerf("messages.restoreSessionTurns", startedAt, {
+      sessionId: sid,
+      rowCount: rows.length,
+      completedTurnCount: sessionCompletedTurnCount(sid),
+    });
     if (rows.length === 0) return;
     const turns = rowsToTurns(rows);
     const state = get();
@@ -372,6 +427,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       // this submission — clear the bubble + yellow sidebar dot
       // so the conversation reverts to normal running visuals.
       pendingAskUser: null,
+      sendPhase: "saving",
       turnIndexOffset: currentTurnCount,
       lastUserPersistRequestId: persistRequestId,
     }));
@@ -405,6 +461,13 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
           const { byId: adjusted } = patchMessages(latest, sid, (m) => ({
             ...m,
             turnIndexOffset: persistedOffset,
+            sendPhase: m.sendPhase === "saving" ? "starting" : m.sendPhase,
+          }));
+          set({ byId: adjusted });
+        } else if (latestMessages?.lastUserPersistRequestId === persistRequestId) {
+          const { byId: adjusted } = patchMessages(latest, sid, (m) => ({
+            ...m,
+            sendPhase: m.sendPhase === "saving" ? "starting" : m.sendPhase,
           }));
           set({ byId: adjusted });
         }
@@ -443,6 +506,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       inFlightContent: "",
       currentTurnIndex: null,
       pendingAskUser: null,
+      sendPhase: dispatched ? "waiting_agent" : null,
       turnIndexOffset: offset,
       lastUserPersistRequestId: 0,
     }));
@@ -465,6 +529,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
   },
 
   appendAgentTurn: (sid, turn) => {
+    invalidateMessageRowsCache(sid);
     const state = get();
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
@@ -482,6 +547,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       currentTurnIndex: null,
       // Finalised turn replaces the streaming buffer.
       inFlightContent: "",
+      sendPhase: null,
     }));
     set({ byId });
     fireSessionMirror(sid, next);
@@ -512,6 +578,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
       agentRunning: running,
+      sendPhase: running ? m.sendPhase : null,
     }));
     set({ byId });
     fireSessionMirror(sid, next);
@@ -522,6 +589,17 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
       currentTurnIndex: idx,
+      sendPhase: idx !== null ? null : m.sendPhase,
+    }));
+    set({ byId });
+    fireSessionMirror(sid, next);
+  },
+
+  setSendPhase: (sid, phase) => {
+    const state = get();
+    const { byId, next } = patchMessages(state, sid, (m) => ({
+      ...m,
+      sendPhase: phase,
     }));
     set({ byId });
     fireSessionMirror(sid, next);
@@ -537,6 +615,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
       inFlightContent: m.inFlightContent + delta,
+      sendPhase: null,
     }));
     set({ byId });
     fireSessionMirror(sid, next);
@@ -563,6 +642,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
   },
 
   clearConversation: (sid) => {
+    invalidateMessageRowsCache(sid);
     const state = get();
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
@@ -572,6 +652,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       agentRunning: false,
       currentTurnIndex: null,
       inFlightContent: "",
+      sendPhase: null,
     }));
     set({ byId });
     fireSessionMirror(sid, next);

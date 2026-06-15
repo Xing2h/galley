@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { copyForLanguage } from "@/lib/i18n";
 import { resolveLanguagePreference } from "@/lib/language";
 import { managedModelsToLLMs } from "@/lib/managed-model-options";
+import { logPerf, perfNow } from "@/lib/perf";
 import { fromIPCError, makeAppError } from "@/types/app-error";
 import type {
   AgentTurn,
@@ -18,7 +19,11 @@ import type {
   ToolResult as IPCToolResult,
 } from "@/types/ipc";
 
-import { useMessagesStore } from "@/stores/messages";
+import {
+  getCachedMessageRowsForSession,
+  rememberMessageRowsForSession,
+  useMessagesStore,
+} from "@/stores/messages";
 import { useManagedModelsStore } from "@/stores/managed-models";
 import { usePrefsStore } from "@/stores/prefs";
 import { useRuntimeStore } from "@/stores/runtime";
@@ -1026,6 +1031,7 @@ export async function ensureHistoryReplayComplete(
 
   const existing = _historyReplayPending.get(sessionId);
   if (existing) {
+    setSendPhaseIfRunning(sessionId, "restoring");
     return await existing.promise;
   }
 
@@ -1044,6 +1050,7 @@ export async function ensureHistoryReplayComplete(
     resolve: resolveReplay,
     timeout,
   });
+  setSendPhaseIfRunning(sessionId, "restoring");
 
   void replayHistoryToBridge(sessionId)
     .then((result) => {
@@ -1056,6 +1063,16 @@ export async function ensureHistoryReplayComplete(
     });
 
   return await promise;
+}
+
+function setSendPhaseIfRunning(
+  sessionId: string,
+  phase: "restoring",
+): void {
+  const messages = useMessagesStore.getState();
+  if (messages.byId[sessionId]?.agentRunning) {
+    messages.setSendPhase(sessionId, phase);
+  }
 }
 
 function markHistoryReplayStale(sessionId: string): void {
@@ -1085,15 +1102,43 @@ function finishHistoryReplay(sessionId: string, ok: boolean): void {
 async function replayHistoryToBridge(
   sessionId: string,
 ): Promise<HistoryReplaySendResult> {
+  const startedAt = perfNow();
   try {
-    const { loadMessagesBySession } = await import("@/lib/db");
-    const rows = await loadMessagesBySession(sessionId);
-    if (rows.length === 0) return "skipped";
     const completedTurnCount =
       useSessionsStore.getState().sessions.find((x) => x.id === sessionId)
         ?.turnCount ?? 0;
+    const cachedRows = getCachedMessageRowsForSession(
+      sessionId,
+      completedTurnCount,
+    );
+    const cacheHit = cachedRows !== null;
+    let rows = cachedRows;
+    if (!rows) {
+      const { loadMessagesBySession } = await import("@/lib/db");
+      rows = await loadMessagesBySession(sessionId);
+      rememberMessageRowsForSession(sessionId, rows, completedTurnCount);
+    }
+    if (rows.length === 0) {
+      logPerf("ipc.replayHistoryToBridge", startedAt, {
+        sessionId,
+        cacheHit,
+        rowCount: 0,
+        messageCount: 0,
+        result: "skipped",
+      });
+      return "skipped";
+    }
     const messages = rowsToConversationMessages(rows, completedTurnCount);
-    if (messages.length === 0) return "skipped";
+    if (messages.length === 0) {
+      logPerf("ipc.replayHistoryToBridge", startedAt, {
+        sessionId,
+        cacheHit,
+        rowCount: rows.length,
+        messageCount: 0,
+        result: "skipped",
+      });
+      return "skipped";
+    }
     await useRuntimeStore.getState().sendIPCCommand(sessionId, {
       kind: "load_history",
       messages,
@@ -1102,9 +1147,20 @@ async function replayHistoryToBridge(
       sessionId,
       messageCount: messages.length,
     });
+    logPerf("ipc.replayHistoryToBridge", startedAt, {
+      sessionId,
+      cacheHit,
+      rowCount: rows.length,
+      messageCount: messages.length,
+      result: "sent",
+    });
     return "sent";
   } catch (e) {
     console.debug("[ipc] replayHistoryToBridge failed.", e);
+    logPerf("ipc.replayHistoryToBridge", startedAt, {
+      sessionId,
+      result: "failed",
+    });
     return "failed";
   }
 }
