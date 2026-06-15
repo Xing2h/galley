@@ -26,7 +26,7 @@ matches who you are and what you are trying to do.
 | Work on Rust core refactor | [refactor README](./refactor/README.md) |
 | Check architecture invariants | [architecture demo](./architecture-demo.md) |
 | Prepare or update a release | [release / update SOP](./release-update-sop.md), then [release workflow](./release-workflow.md) |
-| Close a long coding session | [session close SOP](./session-close-sop.md) |
+| Close a long coding session or sync project knowledge | [session close SOP](./session-close-sop.md) |
 | Smoke Windows builds | [Windows checklist](./windows-build-checklist.md) |
 | Touch GenericAgent integration | [GA baseline](./ga-baseline.md) |
 | Touch app packaging / runtime | [desktop runtime](./desktop-runtime.md) |
@@ -57,8 +57,8 @@ matches who you are and what you are trying to do.
   config, patch discipline, and state rules.
 - [architecture demo](./architecture-demo.md): code-level proof of the four
   architecture principles.
-- [session close SOP](./session-close-sop.md): closeout checklist for long
-  coding sessions.
+- [session close SOP](./session-close-sop.md): closeout and knowledge-sync
+  checklist for long coding sessions.
 - [release / update SOP](./release-update-sop.md): maintainer checklist for
   release day and updater channel promotion.
 - [refactor](./refactor/README.md): B-phase implementation playbooks,

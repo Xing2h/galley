@@ -160,7 +160,7 @@ docs/        Product, architecture, workflow, and history
 | Rust core refactor / B-phase work | [refactor README](./docs/refactor/README.md) |
 | Architecture invariant proof | [architecture demo](./docs/architecture-demo.md) |
 | Release work | [release workflow](./docs/release-workflow.md) |
-| Closing a long coding session | [session close SOP](./docs/session-close-sop.md) |
+| Closing a long coding session or syncing project knowledge | [session close SOP](./docs/session-close-sop.md) |
 | Windows smoke | [Windows checklist](./docs/windows-build-checklist.md) |
 | GUI / engineering conventions | [engineering workflow](./docs/engineering-workflow.md) |
 | Visual design | [DESIGN.md](./docs/DESIGN.md) |
@@ -224,4 +224,6 @@ explicitly asking the agent to run desktop/browser dogfood.
 When the user asks to end, close, or "session close" a long coding session,
 follow [Session Close SOP](./docs/session-close-sop.md): summarize outcome,
 persist durable decisions, update docs/devlog if needed, verify, clean the
-workspace, commit, and leave a short handoff.
+workspace, commit, and leave a short handoff. When the user asks to sync or
+tidy project knowledge without ending the session, run only the SOP's knowledge
+sync parts.
