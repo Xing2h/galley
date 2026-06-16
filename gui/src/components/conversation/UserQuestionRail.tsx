@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { PauseCircle } from "@phosphor-icons/react";
 
 import { useCopy } from "@/lib/i18n";
+import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
 import type { Turn } from "@/types/conversation";
 
@@ -51,6 +53,8 @@ const CLUSTER_MARKER_MIN_H_PX = 12;
 const CLUSTER_MARKER_MAX_H_PX = 26;
 const CLUSTER_CLOSE_DELAY_MS = 300;
 
+type RailTailStatus = "running" | "waiting";
+
 function getTopInScrollContent(
   containerTop: number,
   scrollTop: number,
@@ -66,7 +70,7 @@ interface UserQuestionRailProps {
    * user scrolled up during a long run still sees whether the agent is
    * working ("running") or it's their move — pending approval /
    * ask_user ("waiting"). null = idle, no marker. */
-  tailStatus?: "running" | "waiting" | null;
+  tailStatus?: RailTailStatus | null;
   /** Called when the user jumps via the rail. MainView uses it to
    * break follow-the-bottom (setAtBottom(false)) so a streaming chunk
    * doesn't immediately snap the jump back down — mirrors the ⌥↑/⌥↓
@@ -128,6 +132,21 @@ function buildPreview(raw: string): string {
   return stripped.length > PREVIEW_CHARS
     ? stripped.slice(0, PREVIEW_CHARS).trimEnd() + "…"
     : stripped;
+}
+
+function RailTailStatusIcon({ status }: { status: RailTailStatus }) {
+  return (
+    <span
+      aria-hidden
+      className="relative z-10 flex size-4 items-center justify-center rounded-full group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-brand/40"
+    >
+      {status === "running" ? (
+        <StatusIcon status="running" size={14} />
+      ) : (
+        <PauseCircle size={14} weight="thin" className="text-warning" />
+      )}
+    </span>
+  );
 }
 
 function buildRailItems(
@@ -406,30 +425,25 @@ export function UserQuestionRail({
                     }
                     className="group/dot relative grid size-5 place-items-center outline-none"
                   >
-                    {showStatus && (
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "pointer-events-none absolute left-1/2 top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full motion-safe:animate-pulse",
-                          tailStatus === "waiting"
-                            ? "bg-warning/35"
-                            : "bg-brand/35",
-                        )}
-                      />
+                    {showStatus ? (
+                      <RailTailStatusIcon status={tailStatus} />
+                    ) : (
+                      <>
+                        {/* Active = filled apricot disc; inactive = hollow ring.
+                          Single-axis state (fill vs no-fill) at fixed 8px
+                          size — same visual weight slot for both states, the
+                          ink reading does all the work. */}
+                        <span
+                          className={cn(
+                            "relative block size-2 rounded-full border-[1.5px] transition-colors",
+                            "group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-brand/40",
+                            item.question.index === activeIndex
+                              ? "border-brand-strong bg-brand-strong"
+                              : "border-line-strong bg-transparent group-hover:border-ink-soft",
+                          )}
+                        />
+                      </>
                     )}
-                    {/* Active = filled apricot disc; inactive = hollow ring.
-                      Single-axis state (fill vs no-fill) at fixed 8px
-                      size — same visual weight slot for both states, the
-                      ink reading does all the work. */}
-                    <span
-                      className={cn(
-                        "relative block size-2 rounded-full border-[1.5px] transition-colors",
-                        "group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-brand/40",
-                        item.question.index === activeIndex
-                          ? "border-brand-strong bg-brand-strong"
-                          : "border-line-strong bg-transparent group-hover:border-ink-soft",
-                      )}
-                    />
                   </button>
                   <span
                     role="tooltip"
@@ -481,18 +495,6 @@ export function UserQuestionRail({
                     }
                     className="group/dot relative grid size-5 place-items-center outline-none"
                   >
-                    {showStatus && (
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "pointer-events-none absolute left-1/2 top-1/2 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full motion-safe:animate-pulse",
-                          tailStatus === "waiting"
-                            ? "bg-warning/35"
-                            : "bg-brand/35",
-                        )}
-                        style={{ height: item.markerHeightPx + 6 }}
-                      />
-                    )}
                     <span
                       className={cn(
                         "relative block w-2 rounded-full border-[1.5px] transition-colors",
@@ -504,6 +506,13 @@ export function UserQuestionRail({
                       )}
                       style={{ height: item.markerHeightPx }}
                     />
+                    {showStatus && (
+                      <span
+                        className="pointer-events-none absolute -left-2 top-1/2 -translate-y-1/2"
+                      >
+                        <RailTailStatusIcon status={tailStatus} />
+                      </span>
+                    )}
                   </button>
                   <div
                     aria-hidden
