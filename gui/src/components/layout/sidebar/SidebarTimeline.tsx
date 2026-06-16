@@ -138,7 +138,9 @@ function SidebarBucket({
   };
   return (
     <>
-      <SidebarSectionLabel>{bucketLabel[bucket]}</SidebarSectionLabel>
+      <SidebarSectionLabel count={sessions.length}>
+        {bucketLabel[bucket]}
+      </SidebarSectionLabel>
       {sessions.map((s) => (
         <SidebarSessionRow
           key={s.id}
@@ -171,10 +173,21 @@ function SidebarBucket({
   );
 }
 
-export function SidebarSectionLabel({ children }: { children: React.ReactNode }) {
+export function SidebarSectionLabel({
+  children,
+  count,
+}: {
+  children: React.ReactNode;
+  count?: number;
+}) {
   return (
-    <div className="px-4 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-      {children}
+    <div className="flex items-center gap-1.5 px-4 pb-1.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {count != null && (
+        <span className="shrink-0 tabular-nums normal-case tracking-normal text-ink-muted">
+          {count}
+        </span>
+      )}
     </div>
   );
 }

@@ -346,6 +346,7 @@ $ galley sessions list --project=proj_demo
 | `updatedAt`       | string (ISO8601)| last metadata write                                                                |
 | `pinned`          | bool?           | sidebar pin. `null` = column never set (treat as `false`); `true` / `false` = explicit |
 | `hasUnread`       | bool?           | new content arrived while session was not the active one (GUI signal; B2+ writes). `null` = never set (treat as `false`) |
+| `origin`          | `Origin`?       | source of the session creation (B2+ sessions origin columns). Additive optional field; omitted for default GUI-created rows, older rows, or runtimes that do not project creation origin |
 | `selectedLlmIndex` | int?           | legacy per-session LLM index, when set; retained for bridge compatibility          |
 | `selectedLlmKey`  | string?         | stable per-session LLM identity: managed model id or external GA raw LLM name      |
 | `selectedLlmDisplayName` | string?   | cached display name for the persisted LLM selection                                |

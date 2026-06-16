@@ -84,6 +84,7 @@ const zhCopy = {
     unread: "未读",
     desktopPetAttached: "桌面宠物附着中",
     desktopPetAttachedTitle: "桌面宠物附着中 · 进入此对话可关闭",
+    supervisorCreated: "Supervisor 创建",
     newReplyTitle: "有新回复",
     emptySessions: "你的对话会出现在这里。",
     bucketPinned: "置顶",
@@ -1168,6 +1169,7 @@ const enCopy: AppCopy = {
     desktopPetAttached: "Desktop Pet attached",
     desktopPetAttachedTitle:
       "Desktop Pet attached · Open this conversation to detach",
+    supervisorCreated: "Created by Supervisor",
     newReplyTitle: "New reply",
     emptySessions: "Your conversations will appear here.",
     bucketPinned: "Pinned",

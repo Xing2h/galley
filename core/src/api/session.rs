@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::origin::Origin;
+
 /// Opaque session identifier. Persisted shape is a short string like
 /// `sess_abc123…`; treat as opaque on the agent side.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -78,6 +80,11 @@ pub struct SessionBrief {
     /// New activity arrived while this session wasn't the active one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub has_unread: Option<bool>,
+    /// Where this session was created from. Optional for backward-compatible
+    /// brief JSON; present for rows written after the sessions-origin
+    /// migration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Origin>,
     /// Last LLM the user picked for this session (`agent.set_llm` index).
     /// Kept for backwards compatibility and for the bridge's index-based
     /// command surface; new restore paths prefer `selectedLlmKey`.

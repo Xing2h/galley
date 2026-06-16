@@ -13,6 +13,9 @@ pub(super) struct SessionRow {
     pub(super) last_activity_at: String,
     pub(super) created_at: String,
     pub(super) updated_at: String,
+    pub(super) created_via: Option<String>,
+    pub(super) created_by_supervisor: Option<String>,
+    pub(super) created_origin_note: Option<String>,
     pub(super) llm_index: Option<i64>,
     pub(super) llm_key: Option<String>,
     pub(super) llm_display_name: Option<String>,
@@ -36,6 +39,17 @@ impl SessionRow {
             updated_at: self.updated_at,
             pinned: Some(self.pinned != 0),
             has_unread: Some(self.has_unread != 0),
+            origin: self
+                .created_via
+                .map(|via| {
+                    Ok(Origin {
+                        via: parse_origin_via(&via)?,
+                        supervisor: self.created_by_supervisor,
+                        reason: self.created_origin_note,
+                    })
+                })
+                .transpose()?
+                .filter(|origin| origin.via != OriginVia::Gui),
             selected_llm_index: self.llm_index.and_then(
                 |n| {
                     if n < 0 {

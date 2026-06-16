@@ -100,6 +100,7 @@ fn test_session(id: &str) -> SessionBrief {
         updated_at: "2026-06-05T00:00:00Z".to_string(),
         pinned: None,
         has_unread: None,
+        origin: None,
         selected_llm_index: None,
         selected_llm_key: None,
         selected_llm_display_name: None,

@@ -20,6 +20,7 @@ import { useRuntimeStore } from "@/stores/runtime";
 import type { LLMOption } from "@/stores/runtime";
 import { useUiStore } from "@/stores/ui";
 import { makeAppError } from "@/types/app-error";
+import type { Origin } from "@/types/conversation";
 import type {
   Project,
   RuntimeKind,
@@ -75,6 +76,7 @@ interface SessionBriefWire {
   updatedAt: string;
   pinned?: boolean;
   hasUnread?: boolean;
+  origin?: Origin;
   selectedLlmIndex?: number;
   selectedLlmKey?: string;
   selectedLlmDisplayName?: string;
@@ -215,6 +217,7 @@ function sessionFromBrief(b: SessionBriefWire): Session {
     cwd: undefined,
     pinned: b.pinned ?? false,
     hasUnread: b.hasUnread ?? false,
+    origin: b.origin,
     lastActivityAt: b.lastActivityAt,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,

@@ -49,6 +49,7 @@ const MIG_016: &str = include_str!("../../core/migrations/016_goal_master_sessio
 const MIG_017: &str = include_str!("../../core/migrations/017_message_visibility.sql");
 const MIG_018: &str = include_str!("../../core/migrations/018_goal_deliverable.sql");
 const MIG_019: &str = include_str!("../../core/migrations/019_goal_workspace.sql");
+const MIG_020: &str = include_str!("../../core/migrations/020_message_attachments.sql");
 
 async fn seeded_db_at(path: &std::path::Path) -> SqlitePool {
     let opts = SqliteConnectOptions::new()
@@ -57,7 +58,7 @@ async fn seeded_db_at(path: &std::path::Path) -> SqlitePool {
     let pool = SqlitePool::connect_with(opts).await.expect("open db");
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
-        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019,
+        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019, MIG_020,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)

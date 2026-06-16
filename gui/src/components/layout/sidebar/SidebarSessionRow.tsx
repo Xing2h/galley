@@ -10,6 +10,7 @@ import {
   Folder,
   PauseCircle,
   Pencil,
+  PlugsConnected,
   PushPin,
   PushPinSlash,
   X as XIcon,
@@ -141,6 +142,7 @@ export function SidebarSessionRow({
     !hasBlockingError &&
     !isRunning &&
     !goalRunning;
+  const supervisorCreated = session.origin?.via === "supervisor";
   // Left status-rail kind — one continuous-state channel scanned down
   // the left edge. running breathes (in progress); waiting / error are
   // static color (needs you / stuck). completed / idle = no rail.
@@ -235,6 +237,13 @@ export function SidebarSessionRow({
             : "idle";
   const shouldPopIcon =
     hasBlockingError || hasPendingAsk || hasPendingApproval || showUnread;
+  const inactiveRowClass = hasBlockingError
+    ? "bg-error/[var(--opacity-subtle)] hover:bg-error/[var(--opacity-soft)]"
+    : hasPendingAsk || hasPendingApproval
+      ? "bg-warning/[var(--opacity-subtle)] hover:bg-warning/[var(--opacity-soft)]"
+      : showRunningActivity || goalRunning
+        ? "bg-brand-soft/60 hover:bg-brand-soft/80"
+        : "hover:bg-hover";
   const row = (
     <div
       data-galley-context-menu-trigger={hasRowActions ? "" : undefined}
@@ -250,9 +259,7 @@ export function SidebarSessionRow({
                 ? "bg-selected"
                 : actionsOpen
                   ? "bg-hover"
-                  : showRunningActivity || goalRunning
-                    ? "bg-brand-soft/40 hover:bg-brand-soft/60"
-                    : "hover:bg-hover",
+                  : inactiveRowClass,
             ),
       )}
     >
@@ -336,6 +343,21 @@ export function SidebarSessionRow({
                 className="inline-flex shrink-0 text-ink-soft"
               >
                 <Cat size={12} weight="thin" />
+              </span>
+            </IconTooltip>
+          )}
+          {supervisorCreated && (
+            <IconTooltip text={copy.sidebar.supervisorCreated}>
+              <span
+                role="img"
+                tabIndex={0}
+                aria-label={copy.sidebar.supervisorCreated}
+                className={cn(
+                  "inline-flex shrink-0 items-center rounded-sm text-ink-muted transition-colors",
+                  "hover:text-ink-soft focus-visible:text-ink-soft focus-visible:outline-none",
+                )}
+              >
+                <PlugsConnected size={12} weight="thin" />
               </span>
             </IconTooltip>
           )}

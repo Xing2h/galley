@@ -460,6 +460,7 @@ pub(super) async fn insert_session_row_inner(
         updated_at: now,
         pinned: Some(false),
         has_unread: Some(false),
+        origin: (origin.via != OriginVia::Gui).then(|| origin.clone()),
         selected_llm_index: input.selected_llm_index,
         selected_llm_key: input.selected_llm_key.clone(),
         selected_llm_display_name: input.selected_llm_display_name.clone(),
@@ -698,6 +699,7 @@ pub(super) fn goal_project_name(objective: &str) -> String {
 
 pub(super) const SESSIONS_SELECT_COLS: &str = "id, project_id, title, status, summary, turn_count, \
     pinned, has_unread, last_activity_at, created_at, updated_at, \
+    created_via, created_by_supervisor, created_origin_note, \
     llm_index, llm_key, llm_display_name, ga_runtime_kind, ga_runtime_id, prompt_profile";
 
 pub(super) fn chrono_now_iso() -> String {

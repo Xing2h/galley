@@ -10,6 +10,8 @@
  * Lines wire format).
  */
 
+import type { Origin } from "@/types/conversation";
+
 /** Lifecycle states a session can be in. PRD §8.1. */
 export type SessionStatus =
   | "idle"
@@ -85,6 +87,8 @@ export interface Session {
   lastActivityAt: string;
   createdAt: string;
   updatedAt: string;
+  /** Creation provenance. Sidebar only surfaces Supervisor-created rows. */
+  origin?: Origin;
 
   /** Subprocess identity (when bridge is alive for this session). */
   pid?: number;
