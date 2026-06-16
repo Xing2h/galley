@@ -1,5 +1,5 @@
 diff --git a/frontends/fsapp.py b/frontends/fsapp.py
-index ad959f6..c862b11 100644
+index ad959f6..4f13dc2 100644
 --- a/frontends/fsapp.py
 +++ b/frontends/fsapp.py
 @@ -98,7 +98,7 @@ _FILE_TYPE_MAP = {
@@ -11,7 +11,7 @@ index ad959f6..c862b11 100644
  MEDIA_DIR = os.path.join(TEMP_DIR, "feishu_media")
  os.makedirs(MEDIA_DIR, exist_ok=True)
  
-@@ -327,9 +327,67 @@ agent_error = None
+@@ -327,9 +327,81 @@ agent_error = None
  agent_thread = None
  client, user_tasks, app = None, {}, None
  agent_lock = threading.Lock()
@@ -25,16 +25,22 @@ index ad959f6..c862b11 100644
 +        hook(state, last_error)
 +
 +
++def _has_galley_reconnect_hooks(cli):
++    return hasattr(cli, "on_reconnecting") and hasattr(cli, "on_reconnected")
++
++
 +def _assert_galley_lark_ws_contract(cli):
 +    missing = [
 +        name
-+        for name in ("_connect", "_try_connect", "on_reconnecting", "on_reconnected")
++        for name in ("_connect", "_try_connect")
 +        if not hasattr(cli, name)
 +    ]
++    if not _has_galley_reconnect_hooks(cli) and not hasattr(cli, "_reconnect"):
++        missing.append("_reconnect")
 +    if missing:
 +        raise RuntimeError(
 +            "lark-oapi websocket API changed; Galley Feishu Channel depends on "
-+            f"lark-oapi 1.6.8 hooks/private seams ({', '.join(missing)} missing). "
++            f"lark-oapi websocket hooks/private seams ({', '.join(missing)} missing). "
 +            "Verify Feishu connection status hooks before upgrading lark-oapi."
 +        )
 +
@@ -52,6 +58,14 @@ index ad959f6..c862b11 100644
 +            self._auto_reconnect = True
 +            if not was_connected:
 +                _emit_galley_status("running")
++
++    async def _reconnect(self):
++        if _has_galley_reconnect_hooks(self):
++            await super()._reconnect()
++            return
++        _emit_galley_status("reconnecting", "Feishu long connection disconnected")
++        await super()._reconnect()
++        _emit_galley_status("running")
 +
 +    async def _try_connect(self, cnt):
 +        # Keep running sessions self-healing: some lark-oapi reconnect failures
@@ -79,7 +93,7 @@ index ad959f6..c862b11 100644
      path = _resolve_mykey_path()
      if not path or not path.exists():
          return {}, str(path or "")
-@@ -848,14 +906,33 @@ def main():
+@@ -848,14 +918,34 @@ def main():
      global client, APP_ID, APP_SECRET, ALLOWED_USERS, PUBLIC_ACCESS, CONFIG_PATH
      APP_ID, APP_SECRET, ALLOWED_USERS, PUBLIC_ACCESS, CONFIG_PATH = _feishu_config()
      if not APP_ID or not APP_SECRET:
@@ -108,15 +122,16 @@ index ad959f6..c862b11 100644
 +            except RuntimeError as e:
 +                _emit_galley_status("error", str(e))
 +                return 1
-+            cli.on_reconnecting = lambda: _emit_galley_status(
-+                "reconnecting",
-+                "Feishu long connection disconnected",
-+            )
-+            cli.on_reconnected = lambda: _emit_galley_status("running")
++            if _has_galley_reconnect_hooks(cli):
++                cli.on_reconnecting = lambda: _emit_galley_status(
++                    "reconnecting",
++                    "Feishu long connection disconnected",
++                )
++                cli.on_reconnected = lambda: _emit_galley_status("running")
              print("=" * 50 + "\n飞书 Agent 已启动（长连接模式）\n" + f"App ID: {APP_ID}\n配置: {CONFIG_PATH}\n等待消息...\n" + "=" * 50, flush=True)
              cli.start()
              retry_delay = 5
-@@ -864,6 +941,12 @@ def main():
+@@ -864,6 +955,12 @@ def main():
          except Exception as e:
              print(f"[WARN] 飞书长连接断开或启动失败: {e}", flush=True)
              traceback.print_exc()
@@ -129,7 +144,7 @@ index ad959f6..c862b11 100644
          print(f"[INFO] {retry_delay}s 后重连飞书长连接...", flush=True)
          time.sleep(retry_delay)
          retry_delay = min(retry_delay * 2, 120)
-@@ -877,4 +960,4 @@ if __name__ == "__main__":
+@@ -877,4 +974,4 @@ if __name__ == "__main__":
      if args.check or args.check_agent:
          print(json.dumps(check_config(init_agent=args.check_agent), ensure_ascii=False, indent=2), flush=True)
      else:

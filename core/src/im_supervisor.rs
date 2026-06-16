@@ -201,7 +201,7 @@ impl ImSupervisorManager {
         let sop_path_str = sop_path.to_string_lossy().into_owned();
         env.push((
             "GALLEY_IM_SUPERVISOR_PROMPT_TEXT".into(),
-            managed_prompt::im_supervisor_prompt(&sop_path_str),
+            managed_prompt::im_supervisor_prompt(&sop_path_str, platform),
         ));
         env.push(("GALLEY_SUPERVISOR_SOP_PATH".into(), sop_path_str));
         env.push(("GALLEY_IM_PLATFORM".into(), platform.into()));

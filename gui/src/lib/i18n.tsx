@@ -728,7 +728,7 @@ const zhCopy = {
           ],
         },
         {
-          title: "Galley Settings · 填写凭证",
+          title: "Galley Settings · 保存凭证",
           steps: [
             {
               parts: [
@@ -742,33 +742,95 @@ const zhCopy = {
             {
               parts: [
                 { text: "点击 " },
+                { text: "保存凭证", emphasis: true },
+                { text: "，然后启动 Galley 飞书服务。" },
+              ],
+            },
+          ],
+        },
+        {
+          title: "Galley Settings · 启动服务",
+          steps: [
+            {
+              parts: [
+                { text: "点击 " },
                 { text: "启动飞书服务", emphasis: true },
+                { text: "。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "看到 " },
+                { text: "服务已启动", emphasis: true },
+                { text: " 后，回到飞书开放平台继续配置长连接和事件。" },
+              ],
+            },
+          ],
+        },
+        {
+          title: "飞书开放平台 · 配置长连接和事件",
+          steps: [
+            {
+              parts: [
+                { text: "进入 " },
+                { text: "事件与回调", emphasis: true },
+                { text: "。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "打开 " },
+                { text: "回调配置", emphasis: true },
+                { text: "，订阅方式选择 " },
+                { text: "使用长连接接收事件", emphasis: true },
+                { text: " 并保存。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "打开 " },
+                { text: "事件配置", emphasis: true },
+                { text: "，确认使用 " },
+                { text: "长连接", emphasis: true },
+                { text: "。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "点击 " },
+                { text: "添加事件", emphasis: true },
+                { text: "，添加 " },
+                { text: "im.message.receive_v1", code: true },
                 { text: "。" },
               ],
             },
           ],
         },
         {
-          title: "飞书开放平台 · 接收事件",
+          title: "飞书开放平台 · 发布应用",
           steps: [
             {
               parts: [
-                { text: "在 " },
-                { text: "事件订阅", emphasis: true },
-                { text: " 里选择 " },
-                { text: "长连接", emphasis: true },
-                { text: " 接收事件。" },
+                { text: "进入 " },
+                { text: "版本管理与发布", emphasis: true },
+                { text: "。" },
               ],
             },
             {
               parts: [
-                { text: "添加 " },
-                { text: "im.message.receive_v1", code: true },
-                { text: " 事件。" },
+                { text: "填写 " },
+                { text: "版本信息", emphasis: true },
+                { text: "，点击 " },
+                { text: "保存", emphasis: true },
+                { text: "。" },
               ],
             },
             {
-              parts: [{ text: "发布应用", emphasis: true }, { text: "。" }],
+              parts: [
+                { text: "点击 " },
+                { text: "确认发布", emphasis: true },
+                { text: "，让组织内成员可以使用机器人。" },
+              ],
             },
           ],
         },
@@ -779,12 +841,12 @@ const zhCopy = {
               parts: [
                 { text: "在 " },
                 { text: "飞书客户端", emphasis: true },
-                { text: " 搜索机器人。" },
+                { text: " 搜索机器人并发消息。" },
               ],
             },
             {
               parts: [
-                { text: "给机器人发消息，Galley 会回复到飞书。" },
+                { text: "如果没有回复，检查长连接、事件、权限和发布状态。" },
               ],
             },
           ],
@@ -813,9 +875,9 @@ const zhCopy = {
       copyFeishuPermissions: "复制全部",
       feishuPermissionsCopied: "已复制",
       feishuConnectedSteps: [
-        "在飞书里给机器人发消息。",
-        "保持 Galley 运行，飞书入口会持续可用。",
-        "组织内成员都可以使用这个入口。",
+        "在飞书客户端给机器人发消息。",
+        "如果没有回复，检查长连接、事件、权限和应用发布状态。",
+        "保持 Galley 运行，飞书服务会持续接收消息。",
       ],
       notConnected: "未接入",
       starting: "正在接入",
@@ -833,15 +895,20 @@ const zhCopy = {
       errorHint: "微信接入异常，可以重试。",
       stoppedHint: "已暂停接收微信消息。",
       feishuNotConnectedHint:
-        "按步骤接入后，组织内成员可以在飞书里给 Galley 发消息。",
-      feishuStartingHint: "正在启动飞书服务。启动成功后，继续配置事件订阅。",
+        "先保存凭证并启动飞书服务，再回到飞书开放平台配置长连接和事件。",
+      feishuStartingHint: "正在启动飞书服务。",
       feishuReconnectingHint: "飞书连接正在重试。",
-      feishuRunningHint: "飞书已接入，可以直接在飞书里给 Galley 发消息。",
+      feishuRunningHint:
+        "飞书服务已启动。继续在飞书开放平台配置长连接、添加事件并发布应用；完成后即可在飞书客户端发消息。",
       feishuErrorHint:
-        "接入异常。检查 App ID / App Secret、权限、事件订阅和应用发布状态后重试。",
-      feishuStoppedHint: "已暂停。点击启动飞书服务后继续接收消息。",
+        "接入异常。检查 App ID / App Secret、权限、长连接、事件和应用发布状态后重试。",
+      feishuStoppedHint:
+        "凭证已保存。先点击启动飞书服务，再回到飞书开放平台配置长连接和事件。",
       connect: "接入微信",
+      feishuSaveCredentials: "保存凭证",
       feishuStartService: "启动飞书服务",
+      feishuServiceStarted: "服务已启动",
+      feishuNotStarted: "未启动",
       openFeishuConsole: "打开飞书开放平台",
       feishuAppIdLabel: "App ID",
       feishuAppSecretLabel: "App Secret",
@@ -866,9 +933,6 @@ const zhCopy = {
       feishuDisconnectDialogTitle: "解除飞书接入？",
       feishuDisconnectDialogBody:
         "这会停止飞书接入；下次重新接入需要再粘贴 App Secret。",
-      restartChannelsTitle: "Channels 正在使用旧模型配置",
-      restartChannelsBody:
-        "重启后，已启用 Channels 会使用最新模型配置。可能中断当前回复，不会退出登录。",
       restartChannelsDialogTitle: "重启 Channels？",
       restartChannelsDialogBody:
         "这会重启所有已启用的 Channels，可能中断当前回复；不会退出登录。",
@@ -1099,7 +1163,7 @@ const zhCopy = {
     modelConfigSavedChannelsSuffix: "已启用 Channels 重启后使用新模型配置。",
     restartChannels: "重启 Channels",
     channelsRestarted: "Channels 已重启",
-    channelsRestartedMessage: "已启用 Channels 正在使用最新模型配置。",
+    channelsRestartedMessage: "已启用 Channels 已重新启动。",
     channelsRestartFailed: "重启 Channels 失败",
     channelsRestartNone: "没有已启用的 Channel。",
     goalStarted: "Goal 已启动",
@@ -1990,7 +2054,7 @@ const enCopy: AppCopy = {
           ],
         },
         {
-          title: "Galley Settings · Add credentials",
+          title: "Galley Settings · Save credentials",
           steps: [
             {
               parts: [
@@ -2004,33 +2068,95 @@ const enCopy: AppCopy = {
             {
               parts: [
                 { text: "Click " },
+                { text: "Save credentials", emphasis: true },
+                { text: ", then start the Galley Feishu service." },
+              ],
+            },
+          ],
+        },
+        {
+          title: "Galley Settings · Start service",
+          steps: [
+            {
+              parts: [
+                { text: "Click " },
                 { text: "Start Feishu service", emphasis: true },
+                { text: "." },
+              ],
+            },
+            {
+              parts: [
+                { text: "After " },
+                { text: "Service running", emphasis: true },
+                { text: " appears, return to Feishu Open Platform to configure long connection and events." },
+              ],
+            },
+          ],
+        },
+        {
+          title: "Feishu Open Platform · Configure long connection and events",
+          steps: [
+            {
+              parts: [
+                { text: "Open " },
+                { text: "Events and Callbacks", emphasis: true },
+                { text: "." },
+              ],
+            },
+            {
+              parts: [
+                { text: "Open " },
+                { text: "Callback configuration", emphasis: true },
+                { text: ", set the subscription mode to " },
+                { text: "Use long connection to receive events", emphasis: true },
+                { text: ", then save." },
+              ],
+            },
+            {
+              parts: [
+                { text: "Open " },
+                { text: "Event configuration", emphasis: true },
+                { text: " and confirm " },
+                { text: "long connection", emphasis: true },
+                { text: " is selected." },
+              ],
+            },
+            {
+              parts: [
+                { text: "Click " },
+                { text: "Add event", emphasis: true },
+                { text: " and add " },
+                { text: "im.message.receive_v1", code: true },
                 { text: "." },
               ],
             },
           ],
         },
         {
-          title: "Feishu Open Platform · Receive events",
+          title: "Feishu Open Platform · Publish app",
           steps: [
             {
               parts: [
-                { text: "In " },
-                { text: "event subscriptions", emphasis: true },
-                { text: ", choose " },
-                { text: "long connection", emphasis: true },
-                { text: " events." },
+                { text: "Open " },
+                { text: "Version Management and Publishing", emphasis: true },
+                { text: "." },
               ],
             },
             {
               parts: [
-                { text: "Add the " },
-                { text: "im.message.receive_v1", code: true },
-                { text: " event." },
+                { text: "Fill in " },
+                { text: "version information", emphasis: true },
+                { text: ", then click " },
+                { text: "Save", emphasis: true },
+                { text: "." },
               ],
             },
             {
-              parts: [{ text: "Publish the app", emphasis: true }, { text: "." }],
+              parts: [
+                { text: "Click " },
+                { text: "Confirm publish", emphasis: true },
+                { text: " so members in the organization can use the bot." },
+              ],
             },
           ],
         },
@@ -2041,11 +2167,13 @@ const enCopy: AppCopy = {
               parts: [
                 { text: "Find the bot in the " },
                 { text: "Feishu client", emphasis: true },
-                { text: "." },
+                { text: " and send a message." },
               ],
             },
             {
-              parts: [{ text: "Message the bot. Galley replies in Feishu." }],
+              parts: [
+                { text: "If there is no reply, check long connection, events, permissions, and publishing." },
+              ],
             },
           ],
         },
@@ -2073,9 +2201,9 @@ const enCopy: AppCopy = {
       copyFeishuPermissions: "Copy all",
       feishuPermissionsCopied: "Copied",
       feishuConnectedSteps: [
-        "Message the bot in Feishu.",
-        "Keep Galley running to keep the Feishu entry available.",
-        "Everyone in the organization can use this entry.",
+        "Message the bot in the Feishu client.",
+        "If there is no reply, check long connection, events, permissions, and app publishing.",
+        "Keep Galley running so the Feishu service keeps receiving messages.",
       ],
       notConnected: "Not connected",
       starting: "Connecting",
@@ -2094,18 +2222,20 @@ const enCopy: AppCopy = {
       errorHint: "The WeChat connection has an issue. You can retry.",
       stoppedHint: "Receiving WeChat messages is paused.",
       feishuNotConnectedHint:
-        "After setup, everyone in the organization can message Galley from Feishu.",
-      feishuStartingHint:
-        "Starting the Feishu service. After it starts, continue with event subscriptions.",
+        "Save credentials and start the Feishu service first, then return to Feishu Open Platform to configure long connection and events.",
+      feishuStartingHint: "Starting the Feishu service.",
       feishuReconnectingHint: "The Feishu connection is retrying.",
       feishuRunningHint:
-        "Feishu is connected. Message Galley directly from Feishu.",
+        "The Feishu service is running. Continue configuring long connection, events, and publishing in Feishu Open Platform; then message the bot from the Feishu client.",
       feishuErrorHint:
-        "Connection issue. Check App ID / App Secret, permissions, event subscriptions, and app publishing, then retry.",
+        "Connection issue. Check App ID / App Secret, permissions, long connection, events, and app publishing, then retry.",
       feishuStoppedHint:
-        "Paused. Start the Feishu service again to receive messages.",
+        "Credentials are saved. Start the Feishu service first, then return to Feishu Open Platform to configure long connection and events.",
       connect: "Connect WeChat",
+      feishuSaveCredentials: "Save credentials",
       feishuStartService: "Start Feishu service",
+      feishuServiceStarted: "Service running",
+      feishuNotStarted: "Not started",
       openFeishuConsole: "Open Feishu Open Platform",
       feishuAppIdLabel: "App ID",
       feishuAppSecretLabel: "App Secret",
@@ -2130,9 +2260,6 @@ const enCopy: AppCopy = {
       feishuDisconnectDialogTitle: "Disconnect Feishu?",
       feishuDisconnectDialogBody:
         "This stops Feishu. To connect again, paste the App Secret again.",
-      restartChannelsTitle: "Channels are using old model config",
-      restartChannelsBody:
-        "After restart, enabled Channels will use the latest model config. This may interrupt the current reply, but will not log you out.",
       restartChannelsDialogTitle: "Restart Channels?",
       restartChannelsDialogBody:
         "This restarts all enabled Channels. It may interrupt the current reply, but will not log you out.",
@@ -2373,8 +2500,7 @@ const enCopy: AppCopy = {
       "Enabled Channels use the new model config after restart.",
     restartChannels: "Restart Channels",
     channelsRestarted: "Channels restarted",
-    channelsRestartedMessage:
-      "Enabled Channels are using the latest model config.",
+    channelsRestartedMessage: "Enabled Channels restarted.",
     channelsRestartFailed: "Could not restart Channels",
     channelsRestartNone: "No enabled Channel.",
     goalStarted: "Goal started",

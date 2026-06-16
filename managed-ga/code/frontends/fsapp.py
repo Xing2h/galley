@@ -337,16 +337,22 @@ def _emit_galley_status(state, last_error=None):
         hook(state, last_error)
 
 
+def _has_galley_reconnect_hooks(cli):
+    return hasattr(cli, "on_reconnecting") and hasattr(cli, "on_reconnected")
+
+
 def _assert_galley_lark_ws_contract(cli):
     missing = [
         name
-        for name in ("_connect", "_try_connect", "on_reconnecting", "on_reconnected")
+        for name in ("_connect", "_try_connect")
         if not hasattr(cli, name)
     ]
+    if not _has_galley_reconnect_hooks(cli) and not hasattr(cli, "_reconnect"):
+        missing.append("_reconnect")
     if missing:
         raise RuntimeError(
             "lark-oapi websocket API changed; Galley Feishu Channel depends on "
-            f"lark-oapi 1.6.8 hooks/private seams ({', '.join(missing)} missing). "
+            f"lark-oapi websocket hooks/private seams ({', '.join(missing)} missing). "
             "Verify Feishu connection status hooks before upgrading lark-oapi."
         )
 
@@ -364,6 +370,14 @@ class GalleyStatusWsClient(lark.ws.Client):
             self._auto_reconnect = True
             if not was_connected:
                 _emit_galley_status("running")
+
+    async def _reconnect(self):
+        if _has_galley_reconnect_hooks(self):
+            await super()._reconnect()
+            return
+        _emit_galley_status("reconnecting", "Feishu long connection disconnected")
+        await super()._reconnect()
+        _emit_galley_status("running")
 
     async def _try_connect(self, cnt):
         # Keep running sessions self-healing: some lark-oapi reconnect failures
@@ -928,11 +942,12 @@ def main():
             except RuntimeError as e:
                 _emit_galley_status("error", str(e))
                 return 1
-            cli.on_reconnecting = lambda: _emit_galley_status(
-                "reconnecting",
-                "Feishu long connection disconnected",
-            )
-            cli.on_reconnected = lambda: _emit_galley_status("running")
+            if _has_galley_reconnect_hooks(cli):
+                cli.on_reconnecting = lambda: _emit_galley_status(
+                    "reconnecting",
+                    "Feishu long connection disconnected",
+                )
+                cli.on_reconnected = lambda: _emit_galley_status("running")
             print("=" * 50 + "\n飞书 Agent 已启动（长连接模式）\n" + f"App ID: {APP_ID}\n配置: {CONFIG_PATH}\n等待消息...\n" + "=" * 50, flush=True)
             cli.start()
             retry_delay = 5

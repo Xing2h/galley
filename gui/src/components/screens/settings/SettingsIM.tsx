@@ -70,6 +70,12 @@ export function SettingsIM({
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [invokeError, setInvokeError] = useState<string | null>(null);
   const [confirmRestartOpen, setConfirmRestartOpen] = useState(false);
+  const hasEnabledChannel = [wechatStatus, feishuStatus].some(
+    (status) => status?.enabled,
+  );
+  const hasStaleEnabledChannel = [wechatStatus, feishuStatus].some(
+    (status) => status?.enabled && status.modelConfigStale,
+  );
 
   const runAction = async (
     action: Exclude<BusyAction, null | "restart">,
@@ -162,14 +168,26 @@ export function SettingsIM({
         </div>
       ) : (
         <div className="space-y-3">
-          {[wechatStatus, feishuStatus].some(
-            (status) => status?.enabled && status.modelConfigStale,
-          ) ? (
-            <ChannelsConfigStaleBanner
-              busy={busyAction === "restart"}
-              onRestart={() => setConfirmRestartOpen(true)}
-            />
-          ) : null}
+          <div className="flex items-center">
+            <Button
+              type="button"
+              variant={hasStaleEnabledChannel ? "secondary" : "ghost"}
+              size="sm"
+              disabled={busyAction === "restart" || !hasEnabledChannel}
+              leadingIcon={
+                busyAction === "restart" ? (
+                  <CircleNotch size={13} className="animate-spin" />
+                ) : hasStaleEnabledChannel ? (
+                  <WarningCircle size={13} weight="bold" />
+                ) : (
+                  <ArrowsClockwise size={13} />
+                )
+              }
+              onClick={() => setConfirmRestartOpen(true)}
+            >
+              {copy.toasts.restartChannels}
+            </Button>
+          </div>
           <WeChatCard
             status={wechatStatus}
             busyAction={busyAction}
@@ -201,46 +219,6 @@ export function SettingsIM({
           />
         </div>
       )}
-    </div>
-  );
-}
-
-function ChannelsConfigStaleBanner({
-  busy,
-  onRestart,
-}: {
-  busy: boolean;
-  onRestart: () => void;
-}) {
-  const copy = useCopy();
-  const imCopy = copy.settings.im;
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded-sm border border-warning/[var(--opacity-medium)] bg-warning/[var(--opacity-soft)] px-3 py-2.5">
-      <WarningCircle size={16} weight="bold" className="shrink-0 text-warning" />
-      <div className="min-w-[180px] flex-1">
-        <div className="text-[13px] font-medium text-ink">
-          {imCopy.restartChannelsTitle}
-        </div>
-        <div className="mt-0.5 text-[12px] leading-5 text-ink-soft">
-          {imCopy.restartChannelsBody}
-        </div>
-      </div>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={busy}
-        leadingIcon={
-          busy ? (
-            <CircleNotch size={13} className="animate-spin" />
-          ) : (
-            <ArrowsClockwise size={13} />
-          )
-        }
-        onClick={onRestart}
-      >
-        {copy.toasts.restartChannels}
-      </Button>
     </div>
   );
 }
@@ -560,7 +538,7 @@ function FeishuCard({
   const [appId, setAppId] = useState("");
   const [appSecret, setAppSecret] = useState("");
   const [localBusy, setLocalBusy] = useState<
-    "load" | "open" | "connect" | "stop" | "disconnect" | null
+    "load" | "open" | "save" | "connect" | "stop" | "disconnect" | null
   >("load");
   const [localError, setLocalError] = useState<string | null>(null);
   const [expandedOverride, setExpandedOverride] = useState<boolean | null>(
@@ -595,14 +573,22 @@ function FeishuCard({
   const hasSavedSecretForApp =
     Boolean(config?.hasAppSecret) && trimmedAppId === savedAppId;
   const hasUsableSecret = appSecret.trim().length > 0 || hasSavedSecretForApp;
-  const canConnect = trimmedAppId.length > 0 && hasUsableSecret;
+  const canSaveCredentials = trimmedAppId.length > 0 && hasUsableSecret;
+  const canStartService =
+    trimmedAppId.length > 0 &&
+    trimmedAppId === savedAppId &&
+    Boolean(config?.hasAppSecret);
   const derivedState: ImSupervisorState =
     status?.state ??
     (config?.appId && config.hasAppSecret ? "stopped" : "not_connected");
   const attentionState = derivedState === "expired" || derivedState === "error";
   const expanded =
     expandedOverride ??
-    (attentionState || derivedState === "not_connected" || !canConnect);
+    (attentionState ||
+      derivedState === "not_connected" ||
+      derivedState === "stopped" ||
+      !canSaveCredentials ||
+      (derivedState !== "running" && !canStartService));
   const canPause = derivedState === "running";
   const canDisconnect =
     derivedState === "running" ||
@@ -626,14 +612,20 @@ function FeishuCard({
     }
   };
 
-  const connect = () =>
-    run("connect", async () => {
+  const saveCredentials = () =>
+    run("save", async () => {
       const saved = await saveFeishuImConfig({
         appId: appId.trim(),
         appSecret: appSecret.trim() || null,
       });
       setConfig(saved);
       setAppSecret("");
+      onStatusChange(null);
+      setExpandedOverride(true);
+    });
+
+  const connect = () =>
+    run("connect", async () => {
       onStatusChange(await startImSupervisor("feishu", false));
     });
 
@@ -698,7 +690,19 @@ function FeishuCard({
             >
               {imCopy.feishuTitle}
             </span>
-            <StatusBadge state={derivedState} />
+            <StatusBadge
+              state={derivedState}
+              iconStateOverride={
+                derivedState === "stopped" ? "not_connected" : undefined
+              }
+              labelOverride={
+                derivedState === "running"
+                  ? imCopy.feishuServiceStarted
+                  : derivedState === "stopped"
+                    ? imCopy.feishuNotStarted
+                    : undefined
+              }
+            />
           </span>
         </button>
         <div
@@ -708,26 +712,6 @@ function FeishuCard({
             busy && "opacity-100",
           )}
         >
-          {derivedState === "stopped" && !expanded ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="primary"
-              disabled={busy || !canConnect}
-              leadingIcon={
-                localBusy === "connect" ? (
-                  <CircleNotch size={13} className="animate-spin" />
-                ) : (
-                  <Power size={13} />
-                )
-              }
-              onClick={connect}
-            >
-              {localBusy === "connect"
-                ? imCopy.working
-                : imCopy.feishuStartService}
-            </Button>
-          ) : null}
           {canPause || canDisconnect ? (
             <WeChatActionsMenu
               disabled={busy}
@@ -745,9 +729,13 @@ function FeishuCard({
           <div className="space-y-4 pl-8 pr-1">
             {derivedState === "running" ? (
               <>
-                <ConnectionSteps
-                  steps={imCopy.feishuConnectedSteps}
+                <FeishuSetupGuide
+                  imCopy={imCopy}
                   status={feishuStatusHintForState(derivedState, imCopy)}
+                  onOpenConsole={openFeishuConsole}
+                  openDisabled={busy}
+                  startSectionIndex={3}
+                  statusPlacement="top"
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -813,25 +801,25 @@ function FeishuCard({
                     </label>
                   </div>
                 }
-                startAction={
+                saveAction={
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
                       variant="primary"
                       size="sm"
-                      disabled={busy || !canConnect}
+                      disabled={busy || !canSaveCredentials}
                       leadingIcon={
-                        localBusy === "connect" ? (
+                        localBusy === "save" ? (
                           <CircleNotch size={13} className="animate-spin" />
                         ) : (
-                          <Power size={13} />
+                          <Check size={13} />
                         )
                       }
-                      onClick={connect}
+                      onClick={saveCredentials}
                     >
-                      {localBusy === "connect"
+                      {localBusy === "save"
                         ? imCopy.working
-                        : imCopy.feishuStartService}
+                        : imCopy.feishuSaveCredentials}
                     </Button>
                     {localBusy === "load" ? (
                       <span className="text-[12px] text-ink-muted">
@@ -850,6 +838,28 @@ function FeishuCard({
                         {imCopy.disconnect}
                       </Button>
                     ) : null}
+                  </div>
+                }
+                startAction={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      disabled={busy || !canStartService}
+                      leadingIcon={
+                        localBusy === "connect" ? (
+                          <CircleNotch size={13} className="animate-spin" />
+                        ) : (
+                          <Power size={13} />
+                        )
+                      }
+                      onClick={connect}
+                    >
+                      {localBusy === "connect"
+                        ? imCopy.working
+                        : imCopy.feishuStartService}
+                    </Button>
                   </div>
                 }
               />
@@ -1109,16 +1119,22 @@ function FeishuSetupGuide({
   imCopy,
   status,
   credentialsForm,
+  saveAction,
   startAction,
   openDisabled,
   onOpenConsole,
+  startSectionIndex = 0,
+  statusPlacement = "bottom",
 }: {
   imCopy: ImCopy;
   status: string;
-  credentialsForm: ReactNode;
-  startAction: ReactNode;
+  credentialsForm?: ReactNode;
+  saveAction?: ReactNode;
+  startAction?: ReactNode;
   openDisabled: boolean;
   onOpenConsole: () => void;
+  startSectionIndex?: number;
+  statusPlacement?: "top" | "bottom";
 }) {
   const [permissionsCopied, setPermissionsCopied] = useState(false);
   const permissionsTimerRef = useRef<number | null>(null);
@@ -1149,54 +1165,67 @@ function FeishuSetupGuide({
 
   return (
     <div className="max-w-[76ch] space-y-3">
+      {statusPlacement === "top" ? (
+        <p className="pl-7 text-[12px] leading-[1.45] text-ink-muted">
+          {status}
+        </p>
+      ) : null}
       <div className="divide-y divide-line/70">
-        {imCopy.feishuSetupSections.map((section, index) => (
-          <FeishuSetupSection
-            key={section.title}
-            index={index + 1}
-            title={section.title}
-            steps={section.steps}
-            afterStep={
-              index === 0
-                ? {
-                    stepIndex: 2,
-                    content: (
-                      <FeishuPermissionsList
-                        items={imCopy.feishuPermissionItems}
-                        copied={permissionsCopied}
-                        copyLabel={imCopy.copyFeishuPermissions}
-                        copiedLabel={imCopy.feishuPermissionsCopied}
-                        onCopy={() => void copyPermissions()}
-                      />
-                    ),
-                  }
-                : null
-            }
-          >
-            {index === 0 ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={openDisabled}
-                leadingIcon={<ChatCircleText size={13} />}
-                onClick={onOpenConsole}
+        {imCopy.feishuSetupSections
+          .slice(startSectionIndex)
+          .map((section, index) => {
+            const originalIndex = startSectionIndex + index;
+            return (
+              <FeishuSetupSection
+                key={section.title}
+                index={originalIndex + 1}
+                title={section.title}
+                steps={section.steps}
+                afterStep={
+                  originalIndex === 0
+                    ? {
+                        stepIndex: 2,
+                        content: (
+                          <FeishuPermissionsList
+                            items={imCopy.feishuPermissionItems}
+                            copied={permissionsCopied}
+                            copyLabel={imCopy.copyFeishuPermissions}
+                            copiedLabel={imCopy.feishuPermissionsCopied}
+                            onCopy={() => void copyPermissions()}
+                          />
+                        ),
+                      }
+                    : null
+                }
               >
-                {imCopy.openFeishuConsole}
-              </Button>
-            ) : null}
-            {index === 1 ? (
-              <div className="space-y-3">
-                {credentialsForm}
-                {startAction}
-              </div>
-            ) : null}
-          </FeishuSetupSection>
-        ))}
+                {originalIndex === 0 ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={openDisabled}
+                    leadingIcon={<ChatCircleText size={13} />}
+                    onClick={onOpenConsole}
+                  >
+                    {imCopy.openFeishuConsole}
+                  </Button>
+                ) : null}
+                {originalIndex === 1 && (credentialsForm || saveAction) ? (
+                  <div className="space-y-3">
+                    {credentialsForm}
+                    {saveAction}
+                  </div>
+                ) : null}
+                {originalIndex === 2 ? startAction : null}
+              </FeishuSetupSection>
+            );
+          })}
       </div>
-      <p className="pl-7 text-[12px] leading-[1.45] text-ink-muted">
-        {status}
-      </p>
+      {statusPlacement === "bottom" ? (
+        <p className="pl-7 text-[12px] leading-[1.45] text-ink-muted">
+          {status}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1379,28 +1408,39 @@ function FeishuGlyph({ active }: { active: boolean }) {
   );
 }
 
-function StatusBadge({ state }: { state: ImSupervisorState }) {
+function StatusBadge({
+  state,
+  labelOverride,
+  iconStateOverride,
+}: {
+  state: ImSupervisorState;
+  labelOverride?: string;
+  iconStateOverride?: ImSupervisorState;
+}) {
   const imCopy = useCopy().settings.im;
-  const label = {
-    not_connected: imCopy.notConnected,
-    starting: imCopy.starting,
-    waiting_scan: imCopy.waitingScan,
-    reconnecting: imCopy.reconnecting,
-    running: imCopy.running,
-    expired: imCopy.expired,
-    error: imCopy.error,
-    stopped: imCopy.stopped,
-  }[state];
+  const iconState = iconStateOverride ?? state;
+  const label =
+    labelOverride ??
+    {
+      not_connected: imCopy.notConnected,
+      starting: imCopy.starting,
+      waiting_scan: imCopy.waitingScan,
+      reconnecting: imCopy.reconnecting,
+      running: imCopy.running,
+      expired: imCopy.expired,
+      error: imCopy.error,
+      stopped: imCopy.stopped,
+    }[state];
   const Icon =
-    state === "running"
+    iconState === "running"
       ? CheckCircle
-      : state === "error" || state === "expired"
+      : iconState === "error" || iconState === "expired"
         ? WarningCircle
-        : state === "starting" || state === "reconnecting"
+        : iconState === "starting" || iconState === "reconnecting"
           ? CircleNotch
-          : state === "waiting_scan"
+          : iconState === "waiting_scan"
             ? QrCode
-            : state === "stopped"
+            : iconState === "stopped"
               ? Pause
               : Power;
   return (
@@ -1416,9 +1456,9 @@ function StatusBadge({ state }: { state: ImSupervisorState }) {
     >
       <Icon
         size={12}
-        weight={state === "running" ? "fill" : "regular"}
+        weight={iconState === "running" ? "fill" : "regular"}
         className={
-          state === "starting" || state === "reconnecting"
+          iconState === "starting" || iconState === "reconnecting"
             ? "animate-spin"
             : undefined
         }

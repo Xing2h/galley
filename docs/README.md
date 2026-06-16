@@ -23,6 +23,7 @@ matches who you are and what you are trying to do.
 | Change product behavior or roadmap | [PRD](./PRD.md) |
 | Change CLI output or Agent API | [agent-api](./agent-api.md) |
 | Change Supervisor / Agent integration | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
+| Plan or design Galley Native runtime | [Galley Native](./galley-native/README.md) |
 | Work on Rust core refactor | [refactor README](./refactor/README.md) |
 | Check architecture invariants | [architecture demo](./architecture-demo.md) |
 | Prepare or update a release | [release / update SOP](./release-update-sop.md), then [release workflow](./release-workflow.md) |
@@ -58,6 +59,8 @@ matches who you are and what you are trying to do.
 - [managed GA runtime](./managed-ga-runtime.md): design target for Galley's
   bundled GenericAgent runtime, mode boundaries, prompt composition, model
   config, patch discipline, and state rules.
+- [Galley Native](./galley-native/README.md): folder index for the native
+  runtime charter, RFC set, and implementation-slice plan.
 - [architecture demo](./architecture-demo.md): code-level proof of the four
   architecture principles.
 - [session close SOP](./session-close-sop.md): closeout and knowledge-sync

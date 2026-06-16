@@ -26,8 +26,8 @@ verbatim into Galley would make the product feel like a README wrapper.
 
 ## Follow-up Review Fixes
 
-- 飞书状态事件改为由真实 websocket 连接驱动：首次连接成功才进入 `running`；重连周期使用 `lark-oapi` 1.6.8 的 `on_reconnecting` / `on_reconnected` hooks。
-- `lark-oapi` 暂无首连成功 hook，Galley 保留小范围 `_connect` 私有 seam，并在启动前做 contract check，避免升级 SDK 后静默退回错误状态。
+- 飞书状态事件改为由真实 websocket 连接驱动：首次连接成功才进入 `running`；重连周期优先使用 `lark-oapi` 1.6.8 的 `on_reconnecting` / `on_reconnected` hooks。
+- dev 环境可能使用旧版系统 `lark_oapi`，缺少公开重连 hooks 时 fallback 到 `_reconnect` 私有 seam；启动前做 contract check，避免升级 SDK 后静默退回错误状态。
 - 启动阶段连续失败会进入 `error`，避免错凭据时长期卡在重连中；已成功运行后的断线仍持续自动重连。
 - Managed 飞书进程的 workspace、user data 和 temp dir 固定在 Galley-owned state dir，不写入 bundled GA code payload。
 - `GALLEY_FEISHU_CONFIG_JSON` 一旦存在就视为 managed config 边界；解析失败时硬失败，不 fallback 到 `mykey.py`。

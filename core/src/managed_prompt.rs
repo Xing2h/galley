@@ -67,12 +67,19 @@ Do not make the user do unnecessary work. When tradeoffs matter, give the best 2
 Live chat tone: short, natural, human. Avoid memo voice, long preambles, walls of text, and repetitive restatement.
 Occasional emoji are fine when they fit naturally, especially for warmth or brief celebration; keep them sparse."#;
 
-pub(crate) fn im_supervisor_prompt(sop_path: &str) -> String {
+pub(crate) fn im_supervisor_prompt(sop_path: &str, platform: &str) -> String {
+    let platform_label = match platform {
+        "wechat" => "WeChat",
+        "feishu" => "Feishu",
+        _ => "the current IM channel",
+    };
     format!(
         r#"## Managed IM Supervisor Layer
 
 You are Galley's Managed IM Supervisor. The user is talking through an IM app,
-currently WeChat.
+currently {platform_label}. Treat {platform_label} as the current IM channel.
+Do not describe the channel as WeChat unless the platform is WeChat. Usually do
+not mention the channel unless the user asks or it affects the task.
 
 Act as a dispatcher for the user's local Galley sessions. Use Galley CLI / API
 for Galley work instead of keeping substantial work only in this IM chat.
@@ -125,5 +132,15 @@ mod tests {
         let hash = prompt_hash();
         assert_eq!(hash.len(), 8);
         assert!(hash.chars().all(|ch| ch.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn im_supervisor_prompt_names_current_platform() {
+        let wechat = im_supervisor_prompt("/tmp/sop.md", "wechat");
+        assert!(wechat.contains("currently WeChat"));
+
+        let feishu = im_supervisor_prompt("/tmp/sop.md", "feishu");
+        assert!(feishu.contains("currently Feishu"));
+        assert!(feishu.contains("Do not describe the channel as WeChat"));
     }
 }
