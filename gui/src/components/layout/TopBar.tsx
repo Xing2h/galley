@@ -9,7 +9,6 @@ import {
   Cat,
   ChatCircleText,
   CheckCircle,
-  CircleNotch,
   FolderOpen,
   Gear,
   Lightning,
@@ -122,6 +121,59 @@ export interface TopBarProps {
   trafficLightPadding?: number;
 }
 
+type TopBarStatusTone = "brand" | "error" | "neutral" | "success" | "warning";
+
+const TOPBAR_CONTROL_MOTION = cn(
+  "transition-[background-color,border-color,color,transform]",
+  "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
+  "active:translate-y-[0.5px] active:duration-[45ms]",
+);
+
+const TOPBAR_STATUS_BADGE_BASE = cn(
+  "inline-flex h-7 items-center whitespace-nowrap rounded-md border px-2.5 text-[12px] font-medium",
+  "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+  TOPBAR_CONTROL_MOTION,
+);
+
+const TOPBAR_STATUS_ICON_BASE = cn(
+  "relative flex size-7 items-center justify-center rounded-md border",
+  "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+  TOPBAR_CONTROL_MOTION,
+);
+
+const TOPBAR_STATUS_BADGE_TONE: Record<TopBarStatusTone, string> = {
+  brand:
+    "border-brand/30 bg-brand-soft text-brand-strong hover:bg-brand-soft/80",
+  error:
+    "border-error/30 bg-error/[var(--opacity-soft)] text-error hover:bg-error/[var(--opacity-medium)]",
+  neutral: "border-line bg-elevated text-ink-muted hover:bg-hover hover:text-ink",
+  success:
+    "border-success/30 bg-success/[var(--opacity-soft)] text-success hover:bg-success/[var(--opacity-medium)]",
+  warning:
+    "border-warning/30 bg-warning/[var(--opacity-soft)] text-warning hover:bg-warning/[var(--opacity-medium)]",
+};
+
+const TOPBAR_STATUS_ICON_TONE: Record<"neutral" | "success", string> = {
+  neutral:
+    "border-transparent text-ink-muted hover:border-line hover:bg-hover hover:text-ink",
+  success:
+    "border-transparent text-ink-muted hover:border-line hover:bg-hover hover:text-ink",
+};
+
+function topBarStatusBadgeClass(
+  tone: TopBarStatusTone,
+  className?: string,
+) {
+  return cn(TOPBAR_STATUS_BADGE_BASE, TOPBAR_STATUS_BADGE_TONE[tone], className);
+}
+
+function topBarStatusIconClass(
+  tone: keyof typeof TOPBAR_STATUS_ICON_TONE = "neutral",
+  className?: string,
+) {
+  return cn(TOPBAR_STATUS_ICON_BASE, TOPBAR_STATUS_ICON_TONE[tone], className);
+}
+
 /**
  * Top bar — full-window-width, 44px tall. Per DESIGN.md §4.1.
  *
@@ -186,6 +238,11 @@ export function TopBar({
   trafficLightPadding = isMac ? 70 : 12,
 }: TopBarProps) {
   const copy = useCopy();
+  const hasTopBarStatusItems =
+    yoloMode ||
+    activeGoals.length > 0 ||
+    browserControlStatus !== null ||
+    Boolean(onOpenChannelsSettings);
   return (
     <div
       data-tauri-drag-region
@@ -259,71 +316,160 @@ export function TopBar({
         )}
       </div>
 
-      {/* Right: action cluster. Global controls only — session-level
-          actions live next to the title (see comment above). Buttons
-          are auto-excluded from drag region by Tauri so they remain
+      {/* Right: status cluster + utility cluster. Global controls only —
+          session-level actions live next to the title (see comment above).
+          Buttons are auto-excluded from drag region by Tauri so they remain
           clickable. */}
       <div className="flex shrink-0 items-center gap-2">
-        {activeGoals.length > 0 && (
-          <GoalIndicator
-            goals={activeGoals}
-            onOpenProject={onOpenGoalProject}
+        {hasTopBarStatusItems && (
+          <TopBarStatusCluster
+            yoloMode={yoloMode}
+            onDisableYolo={onDisableYolo}
+            onOpenYoloSettings={onOpenApprovalSettings ?? onOpenSettings}
+            activeGoals={activeGoals}
+            onOpenGoalProject={onOpenGoalProject}
             onOpenGoal={onOpenGoal}
             onStopGoal={onStopGoal}
+            browserControlStatus={browserControlStatus}
+            onOpenBrowserControl={onOpenBrowserControl}
+            channelsState={channelsState}
+            channelsLoadError={channelsLoadError}
+            onOpenChannelsSettings={onOpenChannelsSettings}
           />
         )}
-        {yoloMode && (
-          <YoloIndicator
-            onDisable={onDisableYolo}
-            onOpenSettings={onOpenApprovalSettings ?? onOpenSettings}
-          />
+        {hasTopBarStatusItems && (
+          <div aria-hidden="true" className="h-5 w-px bg-line/80" />
         )}
-        <div className="flex items-center gap-1">
-          {/* No Search button here — the Sidebar's Quick Actions has
-              its own search affordance, and ⌘K opens the palette from
-              anywhere. Two click affordances for the same thing was
-              chrome clutter without payoff. */}
-          <WidthToggleButton
-            mode={conversationWidth}
-            onToggle={onToggleConversationWidth}
-          />
-          {browserControlStatus && (
-            <BrowserControlIndicator
-              status={browserControlStatus}
-              onOpen={onOpenBrowserControl}
-            />
-          )}
-          {onOpenChannelsSettings && (
-            <ChannelsIndicator
-              state={channelsState}
-              loadError={channelsLoadError}
-              onOpen={onOpenChannelsSettings}
-            />
-          )}
-          {onChangeThemePreference && (
-            <ThemePreferenceMenu
-              preference={themePreference}
-              resolvedTheme={resolvedTheme}
-              onChange={onChangeThemePreference}
-              variant="topbar"
-            />
-          )}
-          <IconButton
-            title={copy.topbar.settingsShortcut(
-              formatShortcutReadable("Mod+,"),
-            )}
-            onClick={onOpenSettings}
-            ariaLabel={copy.topbar.openSettings}
-          >
-            <Gear size={16} weight="thin" />
-          </IconButton>
-        </div>
+        <TopBarUtilityCluster
+          conversationWidth={conversationWidth}
+          onToggleConversationWidth={onToggleConversationWidth}
+          themePreference={themePreference}
+          resolvedTheme={resolvedTheme}
+          onChangeThemePreference={onChangeThemePreference}
+          onOpenSettings={onOpenSettings}
+        />
         {/* Windows-only custom chrome: min / max-restore / close. Hugs
             the window's right edge (TopBar drops pr-3 on Win for this).
             Mac path renders nothing — the traffic light on the left
             already owns the window-control role. */}
         {!isMac && <WindowControls />}
       </div>
+    </div>
+  );
+}
+
+function TopBarStatusCluster({
+  yoloMode,
+  onDisableYolo,
+  onOpenYoloSettings,
+  activeGoals,
+  onOpenGoalProject,
+  onOpenGoal,
+  onStopGoal,
+  browserControlStatus,
+  onOpenBrowserControl,
+  channelsState,
+  channelsLoadError,
+  onOpenChannelsSettings,
+}: {
+  yoloMode: boolean;
+  onDisableYolo?: () => void;
+  onOpenYoloSettings?: () => void;
+  activeGoals: GoalBrief[];
+  onOpenGoalProject?: (projectId: string) => void;
+  onOpenGoal?: (goalId: string) => void;
+  onStopGoal?: (goalId: string) => void;
+  browserControlStatus: BrowserControlStatus | null;
+  onOpenBrowserControl?: () => void;
+  channelsState: ImSupervisorState | null;
+  channelsLoadError?: string | null;
+  onOpenChannelsSettings?: () => void;
+}) {
+  const copy = useCopy().topbar;
+
+  return (
+    <div
+      role="group"
+      aria-label={copy.statusGroupLabel}
+      className="flex items-center gap-1"
+    >
+      {yoloMode && (
+        <YoloIndicator
+          onDisable={onDisableYolo}
+          onOpenSettings={onOpenYoloSettings}
+        />
+      )}
+      {activeGoals.length > 0 && (
+        <GoalIndicator
+          goals={activeGoals}
+          onOpenProject={onOpenGoalProject}
+          onOpenGoal={onOpenGoal}
+          onStopGoal={onStopGoal}
+        />
+      )}
+      {browserControlStatus && (
+        <BrowserControlIndicator
+          status={browserControlStatus}
+          onOpen={onOpenBrowserControl}
+        />
+      )}
+      {onOpenChannelsSettings && (
+        <ChannelsIndicator
+          state={channelsState}
+          loadError={channelsLoadError}
+          onOpen={onOpenChannelsSettings}
+        />
+      )}
+    </div>
+  );
+}
+
+function TopBarUtilityCluster({
+  conversationWidth,
+  onToggleConversationWidth,
+  themePreference,
+  resolvedTheme,
+  onChangeThemePreference,
+  onOpenSettings,
+}: {
+  conversationWidth: "compact" | "wide";
+  onToggleConversationWidth?: () => void;
+  themePreference: ThemePreference;
+  resolvedTheme: ResolvedTheme;
+  onChangeThemePreference?: (preference: ThemePreference) => void;
+  onOpenSettings?: () => void;
+}) {
+  const copy = useCopy().topbar;
+
+  return (
+    <div
+      role="group"
+      aria-label={copy.utilityGroupLabel}
+      className="flex items-center gap-1"
+    >
+      {/* No Search button here — the Sidebar's Quick Actions has
+          its own search affordance, and ⌘K opens the palette from
+          anywhere. Two click affordances for the same thing was
+          chrome clutter without payoff. */}
+      <WidthToggleButton
+        mode={conversationWidth}
+        onToggle={onToggleConversationWidth}
+      />
+      {onChangeThemePreference && (
+        <ThemePreferenceMenu
+          preference={themePreference}
+          resolvedTheme={resolvedTheme}
+          onChange={onChangeThemePreference}
+          variant="topbar"
+        />
+      )}
+      <IconButton
+        title={copy.settingsShortcut(formatShortcutReadable("Mod+,"))}
+        onClick={onOpenSettings}
+        ariaLabel={copy.openSettings}
+      >
+        <Gear size={16} weight="thin" />
+      </IconButton>
     </div>
   );
 }
@@ -386,12 +532,7 @@ function GoalIndicator({
           <button
             type="button"
             aria-label={copy.goalTooltip}
-            className={cn(
-              "inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium",
-              "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
-              "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
-              style.trigger,
-            )}
+            className={topBarStatusBadgeClass(style.tone, "gap-1.5")}
           >
             <Icon size={14} weight="thin" />
             <span>{label}</span>
@@ -557,22 +698,19 @@ function goalAttentionGoal(goals: GoalBrief[]): GoalBrief {
   );
 }
 
-function goalIndicatorStyle(goal: GoalBrief) {
+function goalIndicatorStyle(goal: GoalBrief): { tone: TopBarStatusTone } {
   if (goal.status === "failed") {
     return {
-      trigger:
-        "border-error/35 bg-error/[var(--opacity-soft)] text-error hover:bg-error/[var(--opacity-medium)]",
+      tone: "error",
     };
   }
   if (goal.status === "completed") {
     return {
-      trigger:
-        "border-success/35 bg-success/[var(--opacity-soft)] text-success hover:bg-success/[var(--opacity-medium)]",
+      tone: "success",
     };
   }
   return {
-    trigger:
-      "border-brand/30 bg-brand-soft text-brand-strong hover:bg-brand-soft/80",
+    tone: "brand",
   };
 }
 
@@ -615,18 +753,44 @@ function ChannelsIndicator({
     needsAttention: copy.channelsNeedsAttention,
   }[status];
 
+  if (status === "setup" || status === "connected") {
+    return (
+      <TooltipLabel text={title}>
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={title}
+          className={topBarStatusIconClass()}
+        >
+          <ChatCircleText size={16} weight="thin" />
+        </button>
+      </TooltipLabel>
+    );
+  }
+
+  const badgeLabel = {
+    connecting: copy.channelsConnectingBadge,
+    waitingScan: copy.channelsWaitingScanBadge,
+    needsAttention: copy.channelsNeedsAttentionBadge,
+  }[status];
+
   return (
-    <IconButton
-      title={title}
-      onClick={onOpen}
-      ariaLabel={title}
-      className={cn(
-        status === "needsAttention" &&
-          "text-error hover:bg-error/10 hover:text-error",
-      )}
-    >
-      <ChatCircleText size={16} weight="thin" />
-    </IconButton>
+    <TooltipLabel text={title}>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={title}
+        className={topBarStatusBadgeClass(
+          status === "needsAttention"
+            ? "error"
+            : status === "connecting"
+              ? "neutral"
+              : "warning",
+        )}
+      >
+        {badgeLabel}
+      </button>
+    </TooltipLabel>
   );
 }
 
@@ -656,9 +820,7 @@ function BrowserControlIndicator({
   const offline = status === "offline";
   const bridgeReady = connected || connectedNoTabs;
   const checking = status === "unknown";
-  const missing = status === "not_connected";
   const error = status === "error";
-  const needsAttention = missing || error;
   const label = checking
     ? copy.browserControlChecking
     : error
@@ -679,12 +841,7 @@ function BrowserControlIndicator({
         <button
           type="button"
           onClick={onOpen}
-          className={cn(
-            "relative flex size-7 items-center justify-center rounded-sm border border-transparent text-ink-muted",
-            "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
-            "hover:border-line hover:bg-hover hover:text-ink active:translate-y-[0.5px]",
-            "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
-          )}
+          className={topBarStatusIconClass()}
           aria-label={title}
         >
           <PuzzlePiece size={16} weight="thin" />
@@ -698,27 +855,12 @@ function BrowserControlIndicator({
       <button
         type="button"
         onClick={onOpen}
-        className={cn(
-          "flex h-7 items-center gap-1.5 rounded-sm border px-2 text-[12px] transition-[background-color,border-color,color,box-shadow,transform]",
-          "duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px]",
-          "outline-none focus-visible:ring-2 focus-visible:ring-warning/40",
-          error
-            ? "border-warning/40 bg-warning/15 font-medium text-warning hover:bg-warning/25"
-            : checking
-              ? "border-line bg-elevated text-ink-muted hover:bg-hover hover:text-ink"
-              : "border-warning/40 bg-warning/15 font-medium text-warning hover:bg-warning/25",
-          needsAttention && "browser-control-attention",
+        className={topBarStatusBadgeClass(
+          error ? "error" : checking ? "neutral" : "warning",
         )}
         aria-label={title}
       >
-        {checking ? (
-          <CircleNotch size={14} weight="thin" className="spin" />
-        ) : error ? (
-          <Warning size={14} weight="thin" />
-        ) : (
-          <PuzzlePiece size={14} weight="thin" />
-        )}
-        <span>{label}</span>
+        {label}
       </button>
     </TooltipLabel>
   );
@@ -732,9 +874,9 @@ function BrowserControlIndicator({
  *   - "立即关闭" warning-tinted button (calls onDisable)
  *   - Secondary link to Settings → Approval tab
  *
- * Visual: warning-tinted pill, 1px border, Lightning icon. No animation —
- * users tune out blinking; static colour reads "this is a state, be
- * aware" without becoming background noise.
+ * Visual: warning-tinted text badge using the shared TopBar status
+ * style. No animation — users tune out blinking; static colour reads
+ * "this is a state, be aware" without becoming background noise.
  */
 function YoloIndicator({
   onDisable,
@@ -751,11 +893,9 @@ function YoloIndicator({
           <button
             type="button"
             aria-label={copy.topbar.yoloView}
-            className={cn(
-              "inline-flex h-7 items-center rounded-md border border-warning/30 bg-warning/10 px-2.5",
-              "text-[12px] font-medium uppercase tracking-[0.04em] text-warning",
-              "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-warning/20 active:translate-y-[0.5px] active:duration-[45ms]",
-              "outline-none focus-visible:ring-2 focus-visible:ring-warning/40",
+            className={topBarStatusBadgeClass(
+              "warning",
+              "uppercase tracking-[0.04em]",
             )}
           >
             YOLO
@@ -770,9 +910,9 @@ function YoloIndicator({
             "galley-pop-in z-50 w-[280px] overflow-hidden rounded-md border border-warning/30 bg-elevated shadow-elevated",
           )}
         >
-          {/* Caution header band — carries the amber identity of the
-              YOLO pill that opened it, so the popover unmistakably reads
-              as a risk-state surface (DESIGN.md §2.1 warning = caution). */}
+          {/* Caution header band mirrors the shared warning badge while
+              using Lightning inside the expanded risk surface. The
+              collapsed TopBar badge stays text-only. */}
           <div className="flex items-center gap-2 border-b border-warning/20 bg-warning/[var(--opacity-subtle)] px-4 py-3">
             <Lightning size={16} weight="thin" className="text-warning" />
             <div className="text-[13px] font-medium text-ink">
