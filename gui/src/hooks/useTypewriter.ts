@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
  * Fake typewriter for streaming content. Given a `source` string
  * that grows over time (e.g. accumulated LLM partial), reveals
  * characters progressively via requestAnimationFrame so the UI
- * reads as smooth token-by-token typing — even when the upstream
- * pushes content in larger chunks.
+ * reads as smooth typing — even when the upstream pushes content in
+ * larger chunks.
  *
  * Motivation: GA's `agentmain.py` throttles its display_queue to
  * push deltas only when the accumulated response crosses ~50

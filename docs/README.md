@@ -34,6 +34,7 @@ matches who you are and what you are trying to do.
 | Touch GUI or engineering workflow | [engineering workflow](./engineering-workflow.md) |
 | Touch visual design | [DESIGN.md](./DESIGN.md) |
 | Touch UI copy, terminology, or localization | [copy and language guidelines](./copy-language-guidelines.md), [copy austerity principles](./copy-austerity-principles.md) |
+| Review product / UX audit findings | [audits](./audits/README.md) |
 | Understand history or decisions | [devlog](./devlog/README.md) |
 
 ## Document Roles
@@ -52,6 +53,8 @@ matches who you are and what you are trying to do.
   paired with the terminology rules above).
 - [English copy draft](./english-copy-draft.md): review draft for native
   English UI copy before implementation.
+- [audits](./audits/README.md): evidence-backed product, UX, accessibility, and
+  workflow audits used as decision input.
 - [managed GA runtime](./managed-ga-runtime.md): design target for Galley's
   bundled GenericAgent runtime, mode boundaries, prompt composition, model
   config, patch discipline, and state rules.

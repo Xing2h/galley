@@ -10,7 +10,7 @@
 
 ## A. v0.1 七件事（必 cover · 8 项）
 
-- [ ] **A1 端到端真跑** — 新建 session、attach GA、选 LLM、发 "写一个 fib(10) 的 python 函数"，verify streaming token 出 + turn_end commit + 文本可选可复制
+- [ ] **A1 端到端真跑** — 新建 session、attach GA、选 LLM、发 "写一个 fib(10) 的 python 函数"，verify chunked streaming + UI typewriter 平滑可见、turn_end commit、文本可选可复制
 - [ ] **A2 审批拦截 + 审计持久化** — 关 YOLO，发一条触发 file_patch 的需求，verify Approval Card 弹 → 选 Approve → tool 执行 → DB `tool_events` 表有新 row（`sqlite3 ~/Library/Application\ Support/app.galley/galley.db 'select * from tool_events order by id desc limit 3'`）
 - [ ] **A3 审批 Reject 路径** — 同 A2 但选 Reject，verify tool 跳过 + agent 继续不卡死
 - [ ] **A4 Multi-session N-active** — 同时开 3 个 session，每个发不同任务，verify 三 session 并行流式输出不互相阻塞 / TopBar pill 切换正确
@@ -37,7 +37,7 @@
 
 ## C. Polished UX（强 cover · 12 项）
 
-- [ ] **C1 Streaming token rendering** — 长答案 (300+ token)，verify token-by-token 流式出 + 不卡 + fence filter 正常（工具 stdout 不溢出对话区）
+- [ ] **C1 Streaming partial rendering** — 长答案 (300+ tokens worth of content)，verify GA chunked partials 经 UI typewriter 后观感连续、不卡、fence filter 正常（工具 stdout 不溢出对话区）
 - [ ] **C2 Thinking placeholder** — verify「第 N 步 · 思考中···」单行 italic serif 12px 出 + ≥5s 自动显 elapsed counter
 - [ ] **C3 /btw side question** — 主 agent 跑长任务中（关 YOLO 让它停在 approval），发 `/btw 时间是几点`，verify SystemMessageBubble 黄色出 + 不计入主 turn 编号
 - [ ] **C4 ask_user 阻塞** — agent 调 ask_user（提一个需要澄清的需求），verify AskUserBubble + Sidebar 第四态 "⏸ 等你回复" + 输入回复后继续

@@ -219,14 +219,13 @@ export function MainView({
     : (sendPhaseStatus ?? compactLiveStepStatus(livePreamble));
   // Fake-typewriter pass to smooth over GA's ~50-char chunked
   // delta pushes. See useTypewriter docs for the mitigation
-  // rationale. When the GA-side throttle is eventually fixed and
-  // we get true token-level streaming, this hook becomes a no-op
-  // (reveal already keeps pace with arrivals) and can be removed
-  // without behavior change.
+  // rationale. If the GA-side throttle is eventually reduced enough,
+  // this hook becomes a no-op (reveal already keeps pace with
+  // arrivals) and can be removed without behavior change.
   const typedPartial = useTypewriter(visiblePartial);
 
   // Sticky-bottom mode for streaming: when the user is "near the
-  // bottom" we follow newly-arrived tokens; if they've scrolled up
+  // bottom" we follow newly-arrived chunks; if they've scrolled up
   // to read older content we don't yank them down.
   //
   // `atBottom` is the currently-tracked position; updated on scroll
@@ -638,15 +637,15 @@ export function MainView({
             )}
 
             {/* In-flight streaming partial (DESIGN.md §4.3 streaming
-              generation). Renders the LLM's tokens as they arrive
-              via turn_progress IPC events. Replaced by the canonical
+              generation). Renders accumulated display_queue chunks
+              from turn_progress IPC events. Replaced by the canonical
               AgentTurn the moment turn_end fires (store clears
               inFlightContent in appendAgentTurn).
               StreamingCursor below the markdown gives liveness
               feedback during the gaps between GA's ~50-char delta
               pushes — without it the partial reads as "stalled"
-              between chunks. Real fix needs token-level streaming
-              from GA core; this is the UI-side mitigation. */}
+              between chunks. A deeper fix needs GA-side streaming
+              granularity changes; this is the UI-side mitigation. */}
             {isRunning && !stillWaiting && visiblePartial && (
               <div>
                 <TurnMarker

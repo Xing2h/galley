@@ -3,14 +3,11 @@
 The contract between **Galley** and any agent that drives it via the
 `galley` CLI binary or the Unix-socket / named-pipe local transport.
 
-> **Status: `schemaVersion: 1` FROZEN for `v0.2.0`.** The
-> commands documented in §5 are wired, tested, and locked. Inside
-> `schemaVersion: 1` the rules in §1 hold: additions are non-breaking;
-> renames / removals require a `schemaVersion: 2` bump. Pre-freeze
-> adjustments (camelCase version output, flattened error envelope)
-> shipped under M6 as part of locking the contract. See
-> [refactor playbook](./refactor/README.md) for the post-freeze
-> roadmap (background mode, supervisor activity GUI, migration).
+> **Status: `schemaVersion: 1` is frozen for the `v0.2.x` line.**
+> The commands documented in §5 are wired, tested, and locked. Inside
+> `schemaVersion: 1` the rules in §1 hold: additive commands, flags,
+> and optional fields are non-breaking; renames / removals require a
+> `schemaVersion: 2` bump.
 
 ## 1 · Stability
 
@@ -76,7 +73,7 @@ get a clean error path; the JSON envelope carries the original tag.
 | -------------------------- | ------------------------------------------------------------------------------------- |
 | `SessionBrief.status`      | `idle / connecting / running / waiting_approval / error / completed / cancelled / archived` |
 | `MessageBrief.role`        | `user / agent / system` (DB `tool` rows normalize to `agent`)                         |
-| `HealthCheck.status`       | `ok / warn / fail / deferred_b4` (new `deferred_<phase>` values are additive)         |
+| `HealthCheck.status`       | `ok / warn / fail / deferred_b4` (`deferred_b4` is a legacy stable value; new `deferred_<phase>` values are additive) |
 | `Origin.via`               | `gui / cli / supervisor / system`                                                     |
 
 #### `dispatch` values (per-command)
@@ -566,15 +563,16 @@ $ galley status
 | Field           | Type | Notes                                                                                              |
 | --------------- | ---- | -------------------------------------------------------------------------------------------------- |
 | `total`         | int  | non-archived sessions                                                                              |
-| `running`       | int  | sessions in `running` status. Note: B1 surfaces persistence-truth — these counts will usually read as 0 unless caught mid-write, since GUI only persists `archived / completed / cancelled` (transient runtime status coerced to `idle` on save). Real runtime counts arrive in B2+ via the Rust-owned runner manager. |
-| `waitingInput`  | int  | sessions with `waiting_approval` status (same persistence caveat)                                  |
-| `errored`       | int  | sessions in `error` status (same caveat)                                                           |
+| `running`       | int  | persisted sessions in `running` status. `galley status` is a direct SQLite rollup, not a live RunnerManager dashboard; GUI transient statuses usually persist as `idle`, so this often reads as 0. Use `session follow/watch`, `project follow`, or the GUI for live work. |
+| `waitingInput`  | int  | persisted sessions with `waiting_approval` status (same persistence caveat)                        |
+| `errored`       | int  | persisted sessions in `error` status (same persistence caveat)                                     |
 
 ### 5.7 · `galley health`
 
-Health probe. B1 ships a partial set — filesystem / SQLite-checkable
-rows are real; Python-dependent rows (`agentmain_import`,
-`llm_session_init`) report `deferred_b4` until B4 daemon mode ships.
+Health probe. The CLI reports SQLite/config checks directly. The historical
+Python-dependent ids (`agentmain_import`, `llm_session_init`) remain in the
+response for stable parser shape, but currently report `deferred_b4`; treat
+that as "not checked by this command", not as a live B4 milestone promise.
 
 ```bash
 $ galley health
@@ -582,8 +580,8 @@ $ galley health
   {"id":"db_readable","status":"ok","detail":"/Users/.../workbench.db"},
   {"id":"ga_path","status":"ok","detail":"/Users/.../GenericAgent"},
   {"id":"mykey_py","status":"ok","detail":"/Users/.../mykey.py"},
-  {"id":"agentmain_import","status":"deferred_b4","detail":"requires runner spawn — see B4 daemon"},
-  {"id":"llm_session_init","status":"deferred_b4","detail":"requires runner spawn — see B4 daemon"}
+  {"id":"agentmain_import","status":"deferred_b4","detail":"not currently probed by galley health"},
+  {"id":"llm_session_init","status":"deferred_b4","detail":"not currently probed by galley health"}
 ]}
 ```
 
@@ -608,12 +606,13 @@ Probe id catalogue (will grow):
 | `db_readable`       | `SELECT 1` against the resolved DB path                                                              |
 | `ga_path`           | `prefs.ga_config.gaPath` is set + the path resolves to a directory                                   |
 | `mykey_py`          | gated on `ga_path`; checks `<ga_path>/mykey.py` is a file                                            |
-| `agentmain_import`  | B4 — `python -c "import agentmain"` against the bundled / user Python                                |
-| `llm_session_init`  | B4 — instantiate one LLM session, capture the API-key resolution error if any                        |
+| `agentmain_import`  | currently deferred; import validation happens when a runner starts or a deeper runtime check is added |
+| `llm_session_init`  | currently deferred; model connection validation belongs to Models setup / live runner startup         |
 
 Pattern: agents should branch on the `status` value (`ok` / `warn` /
-`fail` actionable; `deferred_b4` indicates "Galley can't currently check
-this — trust other signals or wait for B4").
+`fail` actionable; `deferred_b4` indicates "this command does not currently
+check that dependency — use setup screens, model probes, or live runner
+startup as the stronger signal").
 
 ### 5.8 · `galley session new "<task>" [--runtime=current|managed|external] [--project=<id>] [--llm=<name>] [--supervisor=<x>] [--reason=<y>]`
 
@@ -1163,9 +1162,30 @@ Task statuses: `open`, `claimed`, `running`, `completed`, `blocked`,
 Appends to the Goal audit stream. Event types: `plan`, `claim`, `progress`,
 `result`, `conflict`, `synthesis`, `system`.
 
-Goal task/event commands use `ownerSessionId` / `authorSessionId` as their
-worker authorship. They do not write the ordinary `Origin` record used by
-human/Supervisor session and project commands.
+Goal task/event/deliverable commands use `ownerSessionId` /
+`authorSessionId` as their worker authorship. They do not write the ordinary
+`Origin` record used by human/Supervisor session and project commands.
+
+#### `galley goal deliverable get <goal-id>` / `galley goal deliverable set <goal-id> "<content>" [--note=<text>] [--author-session=<session-id>]`
+
+Goal deliverables are the append-only "current best result" anchor for a Goal.
+The controller and Master use this anchor so a long Goal does not rely on
+scrollback archaeology to find the latest synthesized result.
+
+`get` prints the highest-version `GoalDeliverable` as JSON. If no anchor exists
+yet, stdout is empty and the command exits 0.
+
+`set` appends a new version and returns it:
+
+```json
+{"id":"gdel_...","goalId":"goal_...","version":3,
+ "content":"...","note":"folded reviewer fixes",
+ "authorSessionId":"sess_master","createdAt":"2026-06-16T...Z"}
+```
+
+Fields: `id`, `goalId`, `version`, `content`, `note?`,
+`authorSessionId?`, `createdAt`. Core caps stored `content` at 256 KiB and
+adds a truncation marker to `note` if the cap is hit.
 
 Exit codes: `0` success / `2 invalid_args` (empty objective/title/body, token
 mismatch, expired proposal, unclaimable task) / `3 not_found` / `4
@@ -1246,7 +1266,7 @@ Wire example:
 
 ## 7 · Versioning
 
-`schemaVersion: 1` is **frozen for v0.2.0** (B4 M6). The rules in §1
+`schemaVersion: 1` is **frozen for the v0.2.x line**. The rules in §1
 apply.
 
 Inside `schemaVersion: 1`:
@@ -1275,11 +1295,11 @@ to speak. The socket `version` command returns the server's accepted
 schema version. Future binaries that speak multiple versions will
 expose this as an array.
 
-## 8 · Planned (future B-phases)
+## 8 · Deferred v1 Additions
 
-The following are intentionally **not in `schemaVersion: 1` CLI surface
-yet** — mentioned here so SOPs can plan their integration shape.
-Additions will be non-breaking inside `schemaVersion: 1` per §7.
+The following are intentionally **not in the current CLI surface yet** —
+mentioned here so SOPs can plan their integration shape. Additions will be
+non-breaking inside `schemaVersion: 1` per §7.
 
 - `galley session kill <id>` — runner Shutdown (vs `session stop` which
   Aborts the turn but keeps the bridge alive). Deferred to a future release,
@@ -1295,9 +1315,11 @@ Additions will be non-breaking inside `schemaVersion: 1` per §7.
   cache fills" command, for SOPs that don't want to rely on the GUI
   having been opened.
 
-All future write commands will accept `--supervisor=<x>` /
-`--reason=<y>` flags following the same Origin convention `session send`
-uses today (§5.5a). Read commands stay flag-light.
+Future human/Supervisor-facing session and project write commands should accept
+`--supervisor=<x>` / `--reason=<y>` flags following the same Origin convention
+`session send` uses today (§5.5a). Goal-internal task/event/deliverable writes
+remain authored by `ownerSessionId` / `authorSessionId` instead. Read commands
+stay flag-light.
 
 ### 8A · `GalleyApi` trait surface (B3 M4a)
 

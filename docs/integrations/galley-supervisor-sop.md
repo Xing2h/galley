@@ -119,7 +119,8 @@ While a Goal is running:
 - Tell the user they can find the active Goal from Galley's top bar, then open
   the Project or latest session from there.
 
-Goal worker protocol is Core-owned. Workers coordinate through:
+Goal worker protocol is Core-owned. Workers coordinate through the task board,
+event stream, and a single current-best deliverable anchor:
 
 ```bash
 "$GALLEY" goal status <goal-id>
@@ -127,6 +128,10 @@ Goal worker protocol is Core-owned. Workers coordinate through:
 "$GALLEY" goal task claim <task-id> --owner-session=<session-id>
 "$GALLEY" goal task complete <task-id> --result-summary="<summary>"
 "$GALLEY" goal event post <goal-id> --event-type=progress "<body>"
+"$GALLEY" goal deliverable get <goal-id>
+"$GALLEY" goal deliverable set <goal-id> "<current best result>" \
+  --note="<what changed>" \
+  --author-session=<session-id>
 ```
 
 The default Goal write mode is autonomous, but it is not a blanket approval.
@@ -384,6 +389,7 @@ All commands support `--help`.
 | `"$GALLEY" project show <id> --tail=20` | Project sessions plus transcript tails |
 | `"$GALLEY" project follow <id> --tail=10 --until-idle --final-show` | Follow a Project-backed session group until all child sessions are idle, then emit final context |
 | `"$GALLEY" goal status <id>` | Goal state, task board, events, and Project sessions |
+| `"$GALLEY" goal deliverable get <id>` | Current best Goal deliverable anchor; empty stdout when none exists |
 | `"$GALLEY" llm list` | Available LLMs |
 | `"$GALLEY" health` | Troubleshooting |
 
@@ -402,6 +408,7 @@ All commands support `--help`.
 | `"$GALLEY" goal propose "<objective>" --supervisor=<id> --reason=<why>` | Prepare a pending Goal; does not start work |
 | `"$GALLEY" goal run --proposal=<id> --confirm-token=<token> --supervisor=<id> --reason=<why>` | Start the blocking Goal controller after the user replies `确认启动 Goal` |
 | `"$GALLEY" goal stop <id> --supervisor=<id> --reason=<why>` | Request a graceful Goal stop |
+| `"$GALLEY" goal deliverable set <id> "<content>" --note="<summary>" --author-session=<session-id>` | Append a new current-best Goal deliverable anchor |
 | `"$GALLEY" llm set <session-id> "<llm-name>"` | Switch a session's LLM |
 | `"$GALLEY" project delete <id> --supervisor=<id> --reason=<why>` | Delete project; sessions survive but become unassigned |
 

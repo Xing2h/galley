@@ -10,9 +10,8 @@ pub enum HealthStatus {
     Warn,
     /// Hard failure — the probed dependency is unavailable.
     Fail,
-    /// B1 SQLite-only health implementation can't actually probe this
-    /// (e.g. spawning Python to validate GA imports). Real probe lands
-    /// in B4 daemon stage.
+    /// Stable legacy deferral value for checks this command does not
+    /// currently perform, such as spawning Python to validate GA imports.
     DeferredB4,
 }
 
@@ -28,8 +27,8 @@ pub struct HealthCheck {
     pub detail: Option<String>,
 }
 
-/// Aggregate health report. B1 surfaces a partial set; B4 fills in the
-/// Python-dependent probes.
+/// Aggregate health report. SQLite/config checks are concrete; Python-
+/// dependent ids may remain present as `DeferredB4` for stable parser shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthReport {

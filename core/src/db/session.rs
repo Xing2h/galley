@@ -245,13 +245,10 @@ impl SqliteGalley {
     }
 
     pub(super) async fn status_db(&self) -> Result<StatusSummary> {
-        // Persistence reality check: GUI only persists durable statuses
-        // (archived / completed / cancelled), coercing transient ones
-        // (running / waiting_approval / error) to "idle" before write
-        // (see gui/src/lib/db.ts `persistableStatus`). So running/
-        // waiting_input/errored will usually read as 0 here unless we
-        // catch a write race. Real runtime counts will land via the
-        // runner-manager (B2+); B1 surfaces the persisted truth.
+        // Persistence reality check: this is a direct SQLite rollup,
+        // not a live RunnerManager dashboard. GUI transient statuses
+        // are normally mirrored in-memory and persisted as "idle", so
+        // running/waiting_input/errored often read as 0 here.
         let counts: StatusCounts = sqlx::query_as(
             "SELECT \
                COUNT(*) AS total, \
@@ -358,18 +355,20 @@ impl SqliteGalley {
             }
         }
 
-        // 4. agentmain importable — needs a Python spawn. B4.
+        // 4. agentmain importable — kept as a stable check id, but
+        // this command does not currently spawn Python.
         checks.push(HealthCheck {
             id: "agentmain_import".into(),
             status: HealthStatus::DeferredB4,
-            detail: Some("requires runner spawn — see B4 daemon".into()),
+            detail: Some("not currently probed by galley health".into()),
         });
 
-        // 5. LLM session init — also a Python probe. B4.
+        // 5. LLM session init — kept as a stable check id; deeper
+        // validation happens through Models setup or live runner start.
         checks.push(HealthCheck {
             id: "llm_session_init".into(),
             status: HealthStatus::DeferredB4,
-            detail: Some("requires runner spawn — see B4 daemon".into()),
+            detail: Some("not currently probed by galley health".into()),
         });
 
         Ok(HealthReport { checks })

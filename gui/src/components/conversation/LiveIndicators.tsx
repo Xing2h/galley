@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
  * another chunk" experience the user reported. The cursor keeps a
  * liveness signal on screen during the gap between pushes.
  *
- * Real fix (token-level streaming) requires a GA-side change —
- * tracked separately. This is the UI-side mitigation only.
+ * A deeper fix requires a GA-side streaming-granularity change. This is
+ * the UI-side mitigation only.
  *
  * Width 2px / height 1em matches a thin caret; brand-tinted at 70%
  * so it reads as agentic, not a system caret.

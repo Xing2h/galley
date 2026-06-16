@@ -35,8 +35,8 @@ pub(crate) enum Command {
     /// Aggregate counts: total / running / waiting_input / errored.
     Status,
 
-    /// Run the partial B1 health probe (SQLite-checkable rows only;
-    /// Python-dependent rows surface as `deferred_b4`).
+    /// Run local health probes. Python-dependent rows currently surface
+    /// as the stable legacy value `deferred_b4`.
     Health,
 
     /// Print the CLI + schema version.
