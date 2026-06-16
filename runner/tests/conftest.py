@@ -1,11 +1,13 @@
 """Pytest fixtures: ensure GA is importable from sys.path.
 
-The bridge package imports GA modules (`agent_loop`, `ga`). We never copy
-or vendor GA; we put its install path on sys.path at test startup.
+The bridge package imports GA modules (`agent_loop`, `ga`). Tests prefer the
+user's external GA when explicitly provided, but CI can use Galley's pinned
+managed GA payload so unit tests do not depend on a checkout outside the repo.
 
 GA path resolves in this order:
   1. GA_PATH environment variable
   2. ~/Documents/GenericAgent (user's local install)
+  3. managed-ga/code (repo-pinned managed runtime payload)
 
 Tests that don't need GA still load fine (the path is just prepended;
 imports happen lazily). Tests that need GA fail with a clear ImportError
@@ -17,13 +19,23 @@ import os
 import sys
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _is_ga_path(path: Path) -> bool:
+    return path.is_dir() and (path / "agent_loop.py").is_file() and (path / "ga.py").is_file()
+
 
 def _resolve_ga_path() -> str | None:
     env = os.environ.get("GA_PATH")
     if env:
-        return env if Path(env).is_dir() else None
+        path = Path(env)
+        return str(path) if _is_ga_path(path) else None
     default = Path.home() / "Documents" / "GenericAgent"
-    return str(default) if default.is_dir() else None
+    if _is_ga_path(default):
+        return str(default)
+    managed = _REPO_ROOT / "managed-ga" / "code"
+    return str(managed) if _is_ga_path(managed) else None
 
 
 _GA_PATH = _resolve_ga_path()

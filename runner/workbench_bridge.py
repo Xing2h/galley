@@ -538,7 +538,7 @@ class Bridge:
         self.agent.next_llm(self._initial_llm_index())
         if managed_runtime.is_managed_runtime():
             self._install_managed_prompt_profile()
-        # verbose=True enables GA's per-token LLM streaming
+        # verbose=True enables GA's incremental LLM display streaming
         # (`yield from response_gen` in agent_loop.py). With it off,
         # agent_loop drains the LLM generator silently and yields the
         # full response only at turn end — the conversation reads as
@@ -570,7 +570,7 @@ class Bridge:
         # module isn't bundled with the user's GA install (older
         # baselines / partial checkouts) — /btw degrades gracefully
         # to a plain prompt rather than 500-ing.
-        self._btw_handler: Any = None
+        self._btw_handler = None
         try:
             import btw_cmd  # type: ignore[import-not-found]
 
