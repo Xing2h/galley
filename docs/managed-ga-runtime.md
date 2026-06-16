@@ -612,13 +612,21 @@ Langfuse, or arbitrary GA template fields in first-run onboarding. Those can
 become advanced Settings later if there is real demand.
 
 Managed Channels is the first advanced Settings exception. It lives under
-Settings -> Channels, not Onboarding. Phase 1 exposes only WeChat and keeps the
-user flow to: connect, scan, chat. Galley owns the process, state paths,
-bundled dependencies, managed model config, and managed prompt injection.
+Settings -> Channels, not Onboarding. WeChat keeps the user flow to: connect,
+scan, chat. Feishu targets personal users and small teams: users create an
+internal app in Feishu Open Platform, paste App ID / App Secret into Galley,
+and Galley owns the process, state paths, bundled dependencies, managed model
+config, and managed prompt injection.
 
 WeChat token, QR image, and logs live under Galley's managed state
 `managed-ga-state/im/wechat/`. The official GA default `~/.wxbot/token.json`
 must not be used by Galley's managed launcher.
+
+Feishu App Secret uses Galley's local encrypted secret store. Feishu media temp
+files and logs live under `managed-ga-state/im/feishu/`; the managed launcher
+injects app config into the child process and must not write `mykey.py` /
+`mykey.json` into the bundled GA code payload or a user-owned external GA
+checkout.
 
 Attach mode never reads Galley's model records, and managed mode never reads the
 user's external GA `mykey.py`. Keeping model ownership separate is part of the

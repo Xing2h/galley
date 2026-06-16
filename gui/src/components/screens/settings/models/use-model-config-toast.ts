@@ -38,8 +38,17 @@ export function useModelConfigSavedToast() {
         );
       };
 
-      void getImSupervisorStatus("wechat")
-        .then((status) => push(status.enabled))
+      void Promise.allSettled([
+        getImSupervisorStatus("wechat"),
+        getImSupervisorStatus("feishu"),
+      ])
+        .then((results) =>
+          push(
+            results.some(
+              (result) => result.status === "fulfilled" && result.value.enabled,
+            ),
+          ),
+        )
         .catch(() => push(false));
     },
     [copy],

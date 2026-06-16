@@ -3,10 +3,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   getImSupervisorStatus,
+  type ImSupervisorPlatform,
   type ImSupervisorStatus,
 } from "@/lib/im-supervisor";
 
-export function useImSupervisorStatus(platform: "wechat", enabled = true) {
+export function useImSupervisorStatus(
+  platform: ImSupervisorPlatform,
+  enabled = true,
+) {
   const [status, setStatus] = useState<ImSupervisorStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 

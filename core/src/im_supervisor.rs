@@ -1,9 +1,10 @@
 //! Galley-managed IM Supervisor process management.
 //!
-//! Phase 1 supports WeChat. The process is Galley-owned managed runtime state,
-//! not an external GenericAgent checkout.
+//! The process is Galley-owned managed runtime state, not an external
+//! GenericAgent checkout.
 
 use crate::api::GalleyApi;
+use crate::credential_store;
 use crate::db::SqliteGalley;
 use crate::managed_model_config;
 use crate::managed_prompt;
@@ -24,8 +25,12 @@ use tokio::time::{sleep, Duration};
 
 const EVENT_NAME: &str = "im-supervisor-updated";
 const WECHAT: &str = "wechat";
+const FEISHU: &str = "feishu";
 const WECHAT_PREF: &str = "im_supervisor_wechat";
-const PLATFORMS: [&str; 1] = [WECHAT];
+const FEISHU_PREF: &str = "im_supervisor_feishu";
+const FEISHU_CONFIG_PREF: &str = "im_supervisor_feishu_config";
+const FEISHU_SECRET_REF: &str = "im-supervisor:feishu:app-secret";
+const PLATFORMS: [&str; 2] = [WECHAT, FEISHU];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -33,6 +38,7 @@ pub enum ImSupervisorState {
     NotConnected,
     Starting,
     WaitingScan,
+    Reconnecting,
     Running,
     Expired,
     Error,
@@ -76,6 +82,28 @@ struct ImSupervisorPref {
     enabled: bool,
     auto_start: bool,
     model_config_revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FeishuConfigPref {
+    app_id: String,
+    updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeishuImConfig {
+    pub app_id: String,
+    pub has_app_secret: bool,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveFeishuImConfigInput {
+    pub app_id: String,
+    pub app_secret: Option<String>,
 }
 
 struct ProcessSlot {
@@ -140,6 +168,7 @@ impl ImSupervisorManager {
                 status.state,
                 ImSupervisorState::Starting
                     | ImSupervisorState::WaitingScan
+                    | ImSupervisorState::Reconnecting
                     | ImSupervisorState::Running
             ) {
                 if !relogin && !force_restart {
@@ -154,16 +183,6 @@ impl ImSupervisorManager {
         }
 
         let model_config_revision = read_model_config_revision().await;
-        write_pref(
-            platform,
-            ImSupervisorPref {
-                enabled: true,
-                auto_start: true,
-                model_config_revision: model_config_revision.clone(),
-            },
-        )
-        .await?;
-
         let context = prepare_managed_runtime_context(&app, None)
             .await
             .map_err(|e| e.to_string())?;
@@ -171,8 +190,10 @@ impl ImSupervisorManager {
         let state_dir = state_root.join("im").join(platform);
         let sop_path = materialize_sop_reference(&state_root).map_err(|e| e.to_string())?;
         std::fs::create_dir_all(&state_dir).map_err(|e| e.to_string())?;
-        remove_wechat_qr_files(&state_dir);
-        if relogin {
+        if platform == WECHAT {
+            remove_wechat_qr_files(&state_dir);
+        }
+        if platform == WECHAT && relogin {
             let _ = std::fs::remove_file(state_dir.join("token.json"));
         }
 
@@ -184,6 +205,7 @@ impl ImSupervisorManager {
         ));
         env.push(("GALLEY_SUPERVISOR_SOP_PATH".into(), sop_path_str));
         env.push(("GALLEY_IM_PLATFORM".into(), platform.into()));
+        append_platform_env(platform, &mut env).await?;
 
         let python = managed_python_for_app(&app)?;
         let code_root = context.diagnostics.paths.code_root.clone();
@@ -217,6 +239,15 @@ impl ImSupervisorManager {
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("starting managed IM supervisor failed: {e}"))?;
+        let pref = ImSupervisorPref {
+            enabled: true,
+            auto_start: true,
+            model_config_revision: model_config_revision.clone(),
+        };
+        if let Err(e) = write_pref(platform, pref).await {
+            let _ = child.start_kill();
+            return Err(e);
+        }
         let pid = child.id();
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -321,9 +352,13 @@ impl ImSupervisorManager {
             },
         )
         .await?;
-        if let Ok(state_dir) = wechat_state_dir(&app) {
-            let _ = std::fs::remove_file(state_dir.join("token.json"));
-            remove_wechat_qr_files(&state_dir);
+        if platform == WECHAT {
+            if let Ok(state_dir) = im_state_dir(&app, WECHAT) {
+                let _ = std::fs::remove_file(state_dir.join("token.json"));
+                remove_wechat_qr_files(&state_dir);
+            }
+        } else if platform == FEISHU {
+            let _ = delete_feishu_im_config().await;
         }
         let status = ImSupervisorStatus {
             platform: platform.into(),
@@ -342,9 +377,11 @@ impl ImSupervisorManager {
     }
 
     pub async fn autostart(self: Arc<Self>, app: AppHandle) {
-        let pref = read_pref(WECHAT).await;
-        if pref.enabled && pref.auto_start {
-            let _ = self.start(app, WECHAT.into(), false).await;
+        for platform in PLATFORMS {
+            let pref = read_pref(platform).await;
+            if pref.enabled && pref.auto_start {
+                let _ = self.start(app.clone(), platform.into(), false).await;
+            }
         }
     }
 
@@ -565,9 +602,22 @@ impl ImSupervisorManager {
     ) -> Result<ImSupervisorStatus, String> {
         let pref = read_pref(platform).await;
         let current_revision = read_model_config_revision().await;
-        let state_dir = wechat_state_dir(app)?;
-        let token_exists = state_dir.join("token.json").is_file();
-        let qr_path = latest_wechat_qr_path(&state_dir);
+        let state_dir = im_state_dir(app, platform)?;
+        let (state, qr_path) = if platform == WECHAT {
+            let token_exists = state_dir.join("token.json").is_file();
+            (
+                if token_exists {
+                    ImSupervisorState::Stopped
+                } else {
+                    ImSupervisorState::NotConnected
+                },
+                latest_wechat_qr_path(&state_dir),
+            )
+        } else if feishu_config_ready().await {
+            (ImSupervisorState::Stopped, None)
+        } else {
+            (ImSupervisorState::NotConnected, None)
+        };
         let model_config_stale = model_config_stale(
             pref.model_config_revision.as_ref(),
             current_revision.as_ref(),
@@ -575,11 +625,7 @@ impl ImSupervisorManager {
         );
         Ok(ImSupervisorStatus {
             platform: platform.into(),
-            state: if token_exists {
-                ImSupervisorState::Stopped
-            } else {
-                ImSupervisorState::NotConnected
-            },
+            state,
             enabled: pref.enabled,
             pid: None,
             bot_id: None,
@@ -595,7 +641,7 @@ impl ImSupervisorManager {
         if platform != WECHAT {
             return None;
         }
-        latest_wechat_qr_path(&wechat_state_dir(app).ok()?)
+        latest_wechat_qr_path(&im_state_dir(app, WECHAT).ok()?)
             .map(|path| path.to_string_lossy().into_owned())
     }
 }
@@ -635,8 +681,127 @@ fn latest_wechat_qr_path(state_dir: &Path) -> Option<PathBuf> {
 fn normalize_platform(platform: &str) -> Result<&'static str, String> {
     match platform.trim().to_ascii_lowercase().as_str() {
         WECHAT => Ok(WECHAT),
+        FEISHU => Ok(FEISHU),
         other => Err(format!("unsupported IM platform: {other}")),
     }
+}
+
+pub async fn get_feishu_im_config() -> Result<FeishuImConfig, String> {
+    read_feishu_im_config().await
+}
+
+pub async fn save_feishu_im_config(
+    input: SaveFeishuImConfigInput,
+) -> Result<FeishuImConfig, String> {
+    let app_id = input.app_id.trim();
+    if app_id.is_empty() {
+        return Err("Feishu App ID is required".into());
+    }
+
+    let galley = SqliteGalley::open().await.map_err(|e| e.to_string())?;
+    let secret = input
+        .app_secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(secret) = secret {
+        credential_store::set_secret(&galley, FEISHU_SECRET_REF, secret)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    let has_secret = feishu_has_secret(&galley).await;
+    if !has_secret {
+        return Err("Feishu App Secret is required".into());
+    }
+
+    let pref = FeishuConfigPref {
+        app_id: app_id.to_string(),
+        updated_at: Some(now_iso()),
+    };
+    galley
+        .set_pref_json(FEISHU_CONFIG_PREF, json!(pref))
+        .await
+        .map_err(|e| e.to_string())?;
+    read_feishu_im_config_with(&galley).await
+}
+
+pub async fn delete_feishu_im_config() -> Result<FeishuImConfig, String> {
+    let galley = SqliteGalley::open().await.map_err(|e| e.to_string())?;
+    credential_store::delete_secret(&galley, FEISHU_SECRET_REF)
+        .await
+        .map_err(|e| e.to_string())?;
+    galley
+        .set_pref_json(FEISHU_CONFIG_PREF, json!(FeishuConfigPref::default()))
+        .await
+        .map_err(|e| e.to_string())?;
+    read_feishu_im_config_with(&galley).await
+}
+
+async fn append_platform_env(
+    platform: &str,
+    env: &mut Vec<(String, String)>,
+) -> Result<(), String> {
+    if platform != FEISHU {
+        return Ok(());
+    }
+    let galley = SqliteGalley::open().await.map_err(|e| e.to_string())?;
+    let config = read_feishu_config_pref(&galley).await?;
+    let app_id = config.app_id.trim();
+    if app_id.is_empty() {
+        return Err("Feishu App ID and App Secret are required before connecting".into());
+    }
+    let app_secret = credential_store::get_secret(&galley, FEISHU_SECRET_REF)
+        .await
+        .map_err(|_| "Feishu App ID and App Secret are required before connecting".to_string())?;
+    if app_secret.trim().is_empty() {
+        return Err("Feishu App ID and App Secret are required before connecting".into());
+    }
+    let config_json = serde_json::to_string(&json!({
+        "fs_app_id": app_id,
+        "fs_app_secret": app_secret,
+        "fs_allowed_users": [],
+    }))
+    .map_err(|e| e.to_string())?;
+    env.push(("GALLEY_FEISHU_CONFIG_JSON".into(), config_json));
+    Ok(())
+}
+
+async fn feishu_config_ready() -> bool {
+    read_feishu_im_config()
+        .await
+        .map(|config| !config.app_id.trim().is_empty() && config.has_app_secret)
+        .unwrap_or(false)
+}
+
+async fn read_feishu_im_config() -> Result<FeishuImConfig, String> {
+    let galley = SqliteGalley::open().await.map_err(|e| e.to_string())?;
+    read_feishu_im_config_with(&galley).await
+}
+
+async fn read_feishu_im_config_with(galley: &SqliteGalley) -> Result<FeishuImConfig, String> {
+    let pref = read_feishu_config_pref(galley).await?;
+    Ok(FeishuImConfig {
+        app_id: pref.app_id,
+        has_app_secret: feishu_has_secret(galley).await,
+        updated_at: pref.updated_at,
+    })
+}
+
+async fn read_feishu_config_pref(galley: &SqliteGalley) -> Result<FeishuConfigPref, String> {
+    let value = galley
+        .get_pref_json(FEISHU_CONFIG_PREF)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(value
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default())
+}
+
+async fn feishu_has_secret(galley: &SqliteGalley) -> bool {
+    credential_store::get_secret(galley, FEISHU_SECRET_REF)
+        .await
+        .map(|secret| !secret.trim().is_empty())
+        .unwrap_or(false)
 }
 
 async fn read_pref(platform: &str) -> ImSupervisorPref {
@@ -685,6 +850,7 @@ fn model_config_stale(
 fn pref_key(platform: &str) -> Option<&'static str> {
     match platform {
         WECHAT => Some(WECHAT_PREF),
+        FEISHU => Some(FEISHU_PREF),
         _ => None,
     }
 }
@@ -697,11 +863,11 @@ fn materialize_sop_reference(state_root: &Path) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
-fn wechat_state_dir(app: &AppHandle) -> Result<PathBuf, String> {
+fn im_state_dir(app: &AppHandle, platform: &str) -> Result<PathBuf, String> {
     let diagnostics = managed_runtime::ensure_for_app(app).map_err(|e| e.to_string())?;
     Ok(PathBuf::from(diagnostics.paths.state_root)
         .join("im")
-        .join(WECHAT))
+        .join(platform))
 }
 
 fn managed_python_for_app(app: &AppHandle) -> Result<String, String> {
@@ -733,9 +899,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalize_platform_accepts_wechat_only() {
+    fn normalize_platform_accepts_supported_platforms() {
         assert_eq!(normalize_platform("wechat").unwrap(), WECHAT);
         assert_eq!(normalize_platform(" WeChat ").unwrap(), WECHAT);
+        assert_eq!(normalize_platform("feishu").unwrap(), FEISHU);
+        assert_eq!(normalize_platform(" FeiShu ").unwrap(), FEISHU);
         assert!(normalize_platform("telegram").is_err());
     }
 

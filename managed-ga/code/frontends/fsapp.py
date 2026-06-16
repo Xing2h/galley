@@ -98,7 +98,7 @@ _FILE_TYPE_MAP = {
 }
 _MSG_TYPE_MAP = {"image": "[image]", "audio": "[audio]", "file": "[file]", "media": "[media]", "sticker": "[sticker]"}
 
-TEMP_DIR = os.path.join(PROJECT_ROOT, "temp")
+TEMP_DIR = os.environ.get("GALLEY_FEISHU_TEMP_DIR") or os.path.join(PROJECT_ROOT, "temp")
 MEDIA_DIR = os.path.join(TEMP_DIR, "feishu_media")
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
@@ -327,9 +327,67 @@ agent_error = None
 agent_thread = None
 client, user_tasks, app = None, {}, None
 agent_lock = threading.Lock()
+GALLEY_STARTUP_FAILURE_LIMIT = 3
+_galley_connected_once = False
+
+
+def _emit_galley_status(state, last_error=None):
+    hook = globals().get("GALLEY_STATUS_HOOK")
+    if callable(hook):
+        hook(state, last_error)
+
+
+def _assert_galley_lark_ws_contract(cli):
+    missing = [
+        name
+        for name in ("_connect", "_try_connect", "on_reconnecting", "on_reconnected")
+        if not hasattr(cli, name)
+    ]
+    if missing:
+        raise RuntimeError(
+            "lark-oapi websocket API changed; Galley Feishu Channel depends on "
+            f"lark-oapi 1.6.8 hooks/private seams ({', '.join(missing)} missing). "
+            "Verify Feishu connection status hooks before upgrading lark-oapi."
+        )
+
+
+class GalleyStatusWsClient(lark.ws.Client):
+    async def _connect(self):
+        # lark-oapi 1.6.8 exposes reconnect lifecycle hooks, but not a first
+        # successful-connect hook. Keep this private seam small and verify it in
+        # _assert_galley_lark_ws_contract before starting the client.
+        global _galley_connected_once
+        was_connected = _galley_connected_once
+        await super()._connect()
+        if getattr(self, "_conn", None) is not None:
+            _galley_connected_once = True
+            self._auto_reconnect = True
+            if not was_connected:
+                _emit_galley_status("running")
+
+    async def _try_connect(self, cnt):
+        # Keep running sessions self-healing: some lark-oapi reconnect failures
+        # raise instead of returning False, which would stop the receive task.
+        try:
+            ok = await super()._try_connect(cnt)
+        except Exception as e:
+            _emit_galley_status("reconnecting", str(e))
+            return False
+        if not ok:
+            _emit_galley_status("reconnecting", f"Feishu reconnect attempt {cnt + 1} failed")
+        return ok
 
 
 def _load_config():
+    raw = os.environ.get("GALLEY_FEISHU_CONFIG_JSON")
+    if raw is not None:
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                return data, "<galley-managed-feishu-config>"
+        except Exception as e:
+            raise RuntimeError(f"load Galley Feishu config failed: {e}") from e
+        raise RuntimeError("Galley Feishu config must be a JSON object")
     path = _resolve_mykey_path()
     if not path or not path.exists():
         return {}, str(path or "")
@@ -848,14 +906,33 @@ def main():
     global client, APP_ID, APP_SECRET, ALLOWED_USERS, PUBLIC_ACCESS, CONFIG_PATH
     APP_ID, APP_SECRET, ALLOWED_USERS, PUBLIC_ACCESS, CONFIG_PATH = _feishu_config()
     if not APP_ID or not APP_SECRET:
-        print(f"错误: 请在 mykey 配置中填写 fs_app_id 和 fs_app_secret\n配置文件: {CONFIG_PATH}", flush=True)
-        sys.exit(1)
+        message = f"请在 mykey 配置中填写 fs_app_id 和 fs_app_secret\n配置文件: {CONFIG_PATH}"
+        print(f"错误: {message}", flush=True)
+        _emit_galley_status("error", message)
+        return 1
     handler = lark.EventDispatcherHandler.builder("", "").register_p2_im_message_receive_v1(handle_message).build()
     retry_delay = 5
+    startup_failures = 0
     while True:
         try:
             client = create_client()
-            cli = lark.ws.Client(APP_ID, APP_SECRET, event_handler=handler, log_level=lark.LogLevel.INFO)
+            cli = GalleyStatusWsClient(
+                APP_ID,
+                APP_SECRET,
+                event_handler=handler,
+                log_level=lark.LogLevel.INFO,
+                auto_reconnect=False,
+            )
+            try:
+                _assert_galley_lark_ws_contract(cli)
+            except RuntimeError as e:
+                _emit_galley_status("error", str(e))
+                return 1
+            cli.on_reconnecting = lambda: _emit_galley_status(
+                "reconnecting",
+                "Feishu long connection disconnected",
+            )
+            cli.on_reconnected = lambda: _emit_galley_status("running")
             print("=" * 50 + "\n飞书 Agent 已启动（长连接模式）\n" + f"App ID: {APP_ID}\n配置: {CONFIG_PATH}\n等待消息...\n" + "=" * 50, flush=True)
             cli.start()
             retry_delay = 5
@@ -864,6 +941,12 @@ def main():
         except Exception as e:
             print(f"[WARN] 飞书长连接断开或启动失败: {e}", flush=True)
             traceback.print_exc()
+            if not _galley_connected_once:
+                startup_failures += 1
+                if startup_failures >= GALLEY_STARTUP_FAILURE_LIMIT:
+                    _emit_galley_status("error", str(e))
+                    return 1
+            _emit_galley_status("reconnecting", str(e))
         print(f"[INFO] {retry_delay}s 后重连飞书长连接...", flush=True)
         time.sleep(retry_delay)
         retry_delay = min(retry_delay * 2, 120)
@@ -877,4 +960,4 @@ if __name__ == "__main__":
     if args.check or args.check_agent:
         print(json.dumps(check_config(init_agent=args.check_agent), ensure_ascii=False, indent=2), flush=True)
     else:
-        main()
+        raise SystemExit(main())

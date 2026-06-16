@@ -32,6 +32,7 @@ GA_DEPS=(
   "qrcode[pil]==8.2"
   "pycryptodome==3.23.0"
   "python-dotenv==1.2.1"
+  "lark-oapi==1.6.8"
 )
 
 ARCH="${1:-}"

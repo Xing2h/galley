@@ -72,6 +72,7 @@ import aiohttp
 import bottle
 import bs4
 import dotenv
+import lark_oapi
 import qrcode
 import requests
 import simple_websocket_server
@@ -82,6 +83,7 @@ from frontends import desktop_bridge
 
 assert callable(getattr(agentmain, "GenericAgent", None))
 assert importlib.util.find_spec("frontends.wechatapp") is not None
+assert importlib.util.find_spec("frontends.fsapp") is not None
 assert AES is not None
 assert Image is not None
 assert aiohttp is not None
@@ -89,6 +91,7 @@ assert bottle is not None
 assert bs4 is not None
 assert desktop_bridge is not None
 assert dotenv is not None
+assert lark_oapi is not None
 assert qrcode is not None
 assert requests is not None
 assert simple_websocket_server is not None

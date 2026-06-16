@@ -678,6 +678,7 @@ const zhCopy = {
     im: {
       subtitle: "在聊天软件里和 Galley 对话",
       wechatTitle: "微信",
+      feishuTitle: "飞书",
       setupSteps: [
         "用手机微信扫描二维码完成接入。",
         "接入完成后，直接在微信里给 Galley 发消息。",
@@ -688,9 +689,138 @@ const zhCopy = {
         "Galley 会在本机处理请求，并把结果回复到微信。",
         "保持 Galley 运行，微信入口会持续可用。",
       ],
+      feishuSetupSections: [
+        {
+          title: "飞书开放平台 · 准备应用",
+          steps: [
+            {
+              parts: [
+                { text: "打开 " },
+                { text: "飞书开放平台", emphasis: true },
+                { text: "，创建 " },
+                { text: "企业自建应用", emphasis: true },
+                { text: "。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "添加 " },
+                { text: "机器人", emphasis: true },
+                { text: " 能力。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "进入 " },
+                { text: "权限管理 → 开通权限", emphasis: true },
+                { text: "，搜索并开通以下权限。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "复制 " },
+                { text: "App ID", code: true },
+                { text: " 和 " },
+                { text: "App Secret", code: true },
+                { text: "。" },
+              ],
+            },
+          ],
+        },
+        {
+          title: "Galley Settings · 填写凭证",
+          steps: [
+            {
+              parts: [
+                { text: "把 " },
+                { text: "App ID", code: true },
+                { text: " 和 " },
+                { text: "App Secret", code: true },
+                { text: " 粘贴到下面。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "点击 " },
+                { text: "启动飞书服务", emphasis: true },
+                { text: "。" },
+              ],
+            },
+          ],
+        },
+        {
+          title: "飞书开放平台 · 接收事件",
+          steps: [
+            {
+              parts: [
+                { text: "在 " },
+                { text: "事件订阅", emphasis: true },
+                { text: " 里选择 " },
+                { text: "长连接", emphasis: true },
+                { text: " 接收事件。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "添加 " },
+                { text: "im.message.receive_v1", code: true },
+                { text: " 事件。" },
+              ],
+            },
+            {
+              parts: [{ text: "发布应用", emphasis: true }, { text: "。" }],
+            },
+          ],
+        },
+        {
+          title: "飞书客户端 · 开始对话",
+          steps: [
+            {
+              parts: [
+                { text: "在 " },
+                { text: "飞书客户端", emphasis: true },
+                { text: " 搜索机器人。" },
+              ],
+            },
+            {
+              parts: [
+                { text: "给机器人发消息，Galley 会回复到飞书。" },
+              ],
+            },
+          ],
+        },
+      ],
+      feishuPermissions:
+        "im:message, im:message:send_as_bot, contact:user.id:readonly, im:message.p2p_msg:readonly",
+      feishuPermissionItems: [
+        {
+          name: "im:message",
+          description: "获取与发送单聊、群组消息",
+        },
+        {
+          name: "im:message:send_as_bot",
+          description: "以应用身份发送消息",
+        },
+        {
+          name: "contact:user.id:readonly",
+          description: "获取用户 ID",
+        },
+        {
+          name: "im:message.p2p_msg:readonly",
+          description: "接收用户发给机器人的单聊消息",
+        },
+      ],
+      copyFeishuPermissions: "复制全部",
+      feishuPermissionsCopied: "已复制",
+      feishuConnectedSteps: [
+        "在飞书里给机器人发消息。",
+        "保持 Galley 运行，飞书入口会持续可用。",
+        "组织内成员都可以使用这个入口。",
+      ],
       notConnected: "未接入",
       starting: "正在接入",
       waitingScan: "等待扫码",
+      reconnecting: "正在重连",
       running: "已接入",
       expired: "接入已失效",
       error: "异常",
@@ -702,7 +832,23 @@ const zhCopy = {
       expiredHint: "微信接入已失效，需要重新接入。",
       errorHint: "微信接入异常，可以重试。",
       stoppedHint: "已暂停接收微信消息。",
+      feishuNotConnectedHint:
+        "按步骤接入后，组织内成员可以在飞书里给 Galley 发消息。",
+      feishuStartingHint: "正在启动飞书服务。启动成功后，继续配置事件订阅。",
+      feishuReconnectingHint: "飞书连接正在重试。",
+      feishuRunningHint: "飞书已接入，可以直接在飞书里给 Galley 发消息。",
+      feishuErrorHint:
+        "接入异常。检查 App ID / App Secret、权限、事件订阅和应用发布状态后重试。",
+      feishuStoppedHint: "已暂停。点击启动飞书服务后继续接收消息。",
       connect: "接入微信",
+      feishuStartService: "启动飞书服务",
+      openFeishuConsole: "打开飞书开放平台",
+      feishuAppIdLabel: "App ID",
+      feishuAppSecretLabel: "App Secret",
+      feishuAppIdPlaceholder: "cli_xxxxxxxxxxxxxxxx",
+      feishuAppSecretPlaceholder: "粘贴 App Secret",
+      feishuSecretSavedPlaceholder: "已保存，留空保持不变",
+      feishuConfigLoading: "正在读取飞书配置…",
       continueScan: "继续扫码",
       reconnect: "重新接入",
       retry: "重试",
@@ -717,6 +863,9 @@ const zhCopy = {
       disconnectDialogTitle: "解除微信接入？",
       disconnectDialogBody:
         "这只会让 Galley 停止通过当前微信会话收发消息，不会退出你手机上的微信账号。",
+      feishuDisconnectDialogTitle: "解除飞书接入？",
+      feishuDisconnectDialogBody:
+        "这会停止飞书接入；下次重新接入需要再粘贴 App Secret。",
       restartChannelsTitle: "Channels 正在使用旧模型配置",
       restartChannelsBody:
         "重启后，已启用 Channels 会使用最新模型配置。可能中断当前回复，不会退出登录。",
@@ -725,7 +874,7 @@ const zhCopy = {
         "这会重启所有已启用的 Channels，可能中断当前回复；不会退出登录。",
       openModels: "先去配置模型",
       modelRequired:
-        "微信接入会使用 Galley 已配置的模型。接入前，需要先在 Models 里配置一个可用模型。",
+        "Channels 会使用 Galley 已配置的模型。接入前，需要先在 Models 里配置一个可用模型。",
     },
   },
   onboarding: {
@@ -1791,6 +1940,7 @@ const enCopy: AppCopy = {
     im: {
       subtitle: "Talk with Galley from your messaging apps",
       wechatTitle: "WeChat",
+      feishuTitle: "Feishu",
       setupSteps: [
         "Scan the QR code with WeChat on your phone.",
         "After connecting, send Galley a message directly in WeChat.",
@@ -1801,9 +1951,136 @@ const enCopy: AppCopy = {
         "Galley handles the request on this computer and replies in WeChat.",
         "Keep Galley running to keep the WeChat entry available.",
       ],
+      feishuSetupSections: [
+        {
+          title: "Feishu Open Platform · Prepare app",
+          steps: [
+            {
+              parts: [
+                { text: "Open " },
+                { text: "Feishu Open Platform", emphasis: true },
+                { text: " and create an " },
+                { text: "internal app", emphasis: true },
+                { text: "." },
+              ],
+            },
+            {
+              parts: [
+                { text: "Add the " },
+                { text: "bot", emphasis: true },
+                { text: " capability." },
+              ],
+            },
+            {
+              parts: [
+                { text: "Go to " },
+                { text: "Permissions → Enable permissions", emphasis: true },
+                { text: ", then search for and enable these permissions." },
+              ],
+            },
+            {
+              parts: [
+                { text: "Copy the " },
+                { text: "App ID", code: true },
+                { text: " and " },
+                { text: "App Secret", code: true },
+                { text: "." },
+              ],
+            },
+          ],
+        },
+        {
+          title: "Galley Settings · Add credentials",
+          steps: [
+            {
+              parts: [
+                { text: "Paste the " },
+                { text: "App ID", code: true },
+                { text: " and " },
+                { text: "App Secret", code: true },
+                { text: " below." },
+              ],
+            },
+            {
+              parts: [
+                { text: "Click " },
+                { text: "Start Feishu service", emphasis: true },
+                { text: "." },
+              ],
+            },
+          ],
+        },
+        {
+          title: "Feishu Open Platform · Receive events",
+          steps: [
+            {
+              parts: [
+                { text: "In " },
+                { text: "event subscriptions", emphasis: true },
+                { text: ", choose " },
+                { text: "long connection", emphasis: true },
+                { text: " events." },
+              ],
+            },
+            {
+              parts: [
+                { text: "Add the " },
+                { text: "im.message.receive_v1", code: true },
+                { text: " event." },
+              ],
+            },
+            {
+              parts: [{ text: "Publish the app", emphasis: true }, { text: "." }],
+            },
+          ],
+        },
+        {
+          title: "Feishu client · Start chatting",
+          steps: [
+            {
+              parts: [
+                { text: "Find the bot in the " },
+                { text: "Feishu client", emphasis: true },
+                { text: "." },
+              ],
+            },
+            {
+              parts: [{ text: "Message the bot. Galley replies in Feishu." }],
+            },
+          ],
+        },
+      ],
+      feishuPermissions:
+        "im:message, im:message:send_as_bot, contact:user.id:readonly, im:message.p2p_msg:readonly",
+      feishuPermissionItems: [
+        {
+          name: "im:message",
+          description: "Read and send direct and group messages",
+        },
+        {
+          name: "im:message:send_as_bot",
+          description: "Send messages as the app",
+        },
+        {
+          name: "contact:user.id:readonly",
+          description: "Read user IDs",
+        },
+        {
+          name: "im:message.p2p_msg:readonly",
+          description: "Receive direct messages sent to the bot",
+        },
+      ],
+      copyFeishuPermissions: "Copy all",
+      feishuPermissionsCopied: "Copied",
+      feishuConnectedSteps: [
+        "Message the bot in Feishu.",
+        "Keep Galley running to keep the Feishu entry available.",
+        "Everyone in the organization can use this entry.",
+      ],
       notConnected: "Not connected",
       starting: "Connecting",
       waitingScan: "Waiting for scan",
+      reconnecting: "Reconnecting",
       running: "Connected",
       expired: "Connection expired",
       error: "Issue",
@@ -1816,7 +2093,26 @@ const enCopy: AppCopy = {
       expiredHint: "The WeChat connection expired. Scan again to reconnect.",
       errorHint: "The WeChat connection has an issue. You can retry.",
       stoppedHint: "Receiving WeChat messages is paused.",
+      feishuNotConnectedHint:
+        "After setup, everyone in the organization can message Galley from Feishu.",
+      feishuStartingHint:
+        "Starting the Feishu service. After it starts, continue with event subscriptions.",
+      feishuReconnectingHint: "The Feishu connection is retrying.",
+      feishuRunningHint:
+        "Feishu is connected. Message Galley directly from Feishu.",
+      feishuErrorHint:
+        "Connection issue. Check App ID / App Secret, permissions, event subscriptions, and app publishing, then retry.",
+      feishuStoppedHint:
+        "Paused. Start the Feishu service again to receive messages.",
       connect: "Connect WeChat",
+      feishuStartService: "Start Feishu service",
+      openFeishuConsole: "Open Feishu Open Platform",
+      feishuAppIdLabel: "App ID",
+      feishuAppSecretLabel: "App Secret",
+      feishuAppIdPlaceholder: "cli_xxxxxxxxxxxxxxxx",
+      feishuAppSecretPlaceholder: "Paste App Secret",
+      feishuSecretSavedPlaceholder: "Saved. Leave blank to keep it.",
+      feishuConfigLoading: "Loading Feishu config…",
       continueScan: "Continue scanning",
       reconnect: "Reconnect",
       retry: "Retry",
@@ -1831,6 +2127,9 @@ const enCopy: AppCopy = {
       disconnectDialogTitle: "Disconnect WeChat?",
       disconnectDialogBody:
         "This only stops Galley from sending and receiving through the current WeChat session. It will not log you out of WeChat on your phone.",
+      feishuDisconnectDialogTitle: "Disconnect Feishu?",
+      feishuDisconnectDialogBody:
+        "This stops Feishu. To connect again, paste the App Secret again.",
       restartChannelsTitle: "Channels are using old model config",
       restartChannelsBody:
         "After restart, enabled Channels will use the latest model config. This may interrupt the current reply, but will not log you out.",
@@ -1839,7 +2138,7 @@ const enCopy: AppCopy = {
         "This restarts all enabled Channels. It may interrupt the current reply, but will not log you out.",
       openModels: "Configure models first",
       modelRequired:
-        "WeChat uses Galley's configured models. Add a usable model in Models before connecting.",
+        "Channels use Galley's configured models. Add a usable model in Models before connecting.",
     },
   },
   onboarding: {

@@ -802,7 +802,7 @@ function channelsTopbarStatus(
     return "needsAttention";
   }
   if (state === "running") return "connected";
-  if (state === "starting") return "connecting";
+  if (state === "starting" || state === "reconnecting") return "connecting";
   if (state === "waiting_scan") return "waitingScan";
   return "setup";
 }

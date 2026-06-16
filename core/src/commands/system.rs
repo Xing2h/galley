@@ -115,6 +115,28 @@ pub(crate) async fn get_im_supervisor_status(
 }
 
 #[tauri::command]
+pub(crate) async fn get_feishu_im_config()
+-> std::result::Result<im_supervisor::FeishuImConfig, String> {
+    im_supervisor::get_feishu_im_config().await
+}
+
+#[tauri::command]
+pub(crate) async fn save_feishu_im_config(
+    input: im_supervisor::SaveFeishuImConfigInput,
+) -> std::result::Result<im_supervisor::FeishuImConfig, String> {
+    im_supervisor::save_feishu_im_config(input).await
+}
+
+#[tauri::command]
+pub(crate) async fn delete_feishu_im_config(
+    app: tauri::AppHandle,
+    manager: tauri::State<'_, std::sync::Arc<im_supervisor::ImSupervisorManager>>,
+) -> std::result::Result<im_supervisor::FeishuImConfig, String> {
+    let _ = manager.logout(app, "feishu".into()).await;
+    im_supervisor::get_feishu_im_config().await
+}
+
+#[tauri::command]
 pub(crate) async fn start_im_supervisor(
     app: tauri::AppHandle,
     manager: tauri::State<'_, std::sync::Arc<im_supervisor::ImSupervisorManager>>,

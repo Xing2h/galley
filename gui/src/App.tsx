@@ -34,7 +34,10 @@ import {
   startDesktopGoal,
   stopGoal,
 } from "@/lib/goals";
-import { restartEnabledImSupervisors } from "@/lib/im-supervisor";
+import {
+  restartEnabledImSupervisors,
+  type ImSupervisorState,
+} from "@/lib/im-supervisor";
 import { ensureHistoryReplayComplete } from "@/lib/ipc-handlers";
 import { resolveLanguagePreference } from "@/lib/language";
 import { logPerf, perfNow } from "@/lib/perf";
@@ -67,6 +70,22 @@ function goalMasterSessionTitle(objective: string): string {
   const limit = 44;
   if (normalized.length <= limit) return `Goal · ${normalized}`;
   return `Goal · ${normalized.slice(0, limit)}…`;
+}
+
+function aggregateChannelsState(
+  states: Array<ImSupervisorState | null | undefined>,
+): ImSupervisorState | null {
+  const present = states.filter(Boolean) as ImSupervisorState[];
+  if (present.some((state) => state === "error" || state === "expired")) {
+    return "error";
+  }
+  if (present.includes("waiting_scan")) return "waiting_scan";
+  if (present.some((state) => state === "starting" || state === "reconnecting")) {
+    return "starting";
+  }
+  if (present.includes("running")) return "running";
+  if (present.includes("stopped")) return "stopped";
+  return present[0] ?? null;
 }
 
 /**
@@ -206,8 +225,12 @@ function App() {
   const setActiveRuntimeKind = usePrefsStore((s) => s.setActiveRuntimeKind);
   const gaConfig = usePrefsStore((s) => s.gaConfig);
   const activeRuntimeKind = usePrefsStore((s) => s.activeRuntimeKind);
-  const channelsStatus = useImSupervisorStatus(
+  const wechatChannelsStatus = useImSupervisorStatus(
     "wechat",
+    activeRuntimeKind === "managed",
+  );
+  const feishuChannelsStatus = useImSupervisorStatus(
+    "feishu",
     activeRuntimeKind === "managed",
   );
   const managedModels = useManagedModelsStore((s) => s.models);
@@ -289,7 +312,11 @@ function App() {
       const statuses = await restartEnabledImSupervisors();
       const wechat = statuses.find((status) => status.platform === "wechat");
       if (wechat) {
-        channelsStatus.setStatus(wechat);
+        wechatChannelsStatus.setStatus(wechat);
+      }
+      const feishu = statuses.find((status) => status.platform === "feishu");
+      if (feishu) {
+        feishuChannelsStatus.setStatus(feishu);
       }
       pushToast(
         makeAppError({
@@ -949,11 +976,16 @@ function App() {
             onOpenBrowserControl={() => openSettings("browser")}
             channelsState={
               activeRuntimeKind === "managed"
-                ? (channelsStatus.status?.state ?? null)
+                ? aggregateChannelsState([
+                    wechatChannelsStatus.status?.state,
+                    feishuChannelsStatus.status?.state,
+                  ])
                 : null
             }
             channelsLoadError={
-              activeRuntimeKind === "managed" ? channelsStatus.loadError : null
+              activeRuntimeKind === "managed"
+                ? (wechatChannelsStatus.loadError ?? feishuChannelsStatus.loadError)
+                : null
             }
             onOpenChannelsSettings={
               activeRuntimeKind === "managed"

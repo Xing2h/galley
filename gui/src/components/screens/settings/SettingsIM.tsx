@@ -1,11 +1,15 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   CaretDown,
   CaretRight,
+  ChatCircleText,
+  Check,
   CheckCircle,
   CircleNotch,
+  Copy,
   DotsThreeVertical,
   LinkBreak,
   Pause,
@@ -14,16 +18,22 @@ import {
   ArrowsClockwise,
   WarningCircle,
 } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import feishuLogoMaskUrl from "@/assets/feishu-logo-mask.png";
 import { SettingsPanelHeader } from "@/components/screens/settings/settings-ui";
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
 import { useImSupervisorStatus } from "@/hooks/useImSupervisorStatus";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import {
+  deleteFeishuImConfig,
+  getFeishuImConfig,
   logoutImSupervisor,
   restartEnabledImSupervisors,
+  saveFeishuImConfig,
   startImSupervisor,
   stopImSupervisor,
+  type FeishuImConfig,
   type ImSupervisorState,
   type ImSupervisorStatus,
 } from "@/lib/im-supervisor";
@@ -33,6 +43,9 @@ import { makeAppError } from "@/types/app-error";
 import { cn } from "@/lib/utils";
 
 type ImCopy = ReturnType<typeof useCopy>["settings"]["im"];
+type FeishuSetupStep =
+  ImCopy["feishuSetupSections"][number]["steps"][number];
+type FeishuSetupStepPart = FeishuSetupStep["parts"][number];
 type BusyAction = "connect" | "rescan" | "stop" | "disconnect" | "restart" | null;
 
 export function SettingsIM({
@@ -45,10 +58,15 @@ export function SettingsIM({
   const copy = useCopy();
   const imCopy = copy.settings.im;
   const {
-    status,
-    setStatus,
-    loadError: statusLoadError,
+    status: wechatStatus,
+    setStatus: setWechatStatus,
+    loadError: wechatStatusLoadError,
   } = useImSupervisorStatus("wechat", hasManagedRuntimeConfigured);
+  const {
+    status: feishuStatus,
+    setStatus: setFeishuStatus,
+    loadError: feishuStatusLoadError,
+  } = useImSupervisorStatus("feishu", hasManagedRuntimeConfigured);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [invokeError, setInvokeError] = useState<string | null>(null);
   const [confirmRestartOpen, setConfirmRestartOpen] = useState(false);
@@ -60,7 +78,7 @@ export function SettingsIM({
     setBusyAction(action);
     setInvokeError(null);
     try {
-      setStatus(await fn());
+      setWechatStatus(await fn());
     } catch (e) {
       setInvokeError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -75,7 +93,11 @@ export function SettingsIM({
       const statuses = await restartEnabledImSupervisors();
       const wechat = statuses.find((item) => item.platform === "wechat");
       if (wechat) {
-        setStatus(wechat);
+        setWechatStatus(wechat);
+      }
+      const feishu = statuses.find((item) => item.platform === "feishu");
+      if (feishu) {
+        setFeishuStatus(feishu);
       }
       useUiStore.getState().pushToast(
         makeAppError({
@@ -140,16 +162,18 @@ export function SettingsIM({
         </div>
       ) : (
         <div className="space-y-3">
-          {status?.enabled && status.modelConfigStale ? (
+          {[wechatStatus, feishuStatus].some(
+            (status) => status?.enabled && status.modelConfigStale,
+          ) ? (
             <ChannelsConfigStaleBanner
               busy={busyAction === "restart"}
               onRestart={() => setConfirmRestartOpen(true)}
             />
           ) : null}
           <WeChatCard
-            status={status}
+            status={wechatStatus}
             busyAction={busyAction}
-            invokeError={invokeError ?? statusLoadError}
+            invokeError={invokeError ?? wechatStatusLoadError}
             onConnect={() =>
               runAction("connect", () => startImSupervisor("wechat", false))
             }
@@ -160,6 +184,11 @@ export function SettingsIM({
             onDisconnect={() =>
               runAction("disconnect", () => logoutImSupervisor("wechat"))
             }
+          />
+          <FeishuCard
+            status={feishuStatus}
+            statusLoadError={feishuStatusLoadError}
+            onStatusChange={setFeishuStatus}
           />
           <RestartChannelsDialog
             open={confirmRestartOpen}
@@ -515,6 +544,384 @@ function WeChatCard({
   );
 }
 
+function FeishuCard({
+  status,
+  statusLoadError,
+  onStatusChange,
+}: {
+  status: ImSupervisorStatus | null;
+  statusLoadError: string | null;
+  onStatusChange: (status: ImSupervisorStatus | null) => void;
+}) {
+  const appCopy = useCopy();
+  const imCopy = appCopy.settings.im;
+  const commonCopy = appCopy.common;
+  const [config, setConfig] = useState<FeishuImConfig | null>(null);
+  const [appId, setAppId] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [localBusy, setLocalBusy] = useState<
+    "load" | "open" | "connect" | "stop" | "disconnect" | null
+  >("load");
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [expandedOverride, setExpandedOverride] = useState<boolean | null>(
+    null,
+  );
+  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getFeishuImConfig()
+      .then((next) => {
+        if (cancelled) return;
+        setConfig(next);
+        setAppId(next.appId);
+        setLocalError(null);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setLocalError(e instanceof Error ? e.message : String(e));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLocalBusy(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const savedAppId = config?.appId.trim() ?? "";
+  const trimmedAppId = appId.trim();
+  const hasSavedSecretForApp =
+    Boolean(config?.hasAppSecret) && trimmedAppId === savedAppId;
+  const hasUsableSecret = appSecret.trim().length > 0 || hasSavedSecretForApp;
+  const canConnect = trimmedAppId.length > 0 && hasUsableSecret;
+  const derivedState: ImSupervisorState =
+    status?.state ??
+    (config?.appId && config.hasAppSecret ? "stopped" : "not_connected");
+  const attentionState = derivedState === "expired" || derivedState === "error";
+  const expanded =
+    expandedOverride ??
+    (attentionState || derivedState === "not_connected" || !canConnect);
+  const canPause = derivedState === "running";
+  const canDisconnect =
+    derivedState === "running" ||
+    derivedState === "expired" ||
+    derivedState === "error" ||
+    derivedState === "stopped";
+  const busy = localBusy !== null;
+
+  const run = async (
+    action: Exclude<typeof localBusy, null | "load">,
+    fn: () => Promise<void>,
+  ) => {
+    setLocalBusy(action);
+    setLocalError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLocalBusy(null);
+    }
+  };
+
+  const connect = () =>
+    run("connect", async () => {
+      const saved = await saveFeishuImConfig({
+        appId: appId.trim(),
+        appSecret: appSecret.trim() || null,
+      });
+      setConfig(saved);
+      setAppSecret("");
+      onStatusChange(await startImSupervisor("feishu", false));
+    });
+
+  const stop = () =>
+    run("stop", async () => {
+      onStatusChange(await stopImSupervisor("feishu"));
+    });
+
+  const disconnect = () =>
+    run("disconnect", async () => {
+      const nextConfig = await deleteFeishuImConfig();
+      setConfig(nextConfig);
+      setAppId("");
+      setAppSecret("");
+      onStatusChange(null);
+    });
+
+  const openFeishuConsole = () =>
+    run("open", async () => {
+      await openUrl("https://open.feishu.cn/");
+    });
+
+  return (
+    <section
+      className={cn(
+        "group/im overflow-hidden rounded-sm border border-line bg-surface transition-colors",
+        expanded && "border-line-strong",
+      )}
+    >
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-3 px-2 py-1.5 transition-colors",
+          expanded && "bg-hover/40",
+        )}
+      >
+        <button
+          type="button"
+          aria-expanded={expanded}
+          className={cn(
+            "group/toggle flex min-w-0 flex-1 items-center gap-3 rounded-sm px-1.5 py-0.5 text-left transition-colors",
+            "hover:bg-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
+          )}
+          onClick={() => setExpandedOverride(!expanded)}
+        >
+          <span
+            className={cn(
+              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-soft transition-colors",
+              expanded && "text-ink",
+            )}
+          >
+            {expanded ? (
+              <CaretDown size={12} weight="bold" />
+            ) : (
+              <CaretRight size={12} weight="bold" />
+            )}
+          </span>
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <FeishuGlyph active={expanded} />
+            <span
+              className="min-w-0 truncate text-[13px] font-medium text-ink"
+              title={imCopy.feishuTitle}
+            >
+              {imCopy.feishuTitle}
+            </span>
+            <StatusBadge state={derivedState} />
+          </span>
+        </button>
+        <div
+          className={cn(
+            "ml-auto flex shrink-0 items-center gap-1.5 opacity-80 transition-opacity",
+            "group-hover/im:opacity-100 group-focus-within/im:opacity-100",
+            busy && "opacity-100",
+          )}
+        >
+          {derivedState === "stopped" && !expanded ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              disabled={busy || !canConnect}
+              leadingIcon={
+                localBusy === "connect" ? (
+                  <CircleNotch size={13} className="animate-spin" />
+                ) : (
+                  <Power size={13} />
+                )
+              }
+              onClick={connect}
+            >
+              {localBusy === "connect"
+                ? imCopy.working
+                : imCopy.feishuStartService}
+            </Button>
+          ) : null}
+          {canPause || canDisconnect ? (
+            <WeChatActionsMenu
+              disabled={busy}
+              canStop={canPause}
+              canDisconnect={canDisconnect}
+              onStop={stop}
+              onDisconnect={() => setConfirmDisconnectOpen(true)}
+            />
+          ) : null}
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-line/70 bg-hover/25 px-2.5 py-3">
+          <div className="space-y-4 pl-8 pr-1">
+            {derivedState === "running" ? (
+              <>
+                <ConnectionSteps
+                  steps={imCopy.feishuConnectedSteps}
+                  status={feishuStatusHintForState(derivedState, imCopy)}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={busy || !canPause}
+                    leadingIcon={<Pause size={13} />}
+                    onClick={stop}
+                  >
+                    {localBusy === "stop"
+                      ? imCopy.working
+                      : imCopy.pauseReceiving}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive-soft"
+                    size="sm"
+                    disabled={busy || !canDisconnect}
+                    leadingIcon={<LinkBreak size={13} />}
+                    onClick={() => setConfirmDisconnectOpen(true)}
+                  >
+                    {imCopy.disconnect}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <FeishuSetupGuide
+                imCopy={imCopy}
+                status={feishuStatusHintForState(derivedState, imCopy)}
+                onOpenConsole={openFeishuConsole}
+                openDisabled={busy}
+                credentialsForm={
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                        {imCopy.feishuAppIdLabel}
+                      </span>
+                      <input
+                        value={appId}
+                        onChange={(e) => setAppId(e.target.value)}
+                        placeholder={imCopy.feishuAppIdPlaceholder}
+                        spellCheck={false}
+                        className="w-full rounded-sm border border-line bg-surface px-3 py-2 font-mono text-[12.5px] text-ink outline-none transition-colors placeholder:text-ink-muted/70 focus:border-brand focus:ring-[3px] focus:ring-brand/20"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                        {imCopy.feishuAppSecretLabel}
+                      </span>
+                      <input
+                        type="password"
+                        value={appSecret}
+                        onChange={(e) => setAppSecret(e.target.value)}
+                        placeholder={
+                          hasSavedSecretForApp
+                            ? imCopy.feishuSecretSavedPlaceholder
+                            : imCopy.feishuAppSecretPlaceholder
+                        }
+                        spellCheck={false}
+                        className="w-full rounded-sm border border-line bg-surface px-3 py-2 font-mono text-[12.5px] text-ink outline-none transition-colors placeholder:text-ink-muted/70 focus:border-brand focus:ring-[3px] focus:ring-brand/20"
+                      />
+                    </label>
+                  </div>
+                }
+                startAction={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      disabled={busy || !canConnect}
+                      leadingIcon={
+                        localBusy === "connect" ? (
+                          <CircleNotch size={13} className="animate-spin" />
+                        ) : (
+                          <Power size={13} />
+                        )
+                      }
+                      onClick={connect}
+                    >
+                      {localBusy === "connect"
+                        ? imCopy.working
+                        : imCopy.feishuStartService}
+                    </Button>
+                    {localBusy === "load" ? (
+                      <span className="text-[12px] text-ink-muted">
+                        {imCopy.feishuConfigLoading}
+                      </span>
+                    ) : null}
+                    {canDisconnect ? (
+                      <Button
+                        type="button"
+                        variant="destructive-soft"
+                        size="sm"
+                        disabled={busy}
+                        leadingIcon={<LinkBreak size={13} />}
+                        onClick={() => setConfirmDisconnectOpen(true)}
+                      >
+                        {imCopy.disconnect}
+                      </Button>
+                    ) : null}
+                  </div>
+                }
+              />
+            )}
+
+            {localError || statusLoadError || status?.lastError ? (
+              <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-error/80">
+                  {imCopy.lastError}
+                </div>
+                <div className="select-text break-words font-mono text-[11.5px] leading-[1.45] text-error">
+                  {localError ?? statusLoadError ?? status?.lastError}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      <Dialog.Root
+        open={confirmDisconnectOpen}
+        onOpenChange={setConfirmDisconnectOpen}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[60] bg-overlay" />
+          <Dialog.Content
+            role="alertdialog"
+            aria-describedby="disconnect-feishu-desc"
+            className={cn(
+              "fixed left-1/2 top-1/2 z-[60] w-[420px] -translate-x-1/2 -translate-y-1/2",
+              "max-w-[calc(100vw-32px)] rounded-lg border border-line bg-elevated p-5 shadow-elevated",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <WarningCircle size={18} weight="bold" className="text-warning" />
+              <Dialog.Title className="text-[15px] font-semibold text-ink">
+                {imCopy.feishuDisconnectDialogTitle}
+              </Dialog.Title>
+            </div>
+            <p
+              id="disconnect-feishu-desc"
+              className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft"
+            >
+              {imCopy.feishuDisconnectDialogBody}
+            </p>
+            <DialogActionRow>
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmDisconnectOpen(false)}
+                disabled={busy}
+                autoFocus
+              >
+                {commonCopy.cancel}
+              </Button>
+              <Button
+                variant="destructive-soft"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmDisconnectOpen(false);
+                  void disconnect();
+                }}
+              >
+                {imCopy.disconnect}
+              </Button>
+            </DialogActionRow>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </section>
+  );
+}
+
 function primaryActionForState({
   imCopy,
   state,
@@ -536,7 +943,7 @@ function primaryActionForState({
   const loadingIcon = <CircleNotch size={13} className="animate-spin" />;
 
   if (state === "running") return null;
-  if (state === "starting") {
+  if (state === "starting" || state === "reconnecting") {
     return (
       <Button
         type="button"
@@ -698,6 +1105,224 @@ function ConnectionSteps({
   );
 }
 
+function FeishuSetupGuide({
+  imCopy,
+  status,
+  credentialsForm,
+  startAction,
+  openDisabled,
+  onOpenConsole,
+}: {
+  imCopy: ImCopy;
+  status: string;
+  credentialsForm: ReactNode;
+  startAction: ReactNode;
+  openDisabled: boolean;
+  onOpenConsole: () => void;
+}) {
+  const [permissionsCopied, setPermissionsCopied] = useState(false);
+  const permissionsTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (permissionsTimerRef.current !== null) {
+        window.clearTimeout(permissionsTimerRef.current);
+      }
+    };
+  }, []);
+
+  const copyPermissions = async () => {
+    try {
+      await copyTextToClipboard(imCopy.feishuPermissions);
+      setPermissionsCopied(true);
+      if (permissionsTimerRef.current !== null) {
+        window.clearTimeout(permissionsTimerRef.current);
+      }
+      permissionsTimerRef.current = window.setTimeout(
+        () => setPermissionsCopied(false),
+        1400,
+      );
+    } catch (error) {
+      console.warn("[FeishuSetupGuide] copy permissions failed", error);
+    }
+  };
+
+  return (
+    <div className="max-w-[76ch] space-y-3">
+      <div className="divide-y divide-line/70">
+        {imCopy.feishuSetupSections.map((section, index) => (
+          <FeishuSetupSection
+            key={section.title}
+            index={index + 1}
+            title={section.title}
+            steps={section.steps}
+            afterStep={
+              index === 0
+                ? {
+                    stepIndex: 2,
+                    content: (
+                      <FeishuPermissionsList
+                        items={imCopy.feishuPermissionItems}
+                        copied={permissionsCopied}
+                        copyLabel={imCopy.copyFeishuPermissions}
+                        copiedLabel={imCopy.feishuPermissionsCopied}
+                        onCopy={() => void copyPermissions()}
+                      />
+                    ),
+                  }
+                : null
+            }
+          >
+            {index === 0 ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={openDisabled}
+                leadingIcon={<ChatCircleText size={13} />}
+                onClick={onOpenConsole}
+              >
+                {imCopy.openFeishuConsole}
+              </Button>
+            ) : null}
+            {index === 1 ? (
+              <div className="space-y-3">
+                {credentialsForm}
+                {startAction}
+              </div>
+            ) : null}
+          </FeishuSetupSection>
+        ))}
+      </div>
+      <p className="pl-7 text-[12px] leading-[1.45] text-ink-muted">
+        {status}
+      </p>
+    </div>
+  );
+}
+
+function FeishuSetupSection({
+  index,
+  title,
+  steps,
+  children,
+  afterStep,
+}: {
+  index: number;
+  title: string;
+  steps: FeishuSetupStep[];
+  children?: ReactNode;
+  afterStep?: { stepIndex: number; content: ReactNode } | null;
+}) {
+  return (
+    <section className="py-3 first:pt-0 last:pb-0">
+      <div className="flex gap-2.5">
+        <span className="mt-[1px] inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-line bg-app font-mono text-[11px] font-medium tabular-nums text-ink-soft">
+          {index}
+        </span>
+        <div className="min-w-0 flex-1 space-y-2">
+          <h4 className="text-[12px] font-semibold leading-[1.45] text-ink">
+            {title}
+          </h4>
+          <ul className="space-y-1 text-[12.5px] leading-[1.5] text-ink-soft">
+            {steps.map((step, stepIndex) => (
+              <li key={stepIndex} className="flex min-w-0 gap-2">
+                <span className="mt-[0.65em] size-1 shrink-0 rounded-full bg-ink-muted/60" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <span className="block min-w-0 break-words">
+                    <FeishuSetupStepText step={step} />
+                  </span>
+                  {afterStep?.stepIndex === stepIndex ? afterStep.content : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {children ? <div className="pt-1">{children}</div> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeishuSetupStepText({ step }: { step: FeishuSetupStep }) {
+  return (
+    <>
+      {step.parts.map((part, index) => (
+        <FeishuSetupStepPart key={index} part={part} />
+      ))}
+    </>
+  );
+}
+
+function FeishuSetupStepPart({ part }: { part: FeishuSetupStepPart }) {
+  if ("code" in part && part.code) {
+    return (
+      <code className="rounded-sm border border-line/80 bg-app px-1 py-[1px] font-mono text-[11.5px] text-ink">
+        {part.text}
+      </code>
+    );
+  }
+
+  if ("emphasis" in part && part.emphasis) {
+    return <strong className="font-semibold text-ink">{part.text}</strong>;
+  }
+
+  return <>{part.text}</>;
+}
+
+function FeishuPermissionsList({
+  items,
+  copied,
+  copyLabel,
+  copiedLabel,
+  onCopy,
+}: {
+  items: ImCopy["feishuPermissionItems"];
+  copied: boolean;
+  copyLabel: string;
+  copiedLabel: string;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="relative min-w-0 rounded-sm bg-hover/35 px-2.5 py-2">
+      <button
+        type="button"
+        onClick={onCopy}
+        className={cn(
+          "absolute right-2 top-2 inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded-sm border px-1.5 text-[11px] font-medium",
+          "transition-[background-color,border-color,color,transform] duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-px active:duration-[70ms]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+          copied
+            ? "border-success/30 bg-success/[var(--opacity-subtle)] text-success"
+            : "border-line bg-surface text-ink-muted hover:border-line-strong hover:bg-hover hover:text-ink",
+        )}
+      >
+        {copied ? (
+          <Check size={11} weight="bold" />
+        ) : (
+          <Copy size={11} weight="thin" />
+        )}
+        {copied ? copiedLabel : copyLabel}
+      </button>
+      <ul className="space-y-1.5 sm:pr-20">
+        {items.map((item) => (
+          <li
+            key={item.name}
+            className="grid min-w-0 gap-1 sm:grid-cols-[minmax(0,240px)_1fr] sm:items-baseline sm:gap-3"
+          >
+            <code className="min-w-0 break-all rounded-sm border border-line/70 bg-surface px-1.5 py-[1px] font-mono text-[11.5px] leading-[1.5] text-ink sm:break-normal">
+              {item.name}
+            </code>
+            <span className="min-w-0 text-[12px] leading-[1.5] text-ink-muted">
+              {item.description}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function WeChatGlyph({ active }: { active: boolean }) {
   return (
     <span
@@ -728,12 +1353,39 @@ function WeChatGlyph({ active }: { active: boolean }) {
   );
 }
 
+function FeishuGlyph({ active }: { active: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex size-7 shrink-0 items-center justify-center rounded-sm transition-colors",
+        active ? "text-ink" : "text-ink-soft",
+      )}
+    >
+      <span
+        className="size-5 bg-current"
+        style={{
+          WebkitMaskImage: `url(${feishuLogoMaskUrl})`,
+          WebkitMaskPosition: "center",
+          WebkitMaskRepeat: "no-repeat",
+          WebkitMaskSize: "contain",
+          maskImage: `url(${feishuLogoMaskUrl})`,
+          maskPosition: "center",
+          maskRepeat: "no-repeat",
+          maskSize: "contain",
+        }}
+      />
+    </span>
+  );
+}
+
 function StatusBadge({ state }: { state: ImSupervisorState }) {
   const imCopy = useCopy().settings.im;
   const label = {
     not_connected: imCopy.notConnected,
     starting: imCopy.starting,
     waiting_scan: imCopy.waitingScan,
+    reconnecting: imCopy.reconnecting,
     running: imCopy.running,
     expired: imCopy.expired,
     error: imCopy.error,
@@ -744,7 +1396,7 @@ function StatusBadge({ state }: { state: ImSupervisorState }) {
       ? CheckCircle
       : state === "error" || state === "expired"
         ? WarningCircle
-        : state === "starting"
+        : state === "starting" || state === "reconnecting"
           ? CircleNotch
           : state === "waiting_scan"
             ? QrCode
@@ -765,7 +1417,11 @@ function StatusBadge({ state }: { state: ImSupervisorState }) {
       <Icon
         size={12}
         weight={state === "running" ? "fill" : "regular"}
-        className={state === "starting" ? "animate-spin" : undefined}
+        className={
+          state === "starting" || state === "reconnecting"
+            ? "animate-spin"
+            : undefined
+        }
       />
       {label}
     </span>
@@ -782,9 +1438,23 @@ function statusHintForState(state: ImSupervisorState, imCopy: ImCopy) {
     not_connected: imCopy.notConnectedHint,
     starting: imCopy.startingHint,
     waiting_scan: imCopy.waitingScanHint,
+    reconnecting: imCopy.startingHint,
     running: imCopy.runningHint,
     expired: imCopy.expiredHint,
     error: imCopy.errorHint,
     stopped: imCopy.stoppedHint,
+  }[state];
+}
+
+function feishuStatusHintForState(state: ImSupervisorState, imCopy: ImCopy) {
+  return {
+    not_connected: imCopy.feishuNotConnectedHint,
+    starting: imCopy.feishuStartingHint,
+    waiting_scan: imCopy.feishuStartingHint,
+    reconnecting: imCopy.feishuReconnectingHint,
+    running: imCopy.feishuRunningHint,
+    expired: imCopy.feishuErrorHint,
+    error: imCopy.feishuErrorHint,
+    stopped: imCopy.feishuStoppedHint,
   }[state];
 }

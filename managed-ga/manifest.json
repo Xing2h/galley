@@ -16,7 +16,8 @@
       "0005-code-run-noninteractive-stdin.patch",
       "0006-managed-browser-control-recovery.patch",
       "0007-managed-codex-backend.patch",
-      "0008-managed-image-attachments.patch"
+      "0008-managed-image-attachments.patch",
+      "0009-managed-feishu-config-env.patch"
     ]
   },
   "stateSchemaVersion": 1
