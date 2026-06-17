@@ -1,5 +1,5 @@
 import { ArrowDown } from "@phosphor-icons/react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ApprovalDock } from "@/components/conversation/ApprovalDock";
 import { AskUserBubble } from "@/components/conversation/AskUserBubble";
@@ -18,6 +18,7 @@ import { SelectionCopyToolbar } from "@/components/conversation/SelectionCopyToo
 import { ToolCallout } from "@/components/conversation/ToolCallout";
 import { UserQuestionRail } from "@/components/conversation/UserQuestionRail";
 import { useTypewriter } from "@/hooks/useTypewriter";
+import { useMarkdownStream } from "@/hooks/useMarkdownStream";
 import {
   composerRegisterCopyKey,
   resolveComposerRegister,
@@ -25,6 +26,7 @@ import {
 import { useCopy } from "@/lib/i18n";
 import { cleanPartialContent, extractPreamble } from "@/lib/ipc-handlers";
 import { cn } from "@/lib/utils";
+import { useMessagesStore } from "@/stores/messages";
 import type {
   ConversationToolEvent,
   PendingApproval,
@@ -69,27 +71,17 @@ export interface MainViewProps {
    * "停止中…" acknowledged state and won't fire a second abort.
    */
   isStopping?: boolean;
-  /**
-   * GA-side turn currently being run, surfaced into the thinking
-   * placeholder (Turn N · 思考中…) and into pending Approval Card
-   * headers when the agent has a request mid-turn. `null` / undefined
-   * during quiet states.
-   */
-  currentTurnIndex?: number | null;
-  /**
-   * Counter that increments every time the user submits a message.
-   * MainView watches it to scroll the just-submitted user message
-   * to the viewport top (DESIGN.md §4.3 scroll behaviour). Stay
-   * stateless about the value itself — only changes matter.
-   */
-  userSubmitTick?: number;
-  /**
-   * Streaming partial output from the bridge. Renders mid-turn
-   * after the completed turns and any pending Approval Card. Empty
-   * string when no streaming is active.
-   */
-  inFlightContent?: string;
-  sendPhase?: SendPhase | null;
+  // The streaming fields below were previously passed as props from
+  // `App`, which subscribed to them at the root. That meant every
+  // `turn_progress` token re-rendered the entire app tree. They are
+  // now subscribed INSIDE MainView (see the `useMessagesStore` hooks
+  // below), so token churn is confined to the MainView subtree and
+  // the top bar / sidebar / settings no longer reconcile per chunk.
+  //
+  // GA-side turn currently being run, surfaced into the thinking
+  // placeholder (Turn N · 思考中…) and into pending Approval Card
+  // headers when the agent has a request mid-turn. `null` during
+  // quiet states.
   /** LLM list for the Composer's inline picker. */
   llms?: ComposerLLMOption[];
   /** Called when the user picks an LLM from the inline dropdown. */
@@ -167,10 +159,6 @@ export function MainView({
   onStop,
   isRunning = false,
   isStopping = false,
-  currentTurnIndex,
-  userSubmitTick = 0,
-  inFlightContent = "",
-  sendPhase = null,
   llms,
   onSelectLLM,
   llmConfigHint,
@@ -195,22 +183,45 @@ export function MainView({
     !!runningGoal && !isRunning && !stillWaiting && !pendingAskUser;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pendingApprovalRefs = useRef(new Map<string, HTMLDivElement>());
+
+  // Streaming state, subscribed locally so token churn stays inside
+  // this subtree instead of re-rendering the whole app. These were
+  // previously passed as props from App; see MainViewProps docs above.
+  const inFlightContent = useMessagesStore((s) =>
+    activeSessionId ? (s.byId[activeSessionId]?.inFlightContent ?? "") : "",
+  );
+  const sendPhase = useMessagesStore((s) =>
+    activeSessionId ? (s.byId[activeSessionId]?.sendPhase ?? null) : null,
+  );
+  const currentTurnIndex = useMessagesStore((s) =>
+    activeSessionId ? (s.byId[activeSessionId]?.currentTurnIndex ?? null) : null,
+  );
+  const userSubmitTick = useMessagesStore((s) => s.userSubmitTick);
+
   // Stripped partial — empty when nothing renderable yet (e.g. only
   // `<thinking>...` partial has come through). We hide the
   // ThinkingSummary placeholder once we have user-visible streaming
   // content; otherwise the document briefly shows two "still
   // working" affordances.
-  const visiblePartial = inFlightContent
-    ? cleanPartialContent(inFlightContent).trim()
-    : "";
+  //
+  // Memoized: `cleanPartialContent` runs ~12 regex passes over the
+  // full buffer and `extractPreamble` another 7. Without memo they
+  // re-run on every render — and during streaming the parent re-renders
+  // on every token, so this is a per-token O(buffer) cost. Both depend
+  // only on `inFlightContent`.
+  const visiblePartial = useMemo(
+    () => (inFlightContent ? cleanPartialContent(inFlightContent).trim() : ""),
+    [inFlightContent],
+  );
   // Live preamble for the streaming-step TurnMarker. Read from the
   // raw buffer (not visiblePartial — preamble is stripped from that
   // path so it doesn't double-render with the answer prose). We only
   // surface it while no answer body is visible; once real prose starts
   // streaming, the body itself is the progress signal.
-  const livePreamble = inFlightContent
-    ? extractPreamble(inFlightContent)
-    : undefined;
+  const livePreamble = useMemo(
+    () => (inFlightContent ? extractPreamble(inFlightContent) : undefined),
+    [inFlightContent],
+  );
   const sendPhaseStatus = sendPhase
     ? sendPhaseToStatus(sendPhase, copy)
     : undefined;
@@ -223,6 +234,13 @@ export function MainView({
   // this hook becomes a no-op (reveal already keeps pace with
   // arrivals) and can be removed without behavior change.
   const typedPartial = useTypewriter(visiblePartial);
+  // Markdown-parse throttle: `useTypewriter` reveals chars at ~60 Hz
+  // and each revealed value would trigger a full `react-markdown`
+  // re-parse of the growing buffer (O(n²) across a turn). This holds
+  // the typewriter cadence for perceived smoothness but only commits
+  // a value to the markdown renderer at ~20 Hz, cutting parse work
+  // by roughly 3×. Final + boundary values still flush promptly.
+  const markdownPartial = useMarkdownStream(typedPartial);
 
   // Sticky-bottom mode for streaming: when the user is "near the
   // bottom" we follow newly-arrived chunks; if they've scrolled up
@@ -273,7 +291,7 @@ export function MainView({
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [
-    typedPartial,
+    markdownPartial,
     atBottom,
     turns.length,
     pendingApprovals.length,
@@ -654,13 +672,14 @@ export function MainView({
                   thinking
                   liveStatus={liveStepStatus}
                 />
-                {/* `typedPartial` is the typewriter-throttled view of
-                  `visiblePartial`. The condition above gates on
+                {/* `markdownPartial` is the typewriter + parse-throttled
+                  view of `visiblePartial`. The condition above gates on
                   visiblePartial (so the placeholder→partial swap
                   happens the instant GA's first chunk arrives, not
-                  a frame later); the actual render uses typedPartial
-                  so the content reveals character-by-character. */}
-                <MarkdownView source={typedPartial} variant="agent" />
+                  a frame later); the actual render uses markdownPartial
+                  so content reveals smoothly without re-parsing the
+                  whole document on every rAF tick. */}
+                <MarkdownView source={markdownPartial} variant="agent" />
                 <div className="mt-1 leading-none">
                   <StreamingCursor />
                 </div>

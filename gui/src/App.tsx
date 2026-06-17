@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { ToastHost } from "@/components/error-card/ToastHost";
 import { AppShell } from "@/components/layout/AppShell";
@@ -63,6 +63,7 @@ import { useUiStore } from "@/stores/ui";
 import { makeAppError } from "@/types/app-error";
 import type { PendingImageAttachment } from "@/types/conversation";
 import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
+import type { ApprovalDecision } from "@/types/ipc";
 
 function goalMasterSessionTitle(objective: string): string {
   const normalized = objective.replace(/\s+/g, " ").trim();
@@ -372,20 +373,8 @@ function App() {
   const hasRunningSessions = useMessagesStore((s) =>
     Object.values(s.byId).some((messages) => messages.agentRunning),
   );
-  const currentTurnIndex = useMessagesStore((s) =>
-    activeSessionId
-      ? (s.byId[activeSessionId]?.currentTurnIndex ?? null)
-      : null,
-  );
-  const userSubmitTick = useMessagesStore((s) => s.userSubmitTick);
-  const inFlightContent = useMessagesStore((s) =>
-    activeSessionId ? (s.byId[activeSessionId]?.inFlightContent ?? "") : "",
-  );
   const pendingAskUser = useMessagesStore((s) =>
     activeSessionId ? (s.byId[activeSessionId]?.pendingAskUser ?? null) : null,
-  );
-  const sendPhase = useMessagesStore((s) =>
-    activeSessionId ? (s.byId[activeSessionId]?.sendPhase ?? null) : null,
   );
   const appendUserTurn = useMessagesStore((s) => s.appendUserTurn);
   const appendSideQuestionUserTurn = useMessagesStore(
@@ -393,6 +382,33 @@ function App() {
   );
   const removePendingApproval = useMessagesStore(
     (s) => s.removePendingApproval,
+  );
+
+  // Stable approve handler — passed down to MainView → ToolCallout
+  // (React.memo'd). Keeping it referentially stable lets settled
+  // ToolCallouts skip re-render during the low-frequency App renders
+  // that still happen (bridgeStatus / pendingAskUser changes). The
+  // deps are the only values the body reads.
+  const handleApprove = useCallback(
+    (approvalId: string, decision: ApprovalDecision) => {
+      if (!activeSessionId) return;
+      recordApprovalDecision(activeSessionId, approvalId, decision);
+      removePendingApproval(activeSessionId, approvalId);
+      if (bridgeStatus === "connected") {
+        sendIPCCommand(activeSessionId, {
+          kind: "approval_response",
+          approvalId,
+          decision,
+        });
+      }
+    },
+    [
+      activeSessionId,
+      recordApprovalDecision,
+      removePendingApproval,
+      bridgeStatus,
+      sendIPCCommand,
+    ],
   );
 
   const reportUserSendFailure = (sid: string, context: string, e: unknown) => {
@@ -1365,22 +1381,7 @@ function App() {
                       }
                     })().catch(reportSendFailure);
                   }}
-                  onApprove={(approvalId, decision) => {
-                    if (!activeSessionId) return;
-                    recordApprovalDecision(
-                      activeSessionId,
-                      approvalId,
-                      decision,
-                    );
-                    removePendingApproval(activeSessionId, approvalId);
-                    if (bridgeStatus === "connected") {
-                      sendIPCCommand(activeSessionId, {
-                        kind: "approval_response",
-                        approvalId,
-                        decision,
-                      });
-                    }
-                  }}
+                  onApprove={handleApprove}
                   onStop={() => {
                     console.info("[main] stop");
                     if (!activeSessionId) return;
@@ -1393,10 +1394,6 @@ function App() {
                   }}
                   isRunning={isRunning}
                   isStopping={isStopping}
-                  currentTurnIndex={currentTurnIndex}
-                  userSubmitTick={userSubmitTick}
-                  inFlightContent={inFlightContent}
-                  sendPhase={sendPhase}
                   pendingAskUser={pendingAskUser}
                   conversationWidth={conversationWidth}
                   activeSessionId={activeSessionId}

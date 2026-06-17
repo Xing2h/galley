@@ -225,12 +225,11 @@ fn maybe_show_background_hint(app: &tauri::AppHandle<tauri::Wry>) {
     // Persist the seen flag so it survives the next launch. Best-effort:
     // a write failure only means the hint may show once more, never an
     // exit-path regression.
+    let galley = app.state::<SqliteGalley>().inner().clone();
     tauri::async_runtime::spawn(async move {
-        if let Ok(galley) = SqliteGalley::open().await {
-            let _ = galley
-                .set_pref_json(CLOSE_HINT_SEEN_PREF, serde_json::json!(true))
-                .await;
-        }
+        let _ = galley
+            .set_pref_json(CLOSE_HINT_SEEN_PREF, serde_json::json!(true))
+            .await;
     });
 
     let (title, body) = match app.try_state::<CloseHintCopy>() {
@@ -355,9 +354,9 @@ fn set_close_hint_copy(title: String, body: String, copy: tauri::State<'_, Close
 
 #[tauri::command]
 async fn start_desktop_goal(
+    galley: tauri::State<'_, SqliteGalley>,
     input: StartDesktopGoalInput,
 ) -> std::result::Result<StartDesktopGoalResult, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     let master_session_id = input.master_session_id.clone();
     let launch_llm_name = input.llm_name.clone();
     let locale = GoalLocale::parse(input.locale.as_deref());
@@ -745,6 +744,7 @@ pub fn run() {
             runner_commands::shutdown_all_runners,
         ])
         .setup(move |_app| {
+            use tauri::Manager;
             // Pre-migration backup (B4 M8 · invariant B4-I6). Runs
             // BEFORE `tauri-plugin-sql` opens the DB. We register the
             // SQL plugin below only after this guard succeeds, and its
@@ -790,6 +790,25 @@ pub fn run() {
                     .build(),
             )?;
 
+            // Open the shared SqliteGalley pool ONCE and manage it as
+            // Tauri state. Previously every Tauri command called
+            // `SqliteGalley::open()` on its own, building a fresh
+            // `max_connections(4)` pool per invocation. The pool is
+            // cheap to clone (Arc-shared) so commands now take a
+            // `State<'_, SqliteGalley>` handle instead.
+            //
+            // This runs AFTER the SQL plugin above opened `workbench.db`
+            // and ran migrations, so the file is guaranteed to exist
+            // here (the only prior failure mode for `open()`). WAL is
+            // set by `SqliteConnectOptions` and persists in the DB
+            // header, so this single open also flips the file into WAL
+            // mode for the plugin's subsequent connections.
+            let shared_galley = tauri::async_runtime::block_on(async {
+                SqliteGalley::open().await
+            })
+            .map_err(stringify_error)?;
+            _app.manage(shared_galley);
+
             // Seed the background-mode close-hint guard from the
             // persisted seen flag, now that the SQL plugin above has run
             // migrations and the `prefs` table exists. This must happen
@@ -806,7 +825,10 @@ pub fn run() {
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
                 let seen = tauri::async_runtime::block_on(async {
-                    let galley = SqliteGalley::open().await.ok()?;
+                    let galley = _app
+                        .state::<SqliteGalley>()
+                        .inner()
+                        .clone();
                     let value = galley.get_pref_json(CLOSE_HINT_SEEN_PREF).await.ok()?;
                     value.and_then(|v| v.as_bool())
                 });

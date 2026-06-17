@@ -169,7 +169,11 @@ export function Sidebar({
   const activeProject = activeProjectFilter
     ? projects.find((p) => p.id === activeProjectFilter)
     : undefined;
-  const globalBuckets = groupSessions(sessions);
+  // Memoised: `groupSessions` walks every session; without memo it
+  // re-runs on every Sidebar render, and Sidebar re-renders whenever
+  // App does (which can be triggered by lower-frequency state like
+  // pendingAskUser / bridgeStatus). `[sessions]` is the only input.
+  const globalBuckets = useMemo(() => groupSessions(sessions), [sessions]);
   const globalEmpty = sessions.length === 0;
   const navigationProjects = useMemo(
     () => sortProjectsForNavigation(projects, sessions),

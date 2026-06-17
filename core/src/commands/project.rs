@@ -1,17 +1,18 @@
 use super::*;
 
 #[tauri::command]
-pub(crate) async fn list_projects() -> std::result::Result<Vec<ProjectBrief>, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+pub(crate) async fn list_projects(
+    galley: State<'_, SqliteGalley>,
+) -> std::result::Result<Vec<ProjectBrief>, String> {
     galley.list_projects().await.map_err(stringify_error)
 }
 
 #[tauri::command]
 pub(crate) async fn create_project(
+    galley: State<'_, SqliteGalley>,
     input: CreateProjectInput,
     origin: Origin,
 ) -> std::result::Result<ProjectBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .create_project(input, origin)
         .await
@@ -20,11 +21,11 @@ pub(crate) async fn create_project(
 
 #[tauri::command]
 pub(crate) async fn update_project(
+    galley: State<'_, SqliteGalley>,
     id: ProjectId,
     patch: ProjectPatch,
     origin: Origin,
 ) -> std::result::Result<ProjectBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .update_project(id, patch, origin)
         .await
@@ -33,10 +34,10 @@ pub(crate) async fn update_project(
 
 #[tauri::command]
 pub(crate) async fn delete_project(
+    galley: State<'_, SqliteGalley>,
     id: ProjectId,
     origin: Origin,
 ) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .delete_project(id, origin)
         .await

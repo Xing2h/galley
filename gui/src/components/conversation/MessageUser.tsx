@@ -6,7 +6,7 @@ import {
   Copy,
   PlugsConnected,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, memo, useMemo, useRef, useState } from "react";
 
 import { ActionChip } from "@/components/conversation/ActionChip";
 import {
@@ -134,7 +134,7 @@ export interface MessageUserProps {
   createdAt?: string;
 }
 
-export function MessageUser({
+export const MessageUser = memo(function MessageUser({
   content,
   attachments = [],
   origin,
@@ -291,7 +291,7 @@ export function MessageUser({
       )}
     </div>
   );
-}
+});
 
 function UserImageAttachments({
   attachments,

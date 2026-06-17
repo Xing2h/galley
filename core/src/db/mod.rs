@@ -16,9 +16,10 @@
 //! [desktop runtime](../../docs/desktop-runtime.md#tauri-identifier).
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::Serialize;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::{FromRow, Sqlite, SqliteConnection, SqlitePool, Transaction};
 
 use crate::api::{
@@ -77,7 +78,26 @@ impl SqliteGalley {
             // and populates. M3 read failure on a missing DB should
             // surface clearly instead of silently returning empty
             // rows from an auto-created blank schema.
-            .create_if_missing(false);
+            .create_if_missing(false)
+            // WAL + relaxed fsync + busy retry. The Rust pool and the
+            // GUI's `tauri-plugin-sql` connection are two independent
+            // openers on the same `workbench.db`. Without these
+            // pragmas the Rust pool runs SQLite defaults
+            // (`journal_mode=DELETE`, `synchronous=FULL`,
+            // `busy_timeout=0`): every transaction fsyncs, and a
+            // concurrent writer/read from the other opener returns
+            // `SQLITE_BUSY` instead of waiting.
+            //
+            // WAL is a file-level persistent property — once set here
+            // it persists in the DB header, so the plugin's opener
+            // also reads WAL on subsequent process starts.
+            // `synchronous=Normal` is the documented safe pairing
+            // with WAL (no fsync per commit, still crash-safe). These
+            // two are connection-scoped, so only this pool benefits,
+            // which is fine: the plugin only runs migrations.
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .busy_timeout(Duration::from_secs(5));
         let pool = SqlitePoolOptions::new()
             .max_connections(4)
             .connect_with(opts)

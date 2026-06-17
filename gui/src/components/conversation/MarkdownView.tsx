@@ -11,6 +11,7 @@ import {
   Children,
   type CSSProperties,
   isValidElement,
+  memo,
   useEffect,
   useRef,
   useState,
@@ -71,7 +72,14 @@ interface MarkdownViewProps {
   selectionCopyScope?: boolean;
 }
 
-export function MarkdownView({
+// Memoised: `source` (the markdown string) is the only prop that
+// changes meaningfully; `variant`/`className` are stable per call site.
+// During streaming the parent re-renders on every throttled chunk, and
+// without `memo` every historical `MarkdownView` in the conversation
+// would re-reconcile on each chunk even though its `source` is final
+// and immutable. The memo keeps settled answers out of the streaming
+// re-render path.
+export const MarkdownView = memo(function MarkdownView({
   source,
   variant,
   className,
@@ -105,7 +113,7 @@ export function MarkdownView({
       </ReactMarkdown>
     </div>
   );
-}
+});
 
 // ---------- Prose-level typography (variant) ----------
 

@@ -1,9 +1,9 @@
 use super::*;
 
 #[tauri::command]
-pub(crate) async fn list_managed_model_providers()
--> std::result::Result<Vec<api::ManagedModelProviderRecord>, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+pub(crate) async fn list_managed_model_providers(
+    galley: State<'_, SqliteGalley>,
+) -> std::result::Result<Vec<api::ManagedModelProviderRecord>, String> {
     galley
         .list_managed_model_providers()
         .await
@@ -11,18 +11,18 @@ pub(crate) async fn list_managed_model_providers()
 }
 
 #[tauri::command]
-pub(crate) async fn list_managed_models()
--> std::result::Result<Vec<api::ManagedModelRecord>, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+pub(crate) async fn list_managed_models(
+    galley: State<'_, SqliteGalley>,
+) -> std::result::Result<Vec<api::ManagedModelRecord>, String> {
     galley.list_managed_models().await.map_err(stringify_error)
 }
 
 #[tauri::command]
 pub(crate) async fn save_managed_model_provider(
+    galley: State<'_, SqliteGalley>,
     app: tauri::AppHandle,
     input: SaveManagedProviderInput,
 ) -> std::result::Result<api::ManagedModelProviderRecord, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     let id = input
         .id
         .as_deref()
@@ -80,10 +80,10 @@ pub(crate) async fn save_managed_model_provider(
 
 #[tauri::command]
 pub(crate) async fn delete_managed_model_provider(
+    galley: State<'_, SqliteGalley>,
     app: tauri::AppHandle,
     id: String,
 ) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     let id = id.trim();
     if id.is_empty() {
         return Err(stringify_error(error::GalleyError::InvalidArgs {
@@ -105,10 +105,10 @@ pub(crate) async fn delete_managed_model_provider(
 
 #[tauri::command]
 pub(crate) async fn save_managed_model(
+    galley: State<'_, SqliteGalley>,
     app: tauri::AppHandle,
     input: SaveManagedModelInput,
 ) -> std::result::Result<api::ManagedModelRecord, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     let id = input
         .id
         .as_deref()
@@ -154,10 +154,10 @@ pub(crate) async fn save_managed_model(
 
 #[tauri::command]
 pub(crate) async fn delete_managed_model(
+    galley: State<'_, SqliteGalley>,
     app: tauri::AppHandle,
     id: String,
 ) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     let id = id.trim();
     if id.is_empty() {
         return Err(stringify_error(error::GalleyError::InvalidArgs {
@@ -174,10 +174,10 @@ pub(crate) async fn delete_managed_model(
 
 #[tauri::command]
 pub(crate) async fn reorder_managed_models(
+    galley: State<'_, SqliteGalley>,
     app: tauri::AppHandle,
     input: ReorderManagedModelsInput,
 ) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .reorder_managed_models(input.model_ids)
         .await
@@ -214,38 +214,38 @@ pub(crate) async fn start_chatgpt_codex_login()
 
 #[tauri::command]
 pub(crate) async fn complete_chatgpt_codex_login(
+    galley: State<'_, SqliteGalley>,
     app: tauri::AppHandle,
     input: codex_oauth::CompleteCodexDeviceLoginInput,
 ) -> std::result::Result<codex_oauth::CodexAuthSetupResult, String> {
     let result = codex_oauth::complete_device_login(input)
         .await
         .map_err(stringify_error)?;
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     sync_managed_model_config(&app, &galley).await?;
     Ok(result)
 }
 
 #[tauri::command]
 pub(crate) async fn import_chatgpt_codex_cli_login(
+    galley: State<'_, SqliteGalley>,
     app: tauri::AppHandle,
 ) -> std::result::Result<codex_oauth::CodexAuthSetupResult, String> {
     let result = codex_oauth::import_cli_login()
         .await
         .map_err(stringify_error)?;
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     sync_managed_model_config(&app, &galley).await?;
     Ok(result)
 }
 
 #[tauri::command]
 pub(crate) async fn logout_chatgpt_codex_provider(
+    galley: State<'_, SqliteGalley>,
     app: tauri::AppHandle,
     input: codex_oauth::CodexProviderActionInput,
 ) -> std::result::Result<(), String> {
     codex_oauth::logout_provider(input)
         .await
         .map_err(stringify_error)?;
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     sync_managed_model_config(&app, &galley).await
 }
 

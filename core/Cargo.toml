@@ -123,3 +123,21 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 name = "bridge-owner-experiment"
 path = "experiments/bridge-owner/main.rs"
 required-features = ["experiments"]
+
+# Release profile for the shipped desktop app. Defaults are opt-level=3 with
+# no LTO, codegen-units=16, no stripping — fine for iteration, suboptimal for
+# a shipped binary on the hot SQLite/JSON/IPC paths.
+#
+# - `lto = "thin"`: cross-crate inlining across sqlx/reqwest/tokio/tauri
+#   without the compile-time blow-up of `lto = true`.
+# - `codegen-units = 1`: better optimisation at the cost of build time.
+#   Build time matters less than runtime for a shipped client.
+# - `strip = "symbols"`: smaller binary, faster cold-start.
+#
+# `panic` stays at the default `unwind` on purpose: `kill_on_drop(true)` on
+# runner subprocesses (runner_manager/mod.rs) relies on unwinding to run
+# drop glue that tears down the child. Do NOT set `panic = "abort"`.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

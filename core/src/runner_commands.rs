@@ -54,7 +54,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::broadcast::error::RecvError;
 
 /// JSON-friendly mirror of [`SpawnArgs`]. The TS side sends camelCase keys
@@ -190,12 +190,7 @@ pub(crate) async fn prepare_managed_runtime_context(
             ),
         });
     }
-    let galley =
-        SqliteGalley::open()
-            .await
-            .map_err(|e| RunnerSpawnError::ManagedRuntimeInvalid {
-                detail: format!("opening Galley database failed: {e}"),
-            })?;
+    let galley = app.state::<SqliteGalley>().inner().clone();
     let models = galley.list_managed_models().await.map_err(|e| {
         RunnerSpawnError::ManagedModelNotConfigured {
             detail: format!("loading managed model records failed: {e}"),

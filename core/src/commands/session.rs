@@ -16,9 +16,9 @@ const MAX_MESSAGE_IMAGE_BYTES: usize = 25 * 1024 * 1024;
 /// same `error: <category>` discriminant.
 #[tauri::command]
 pub(crate) async fn list_sessions(
+    galley: State<'_, SqliteGalley>,
     filter: SessionFilter,
 ) -> std::result::Result<Vec<SessionBrief>, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley.list_sessions(filter).await.map_err(stringify_error)
 }
 
@@ -36,10 +36,10 @@ pub(crate) async fn list_sessions(
 
 #[tauri::command]
 pub(crate) async fn create_session(
+    galley: State<'_, SqliteGalley>,
     input: CreateSessionInput,
     origin: Origin,
 ) -> std::result::Result<SessionBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .create_session(input, origin)
         .await
@@ -48,10 +48,10 @@ pub(crate) async fn create_session(
 
 #[tauri::command]
 pub(crate) async fn archive_session(
+    galley: State<'_, SqliteGalley>,
     id: SessionId,
     origin: Origin,
 ) -> std::result::Result<SessionBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .archive_session(id, origin)
         .await
@@ -60,10 +60,10 @@ pub(crate) async fn archive_session(
 
 #[tauri::command]
 pub(crate) async fn unarchive_session(
+    galley: State<'_, SqliteGalley>,
     id: SessionId,
     origin: Origin,
 ) -> std::result::Result<SessionBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .unarchive_session(id, origin)
         .await
@@ -72,11 +72,11 @@ pub(crate) async fn unarchive_session(
 
 #[tauri::command]
 pub(crate) async fn rename_session(
+    galley: State<'_, SqliteGalley>,
     id: SessionId,
     title: String,
     origin: Origin,
 ) -> std::result::Result<SessionBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .rename_session(id, title, origin)
         .await
@@ -85,11 +85,11 @@ pub(crate) async fn rename_session(
 
 #[tauri::command]
 pub(crate) async fn set_session_pinned(
+    galley: State<'_, SqliteGalley>,
     id: SessionId,
     pinned: bool,
     origin: Origin,
 ) -> std::result::Result<SessionBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .set_session_pinned(id, pinned, origin)
         .await
@@ -98,10 +98,10 @@ pub(crate) async fn set_session_pinned(
 
 #[tauri::command]
 pub(crate) async fn delete_session(
+    galley: State<'_, SqliteGalley>,
     id: SessionId,
     origin: Origin,
 ) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .delete_session(id, origin)
         .await
@@ -110,11 +110,11 @@ pub(crate) async fn delete_session(
 
 #[tauri::command]
 pub(crate) async fn assign_session_to_project(
+    galley: State<'_, SqliteGalley>,
     session_id: SessionId,
     project_id: Option<String>,
     origin: Origin,
 ) -> std::result::Result<SessionBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .assign_session_to_project(session_id, project_id, origin)
         .await
@@ -123,12 +123,12 @@ pub(crate) async fn assign_session_to_project(
 
 #[tauri::command]
 pub(crate) async fn set_session_llm(
+    galley: State<'_, SqliteGalley>,
     id: SessionId,
     index: Option<u32>,
     key: Option<String>,
     display_name: Option<String>,
 ) -> std::result::Result<SessionBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .set_session_llm(id, index, key, display_name)
         .await
@@ -137,12 +137,12 @@ pub(crate) async fn set_session_llm(
 
 #[tauri::command]
 pub(crate) async fn bump_session_after_turn(
+    galley: State<'_, SqliteGalley>,
     id: SessionId,
     summary: Option<String>,
     step_number: Option<u32>,
     mark_unread: bool,
 ) -> std::result::Result<SessionBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .bump_session_after_turn(id, summary, step_number, mark_unread)
         .await
@@ -150,8 +150,10 @@ pub(crate) async fn bump_session_after_turn(
 }
 
 #[tauri::command]
-pub(crate) async fn clear_session_unread(id: SessionId) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+pub(crate) async fn clear_session_unread(
+    galley: State<'_, SqliteGalley>,
+    id: SessionId,
+) -> std::result::Result<(), String> {
     galley
         .clear_session_unread(id)
         .await
@@ -160,9 +162,9 @@ pub(crate) async fn clear_session_unread(id: SessionId) -> std::result::Result<(
 
 #[tauri::command]
 pub(crate) async fn session_message_rows(
+    galley: State<'_, SqliteGalley>,
     session_id: SessionId,
 ) -> std::result::Result<Vec<PersistedMessageRow>, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .persisted_message_rows(&session_id)
         .await
@@ -171,12 +173,12 @@ pub(crate) async fn session_message_rows(
 
 #[tauri::command]
 pub(crate) async fn persist_user_message(
+    galley: State<'_, SqliteGalley>,
     session_id: SessionId,
     content: String,
     origin: Origin,
     attachments: Option<Vec<PersistUserMessageAttachmentInput>>,
 ) -> std::result::Result<api::MessageBrief, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     let attachments =
         decode_message_attachments(attachments.unwrap_or_default()).map_err(stringify_error)?;
     galley
@@ -344,9 +346,9 @@ pub(crate) struct PersistAssistantMessageInput {
 
 #[tauri::command]
 pub(crate) async fn persist_assistant_message(
+    galley: State<'_, SqliteGalley>,
     input: PersistAssistantMessageInput,
 ) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .persist_gui_assistant_message(PersistAssistantMessage {
             session_id: input.session_id,
@@ -365,8 +367,9 @@ pub(crate) async fn persist_assistant_message(
 }
 
 #[tauri::command]
-pub(crate) async fn delete_empty_new_sessions() -> std::result::Result<u32, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+pub(crate) async fn delete_empty_new_sessions(
+    galley: State<'_, SqliteGalley>,
+) -> std::result::Result<u32, String> {
     galley
         .delete_empty_new_sessions()
         .await
@@ -374,14 +377,16 @@ pub(crate) async fn delete_empty_new_sessions() -> std::result::Result<u32, Stri
 }
 
 #[tauri::command]
-pub(crate) async fn delete_demo_sessions() -> std::result::Result<u32, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+pub(crate) async fn delete_demo_sessions(
+    galley: State<'_, SqliteGalley>,
+) -> std::result::Result<u32, String> {
     galley.delete_demo_sessions().await.map_err(stringify_error)
 }
 
 #[tauri::command]
-pub(crate) async fn backfill_fts_if_empty() -> std::result::Result<u32, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
+pub(crate) async fn backfill_fts_if_empty(
+    galley: State<'_, SqliteGalley>,
+) -> std::result::Result<u32, String> {
     galley
         .backfill_fts_if_empty()
         .await
@@ -390,11 +395,11 @@ pub(crate) async fn backfill_fts_if_empty() -> std::result::Result<u32, String> 
 
 #[tauri::command]
 pub(crate) async fn search_messages(
+    galley: State<'_, SqliteGalley>,
     query: String,
     limit: u32,
     runtime_kind: Option<RuntimeKind>,
 ) -> std::result::Result<Vec<MessageSearchHit>, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .search_message_hits(query, limit, runtime_kind)
         .await
@@ -416,9 +421,9 @@ pub(crate) struct PersistToolEventPendingInput {
 
 #[tauri::command]
 pub(crate) async fn persist_tool_event_pending(
+    galley: State<'_, SqliteGalley>,
     input: PersistToolEventPendingInput,
 ) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .persist_tool_event_pending(PersistToolEventPending {
             approval_id: input.approval_id,
@@ -436,11 +441,11 @@ pub(crate) async fn persist_tool_event_pending(
 
 #[tauri::command]
 pub(crate) async fn persist_tool_event_approval_decision(
+    galley: State<'_, SqliteGalley>,
     approval_id: String,
     decision: String,
     decided_at: String,
 ) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .persist_tool_event_approval_decision(&approval_id, &decision, &decided_at)
         .await
@@ -449,9 +454,9 @@ pub(crate) async fn persist_tool_event_approval_decision(
 
 #[tauri::command]
 pub(crate) async fn load_tool_events_by_session(
+    galley: State<'_, SqliteGalley>,
     session_id: SessionId,
 ) -> std::result::Result<Vec<ToolEventRow>, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .tool_event_rows_by_session(&session_id)
         .await
@@ -460,18 +465,18 @@ pub(crate) async fn load_tool_events_by_session(
 
 #[tauri::command]
 pub(crate) async fn get_pref_json(
+    galley: State<'_, SqliteGalley>,
     key: String,
 ) -> std::result::Result<Option<serde_json::Value>, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley.get_pref_json(&key).await.map_err(stringify_error)
 }
 
 #[tauri::command]
 pub(crate) async fn set_pref_json(
+    galley: State<'_, SqliteGalley>,
     key: String,
     value: serde_json::Value,
 ) -> std::result::Result<(), String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .set_pref_json(&key, value)
         .await
@@ -480,10 +485,10 @@ pub(crate) async fn set_pref_json(
 
 #[tauri::command]
 pub(crate) async fn bulk_archive_sessions(
+    galley: State<'_, SqliteGalley>,
     ids: Vec<SessionId>,
     origin: Origin,
 ) -> std::result::Result<u32, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .bulk_archive_sessions(ids, origin)
         .await
@@ -492,10 +497,10 @@ pub(crate) async fn bulk_archive_sessions(
 
 #[tauri::command]
 pub(crate) async fn bulk_unarchive_sessions(
+    galley: State<'_, SqliteGalley>,
     ids: Vec<SessionId>,
     origin: Origin,
 ) -> std::result::Result<u32, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .bulk_unarchive_sessions(ids, origin)
         .await
@@ -504,10 +509,10 @@ pub(crate) async fn bulk_unarchive_sessions(
 
 #[tauri::command]
 pub(crate) async fn bulk_delete_sessions(
+    galley: State<'_, SqliteGalley>,
     ids: Vec<SessionId>,
     origin: Origin,
 ) -> std::result::Result<u32, String> {
-    let galley = SqliteGalley::open().await.map_err(stringify_error)?;
     galley
         .bulk_delete_sessions(ids, origin)
         .await

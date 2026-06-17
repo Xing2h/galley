@@ -15,7 +15,7 @@ import {
   Terminal,
   XCircle,
 } from "@phosphor-icons/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, memo, useState, type ReactNode } from "react";
 
 import { ApprovalForm } from "@/components/conversation/ApprovalForm";
 import { LiveDots } from "@/components/conversation/LiveIndicators";
@@ -83,7 +83,11 @@ function pickToolTier(
  * Tool callout — dispatcher between the three visual tiers. See
  * `pickToolTier` for the rationale behind the split.
  */
-export function ToolCallout({
+// Memoised: settled tool callouts carry immutable `tool` data. The
+// `onApprove` prop must be stable (useCallback) at the call site for
+// the memo to keep pending callouts from re-rendering on every stream
+// chunk — see the App.tsx handler wiring.
+export const ToolCallout = memo(function ToolCallout({
   tool,
   onApprove,
   approvalDecision,
@@ -100,7 +104,7 @@ export function ToolCallout({
       projectName={projectName}
     />
   );
-}
+});
 
 /**
  * Block-form tool callout — the original "Notion callout" treatment.

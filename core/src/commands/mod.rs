@@ -14,6 +14,12 @@ use crate::{
     managed_model_probe, managed_runtime, path_install, sop_install,
 };
 use serde::Deserialize;
+// `State` is re-exported so every command module picks it up via its
+// `use super::*;` import. `SqliteGalley` is injected once as Tauri
+// managed state (see lib.rs setup) — commands take it as a
+// `State<'_, SqliteGalley>` argument instead of calling
+// `SqliteGalley::open()` per invocation.
+pub(crate) use tauri::State;
 
 mod goal;
 mod managed_model;

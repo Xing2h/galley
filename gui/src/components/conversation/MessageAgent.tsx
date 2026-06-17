@@ -1,4 +1,4 @@
-import { isValidElement, type ReactNode } from "react";
+import { isValidElement, memo, type ReactNode } from "react";
 
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { MessageActions } from "@/components/conversation/MessageActions";
@@ -22,7 +22,10 @@ import { MessageActions } from "@/components/conversation/MessageActions";
  * ReactNode demo children always skip actions — there's no canonical
  * markdown source to copy back out, and demos rarely need actions.
  */
-export function MessageAgent({
+// Memoised: during streaming the conversation re-renders on every
+// throttled chunk, but settled agent turns carry an immutable string
+// child. `memo` keeps those out of the streaming reconciliation path.
+export const MessageAgent = memo(function MessageAgent({
   children,
   showActions = true,
 }: {
@@ -48,7 +51,7 @@ export function MessageAgent({
       {isValidElement(children) || children !== undefined ? children : null}
     </div>
   );
-}
+});
 
 /**
  * Intermediate assistant narration — process prose that belongs in
@@ -56,10 +59,14 @@ export function MessageAgent({
  * text does not restyle when it settles, but skips Copy/Save actions:
  * this text is useful status context, not the user-facing deliverable.
  */
-export function MessageAgentNarration({ children }: { children: string }) {
+export const MessageAgentNarration = memo(function MessageAgentNarration({
+  children,
+}: {
+  children: string;
+}) {
   return (
     <div className="my-1.5" data-role="agent-narration">
       <MarkdownView source={children} variant="narration" />
     </div>
   );
-}
+});

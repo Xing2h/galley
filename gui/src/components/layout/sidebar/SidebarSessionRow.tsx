@@ -1,6 +1,6 @@
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, memo, useRef, useState } from "react";
 import {
   Archive,
   CaretRight,
@@ -37,7 +37,7 @@ import {
 } from "./SidebarRowMenu";
 
 
-export function SidebarSessionRow({
+export const SidebarSessionRow = memo(function SidebarSessionRow({
   session,
   active,
   petAttached = false,
@@ -452,7 +452,7 @@ export function SidebarSessionRow({
       </ContextMenu.Portal>
     </ContextMenu.Root>
   );
-}
+});
 
 function SidebarSessionMenuItems({
   kind,
