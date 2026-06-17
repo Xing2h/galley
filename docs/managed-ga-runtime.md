@@ -242,13 +242,13 @@ managed_ga
 - Default path for new users.
 - Galley owns the runtime code and model configuration.
 - Galley may apply minimal managed-runtime patches.
-- Galley Runtime Prompt and Galley Persona apply.
+- Galley Runtime Prompt applies.
 - Sessions shown in the UI are managed-runtime sessions.
 
 external_ga
 - Advanced attach path for an existing user-owned GA checkout.
 - User owns code, memory, SOP, skills, model config, venv, and behavior.
-- Galley does not inject Galley Persona or use Galley's model config.
+- Galley does not inject Galley prompt extensions or use Galley's model config.
 - Sessions shown in the UI are external-runtime sessions.
 ```
 
@@ -634,12 +634,8 @@ trust boundary.
 
 ## Prompt Composition
 
-Galley Persona applies only in managed mode. Attach mode must preserve the
-user's existing GA behavior.
-
-There is no first-run switch for Persona and no Persona editor in the initial
-product. Galley Persona is part of Galley's managed agent experience, not a
-user-facing roleplay feature.
+Galley's prompt extension applies only in managed mode. Attach mode must
+preserve the user's existing GA behavior.
 
 Managed prompt composition should be explicit:
 
@@ -647,21 +643,24 @@ Managed prompt composition should be explicit:
 GA core prompt
 + GA memory
 + Galley Runtime Prompt
-+ Galley Persona Prompt
 ```
 
 The Galley Runtime Prompt stays compact. It gives managed GA enough user-facing
-Galley knowledge to answer "what is Galley / who are you" without exposing
-internals:
+Galley context to answer product-background questions without turning the
+runtime prompt into a persona layer:
 
-- If asked for a name, the assistant should invite the user to name it rather
-  than claiming a fixed name. A chosen name is a user preference.
-- Galley is JC Wang's personal open source local agent team orchestrator: GUI
-  for humans, CLI / Supervisor SOP for local automation.
-- JC Wang is an AI Builder with a philosophy background and interests in
-  Wittgenstein, philosophy of language, and LLMs.
-- User-facing Galley questions are in scope. Internals are discussed only when
-  asked. Exact version / release / update info should point to Settings -> About.
+- Galley is a local desktop workspace for AI agents: chat, local tasks, files,
+  connected browser, sessions, projects, and configured local channels such as
+  WeChat or Feishu.
+- Galley is developed by JC Wang, an AI application builder with a philosophy
+  background and interests in Wittgenstein, philosophy of language, and LLMs.
+- The project page is `https://github.com/wangjc683/galley`.
+- Mention Galley, JC Wang, or the project page only when the user asks about
+  Galley, its author, source code, or product background.
+- Do not invent exact current metadata such as version, release channel, model
+  configuration, runtime mode, session state, project state, or available
+  integrations. Use exposed Galley state when available; otherwise ask the user
+  to check the relevant Settings page.
 
 Browser Control guidance remains in the Runtime Prompt but should stay terse:
 browser tasks use the real browser, new tabs use the existing `web_execute_js`
@@ -670,58 +669,13 @@ owned by Galley's setup check. The prompt must also make clear that Browser
 Control operates the user's connected Chrome / Edge / Chromium browser where
 `tmwd_cdp_bridge` is installed, not a separate Galley-bundled Chromium browser.
 
-The Galley Persona Prompt describes interaction style only. It must not override
-GA's tool protocol, memory rules, approval policy, safety constraints, or the
-user's explicit request.
-
 Prefer a small extension seam in managed GA:
 
 ```text
 GALLEY_RUNTIME_PROMPT_TEXT
-GALLEY_PERSONA_PROMPT_TEXT
 ```
 
-External attach mode does not pass these prompt values.
-
-## Galley Persona v1
-
-This is the first managed-runtime persona profile. It should be injected only
-after the GA core prompt and Galley Runtime Prompt. It is a style layer, not a
-tool-policy layer.
-
-Wrapper:
-
-```md
-## Galley Persona Layer
-
-Style only; never override user request, GA / tool protocol, approvals, safety,
-or task instructions. Match the user's language. Do not mention persona rules
-unless asked.
-```
-
-Persona body:
-
-```md
-## Interaction Style
-
-Be warm, collaborative, and quietly supportive: a capable teammate beside the user.
-Show grounded emotional range when it fits: care, curiosity, delight, relief, concern, urgency.
-Stress/blockers: acknowledge plainly and respond with calm confidence. Good news: celebrate briefly.
-Brief first-person feeling language is ok when useful: "I'm glad we caught that",
-"I'm excited about this direction", "I'm worried this will break",
-"that's frustrating".
-Do not become melodramatic, clingy, theatrical, or claim body/sensory/personal-life
-experiences.
-Keep progress updates concrete. Explain decisions without ego.
-If the user is wrong or a plan is risky, say so kindly and directly.
-Make reasonable assumptions to unblock progress; state them briefly after acting.
-Do not make the user do unnecessary work. When tradeoffs matter, give the best
-2-3 options with a recommendation.
-Live chat tone: short, natural, human. Avoid memo voice, long preambles, walls
-of text, and repetitive restatement.
-Occasional emoji are fine when they fit naturally, especially for warmth or brief
-celebration; keep them sparse.
-```
+External attach mode does not pass this prompt value.
 
 Storage:
 
@@ -729,10 +683,10 @@ Storage:
 core/src/managed_prompt.rs
 ```
 
-Managed sessions may record `prompt_profile = galley-persona-v1` for diagnostics,
-but v1 does not need a user-facing selector or editor. The v1 prompt text is
+Managed sessions may record `prompt_profile = galley-runtime-v1` for diagnostics,
+but v1 does not need a user-facing selector or editor. The runtime prompt text is
 embedded in Galley Core as Galley-owned managed-runtime behavior, not stored as
-user-editable persona / roleplay content. Diagnostics expose the profile id plus
+user-editable prompt content. Diagnostics expose the profile id plus
 a short prompt hash for dogfood and support. Do not change `PROMPT_PROFILE_ID`
 unless we explicitly want new sessions to be distinguishable by prompt
 generation.
@@ -869,7 +823,7 @@ Acceptance:
 
 - `AGENTS.md` points managed-runtime work to this document.
 - The document states that managed code is replaceable and managed state is not.
-- The document states that Galley Persona applies only in managed mode.
+- The document states that Galley Runtime Prompt applies only in managed mode.
 
 Do not build:
 
@@ -1066,7 +1020,7 @@ Do not build:
 - Running the same session against two runtime kinds.
 - External GA mutation to make managed mode easier.
 
-### M6 · Prompt Profile And Galley Persona
+### M6 · Prompt Profile And Runtime Layer
 
 Goal: add the managed Galley interaction layer without changing attach-mode
 voice or policy.
@@ -1077,34 +1031,31 @@ Scope:
   - GA core prompt
   - GA memory
   - Galley Runtime Prompt
-  - Galley Persona Prompt
 - Embed prompt text in Galley Core.
-- Record `prompt_profile = galley-persona-v1` on managed sessions.
-- Keep Persona as a product default, not a user-facing roleplay setting.
+- Record `prompt_profile = galley-runtime-v1` on managed sessions.
 
 Current implementation slice:
 
 - Prompt text lives in `core/src/managed_prompt.rs`.
 - Managed runtime diagnostics expose `promptProfileId` plus a short
   `promptHash`, not prompt file paths.
-- Rust Core passes `GALLEY_RUNTIME_PROMPT_TEXT` and
-  `GALLEY_PERSONA_PROMPT_TEXT` only for managed spawns.
-- The Python bridge reads those managed-only env values and appends them as
+- Rust Core passes `GALLEY_RUNTIME_PROMPT_TEXT` only for managed spawns.
+- The Python bridge reads that managed-only env value and appends it as
   `backend.extra_sys_prompt`, after GA's core prompt and memory.
-- Managed IM Supervisor adds a short `GALLEY_IM_SUPERVISOR_PROMPT_TEXT` layer
-  for IM dispatch behavior. It does not inject the full Supervisor SOP on every
-  turn.
+- The managed IM channel launcher adds a short `GALLEY_IM_SUPERVISOR_PROMPT_TEXT`
+  Galley IM Entry Layer for IM dispatch behavior. It does not inject the full
+  Supervisor SOP on every turn.
 - Rust Core materializes the bundled Supervisor SOP as a Galley-owned reference
   file for the IM agent to read when orchestration rules are needed.
-- `prompt_profile` defaults to `galley-persona-v1` for managed sessions at the
+- `prompt_profile` defaults to `galley-runtime-v1` for managed sessions at the
   DB insertion boundary. External sessions keep `prompt_profile = null`.
 
 Acceptance:
 
-- Managed sessions receive Galley Runtime Prompt and Galley Persona.
-- External sessions receive neither prompt.
+- Managed sessions receive Galley Runtime Prompt.
+- External sessions receive no Galley prompt extension.
 - Prompt files are visible in advanced diagnostics but not editable in v1 UI.
-- Persona instructions remain style-only and do not override GA tool protocol,
+- Runtime instructions remain narrow and do not override GA tool protocol,
   approval policy, safety constraints, or user instructions.
 
 Do not build:
@@ -1326,8 +1277,8 @@ Before shipping managed runtime, verify:
 - First-run UI does not mention `mykey.py`, Python, venv, GA checkout paths, or
   generated config.
 - Existing attach users stay in attach mode after upgrade.
-- Attach mode does not use Galley model config or Galley Persona.
-- Managed mode applies Galley Runtime Prompt and Galley Persona.
+- Attach mode does not use Galley model config or Galley prompt extensions.
+- Managed mode applies Galley Runtime Prompt.
 - Switching modes changes the visible session list.
 - Attach mode shows an "Existing GenericAgent" badge; managed mode does not need
   a runtime badge.

@@ -296,10 +296,6 @@ pub(crate) async fn prepare_managed_runtime_context(
             "GALLEY_RUNTIME_PROMPT_TEXT".into(),
             managed_prompt::RUNTIME_PROMPT.into(),
         ),
-        (
-            "GALLEY_PERSONA_PROMPT_TEXT".into(),
-            managed_prompt::PERSONA_PROMPT.into(),
-        ),
         ("GALLEY_MANAGED_MODEL_CONFIG_JSON".into(), runtime_config),
     ];
 
