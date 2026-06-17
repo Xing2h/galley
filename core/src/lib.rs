@@ -597,6 +597,36 @@ pub fn run() {
             sql: include_str!("../migrations/020_message_attachments.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 21,
+            description: "allow Galley Native session runtime",
+            sql: include_str!("../migrations/021_native_session_runtime.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 22,
+            description: "add Galley Native memory substrate",
+            sql: include_str!("../migrations/022_native_memory_substrate.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 23,
+            description: "allow Galley Native Goal runtime",
+            sql: include_str!("../migrations/023_native_goal_runtime.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 24,
+            description: "make Galley Native the default built-in runtime",
+            sql: include_str!("../migrations/024_native_default_runtime.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 25,
+            description: "restore managed runtime default after native experiment",
+            sql: include_str!("../migrations/025_restore_managed_runtime_default.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —

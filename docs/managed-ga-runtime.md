@@ -716,6 +716,13 @@ changes the format or location contract of user state. In that case, treat it as
 a high-risk migration: back up first, document the upstream reason, and dogfood
 with real managed-runtime state.
 
+Compatibility note: migrations `021`-`024` are retained byte-for-byte from the
+abandoned Galley Native experiment so dogfood databases that already applied
+them can still pass SQLx migration validation after returning to main. Migration
+`025` restores persisted `galley_native` runtime values back to `managed`.
+Keeping these migration records does not re-enable the Rust native runtime on
+main; it only protects local user state from a development downgrade trap.
+
 Suggested layout:
 
 ```text
