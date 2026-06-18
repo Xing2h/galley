@@ -876,6 +876,21 @@ const zhCopy = {
       ],
       copyFeishuPermissions: "复制全部",
       feishuPermissionsCopied: "已复制",
+      feishuTextCommandsTitle: "飞书文本命令",
+      feishuTextCommandsHint:
+        "在飞书聊天里直接发送这些文本命令。也可以发送 /help 查看完整列表。",
+      feishuTextCommands: [
+        { command: "/help", description: "显示完整帮助" },
+        { command: "/status", description: "查看运行状态和当前模型" },
+        { command: "/llm", description: "查看可用模型" },
+        { command: "/llm 0", description: "切换到第 0 个模型" },
+        { command: "/llm 1", description: "切换到第 1 个模型" },
+        { command: "/new", description: "开启新对话并清空当前上下文" },
+        { command: "/stop", description: "停止当前任务" },
+        { command: "/continue", description: "列出可恢复会话" },
+        { command: "/continue 1", description: "恢复列表中的第 1 个会话" },
+        { command: "/restore", description: "恢复上次对话历史" },
+      ],
       feishuConnectedSteps: [
         "在飞书客户端给机器人发消息。",
         "如果没有回复，检查长连接、事件、权限和应用发布状态。",
@@ -2212,6 +2227,27 @@ const enCopy: AppCopy = {
       ],
       copyFeishuPermissions: "Copy all",
       feishuPermissionsCopied: "Copied",
+      feishuTextCommandsTitle: "Feishu text commands",
+      feishuTextCommandsHint:
+        "Send these text commands directly in Feishu. Send /help for the full list.",
+      feishuTextCommands: [
+        { command: "/help", description: "Show full help" },
+        { command: "/status", description: "Show status and current model" },
+        { command: "/llm", description: "List available models" },
+        { command: "/llm 0", description: "Switch to model 0" },
+        { command: "/llm 1", description: "Switch to model 1" },
+        {
+          command: "/new",
+          description: "Start a new chat and clear current context",
+        },
+        { command: "/stop", description: "Stop the current task" },
+        { command: "/continue", description: "List restorable sessions" },
+        {
+          command: "/continue 1",
+          description: "Restore the first listed session",
+        },
+        { command: "/restore", description: "Restore the last chat history" },
+      ],
       feishuConnectedSteps: [
         "Message the bot in the Feishu client.",
         "If there is no reply, check long connection, events, permissions, and app publishing.",
