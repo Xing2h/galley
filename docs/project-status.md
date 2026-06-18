@@ -9,34 +9,33 @@ live in [refactor](./refactor/README.md).
 
 ## Current Target
 
-- Package version: `0.2.8`.
-- Git tag / GitHub Release: `v0.2.8` is the current published GitHub Latest.
+- Package version: `0.2.9`.
+- Git tag / GitHub Release: `v0.2.9` is the current release candidate.
 - Agent API schema: `schemaVersion: 1`
-- Release tier: stable patch; default update channel points at `v0.2.8`, with
-  `beta` kept as a legacy alias for older builds.
+- Release tier: stable patch; default update channel is being prepared for
+  `v0.2.9`, with `beta` kept as a legacy alias for older builds.
 - Product shape: dual-native local agent team orchestrator
 
 Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
 GUI is for the human operator at the desk; the CLI is for trusted Agent /
 Supervisor automation on the same machine.
 
-Current unreleased work has upgraded the audited managed GenericAgent baseline
-to upstream `53b48aea` and reintroduced Project folder binding as GA Project
-Workspace: GUI folder selection enables it, while CLI/API callers still opt in
-explicitly. This does not restore the old Project-root-as-process-cwd behavior.
+Current v0.2.9 release work upgrades the audited managed GenericAgent baseline
+to upstream `53b48aea`, reintroduces Project folder binding as GA Project
+Workspace, and includes the post-v0.2.8 GUI / Core / Channels polish set.
+Project Workspace does not restore the old Project-root-as-process-cwd
+behavior: GUI folder selection enables it, while CLI/API callers still opt in
+explicitly.
 
 ## Current Release State
 
-`v0.2.8` is the current published stable patch, GitHub Latest, and default
-update-channel target. It shipped Goal V1 and master-session Goal delivery, the
-post-`v0.2.7` main-workbench / Settings / Browser Control polish set, Browser
-Control reconnect timing improvements, Core / CLI structure splits, and the
-audited bundled GenericAgent baseline at upstream `0def7441`.
+`v0.2.9` is being prepared as the next stable patch. It includes the audited
+bundled GenericAgent baseline at upstream `53b48aea`, Project Workspace
+reactivation without process-cwd coupling, Feishu / Channels polish, and the
+post-`v0.2.8` Core / GUI reliability set.
 
-The default update channel was promoted to `v0.2.8` after publish. The live
-channel verifier passed with cache-busting for both `stable` and the legacy
-`beta` alias, and the `galley-update-channel` branch manifest reports version
-`0.2.8`. `GALLEY_UPDATER_ENDPOINT` points at
+Until `v0.2.9` publish and promotion complete, the live default update channel
+still points at `v0.2.8`. `GALLEY_UPDATER_ENDPOINT` points at
 `updates/stable/latest.json`; `updates/beta/latest.json` is kept as a legacy
 alias for builds compiled before the stable endpoint rename.
 
@@ -59,7 +58,7 @@ Post-promote follow-up:
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
 | Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; current unreleased baseline is audited upstream `53b48aea`; GUI / CLI split, Provider / Model config, local encrypted SQLite credentials, and Project Workspace are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | Backup mechanism exists; current schema covers runtime identity, managed models/providers, Goal state, internal message visibility, and GUI-created message attachments | [B4 M8](./refactor/B4-M8-sub-plan.md) |
-| Release path | v0.2.8 is published as GitHub Latest and the live update-channel target | [release / update SOP](./release-update-sop.md) |
+| Release path | v0.2.9 release prep is active; v0.2.8 remains live until publish + promotion complete | [release / update SOP](./release-update-sop.md) |
 | Windows | Windows x64 remains the supported release target; Windows ARM is deferred until the release workflow and smoke path are added | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream `53b48aea` | [GA baseline](./ga-baseline.md) |
 
@@ -84,7 +83,7 @@ Detailed phase narratives are intentionally not duplicated here. Use:
 
 ## Release Version Rules
 
-- Current package metadata uses `0.2.8`. For the next release, update:
+- Current package metadata uses `0.2.9`. For the next release, update:
   - `package.json`
   - `core/tauri.conf.json`
   - `core/Cargo.toml`
