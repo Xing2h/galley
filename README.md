@@ -93,10 +93,10 @@ GUI 启动后进 **Settings → Agent**：
 
 | 按钮 | 做什么 |
 |---|---|
-| **复制 SOP** | 复制 [`galley-supervisor-sop.md`](./docs/integrations/galley-supervisor-sop.md)，发给你的 Agent，让它学会在单 session、已有 session 跟进、Project-backed session group 之间选择 |
+| **复制 SOP** | 复制短版 [`galley-supervisor-sop.md`](./docs/integrations/galley-supervisor-sop.md)，发给你的 Agent，让它学会检查、继续、新开、拆分和等待 Galley 任务；高级细节见 [Supervisor reference](./docs/integrations/galley-supervisor-reference.md) |
 | **查看 Agent API 文档** | 打开完整命令清单、JSON schema 和 exit code |
 
-用户无需学习 CLI，直接用自然语言告诉 Supervisor Agent，让它安排 Galley 做什么即可。复杂任务不会直接变成一个“大 prompt”：Supervisor SOP 会先选择编排模式，简单问题直接读或跟进一个 session，复杂目标用 Project 承载一组 sessions 并行跑，结束后汇总。也可以在 **Settings → Channels** 接入微信，扫码后从微信给 Galley 发消息。
+用户无需学习 CLI，直接用自然语言告诉 Supervisor Agent，让它安排 Galley 做什么即可。复制给 Agent 的 SOP 是轻量热路径；复杂命令和高级编排留在 reference / Agent API。复杂任务不会直接变成一个“大 prompt”：Supervisor 会先选择编排模式，简单问题直接读或跟进一个 session，复杂目标用 Project 承载一组 sessions 并行跑，结束后汇总。也可以在 **Settings → Channels** 接入微信，扫码后从微信给 Galley 发消息。
 
 <details>
 <summary>展开 CLI 示例</summary>

@@ -112,7 +112,7 @@ grep -rn "supervisor_chat\|conversation_log\|supervisor_history\|im_messages" co
 ### Document references
 
 - [`docs/agent-api.md`](./agent-api.md) §6A — Origin fields per-via semantics: only what supervisor SENDS to Galley is persisted, never what they receive externally
-- [`docs/integrations/galley-supervisor-sop.md`](./integrations/galley-supervisor-sop.md) §6 Origin convention — SOP explicitly tells supervisor bots to pass identity + reason via CLI flags, not push conversation logs
+- [`docs/integrations/galley-supervisor-sop.md`](./integrations/galley-supervisor-sop.md) hard rules and [`galley-supervisor-reference.md`](./integrations/galley-supervisor-reference.md) Origin Fields — Supervisor guidance explicitly tells bots to pass identity + reason via CLI flags, not push conversation logs
 
 ---
 

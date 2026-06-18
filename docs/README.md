@@ -8,7 +8,7 @@ matches who you are and what you are trying to do.
 | Role | Start Here |
 |---|---|
 | User evaluating Galley | [README](../README.md), then [architecture](./architecture.md) |
-| Agent / Supervisor integrator | [Supervisor SOP](./integrations/galley-supervisor-sop.md), then [agent-api](./agent-api.md) |
+| Agent / Supervisor integrator | [Supervisor SOP](./integrations/galley-supervisor-sop.md), then [Supervisor reference](./integrations/galley-supervisor-reference.md) or [agent-api](./agent-api.md) |
 | Contributor | [CONTRIBUTING](../CONTRIBUTING.md), then [engineering workflow](./engineering-workflow.md) |
 | Maintainer | [project status](./project-status.md), [release / update SOP](./release-update-sop.md), [release workflow](./release-workflow.md), [GA baseline](./ga-baseline.md) |
 | Historical reader | [devlog](./devlog/README.md) |
@@ -22,7 +22,7 @@ matches who you are and what you are trying to do.
 | Understand the architecture | [architecture](./architecture.md) |
 | Change product behavior or roadmap | [PRD](./PRD.md) |
 | Change CLI output or Agent API | [agent-api](./agent-api.md) |
-| Change Supervisor / Agent integration | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
+| Change Supervisor / Agent integration | [Supervisor SOP](./integrations/galley-supervisor-sop.md), then [Supervisor reference](./integrations/galley-supervisor-reference.md) |
 | Plan or design Galley Native runtime | [Galley Native](./galley-native/README.md) |
 | Work on Rust core refactor | [refactor README](./refactor/README.md) |
 | Check architecture invariants | [architecture demo](./architecture-demo.md) |
@@ -47,6 +47,10 @@ matches who you are and what you are trying to do.
   compact phase state.
 - [PRD](./PRD.md): product definition and roadmap.
 - [agent-api](./agent-api.md): stable CLI / socket contract for agents.
+- [Supervisor SOP](./integrations/galley-supervisor-sop.md): short copy-first
+  SOP for local supervisor agents.
+- [Supervisor reference](./integrations/galley-supervisor-reference.md):
+  detailed command and advanced-workflow reference for Supervisor maintainers.
 - [copy and language guidelines](./copy-language-guidelines.md): UI copy,
   terminology, and localization rules for Chinese and English.
 - [copy austerity principles](./copy-austerity-principles.md): the voice rules

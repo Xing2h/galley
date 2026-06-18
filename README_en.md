@@ -93,10 +93,10 @@ In the running GUI, open **Settings -> Agent**:
 
 | Button | What it does |
 |---|---|
-| **Copy SOP** | Copies [`galley-supervisor-sop.md`](./docs/integrations/galley-supervisor-sop.md), so your Agent can choose between one session, an existing-session follow-up, or a Project-backed session group |
+| **Copy SOP** | Copies the short [`galley-supervisor-sop.md`](./docs/integrations/galley-supervisor-sop.md), so your Agent can inspect, continue, start, split, and wait for Galley work; advanced details live in the [Supervisor reference](./docs/integrations/galley-supervisor-reference.md) |
 | **Open Agent API docs** | Opens the full command reference, JSON schemas, and exit codes |
 
-You do not need to learn the CLI yourself. Tell your Supervisor Agent what you want in natural language, and let it decide how to operate Galley. Complex work does not become one giant prompt: the Supervisor SOP first chooses an orchestration mode, follows one session for simple requests, and uses a Project-backed group of sessions for independent work that needs synthesis. You can also connect WeChat from **Settings -> Channels**, scan the QR code, and message Galley from WeChat.
+You do not need to learn the CLI yourself. Tell your Supervisor Agent what you want in natural language, and let it decide how to operate Galley. The copied SOP is a lightweight hot path; detailed commands and advanced orchestration live in the reference / Agent API. Complex work does not become one giant prompt: the Supervisor first chooses an orchestration mode, follows one session for simple requests, and uses a Project-backed group of sessions for independent work that needs synthesis. You can also connect WeChat from **Settings -> Channels**, scan the QR code, and message Galley from WeChat.
 
 <details>
 <summary>Show CLI examples</summary>
