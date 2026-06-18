@@ -29,6 +29,8 @@ ubuntu-latest 收集产物 + gh release create --draft
        ↓
 手动 review: GitHub Release 页面看 draft、edit 加亮 notes、本地下载 smoke test
        ↓
+Agent / automation stops here until release owner confirms this exact draft build
+       ↓
 点 publish → 用户可见 + 可下载
        ↓
 alpha 内测 / 尝鲜：停在这里，只供手动下载
@@ -171,6 +173,11 @@ GA baseline: `<commit-hash>` (e.g. 6bb3104)
 
 底部 GitHub 自动加的 commit list 保留作为详细变更记录。
 
+**Agent stop point**: 到这里不能 publish。Agent 只能汇总 draft URL、三平台
+installer 链接、CI / asset / notes 检查结果，然后等 release owner 下载并测试
+这一次 draft build。用户在发版开始时说「可以发布」只代表可以准备 release，
+不代表可以跳过 draft build 的安装包 smoke。
+
 ### Step 4. Smoke test 三份产物
 
 把 CI 出的 2 个文件（+ 可选的本地 build Intel 包）下载到本地，按下表跑核心流程：
@@ -183,7 +190,13 @@ GA baseline: `<commit-hash>` (e.g. 6bb3104)
 
 任何 smoke 项失败：**不要 publish**，先 `git tag -d v0.2.0 && git push origin :v0.2.0` 删 tag、修 bug、bump 到 `v0.2.1`（或推 `v0.2.0-rc.2` 重新预发）。
 
+如果是 Agent 协助发版，必须等 release owner 明确回复这一次 draft build 已经
+安装 / smoke 通过，并说可以 publish。CI 绿、assets 齐、release notes 写好，
+都不等价于 publish 授权。
+
 ### Step 5. Publish
+
+只有 release owner 对这一次 draft build 给出明确 publish 授权后，才能执行本步。
 
 Release 页面右上角 → **Publish release**。一秒钟从 draft 变公开。
 

@@ -10,17 +10,26 @@
 Release and update are two separate gates:
 
 1. `release.yml` builds installers and creates a **draft GitHub Release**.
-2. Human review and smoke test decide whether the Release is safe to publish.
+2. Release-owner review and smoke test decide whether that exact draft build is
+   safe to publish.
 3. `promote-update-channel.yml` updates `updates/stable/latest.json` **only
    after publish + smoke**. It also keeps `updates/beta/latest.json` as a
    legacy alias for older installed builds.
 
+Agent rule: stop at the draft Release gate. After CI creates the draft, report
+the draft URL, asset list, and verification state, then wait for the release
+owner to install / smoke the new build and explicitly approve publish. A
+pre-flight "release this version" request is permission to prepare the release,
+not permission to publish unseen installers. Build green is not publish
+approval.
+
 For stable and patch releases, the release is not complete at GitHub publish.
 The default finish line is:
 
-1. publish the GitHub Release;
-2. promote the default update channel in the same release session;
-3. verify the live update manifest.
+1. release owner approves the draft after installer smoke;
+2. publish the GitHub Release;
+3. promote the default update channel in the same release session;
+4. verify the live update manifest.
 
 Only skip promotion when the release owner explicitly marks the release as
 `manual-download only` or `hold updater`. If either exception is used, record it
@@ -144,6 +153,13 @@ Pass criteria:
 - Draft assets include installers and updater artifacts.
 - Draft assets include `latest.json` candidate.
 
+Agent stop point:
+
+- Do not publish the draft from this step.
+- Post the draft URL and direct installer links for release-owner smoke.
+- Wait for an explicit post-draft approval such as "smoke passed, publish" or
+  "publish and promote".
+
 ### 4. Review Draft Release
 
 Open the draft Release in GitHub and check:
@@ -160,6 +176,11 @@ Open the draft Release in GitHub and check:
   - `latest.json` candidate
 
 Do not publish if assets are missing or release notes are misleading.
+
+Do not publish before the release owner has installed and smoked the draft
+artifacts. If an agent is driving the release, this is a hard handoff point:
+the agent waits here and resumes only after explicit approval for this exact
+draft build.
 
 #### Stable Release Notes Template
 
@@ -311,9 +332,14 @@ Download from the draft Release and run the platform smoke path:
 If smoke fails, stop here. Delete the bad tag, fix, bump or retag as needed,
 and run release again.
 
+If an agent is driving the release, the release owner performs or explicitly
+accepts this smoke result. The agent must not infer approval from CI status,
+asset presence, or an earlier "go release" instruction.
+
 ### 6. Publish Release
 
-Publish only after smoke passes.
+Publish only after smoke passes and the release owner explicitly approves
+publishing this exact draft build.
 
 After publish:
 
@@ -429,6 +455,8 @@ Then:
 
 ## Done Criteria
 
+- [ ] Release owner explicitly approved the exact draft build after installer
+      smoke.
 - [ ] GitHub Release published.
 - [ ] For stable / patch releases, default update channel promoted after smoke,
       unless the release is explicitly `manual-download only` or `hold updater`.
