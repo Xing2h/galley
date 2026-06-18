@@ -4,8 +4,8 @@ name: Check
 # to main. Verifies release-target health WITHOUT producing release
 # artifacts, so it stays much faster than the release workflow.
 #
-# Gates: actionlint, pnpm typecheck, pnpm lint, managed GA payload
-# check, cargo check, and cargo test. Target jobs run in parallel;
+# Gates: actionlint, pnpm typecheck, pnpm lint, pnpm test, managed GA
+# payload check, cargo check, and cargo test. Target jobs run in parallel;
 # fail-fast: false so every platform reports independently and we get
 # a complete picture.
 #
@@ -74,6 +74,10 @@ jobs:
       - name: Lint
         working-directory: ./gui
         run: pnpm lint
+
+      - name: Test
+        working-directory: ./gui
+        run: pnpm test
 
       - name: Managed GA payload gate
         run: node scripts/check-managed-ga-payload.mjs
