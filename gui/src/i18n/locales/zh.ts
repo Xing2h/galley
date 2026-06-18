@@ -686,6 +686,15 @@ export const zhCopy = {
         "Galley 会在本机处理请求，并把结果回复到微信。",
         "保持 Galley 运行，微信入口会持续可用。",
       ],
+      wechatTextCommandsTitle: "微信文本命令",
+      wechatTextCommandsHint:
+        "在微信聊天里直接发送这些文本命令。微信入口目前保持官方 GA 命令集。",
+      wechatTextCommands: [
+        { command: "/llm", description: "查看可用模型" },
+        { command: "/llm 0", description: "切换到第 0 个模型" },
+        { command: "/llm 1", description: "切换到第 1 个模型" },
+        { command: "/stop", description: "停止当前任务" },
+      ],
       feishuSetupSections: [
         {
           title: "飞书开放平台 · 准备应用",

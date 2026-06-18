@@ -717,6 +717,15 @@ export const enCopy: AppCopy = {
         "Galley handles the request on this computer and replies in WeChat.",
         "Keep Galley running to keep the WeChat entry available.",
       ],
+      wechatTextCommandsTitle: "WeChat text commands",
+      wechatTextCommandsHint:
+        "Send these text commands directly in WeChat. The WeChat entry currently keeps the official GA command set.",
+      wechatTextCommands: [
+        { command: "/llm", description: "List available models" },
+        { command: "/llm 0", description: "Switch to model 0" },
+        { command: "/llm 1", description: "Switch to model 1" },
+        { command: "/stop", description: "Stop the current task" },
+      ],
       feishuSetupSections: [
         {
           title: "Feishu Open Platform · Prepare app",
