@@ -44,6 +44,12 @@ const MIG_017: &str = include_str!("../migrations/017_message_visibility.sql");
 const MIG_018: &str = include_str!("../migrations/018_goal_deliverable.sql");
 const MIG_019: &str = include_str!("../migrations/019_goal_workspace.sql");
 const MIG_020: &str = include_str!("../migrations/020_message_attachments.sql");
+const MIG_021: &str = include_str!("../migrations/021_native_session_runtime.sql");
+const MIG_022: &str = include_str!("../migrations/022_native_memory_substrate.sql");
+const MIG_023: &str = include_str!("../migrations/023_native_goal_runtime.sql");
+const MIG_024: &str = include_str!("../migrations/024_native_default_runtime.sql");
+const MIG_025: &str = include_str!("../migrations/025_restore_managed_runtime_default.sql");
+const MIG_026: &str = include_str!("../migrations/026_project_workspace.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -83,6 +89,7 @@ async fn run_migrations(pool: &SqlitePool) {
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
         MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019, MIG_020,
+        MIG_021, MIG_022, MIG_023, MIG_024, MIG_025, MIG_026,
     ] {
         sqlx::raw_sql(sql)
             .execute(pool)
@@ -1071,11 +1078,12 @@ async fn delete_session_cascades_messages_and_attachments() {
         .await
         .unwrap();
     assert_eq!(n, 0);
-    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_attachments WHERE session_id = ?")
-        .bind("s1")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let n: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM message_attachments WHERE session_id = ?")
+            .bind("s1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(n, 0);
 }
 
@@ -1511,6 +1519,7 @@ async fn create_project_happy_path() {
                 id: "proj_1".into(),
                 name: "Alpha".into(),
                 root_path: Some("/tmp/alpha".into()),
+                workspace_enabled: true,
                 icon: Some("📁".into()),
                 color: None,
             },
@@ -1520,6 +1529,7 @@ async fn create_project_happy_path() {
         .expect("create");
     assert_eq!(p.name, "Alpha");
     assert_eq!(p.root_path.as_deref(), Some("/tmp/alpha"));
+    assert!(p.workspace_enabled);
     assert_eq!(p.icon.as_deref(), Some("📁"));
     assert!(!p.pinned);
 }
@@ -1534,6 +1544,7 @@ async fn create_project_empty_root_path_normalized_to_null() {
                 id: "proj_2".into(),
                 name: "Beta".into(),
                 root_path: Some("   ".into()),
+                workspace_enabled: false,
                 icon: None,
                 color: None,
             },
@@ -1542,6 +1553,7 @@ async fn create_project_empty_root_path_normalized_to_null() {
         .await
         .expect("create");
     assert!(p.root_path.is_none());
+    assert!(!p.workspace_enabled);
 }
 
 #[tokio::test]
@@ -1554,6 +1566,7 @@ async fn create_project_rejects_empty_name() {
                 id: "proj_x".into(),
                 name: "  ".into(),
                 root_path: None,
+                workspace_enabled: false,
                 icon: None,
                 color: None,
             },
@@ -1575,6 +1588,7 @@ async fn create_project_id_conflict_returns_invalid_args() {
                 id: "proj_dup".into(),
                 name: "Other".into(),
                 root_path: None,
+                workspace_enabled: false,
                 icon: None,
                 color: None,
             },
@@ -1583,6 +1597,25 @@ async fn create_project_id_conflict_returns_invalid_args() {
         .await
         .expect_err("dup id");
     assert!(matches!(err, GalleyError::InvalidArgs { .. }));
+}
+
+#[tokio::test]
+async fn update_project_workspace_enabled_flag() {
+    let pool = fresh_pool().await;
+    seed_project(&pool, "proj_1", "X").await;
+    let galley = SqliteGalley::from_pool(pool);
+    let p = galley
+        .update_project(
+            pid("proj_1"),
+            ProjectPatch {
+                workspace_enabled: Some(true),
+                ..Default::default()
+            },
+            Origin::gui(),
+        )
+        .await
+        .expect("workspace flag");
+    assert!(p.workspace_enabled);
 }
 
 // ---------------- update_project ----------------

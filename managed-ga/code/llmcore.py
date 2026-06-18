@@ -188,7 +188,8 @@ def _parse_claude_sse(resp_lines):
         content_blocks.append(current_block); current_block = None
     if warn:
         print(f"[WARN] {warn.strip()}")
-        content_blocks.append({"type": "text", "text": warn}); yield warn
+        insert_at = next((i for i,b in enumerate(content_blocks) if b.get("type") == "tool_use"), len(content_blocks))
+        content_blocks.insert(insert_at, {"type": "text", "text": warn}); yield warn
     return content_blocks
 
 def _try_parse_tool_args(raw):
@@ -448,7 +449,7 @@ def _openai_stream(sess, messages):
     account_id = None
     if getattr(sess, 'codex_backend', False):
         api_key, account_id = _galley_codex_access_token(sess)
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "text/event-stream", 'originator': 'codex_exec'}
     if getattr(sess, 'codex_backend', False):
         headers.update({"User-Agent": "codex_cli_rs/0.0.0 (Galley)", "originator": "codex_cli_rs"})
         account_id = account_id or _codex_account_id_from_jwt(api_key)
@@ -459,7 +460,8 @@ def _openai_stream(sess, messages):
         url = f"{sess.api_base.rstrip('/')}/responses" if getattr(sess, 'codex_backend', False) else auto_make_url(sess.api_base, "responses")
         payload = {"model": model, "input": _to_responses_input(messages), "stream": sess.stream,
                    "prompt_cache_key": _RESP_CACHE_KEY, "instructions": sess.system or "You are an Omnipotent Executor.",
-                   "client_metadata": {"x-codex-window-id": f"{_RESP_CACHE_KEY}:0","x-codex-installation-id": _RESP_CODEX_KEY}}
+                   "client_metadata": {"x-codex-window-id": f"{_RESP_CACHE_KEY}:0","x-codex-installation-id": _RESP_CODEX_KEY},
+                   'include': ['reasoning.encrypted_content']}
         if getattr(sess, 'codex_backend', False): payload["store"] = False
         if sess.reasoning_effort: payload["reasoning"] = {"effort": sess.reasoning_effort}
         if sess.max_tokens and not getattr(sess, 'codex_backend', False): payload["max_output_tokens"] = sess.max_tokens

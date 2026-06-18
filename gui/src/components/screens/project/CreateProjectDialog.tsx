@@ -1,9 +1,10 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { X as XIcon } from "@phosphor-icons/react";
+import { FolderOpen, X as XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
+import { pickFolder } from "@/lib/pick-folder";
 import { cn } from "@/lib/utils";
 
 export interface CreateProjectDialogProps {
@@ -14,14 +15,15 @@ export interface CreateProjectDialogProps {
    * the store and any post-create navigation (e.g., filter into the
    * new project). Resolves after the store action completes so the
    * dialog can close synchronously. */
-  onCreate: (input: { name: string; rootPath?: string }) => Promise<void>;
+  onCreate: (input: {
+    name: string;
+    rootPath?: string;
+  }) => Promise<void>;
 }
 
 /**
- * Create a new Project. Per PRD §7.3 (as amended by devlog
- * 2026-05-14) Project = pure 归类. The dialog has exactly one input:
- * name. The legacy `rootPath` / cwd-binding entry was rolled back to
- * avoid silently breaking GA's relative `./memory/...` reads.
+ * Create a new Project. Folder binding uses GA Workspace / Project Mode,
+ * never process cwd.
  *
  * Sized smaller than EarlierDialog (420 vs 640) — this is a quick
  * create flow, not a browser. Esc / click-outside dismiss via Radix.
@@ -33,6 +35,7 @@ export function CreateProjectDialog({
 }: CreateProjectDialogProps) {
   const copy = useCopy();
   const [name, setName] = useState("");
+  const [rootPath, setRootPath] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -43,6 +46,7 @@ export function CreateProjectDialog({
     if (!open) return;
     const t = setTimeout(() => {
       setName("");
+      setRootPath("");
       setSubmitting(false);
       nameInputRef.current?.focus();
     }, 0);
@@ -56,7 +60,11 @@ export function CreateProjectDialog({
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await onCreate({ name: trimmedName });
+      const trimmedRoot = rootPath.trim();
+      await onCreate({
+        name: trimmedName,
+        rootPath: trimmedRoot || undefined,
+      });
       onOpenChange(false);
     } catch (e) {
       console.warn("[CreateProjectDialog] onCreate failed.", e);
@@ -117,6 +125,48 @@ export function CreateProjectDialog({
               />
             </Field>
 
+            <Field label={copy.projects.workspaceFolder}>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <div
+                  className={cn(
+                    "flex h-9 min-w-[180px] flex-[1_1_190px] items-center rounded-sm border border-line bg-app px-3",
+                    rootPath
+                      ? "font-mono text-[11.5px] text-ink-soft"
+                      : "text-[12.5px] text-ink-muted",
+                  )}
+                  title={rootPath || copy.projects.workspacePlaceholder}
+                >
+                  <span className="truncate">
+                    {rootPath || copy.projects.workspacePlaceholder}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  leadingIcon={<FolderOpen size={13} weight="thin" />}
+                  onClick={() => {
+                    void pickFolder(copy.projects.chooseWorkspaceFolderTitle).then(
+                      (path) => {
+                        if (!path) return;
+                        setRootPath(path);
+                      },
+                    );
+                  }}
+                >
+                  {copy.projects.chooseFolder}
+                </Button>
+                {rootPath && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setRootPath("")}
+                  >
+                    {copy.projects.clearFolder}
+                  </Button>
+                )}
+              </div>
+            </Field>
+
             <DialogActionRow className="mt-0 pt-1">
               <Button variant="secondary" onClick={() => onOpenChange(false)}>
                 {copy.common.cancel}
@@ -135,12 +185,10 @@ export function CreateProjectDialog({
 function Field({
   label,
   required,
-  hint,
   children,
 }: {
   label: string;
   required?: boolean;
-  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -150,7 +198,6 @@ function Field({
         {required && <span className="ml-0.5 text-error">*</span>}
       </label>
       <div className="mt-1.5">{children}</div>
-      {hint && <div className="mt-1 text-[11.5px] text-ink-muted">{hint}</div>}
     </div>
   );
 }

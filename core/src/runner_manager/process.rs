@@ -66,6 +66,9 @@ pub struct SpawnArgs {
     /// Working directory for the GA subprocess (forwarded as `--cwd`).
     /// None means "let GA inherit from the runner's cwd".
     pub cwd: Option<PathBuf>,
+    /// Optional Project Workspace root. Forwarded separately from cwd so
+    /// Project folders never chdir the GA process away from its state root.
+    pub workspace_root: Option<PathBuf>,
     /// Working directory for the *runner* subprocess itself. In production
     /// this is the Tauri resourceDir (where `runner/` was packaged); in
     /// dev it's the repo root.
@@ -146,6 +149,15 @@ impl RunnerProcess {
                 detail: format!("cwd not UTF-8: {}", cwd.display()),
             })?;
             cmd.args(["--cwd", cwd_str]);
+        }
+        if let Some(ref workspace_root) = args.workspace_root {
+            let workspace_root_str =
+                workspace_root
+                    .to_str()
+                    .ok_or_else(|| RunnerSpawnError::PathEncoding {
+                        detail: format!("workspace root not UTF-8: {}", workspace_root.display()),
+                    })?;
+            cmd.args(["--workspace-root", workspace_root_str]);
         }
         if let Some(idx) = args.llm_index {
             cmd.args(["--llm-no", &idx.to_string()]);
@@ -459,6 +471,7 @@ mod tests {
             ga_path: PathBuf::from("/tmp"),
             session_id: "s1".into(),
             cwd: None,
+            workspace_root: None,
             bridge_cwd: PathBuf::from("/no/such/dir/anywhere"),
             llm_index: None,
             llm_key: None,
@@ -478,6 +491,7 @@ mod tests {
             ga_path: PathBuf::from("/tmp"),
             session_id: "s1".into(),
             cwd: None,
+            workspace_root: None,
             // Use a real existing dir so the cwd check passes and we get
             // to the spawn step.
             bridge_cwd: env::temp_dir(),

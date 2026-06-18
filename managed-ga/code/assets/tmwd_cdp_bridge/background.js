@@ -281,7 +281,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'tmwd-ws-probe') {
     clearProbeTimer();
     if (ws && ws.readyState <= 1) return; // Already connected/connecting
-    connectWS();
+    connectWS()
   }
 });
 

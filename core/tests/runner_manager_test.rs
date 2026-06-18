@@ -203,6 +203,7 @@ fn make_args(session_id: &str, bridge_cwd: PathBuf) -> SpawnArgs {
         ga_path: bridge_cwd.clone(),
         session_id: session_id.to_string(),
         cwd: None,
+        workspace_root: None,
         bridge_cwd,
         llm_index: None,
         llm_key: None,

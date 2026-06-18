@@ -445,10 +445,12 @@ class Bridge:
         llm_name: str | None,
         stdout: IO[str],
         stdin: IO[str],
+        workspace_root: str | None = None,
     ) -> None:
         self.ga_path = ga_path
         self.session_id = session_id
         self.cwd = cwd
+        self.workspace_root = workspace_root
         self.llm_no = llm_no
         self.llm_name = llm_name
         self._stdout = stdout
@@ -538,6 +540,7 @@ class Bridge:
         self.agent.next_llm(self._initial_llm_index())
         if managed_runtime.is_managed_runtime():
             self._install_managed_prompt_profile()
+        self._activate_project_workspace()
         # verbose=True enables GA's incremental LLM display streaming
         # (`yield from response_gen` in agent_loop.py). With it off,
         # agent_loop drains the LLM generator silently and yields the
@@ -605,6 +608,98 @@ class Bridge:
 
     def _install_managed_prompt_profile(self) -> None:
         managed_runtime.install_managed_prompt_profile(self.agent)
+
+    def _external_workspace_allowed(self) -> bool:
+        state_root = managed_runtime.managed_state_root()
+        if not state_root:
+            return False
+        try:
+            state_root_path = os.path.realpath(os.path.abspath(state_root))
+            ga_path = os.path.realpath(os.path.abspath(self.ga_path))
+            return os.path.commonpath([state_root_path, ga_path]) != ga_path
+        except (OSError, ValueError):
+            return False
+
+    def _workspace_activation_allowed(self) -> bool:
+        return managed_runtime.is_managed_runtime() or self._external_workspace_allowed()
+
+    def _activate_project_workspace(self) -> None:
+        if not self.workspace_root:
+            return
+        root = os.path.abspath(os.path.expanduser(self.workspace_root))
+        if not os.path.isdir(root):
+            self._emit_error(
+                f"Project workspace folder is unavailable: {root}",
+                None,
+                category="bridge",
+                severity="warning",
+                context="project_workspace",
+            )
+            return
+        if not self._workspace_activation_allowed():
+            self._emit_error(
+                "Project workspace skipped for external GenericAgent: "
+                "this GA does not expose a safe state-root workspace path.",
+                None,
+                category="bridge",
+                severity="warning",
+                context="project_workspace",
+            )
+            return
+        try:
+            import workspace_cmd  # type: ignore[import-not-found]
+        except Exception as e:
+            self._emit_error(
+                f"Project workspace unavailable in this GenericAgent: {e}",
+                traceback.format_exc(),
+                category="bridge",
+                severity="warning",
+                context="project_workspace",
+            )
+            return
+        prepare = getattr(workspace_cmd, "prepare", None)
+        if not callable(prepare):
+            self._emit_error(
+                "Project workspace unavailable in this GenericAgent: "
+                "workspace_cmd.prepare is missing.",
+                None,
+                category="bridge",
+                severity="warning",
+                context="project_workspace",
+            )
+            return
+        try:
+            result = prepare(root)
+        except Exception as e:
+            self._emit_error(
+                f"Project workspace activation failed: {e}",
+                traceback.format_exc(),
+                category="bridge",
+                severity="warning",
+                context="project_workspace",
+            )
+            return
+        if not isinstance(result, dict) or not result.get("ok"):
+            detail = result.get("error") if isinstance(result, dict) else result
+            self._emit_error(
+                f"Project workspace activation failed: {detail}",
+                None,
+                category="bridge",
+                severity="warning",
+                context="project_workspace",
+            )
+            return
+        try:
+            self.agent._ga_project_mode_name = result.get("name") or None
+            self.agent._ga_project_mode_workspace_path = result.get("target") or root
+        except Exception as e:
+            self._emit_error(
+                f"Project workspace activation failed while updating the GA session: {e}",
+                traceback.format_exc(),
+                category="bridge",
+                severity="warning",
+                context="project_workspace",
+            )
 
     def _install_handler_subclass(self) -> None:
         from runner.handlers import WorkbenchHandler
@@ -1507,6 +1602,7 @@ def main() -> int:
     parser.add_argument("--ga-path", required=True)
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--cwd", default=None)
+    parser.add_argument("--workspace-root", default=None)
     parser.add_argument("--llm-no", type=int, default=0)
     parser.add_argument("--llm-name", default=None)
     args = parser.parse_args()
@@ -1528,6 +1624,7 @@ def main() -> int:
         llm_name=args.llm_name,
         stdout=real_stdout,
         stdin=real_stdin,
+        workspace_root=args.workspace_root,
     )
     try:
         bridge.start()

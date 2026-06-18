@@ -133,11 +133,23 @@ async fn run(cli: Cli) -> Result<(), GalleyError> {
         Command::Project(ProjectCmd::Create {
             name,
             root_path,
+            enable_workspace,
             icon,
             color,
             supervisor,
             reason,
-        }) => project::project_create(name, root_path, icon, color, supervisor, reason).await,
+        }) => {
+            project::project_create(
+                name,
+                root_path,
+                enable_workspace,
+                icon,
+                color,
+                supervisor,
+                reason,
+            )
+            .await
+        }
         Command::Project(ProjectCmd::List) => project::project_list().await,
         Command::Project(ProjectCmd::Brief { project_id, all }) => {
             project::project_brief(project_id, all).await

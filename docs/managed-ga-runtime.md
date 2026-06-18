@@ -1003,7 +1003,8 @@ Current implementation slice:
 - `scripts/build-managed-ga.sh` reapplies `managed-ga/patches/*.patch` after
   copying the upstream baseline, so Galley-managed changes are replayable.
 - `0001-managed-state-root.patch` redirects managed GA memory, temp, model
-  response logs, and `/continue` log lookup to `GALLEY_GA_STATE_ROOT`.
+  response logs, `/continue` log lookup, and upstream Workspace
+  temp/registry/anchor files to `GALLEY_GA_STATE_ROOT`.
 - GUI bridge spawns now include `runtimeKind`; managed spawns are resolved in
   Rust Core to the managed code path, managed state path, managed model config
   marker, and in-memory model credential injection.

@@ -22,9 +22,9 @@ const CRITICAL_MEMORY_SEED_FILES: &[&str] = &[
     "web_setup_sop.md",
     "verify_sop.md",
     "supervisor_sop.md",
+    "project_mode_sop.md",
     "L4_raw_sessions/salient_mining_sop.md",
     "L4_raw_sessions/compress_session.py",
-    "skill_search/SKILL.md",
 ];
 pub use managed_prompt::PROMPT_PROFILE_ID;
 

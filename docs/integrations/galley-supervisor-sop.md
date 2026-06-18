@@ -328,10 +328,13 @@ A good session prompt should include:
 - Expected output.
 - The shared Project / session-group context when this is one part of a split.
 
-For file-based work, do not rely on Project `rootPath` to set the runner's
-working directory. `--root-path` is stored on the Project row for user context,
-but the child prompt should still include the absolute repo root and any
-important absolute file paths.
+For file-based work, do not rely on Project `rootPath` as process cwd. If the
+user explicitly wants the Project bound to a real folder, create or update the
+Project with `--root-path=<absolute-folder> --enable-workspace`; future runner
+spawns may activate GA Project Workspace for that Project. The child prompt
+should still include the absolute repo root and important absolute file paths,
+because existing runners do not hot-swap Workspace and external GA may skip
+Workspace when safe state-root support is unavailable.
 
 When the user asks for implementation, create one writer session and separate
 read-only review or verification sessions unless the ownership boundaries are
@@ -504,6 +507,17 @@ Use a Project as the visible container for a small group of child sessions:
   --supervisor=my-agent/v1 \
   --reason="split user task into child task B"
 "$GALLEY" project follow <project-id> --tail=80 --until-idle --final-show
+```
+
+When the user explicitly asks to bind that Project to a real folder, create the
+Project with Workspace enabled instead:
+
+```bash
+"$GALLEY" project create "<short user-goal name>" \
+  --root-path="<absolute repo root>" \
+  --enable-workspace \
+  --supervisor=my-agent/v1 \
+  --reason="create Project workspace for user task"
 ```
 
 The duplicate search above stays in the current runtime by default. Do not

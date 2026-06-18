@@ -22,12 +22,13 @@ impl std::fmt::Display for ProjectId {
 pub struct ProjectBrief {
     pub id: ProjectId,
     pub name: String,
-    /// Historical bound cwd. Preserved on the DB row for forward
-    /// compatibility but no longer injected at runner spawn — see devlog
-    /// 2026-05-14 (rolled back to avoid breaking GA's relative
-    /// `./memory/...` reads).
+    /// Optional workspace root. This never becomes the runner process cwd;
+    /// it is only activated through GA Project Mode when
+    /// `workspace_enabled` is true.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub root_path: Option<String>,
+    #[serde(default)]
+    pub workspace_enabled: bool,
     /// Default emoji: 📁.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
@@ -51,6 +52,8 @@ pub struct CreateProjectInput {
     pub name: String,
     #[serde(default)]
     pub root_path: Option<String>,
+    #[serde(default)]
+    pub workspace_enabled: bool,
     #[serde(default)]
     pub icon: Option<String>,
     #[serde(default)]
@@ -76,6 +79,8 @@ pub struct ProjectPatch {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_path: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

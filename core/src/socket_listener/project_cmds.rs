@@ -31,6 +31,8 @@ struct ProjectCreateArgs {
     #[serde(default)]
     root_path: Option<String>,
     #[serde(default)]
+    workspace_enabled: bool,
+    #[serde(default)]
     icon: Option<String>,
     #[serde(default)]
     color: Option<String>,
@@ -71,8 +73,13 @@ pub(super) async fn dispatch_project_create(
         name,
         root_path: parsed.root_path.and_then(|s| {
             let t = s.trim().to_string();
-            if t.is_empty() { None } else { Some(t) }
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
         }),
+        workspace_enabled: parsed.workspace_enabled,
         icon: parsed.icon,
         color: parsed.color,
     };

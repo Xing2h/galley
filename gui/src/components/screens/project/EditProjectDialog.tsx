@@ -1,9 +1,15 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { Trash, WarningCircle, X as XIcon } from "@phosphor-icons/react";
+import {
+  FolderOpen,
+  Trash,
+  WarningCircle,
+  X as XIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
 import { useCopy } from "@/lib/i18n";
+import { pickFolder } from "@/lib/pick-folder";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/types/session";
 
@@ -13,10 +19,8 @@ export interface EditProjectDialogProps {
    * without a full unmount/remount cycle. */
   project: Project | null;
   onClose: () => void;
-  /** Persist name edits. Resolves after the store action completes
-   * so the dialog can close synchronously. `rootPath` stays on the
-   * type for forward compat but is no longer surfaced in the UI;
-   * see devlog 2026-05-14. */
+  /** Persist project edits. Resolves after the store action completes
+   * so the dialog can close synchronously. */
   onSave: (
     id: string,
     partial: { name: string; rootPath?: string },
@@ -29,7 +33,7 @@ export interface EditProjectDialogProps {
 }
 
 /**
- * Edit Project — rename only (post devlog 2026-05-14). Same 420px
+ * Edit Project. Same 420px
  * frame as CreateProjectDialog so the two read as siblings; the
  * only structural difference is the destructive "删除 Project" row
  * at the bottom (separated by a divider so a stray click doesn't
@@ -47,6 +51,7 @@ export function EditProjectDialog({
 }: EditProjectDialogProps) {
   const copy = useCopy();
   const [name, setName] = useState("");
+  const [rootPath, setRootPath] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -54,6 +59,7 @@ export function EditProjectDialog({
     if (!project) return;
     const t = setTimeout(() => {
       setName(project.name);
+      setRootPath(project.rootPath ?? "");
       setSubmitting(false);
       nameInputRef.current?.focus();
       nameInputRef.current?.select();
@@ -62,17 +68,22 @@ export function EditProjectDialog({
   }, [project]);
 
   const trimmedName = name.trim();
+  const trimmedRootPath = rootPath.trim();
   const canSubmit =
     !!project &&
     trimmedName.length > 0 &&
     !submitting &&
-    trimmedName !== project.name;
+    (trimmedName !== project.name ||
+      trimmedRootPath !== (project.rootPath ?? ""));
 
   const handleSubmit = async () => {
     if (!project || !canSubmit) return;
     setSubmitting(true);
     try {
-      await onSave(project.id, { name: trimmedName });
+      await onSave(project.id, {
+        name: trimmedName,
+        rootPath: trimmedRootPath || undefined,
+      });
       onClose();
     } catch (e) {
       console.warn("[EditProjectDialog] onSave failed.", e);
@@ -136,28 +147,73 @@ export function EditProjectDialog({
               />
             </Field>
 
-            <DialogActionRow className="mt-0 pt-1">
-              <Button variant="secondary" onClick={onClose}>
-                {copy.common.cancel}
-              </Button>
-              <Button type="submit" disabled={!canSubmit}>
-                {copy.common.save}
-              </Button>
-            </DialogActionRow>
+            <Field label={copy.projects.workspaceFolder}>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <div
+                  className={cn(
+                    "flex h-9 min-w-[180px] flex-[1_1_190px] items-center rounded-sm border border-line bg-app px-3",
+                    rootPath
+                      ? "font-mono text-[11.5px] text-ink-soft"
+                      : "text-[12.5px] text-ink-muted",
+                  )}
+                  title={rootPath || copy.projects.workspacePlaceholder}
+                >
+                  <span className="truncate">
+                    {rootPath || copy.projects.workspacePlaceholder}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  leadingIcon={<FolderOpen size={13} weight="thin" />}
+                  onClick={() => {
+                    void pickFolder(copy.projects.chooseWorkspaceFolderTitle).then(
+                      (path) => {
+                        if (!path) return;
+                        setRootPath(path);
+                      },
+                    );
+                  }}
+                >
+                  {copy.projects.chooseFolder}
+                </Button>
+                {rootPath && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setRootPath("")}
+                  >
+                    {copy.projects.clearFolder}
+                  </Button>
+                )}
+              </div>
+            </Field>
           </form>
 
-          <div className="mt-5 border-t border-line pt-4">
-            <Button
-              variant="destructive-soft"
-              size="sm"
-              onClick={() => project && onRequestDelete(project)}
-              leadingIcon={<Trash size={12} weight="thin" />}
-            >
-              {copy.projects.deleteProject}
-            </Button>
-            <span className="ml-2 text-[11px] text-ink-muted">
-              {copy.projects.deleteProjectHint}
-            </span>
+          <div className="mt-6 border-t border-line pt-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <Button
+                  variant="destructive-soft"
+                  size="sm"
+                  onClick={() => project && onRequestDelete(project)}
+                  leadingIcon={<Trash size={12} weight="thin" />}
+                >
+                  {copy.projects.deleteProject}
+                </Button>
+                <p className="mt-2 max-w-[230px] text-[11px] leading-[1.45] text-ink-muted">
+                  {copy.projects.deleteProjectHint}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button variant="secondary" onClick={onClose}>
+                  {copy.common.cancel}
+                </Button>
+                <Button onClick={() => void handleSubmit()} disabled={!canSubmit}>
+                  {copy.common.save}
+                </Button>
+              </div>
+            </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
@@ -237,12 +293,10 @@ export function ConfirmDeleteProjectDialog({
 function Field({
   label,
   required,
-  hint,
   children,
 }: {
   label: string;
   required?: boolean;
-  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -252,7 +306,6 @@ function Field({
         {required && <span className="ml-0.5 text-error">*</span>}
       </label>
       <div className="mt-1.5">{children}</div>
-      {hint && <div className="mt-1 text-[11.5px] text-ink-muted">{hint}</div>}
     </div>
   );
 }

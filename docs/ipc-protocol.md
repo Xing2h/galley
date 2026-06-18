@@ -93,14 +93,15 @@ Bridge 子进程通过 CLI 参数初始化：
 |---|---|---|
 | `--ga-path` | 必填 | 用户本地 GenericAgent 仓库的绝对路径 |
 | `--session-id` | 必填 | desktop 端分配的 session id |
-| `--cwd` | 可选 | GA 子进程工作目录。**项目场景**：当 session 属于一个有 `rootPath` 的 project 时，desktop 把该路径作为 cwd 传入，GA 的 `file_read` / `file_write` / `code_run` 工具默认以此目录为相对路径根。**无该参数时**：bridge 退化到 `ga_path` 自己的目录（让 `agentmain` 找到 `assets/`）。 |
+| `--cwd` | 可选 | Legacy escape hatch for explicit runner cwd. Project folders are **not** passed here. Normal Galley spawns omit it so GA can keep using its own runtime/state root. |
+| `--workspace-root` | 可选 | Project Workspace root. When set, bridge asks GA `frontends/workspace_cmd.py` to prepare a Workspace link, sets per-agent Project Mode attributes, and leaves process cwd unchanged. |
 | `--llm-no` | 可选 | 初始 LLM 索引（默认 0） |
 
 ```
 desktop                             bridge subprocess
   │                                       │
   │  spawn (--ga-path, --session-id,      │
-  │         --cwd, --llm-no)              │
+  │         --workspace-root?, --llm-no)  │
   │ ───────────────────────────────────► │
   │                                       │ import GA, build agent
   │                                       │ register turn_end_hook

@@ -64,6 +64,8 @@ export interface BridgeSpawnArgs {
   sessionId: string;
   /** Working directory for the GA subprocess (--cwd). */
   cwd?: string;
+  /** Optional Project Workspace root. Never used as subprocess cwd. */
+  workspaceRoot?: string;
   /**
    * Working directory for the bridge process itself. Should be the
    * Workbench repo root so `python -m runner.workbench_bridge`
@@ -130,6 +132,7 @@ interface SpawnRunnerArgsJson {
   gaPath: string;
   sessionId: string;
   cwd?: string;
+  workspaceRoot?: string;
   bridgeCwd: string;
   llmIndex?: number;
   llmKey?: string;
@@ -167,6 +170,7 @@ export async function spawnBridge(
     gaPath: args.gaPath,
     sessionId: args.sessionId,
     cwd: args.cwd,
+    workspaceRoot: args.workspaceRoot,
     bridgeCwd,
     llmIndex: args.llmIndex,
     llmKey: args.llmKey,

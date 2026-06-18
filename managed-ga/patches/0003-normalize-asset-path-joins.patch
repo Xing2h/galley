@@ -1,70 +1,32 @@
 diff --git a/agentmain.py b/agentmain.py
-index a9706cb..c152bf4 100644
+index 14b2e94..43c86a1 100644
 --- a/agentmain.py
 +++ b/agentmain.py
-@@ -17,10 +17,12 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
- state_dir = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or script_dir)
- def state_path(*parts):
-     return os.path.join(state_dir, *parts)
+@@ -19,0 +20,2 @@ def state_path(*parts):
 +def asset_path(*parts):
 +    return os.path.join(script_dir, 'assets', *parts)
-
- def load_tool_schema(suffix=''):
-     global TOOLS_SCHEMA
+@@ -22 +24 @@ def load_tool_schema(suffix=''):
 -    TS = open(os.path.join(script_dir, f'assets/tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
 +    TS = open(asset_path(f'tools_schema{suffix}.json'), 'r', encoding='utf-8').read()
-     TOOLS_SCHEMA = json.loads(TS if os.name == 'nt' else TS.replace('powershell', 'bash'))
- load_tool_schema()
-
-@@ -31,9 +33,9 @@ mem_txt = os.path.join(mem_dir, 'global_mem.txt')
- if not os.path.exists(mem_txt): open(mem_txt, 'w', encoding='utf-8').write('# [Global Memory - L2]\n')
- mem_insight = os.path.join(mem_dir, 'global_mem_insight.txt')
- if not os.path.exists(mem_insight):
+@@ -33 +35 @@ if not os.path.exists(mem_insight):
 -    t = os.path.join(script_dir, f'assets/global_mem_insight_template{lang_suffix}.txt')
 +    t = asset_path(f'global_mem_insight_template{lang_suffix}.txt')
-     open(mem_insight, 'w', encoding='utf-8').write(open(t, encoding='utf-8').read() if os.path.exists(t) else '')
+@@ -35 +37 @@ if not os.path.exists(mem_insight):
 -cdp_cfg = os.path.join(script_dir, 'assets/tmwd_cdp_bridge/config.js')
 +cdp_cfg = asset_path('tmwd_cdp_bridge', 'config.js')
- if not os.path.exists(cdp_cfg):
-     try:
-         os.makedirs(os.path.dirname(cdp_cfg), exist_ok=True)
-@@ -41,7 +43,7 @@ if not os.path.exists(cdp_cfg):
-     except Exception as e: print(f'[WARN] CDP config init failed: {e} — advanced web features (tmwebdriver) will be unavailable.')
-
- def get_system_prompt():
+@@ -43 +45 @@ def get_system_prompt():
 -    with open(os.path.join(script_dir, f'assets/sys_prompt{lang_suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
 +    with open(asset_path(f'sys_prompt{lang_suffix}.txt'), 'r', encoding='utf-8') as f: prompt = f.read()
-     prompt += f"\nToday: {time.strftime('%Y-%m-%d %a')}\n"
-     prompt += get_global_memory()
-     return prompt
 diff --git a/ga.py b/ga.py
-index 77552bf..a239c6f 100644
+index 05adfe1..3784478 100644
 --- a/ga.py
 +++ b/ga.py
-@@ -11,6 +11,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
- state_dir = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or script_dir)
- def state_path(*parts):
-     return os.path.join(state_dir, *parts)
+@@ -13,0 +14,2 @@ def state_path(*parts):
 +def asset_path(*parts):
 +    return os.path.join(script_dir, 'assets', *parts)
-
-
- def safe_print(*args, **kwargs):
-@@ -27,7 +29,7 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
-     cwd = cwd or state_path('temp'); tmp_path = None
-     if code_type in ["python", "py"]:
-         tmp_file = tempfile.NamedTemporaryFile(suffix=".ai.py", delete=False, mode='w', encoding='utf-8', dir=code_cwd)
+@@ -30 +32 @@ def code_run(code, code_type="python", timeout=60, cwd=None, code_cwd=None, stop
 -        cr_header = os.path.join(script_dir, 'assets', 'code_run_header.py')
 +        cr_header = asset_path('code_run_header.py')
-         if os.path.exists(cr_header): tmp_file.write(open(cr_header, encoding='utf-8').read())
-         tmp_file.write(code)
-         tmp_path = tmp_file.name
-@@ -590,7 +592,7 @@ def get_global_memory():
-     try:
-         suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
-         with open(state_path('memory', 'global_mem_insight.txt'), 'r', encoding='utf-8', errors='replace') as f: insight = f.read()
+@@ -590 +592 @@ def get_global_memory():
 -        with open(os.path.join(script_dir, f'assets/insight_fixed_structure{suffix}.txt'), 'r', encoding='utf-8') as f: structure = f.read()
 +        with open(asset_path(f'insight_fixed_structure{suffix}.txt'), 'r', encoding='utf-8') as f: structure = f.read()
-         prompt += f'cwd = {state_path("temp")} (./)\n'
-         prompt += f"\n[Memory] (../memory)\n"
-         prompt += structure + '\n../memory/global_mem_insight.txt:\n'

@@ -92,6 +92,7 @@ interface ProjectBriefWire {
   id: string;
   name: string;
   rootPath?: string;
+  workspaceEnabled?: boolean;
   icon?: string;
   color?: string;
   pinned: boolean;
@@ -155,6 +156,7 @@ interface CreateProjectInputWire {
   id: string;
   name: string;
   rootPath?: string;
+  workspaceEnabled?: boolean;
   icon?: string;
   color?: string;
 }
@@ -242,6 +244,7 @@ function projectFromBrief(b: ProjectBriefWire): Project {
     id: b.id,
     name: b.name,
     rootPath: b.rootPath,
+    workspaceEnabled: b.workspaceEnabled ?? false,
     icon: b.icon,
     color: b.color,
     pinned: b.pinned,
@@ -377,10 +380,13 @@ interface SessionsActions {
   createProject: (input: {
     name: string;
     rootPath?: string;
+    workspaceEnabled?: boolean;
   }) => Promise<Project>;
   updateProject: (
     id: string,
-    partial: Partial<Pick<Project, "name" | "rootPath" | "pinned">>,
+    partial: Partial<
+      Pick<Project, "name" | "rootPath" | "workspaceEnabled" | "pinned">
+    >,
   ) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   assignSessionToProject: (
@@ -597,11 +603,19 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       // concern with the cross-store static import block at the
       // top of this file.
       const gaConfig = usePrefsStore.getState().gaConfig;
+      const workspaceProject = session?.projectId
+        ? get().projects.find((p) => p.id === session.projectId)
+        : undefined;
+      const workspaceRoot =
+        workspaceProject?.workspaceEnabled && workspaceProject.rootPath
+          ? workspaceProject.rootPath
+          : undefined;
       const spawnStartedAt = perfNow();
       await useRuntimeStore.getState().spawnBridge({
         ...gaConfig,
         sessionId: id,
         cwd: undefined,
+        workspaceRoot,
         llmIndex: consumePending ? pendingLLMIndex : restoredLlmIndex,
         llmKey: consumePending ? session?.selectedLlmKey : restoredLlmKey,
         runtimeKind,
@@ -1072,10 +1086,12 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
   createProject: async ({ name, rootPath }) => {
     const id = `proj_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
     const now = new Date().toISOString();
+    const nextRootPath = rootPath?.trim() || undefined;
     const next: Project = {
       id,
       name: name.trim(),
-      rootPath: rootPath?.trim() || undefined,
+      rootPath: nextRootPath,
+      workspaceEnabled: !!nextRootPath,
       pinned: false,
       lastActivityAt: now,
       createdAt: now,
@@ -1088,6 +1104,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
           id,
           name: next.name,
           rootPath: next.rootPath,
+          workspaceEnabled: next.workspaceEnabled,
         } as CreateProjectInputWire,
         origin: GUI_ORIGIN,
       });
@@ -1103,13 +1120,24 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     set((state) => ({
       projects: state.projects.map((p) => {
         if (p.id !== id) return p;
+        const nextRootPath =
+          partial.rootPath !== undefined
+            ? partial.rootPath?.trim() || undefined
+            : p.rootPath;
+        const rootPathWasPatched = Object.prototype.hasOwnProperty.call(
+          partial,
+          "rootPath",
+        );
         updated = {
           ...p,
           ...partial,
-          rootPath:
-            partial.rootPath !== undefined
-              ? partial.rootPath?.trim() || undefined
-              : p.rootPath,
+          rootPath: nextRootPath,
+          workspaceEnabled:
+            rootPathWasPatched
+              ? !!nextRootPath
+              : partial.workspaceEnabled !== undefined
+              ? partial.workspaceEnabled && !!nextRootPath
+              : p.workspaceEnabled,
           name: partial.name !== undefined ? partial.name.trim() : p.name,
           updatedAt: now,
         };
@@ -1132,6 +1160,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       if (Object.prototype.hasOwnProperty.call(partial, "rootPath")) {
         const trimmed = partial.rootPath?.trim();
         patch.rootPath = trimmed ? trimmed : null;
+        patch.workspaceEnabled = !!trimmed;
+      } else if (partial.workspaceEnabled !== undefined) {
+        patch.workspaceEnabled = partial.workspaceEnabled;
       }
       if (partial.pinned !== undefined) patch.pinned = partial.pinned;
       await invoke("update_project", {

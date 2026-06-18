@@ -1,18 +1,11 @@
 diff --git a/llmcore.py b/llmcore.py
-index e435fc0..c59b028 100644
+index de6b178..f279671 100644
 --- a/llmcore.py
 +++ b/llmcore.py
-@@ -1,4 +1,4 @@
+@@ -1 +1 @@
 -import os, json, re, time, requests, sys, threading, urllib3, base64, importlib, uuid, pathlib
 +import os, json, re, time, requests, sys, threading, urllib3, base64, importlib, uuid, pathlib, socket
- from datetime import datetime
- urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
- _RESP_CACHE_KEY = str(uuid.uuid4()); _RESP_CODEX_KEY = str(uuid.uuid4())
-@@ -397,21 +397,72 @@ def _stream_with_retry(sess, url, headers, payload, parse_fn):
-             err = f"\n\n[!!! 流异常中断 {type(e).__name__}: {e} !!!]" if streamed else f"!!!Error: {type(e).__name__}: {e}"
-             yield err; return [{"type": "text", "text": err}]
--
-+
+@@ -400,0 +401,41 @@ def _stream_with_retry(sess, url, headers, payload, parse_fn):
 +def _codex_account_id_from_jwt(access_token):
 +    try:
 +        parts = str(access_token or '').split('.')
@@ -54,64 +47,36 @@ index e435fc0..c59b028 100644
 +    except Exception as e:
 +        raise RuntimeError(f"Galley Codex credential refresh failed: {e}") from e
 +
- def _openai_stream(sess, messages):
-     model, api_mode = sess.model, sess.api_mode
-     ml = model.lower()
-     temperature = sess.temperature
-     if 'kimi' in ml or 'moonshot' in ml: temperature = 1
-     elif 'minimax' in ml: temperature = max(0.01, min(temperature, 1.0))  # MiniMax requires temp in (0, 1]
--    headers = {"Authorization": f"Bearer {sess.api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"}
+@@ -407,2 +448,11 @@ def _openai_stream(sess, messages):
+-    headers = {"Authorization": f"Bearer {sess.api_key}", "Content-Type": "application/json", "Accept": "text/event-stream", 'originator': 'codex_exec'}
 -    headers["User-Agent"] = sess.user_agent
 +    api_key = sess.api_key
 +    account_id = None
 +    if getattr(sess, 'codex_backend', False):
 +        api_key, account_id = _galley_codex_access_token(sess)
-+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"}
++    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "text/event-stream", 'originator': 'codex_exec'}
 +    if getattr(sess, 'codex_backend', False):
 +        headers.update({"User-Agent": "codex_cli_rs/0.0.0 (Galley)", "originator": "codex_cli_rs"})
 +        account_id = account_id or _codex_account_id_from_jwt(api_key)
 +        if account_id: headers["ChatGPT-Account-ID"] = account_id
 +    else:
 +        headers["User-Agent"] = sess.user_agent
-     if api_mode == "responses":
+@@ -410 +460 @@ def _openai_stream(sess, messages):
 -        url = auto_make_url(sess.api_base, "responses")
 +        url = f"{sess.api_base.rstrip('/')}/responses" if getattr(sess, 'codex_backend', False) else auto_make_url(sess.api_base, "responses")
-         payload = {"model": model, "input": _to_responses_input(messages), "stream": sess.stream,
-                    "prompt_cache_key": _RESP_CACHE_KEY, "instructions": sess.system or "You are an Omnipotent Executor.",
-                    "client_metadata": {"x-codex-window-id": f"{_RESP_CACHE_KEY}:0","x-codex-installation-id": _RESP_CODEX_KEY}}
+@@ -414,0 +465 @@ def _openai_stream(sess, messages):
 +        if getattr(sess, 'codex_backend', False): payload["store"] = False
-         if sess.reasoning_effort: payload["reasoning"] = {"effort": sess.reasoning_effort}
+@@ -416 +467 @@ def _openai_stream(sess, messages):
 -        if sess.max_tokens: payload["max_output_tokens"] = sess.max_tokens
 +        if sess.max_tokens and not getattr(sess, 'codex_backend', False): payload["max_output_tokens"] = sess.max_tokens
-     else:
-         url = auto_make_url(sess.api_base, "chat/completions")
-         if sess.system: messages = [{"role": "system", "content": sess.system}] + messages
-@@ -525,6 +576,10 @@ class BaseSession:
-         self.api_key = cfg['apikey']
-         self.api_base = cfg['apibase'].rstrip('/')
-         self.model = cfg.get('model', '')
+@@ -529,0 +581,4 @@ class BaseSession:
 +        self.codex_backend = bool(cfg.get('codex_backend'))
 +        self.galley_api_key_ref = cfg.get('galley_api_key_ref') or ''
 +        ipc = cfg.get('galley_credential_ipc')
 +        self.galley_credential_ipc = ipc if isinstance(ipc, dict) else None
-         default_context_win = 30000
-         if 'deepseek' in self.model.lower():
-             default_context_win = 70000; self.cut_msg_interval = 25; self.trim_keep_rate = 0.3
-@@ -535,7 +590,7 @@ class BaseSession:
-         self.proxies = {"http": proxy, "https": proxy} if proxy else None
-         self.max_retries = max(0, int(cfg.get('max_retries', 4)))
-         self.verify = cfg.get('verify', True)
+@@ -540 +595 @@ class BaseSession:
 -        self.stream = cfg.get('stream', True)
 +        self.stream = True if self.codex_backend else cfg.get('stream', True)
-         default_ct, default_rt = (5, 40) if self.stream else (10, 240)
-         self.connect_timeout = max(1, int(cfg.get('timeout', default_ct)))
-         self.read_timeout = max(5, int(cfg.get('read_timeout', default_rt)))
-@@ -543,6 +598,8 @@ class BaseSession:
-             v = cfg.get(key); v = None if v is None else str(v).strip().lower()
-             return v if not v or v in valid else print(f"[WARN] Invalid {key} {v!r}, ignored.")
-         self.reasoning_effort = _enum('reasoning_effort', {'none', 'minimal', 'low', 'medium', 'high', 'xhigh'})
+@@ -547,0 +603,2 @@ class BaseSession:
 +        if self.codex_backend and self.reasoning_effort == 'minimal':
 +            self.reasoning_effort = 'medium'
-         self.service_tier = _enum('service_tier', {'auto', 'default', 'priority', 'flex'})
-         self.thinking_type = _enum('thinking_type', {'adaptive', 'enabled', 'disabled'})
-         self.thinking_budget_tokens = cfg.get('thinking_budget_tokens')

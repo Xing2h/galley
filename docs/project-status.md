@@ -20,6 +20,11 @@ Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
 GUI is for the human operator at the desk; the CLI is for trusted Agent /
 Supervisor automation on the same machine.
 
+Current unreleased work has upgraded the audited managed GenericAgent baseline
+to upstream `12655687` and reintroduced Project folder binding as GA Project
+Workspace: GUI folder selection enables it, while CLI/API callers still opt in
+explicitly. This does not restore the old Project-root-as-process-cwd behavior.
+
 ## Current Release State
 
 `v0.2.8` is the current published stable patch, GitHub Latest, and default
@@ -52,11 +57,11 @@ Post-promote follow-up:
 | Core architecture | Rust Galley Core is authoritative | [architecture demo](./architecture-demo.md) |
 | CLI / Agent API | Feature-complete for v0.2; schema frozen | [agent-api](./agent-api.md) |
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
-| Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; v0.2.8 ships audited upstream `0def7441`; GUI / CLI split, Provider / Model config, and local encrypted SQLite credentials are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
+| Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; current unreleased baseline is audited upstream `12655687`; GUI / CLI split, Provider / Model config, local encrypted SQLite credentials, and Project Workspace are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | Backup mechanism exists; current schema covers runtime identity, managed models/providers, Goal state, internal message visibility, and GUI-created message attachments | [B4 M8](./refactor/B4-M8-sub-plan.md) |
 | Release path | v0.2.8 is published as GitHub Latest and the live update-channel target | [release / update SOP](./release-update-sop.md) |
 | Windows | Windows x64 remains the supported release target; Windows ARM is deferred until the release workflow and smoke path are added | [Windows checklist](./windows-build-checklist.md) |
-| GA baseline | Locked to audited upstream `0def7441` | [GA baseline](./ga-baseline.md) |
+| GA baseline | Locked to audited upstream `12655687` | [GA baseline](./ga-baseline.md) |
 
 ## Compact Timeline
 

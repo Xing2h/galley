@@ -67,6 +67,8 @@ pub struct SpawnRunnerArgs {
     pub session_id: String,
     #[serde(default)]
     pub cwd: Option<String>,
+    #[serde(default)]
+    pub workspace_root: Option<String>,
     pub bridge_cwd: String,
     #[serde(default)]
     pub llm_index: Option<i64>,
@@ -97,6 +99,7 @@ impl From<SpawnRunnerArgs> for SpawnArgs {
             ga_path: PathBuf::from(args.ga_path),
             session_id: args.session_id,
             cwd: args.cwd.map(PathBuf::from),
+            workspace_root: args.workspace_root.map(PathBuf::from),
             bridge_cwd: PathBuf::from(args.bridge_cwd),
             llm_index: args.llm_index,
             llm_key: args.llm_key,
@@ -866,6 +869,7 @@ mod tests {
             "gaPath": "/home/u/GA",
             "sessionId": "s1",
             "cwd": null,
+            "workspaceRoot": "/home/u/project",
             "bridgeCwd": "/repo/runner",
             "llmIndex": 0,
             "runtimeKind": "managed",
@@ -874,8 +878,14 @@ mod tests {
         let parsed: SpawnRunnerArgs = serde_json::from_str(line).expect("parse");
         assert_eq!(parsed.session_id, "s1");
         assert_eq!(parsed.bridge_cwd, "/repo/runner");
+        assert_eq!(parsed.workspace_root.as_deref(), Some("/home/u/project"));
         assert_eq!(parsed.runtime_kind, Some(RuntimeKind::Managed));
         assert_eq!(parsed.env, vec![("FOO".to_string(), "bar".to_string())]);
+        let spawn_args: SpawnArgs = parsed.into();
+        assert_eq!(
+            spawn_args.workspace_root.as_deref(),
+            Some(Path::new("/home/u/project"))
+        );
     }
 
     #[test]
@@ -888,6 +898,7 @@ mod tests {
         }"#;
         let parsed: SpawnRunnerArgs = serde_json::from_str(line).expect("parse");
         assert!(parsed.cwd.is_none());
+        assert!(parsed.workspace_root.is_none());
         assert!(parsed.llm_index.is_none());
         assert!(parsed.runtime_kind.is_none());
         assert!(parsed.env.is_empty());

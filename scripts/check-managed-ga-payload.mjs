@@ -23,9 +23,9 @@ const criticalMemorySeedFiles = [
   "web_setup_sop.md",
   "verify_sop.md",
   "supervisor_sop.md",
+  "project_mode_sop.md",
   "L4_raw_sessions/salient_mining_sop.md",
   "L4_raw_sessions/compress_session.py",
-  "skill_search/SKILL.md",
 ];
 const forbiddenMemorySeedFiles = new Set([
   "global_mem.txt",
@@ -89,6 +89,7 @@ requireFile(path.join(codeRoot, "agent_loop.py"));
 requireFile(path.join(codeRoot, "llmcore.py"));
 requireFile(path.join(codeRoot, "frontends", "wechatapp.py"));
 requireFile(path.join(codeRoot, "frontends", "fsapp.py"));
+requireFile(path.join(codeRoot, "frontends", "workspace_cmd.py"));
 if (fs.existsSync(path.join(managedRoot, "galley-prompts"))) {
   fail("managed prompt profile is embedded in Core; remove managed-ga/galley-prompts");
 }

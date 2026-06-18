@@ -15,42 +15,39 @@ audited against.
 
 ## Current Baseline
 
-Locked commit: `0def744157916f0c88da69f710941e4c408b3768`
+Locked commit: `12655687aa964ea541bb0606c0051700e76991ca`
 
 - Source: `lsdefine/GenericAgent` upstream `main`
-- Date audited: 2026-06-12
-- Previous baseline: `ba19018a6d84df7f530275fa4b9b0858843e932a`
-- Delta: 23 commits
-- Result: no external bridge protocol or dependency break; `agent_loop.py`,
-  `agentmain.py`, and `pyproject.toml` did not change. Managed runtime needed
-  refreshed Project Mode state-root coverage, Browser Control recovery context,
-  and ChatGPT / Codex patch context because upstream moved nearby `ga.py` and
-  `llmcore.py` code. Galley keeps Browser Control test-page launching as an
-  explicit UI action instead of inheriting upstream's implicit
-  `example.com` opener from GA runtime.
-- Devlog: [GA upstream upgrade ba19018a -> 0def7441](./devlog/2026-06-12-ga-upstream-upgrade-ba19018a-to-0def7441.md)
+- Date audited: 2026-06-18
+- Previous baseline: `0def744157916f0c88da69f710941e4c408b3768`
+- Delta: 30 commits
+- Result: no external bridge protocol or dependency break; `pyproject.toml`
+  did not change. Managed runtime needed refreshed state-root coverage for
+  upstream Workspace / Project Mode files, plus patch-context refreshes for
+  Browser Control, ChatGPT / Codex, image attachments, and WeChat paths.
+- Devlog: [Project Workspace and GA upstream upgrade 0def7441 -> 12655687](./devlog/2026-06-18-project-workspace-and-ga-upstream-12655687.md)
 
 Relevant compatibility notes:
 
-- `agent_loop.py`, `agentmain.py`, and `pyproject.toml`: no diff in this range.
-  The dispatch / hooks surface and bundled dependency list Galley audits did
-  not move.
-- `ga.py`: upstream changed Browser Control startup to wait longer and open
-  `https://example.com` when no tab appears. Managed mode preserves Galley's
-  non-interactive `code_run` stdin close and Browser Control recovery
-  diagnostics, but does not keep the implicit page opener.
-- `llmcore.py`: upstream improved empty-response failover, Responses API Codex
-  client metadata, read timeout defaults, and native OpenAI user-agent handling.
-  Galley's ChatGPT / Codex managed backend remains a managed patch because it
-  is a Galley credential IPC contract.
-- `plugins/project_mode.py`: upstream added a default-loaded Project Mode
-  plugin. Managed mode routes its activation anchor and project memory files
-  through `GALLEY_GA_STATE_ROOT` so user state never lands in the shipped code
-  payload.
-- `frontends/continue_cmd.py`, `frontends/model_cmd.py`,
-  `frontends/plan_state.py`, and `frontends/tuiapp_v2.py`: upstream shipped
-  TUI `/continue`, `/model`, `/effort`, tool-card, and plan-card updates. These
-  are bundled in managed GA but do not move Galley's attach bridge contract.
+- `frontends/workspace_cmd.py`, `plugins/project_mode.py`,
+  `frontends/tuiapp_v2.py`, and `frontends/tui_v3.py`: upstream now supports
+  `/workspace`, shared Workspace link/registry logic, and per-agent Project
+  Mode activation. Galley uses this for managed Project Workspace and routes
+  Workspace temp/registry/anchor state through `GALLEY_GA_STATE_ROOT`.
+- `frontends/continue_cmd.py`: upstream added in-place restore, session locks,
+  and workspace restore metadata. Managed mode routes continue logs/cache
+  through the managed state root.
+- `agentmain.py`: upstream task/reflect loop moved nearby contexts only; Galley
+  keeps image attachment initial content and managed state-root routing.
+- `ga.py`: upstream browser wake-up behavior remains compatible. Managed mode
+  preserves Galley's non-interactive `code_run` stdin close and Browser Control
+  recovery diagnostics.
+- `llmcore.py`: upstream added Responses Codex metadata. Galley's ChatGPT /
+  Codex managed backend remains a managed patch because it is a Galley
+  credential IPC contract.
+- `memory/`: upstream removed `skill_search`, added macOS AX control support,
+  and refreshed SOP content. The managed state seed follows upstream memory
+  files while excluding generated long-term memory artifacts.
 - `pyproject.toml`: no dependency diff in this range; bundled Python
   dependencies did not need changes.
 

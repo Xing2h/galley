@@ -8,7 +8,8 @@ impl SqliteGalley {
     /// `unwrap`).
     pub(super) async fn fetch_project(&self, id: &str) -> Result<ProjectBrief> {
         let row = sqlx::query_as::<_, ProjectRow>(
-            "SELECT p.id, p.name, p.root_path, p.icon, p.color, p.pinned, \
+            "SELECT p.id, p.name, p.root_path, p.workspace_enabled, \
+                p.icon, p.color, p.pinned, \
                 CASE \
                     WHEN MAX(s.last_activity_at) IS NOT NULL \
                          AND MAX(s.last_activity_at) > p.created_at \
@@ -20,8 +21,8 @@ impl SqliteGalley {
              LEFT JOIN sessions s \
                 ON s.project_id = p.id AND s.status != 'archived' \
              WHERE p.id = ? \
-             GROUP BY p.id, p.name, p.root_path, p.icon, p.color, \
-                p.pinned, p.created_at, p.updated_at",
+             GROUP BY p.id, p.name, p.root_path, p.workspace_enabled, \
+                p.icon, p.color, p.pinned, p.created_at, p.updated_at",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -37,7 +38,8 @@ impl SqliteGalley {
 impl SqliteGalley {
     pub(super) async fn list_projects_db(&self) -> Result<Vec<ProjectBrief>> {
         let rows = sqlx::query_as::<_, ProjectRow>(
-            "SELECT p.id, p.name, p.root_path, p.icon, p.color, p.pinned, \
+            "SELECT p.id, p.name, p.root_path, p.workspace_enabled, \
+                p.icon, p.color, p.pinned, \
                 CASE \
                     WHEN MAX(s.last_activity_at) IS NOT NULL \
                          AND MAX(s.last_activity_at) > p.created_at \
@@ -48,8 +50,8 @@ impl SqliteGalley {
              FROM projects p \
              LEFT JOIN sessions s \
                 ON s.project_id = p.id AND s.status != 'archived' \
-             GROUP BY p.id, p.name, p.root_path, p.icon, p.color, \
-                p.pinned, p.created_at, p.updated_at \
+             GROUP BY p.id, p.name, p.root_path, p.workspace_enabled, \
+                p.icon, p.color, p.pinned, p.created_at, p.updated_at \
              ORDER BY p.pinned DESC, last_activity_at DESC, \
                 p.name COLLATE NOCASE ASC",
         )
@@ -84,13 +86,19 @@ impl SqliteGalley {
             .map(str::to_string);
         let now = chrono_now_iso();
         sqlx::query(
-            "INSERT INTO projects (id, name, root_path, icon, color, pinned, \
+            "INSERT INTO projects (id, name, root_path, workspace_enabled, \
+                icon, color, pinned, \
                 last_activity_at, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
         )
         .bind(id)
         .bind(name)
         .bind(&root_path)
+        .bind(if input.workspace_enabled {
+            1_i64
+        } else {
+            0_i64
+        })
         .bind(&input.icon)
         .bind(&input.color)
         .bind(&now)
@@ -139,6 +147,9 @@ impl SqliteGalley {
         if write_root {
             sets.push("root_path = ?");
         }
+        if patch.workspace_enabled.is_some() {
+            sets.push("workspace_enabled = ?");
+        }
         let (write_icon, icon_val) = project_nullable_patch(&patch.icon);
         if write_icon {
             sets.push("icon = ?");
@@ -159,6 +170,9 @@ impl SqliteGalley {
         }
         if write_root {
             q = q.bind(&root_val);
+        }
+        if let Some(enabled) = patch.workspace_enabled {
+            q = q.bind(if enabled { 1_i64 } else { 0_i64 });
         }
         if write_icon {
             q = q.bind(&icon_val);

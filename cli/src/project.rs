@@ -260,16 +260,29 @@ async fn project_snapshot_payload(
 pub(crate) async fn project_create(
     name: String,
     root_path: Option<String>,
+    enable_workspace: bool,
     icon: Option<String>,
     color: Option<String>,
     supervisor: Option<String>,
     reason: Option<String>,
 ) -> Result<(), GalleyError> {
+    if enable_workspace
+        && root_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_none()
+    {
+        return Err(GalleyError::InvalidArgs {
+            message: "--enable-workspace requires --root-path".into(),
+        });
+    }
     let req = serde_json::json!({
         "command": "project.create",
         "args": {
             "name": name,
             "rootPath": root_path,
+            "workspaceEnabled": enable_workspace,
             "icon": icon,
             "color": color,
             "supervisor": supervisor,

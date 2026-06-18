@@ -205,8 +205,8 @@ pub(crate) async fn test_managed_model_connection(
 }
 
 #[tauri::command]
-pub(crate) async fn start_chatgpt_codex_login()
--> std::result::Result<codex_oauth::CodexDeviceLoginStart, String> {
+pub(crate) async fn start_chatgpt_codex_login(
+) -> std::result::Result<codex_oauth::CodexDeviceLoginStart, String> {
     codex_oauth::start_device_login()
         .await
         .map_err(stringify_error)

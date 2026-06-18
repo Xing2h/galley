@@ -622,6 +622,11 @@ task. Either both DB rows commit or neither does; once the rows commit,
 runner spawn/dispatch failures surface as `runner_error` (exit 5) so
 agents know the delegated task did not actually start.
 
+If `--project` points at a Project with `workspaceEnabled=true` and a
+`rootPath`, the next runner spawn passes that folder as GA Project Workspace.
+It is never passed as process `cwd`; GA memory/SOP lookup continues to use the
+runtime's own state root.
+
 | Flag           | Default                              | Notes                                                                                          |
 | -------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | `--project`    | (none → ungrouped)                   | Project id. Invalid id → `invalid_args`.                                                       |
@@ -755,7 +760,7 @@ $ galley session move sess_abc        # no --to → detach
 Exit codes: `0` success / `2 invalid_args` (project id doesn't exist —
 FK violation) / `3 not_found` (session id) / `4 db_unavailable`.
 
-### 5.14 · `galley project create "<name>" [--root-path=…] [--icon=…] [--color=…] [--supervisor=<x>] [--reason=<y>]`
+### 5.14 · `galley project create "<name>" [--root-path=…] [--enable-workspace] [--icon=…] [--color=…] [--supervisor=<x>] [--reason=<y>]`
 
 **Write command** — creates a project. Id is server-side minted
 (`proj_<16-hex>`) so SOPs don't have to invent ids. `name` is trimmed
@@ -763,13 +768,14 @@ server-side; empty after trim → `invalid_args`.
 
 | Flag           | Default        | Notes                                                                                                     |
 | -------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
-| `--root-path`  | (none)         | Filesystem root. Stored for forward compatibility — runner spawn no longer injects this (see 2026-05-14). |
+| `--root-path`  | (none)         | Optional Project folder. Metadata only unless paired with `--enable-workspace`.                           |
+| `--enable-workspace` | `false`  | Opts this Project into GA Project Workspace for future runner spawns. Requires a non-empty `--root-path`. |
 | `--icon`       | (none)         | Legacy icon metadata. Current GUI renders the standard Phosphor folder icon.                             |
 | `--color`      | (none)         | Hex accent color (e.g. `#7c84ff`).                                                                       |
 
 ```bash
-$ galley project create "MyApp refactor" --root-path=/Users/me/src/myapp
-{"project":{"id":"proj_a1b2c3d4e5f60718","name":"MyApp refactor","rootPath":"/Users/me/src/myapp",…}}
+$ galley project create "MyApp refactor" --root-path=/Users/me/src/myapp --enable-workspace
+{"project":{"id":"proj_a1b2c3d4e5f60718","name":"MyApp refactor","rootPath":"/Users/me/src/myapp","workspaceEnabled":true,…}}
 ```
 
 Exit codes: `0` success / `2 invalid_args` (empty name) /
@@ -793,7 +799,8 @@ $ galley project list
 | ---------------- | ---------------- | -------------------------------------------------------------------- |
 | `id`             | string           | `proj_<16-hex>`                                                      |
 | `name`           | string           |                                                                      |
-| `rootPath`       | string?          |                                                                      |
+| `rootPath`       | string?          | Optional Project Workspace root. Never used as process cwd.          |
+| `workspaceEnabled` | bool           | True when `rootPath` activates GA Project Workspace on future runner spawn. Legacy rows default false. |
 | `icon`           | string?          | Emoji                                                                |
 | `color`          | string?          | Hex                                                                  |
 | `pinned`         | bool             |                                                                      |
@@ -1370,9 +1377,9 @@ Input types (camelCase on the JSON wire):
 - `CreateSessionInput { id, title, projectId?, selectedLlmIndex?, selectedLlmKey?, selectedLlmDisplayName?, gaRuntimeKind?, gaRuntimeId?, promptProfile? }`
   — `id` is caller-assigned (`s-<base36>-<rand>` convention; conflicts
   surface as `invalid_args`).
-- `CreateProjectInput { id, name, rootPath?, icon?, color? }` —
+- `CreateProjectInput { id, name, rootPath?, workspaceEnabled?, icon?, color? }` —
   same id-assigned-by-caller convention (`proj_<random16>`).
-- `ProjectPatch { name?, rootPath??, icon??, color??, pinned? }` —
+- `ProjectPatch { name?, rootPath??, workspaceEnabled?, icon??, color??, pinned? }` —
   the `?` (Option) means "leave the column alone"; the `??`
   (double-Option) on `rootPath` / `icon` / `color` means
   `Some(None)` clears the column to SQL NULL while `Some(Some(v))`

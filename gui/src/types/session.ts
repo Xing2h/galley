@@ -128,12 +128,10 @@ export interface Session {
 export interface Project {
   id: string;
   name: string;
-  /** Historical bound cwd. Preserved on the DB row for forward
-   * compatibility but no longer injected at bridge spawn time; see
-   * devlog 2026-05-14 (rolled back to avoid breaking GA's relative
-   * `./memory/...` reads). PRD §7.3 "B. cwd" describes the original
-   * intent. */
+  /** Optional GA Workspace root. This is never injected as process cwd;
+   * it activates GA Project Mode only when workspaceEnabled is true. */
   rootPath?: string;
+  workspaceEnabled: boolean;
   /** Legacy metadata; current GUI renders Phosphor folder icons instead. */
   icon?: string;
   color?: string;

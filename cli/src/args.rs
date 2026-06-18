@@ -68,10 +68,14 @@ pub(crate) enum ProjectCmd {
         /// Project name (will be trimmed; empty → exit 2).
         name: String,
         /// Optional filesystem root path. Historical — currently stored
-        /// on the row but no longer injected at runner spawn (see
-        /// 2026-05-14 devlog on the rootPath rollback).
+        /// on the row. It only affects GA when paired with
+        /// --enable-workspace.
         #[arg(long)]
         root_path: Option<String>,
+        /// Activate GenericAgent Workspace / Project Mode for sessions
+        /// in this Project. Requires --root-path.
+        #[arg(long)]
+        enable_workspace: bool,
         /// Optional legacy icon metadata. Current GUI renders Phosphor folder icons.
         #[arg(long)]
         icon: Option<String>,

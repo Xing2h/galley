@@ -6,9 +6,12 @@ that don't need a GA subprocess: error classification and LLM display names.
 from __future__ import annotations
 
 import json
+import os
+import sys
 import time
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -389,6 +392,132 @@ def test_user_message_command_passes_images_to_agent() -> None:
         {"text": "describe", "source": "workbench", "images": ["/tmp/galley/image.png"]}
     ]
     assert bridge._current_message_turn_base == 7
+
+
+def test_project_workspace_managed_runtime_sets_project_mode_attrs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    ga_path = tmp_path / "ga"
+    ga_path.mkdir()
+    calls: list[str] = []
+
+    def fake_prepare(root: str) -> dict[str, object]:
+        calls.append(root)
+        return {
+            "ok": True,
+            "name": "repo",
+            "target": str(workspace),
+        }
+
+    monkeypatch.setitem(sys.modules, "workspace_cmd", SimpleNamespace(prepare=fake_prepare))
+    monkeypatch.setattr(managed_runtime, "is_managed_runtime", lambda: True)
+
+    bridge = Bridge(
+        ga_path=str(ga_path),
+        session_id="s1",
+        cwd=None,
+        llm_no=0,
+        llm_name=None,
+        stdout=StringIO(),
+        stdin=StringIO(),
+        workspace_root=str(workspace),
+    )
+    bridge.agent = SimpleNamespace()
+    cwd_before = os.getcwd()
+
+    bridge._activate_project_workspace()
+
+    assert calls == [str(workspace)]
+    assert bridge.agent._ga_project_mode_name == "repo"
+    assert bridge.agent._ga_project_mode_workspace_path == str(workspace)
+    assert os.getcwd() == cwd_before
+    assert bridge.event_queue.empty()
+
+
+def test_project_workspace_external_runtime_activates_only_with_safe_state_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    ga_path = tmp_path / "external-ga"
+    ga_path.mkdir()
+    state_root = tmp_path / "galley-state"
+    calls: list[str] = []
+
+    def fake_prepare(root: str) -> dict[str, object]:
+        calls.append(root)
+        return {
+            "ok": True,
+            "name": "repo",
+            "target": str(workspace),
+        }
+
+    monkeypatch.setitem(sys.modules, "workspace_cmd", SimpleNamespace(prepare=fake_prepare))
+    monkeypatch.setattr(managed_runtime, "is_managed_runtime", lambda: False)
+    monkeypatch.setattr(managed_runtime, "managed_state_root", lambda: str(state_root))
+
+    bridge = Bridge(
+        ga_path=str(ga_path),
+        session_id="s1",
+        cwd=None,
+        llm_no=0,
+        llm_name=None,
+        stdout=StringIO(),
+        stdin=StringIO(),
+        workspace_root=str(workspace),
+    )
+    bridge.agent = SimpleNamespace()
+    cwd_before = os.getcwd()
+
+    bridge._activate_project_workspace()
+
+    assert calls == [str(workspace)]
+    assert bridge.agent._ga_project_mode_name == "repo"
+    assert bridge.agent._ga_project_mode_workspace_path == str(workspace)
+    assert os.getcwd() == cwd_before
+    assert bridge.event_queue.empty()
+
+
+def test_project_workspace_external_runtime_skips_without_safe_state_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    ga_path = tmp_path / "external-ga"
+    ga_path.mkdir()
+
+    def fake_prepare(_root: str) -> dict[str, object]:
+        raise AssertionError("prepare must not run for unsafe external GA")
+
+    monkeypatch.setitem(sys.modules, "workspace_cmd", SimpleNamespace(prepare=fake_prepare))
+    monkeypatch.setattr(managed_runtime, "is_managed_runtime", lambda: False)
+    monkeypatch.setattr(managed_runtime, "managed_state_root", lambda: None)
+
+    bridge = Bridge(
+        ga_path=str(ga_path),
+        session_id="s1",
+        cwd=None,
+        llm_no=0,
+        llm_name=None,
+        stdout=StringIO(),
+        stdin=StringIO(),
+        workspace_root=str(workspace),
+    )
+    bridge.agent = SimpleNamespace()
+
+    bridge._activate_project_workspace()
+
+    assert not hasattr(bridge.agent, "_ga_project_mode_name")
+    event = json.loads(bridge.event_queue.get_nowait())
+    assert event["kind"] == "error"
+    assert event["severity"] == "warning"
+    assert event["context"] == "project_workspace"
+    assert "external GenericAgent" in event["message"]
 
 
 def test_message_to_content_blocks_adds_image_blocks(tmp_path: Path) -> None:

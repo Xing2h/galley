@@ -1,11 +1,8 @@
 diff --git a/llmcore.py b/llmcore.py
-index 60cebca..ee39636 100644
+index aebd6a4..de6b178 100644
 --- a/llmcore.py
 +++ b/llmcore.py
-@@ -892,16 +892,68 @@ def _write_llm_log(label, content, log_path=None):
-     with open(log_path, 'a', encoding='utf-8', errors='replace') as f:
-         f.write(f"=== {label} === {ts}\n{content}\n\n")
-
+@@ -928,0 +929,47 @@ def _write_llm_log(label, content, log_path=None):
 +_WINDOWS_PATH_KEYS = {'path', 'file_path', 'filepath'}
 +_WINDOWS_PATH_FIELD_RE = re.compile(
 +    r'("(?P<key>path|file_path|filepath)"\s*:\s*)"{1,2}'
@@ -53,25 +50,20 @@ index 60cebca..ee39636 100644
 +        return [_normalize_windows_path_values(v) for v in value]
 +    return value
 +
- def tryparse(json_str):
+@@ -930 +977 @@ def tryparse(json_str):
 -    try: return json.loads(json_str)
 +    try: return _normalize_windows_path_values(json.loads(json_str))
-     except: pass
-     json_str = json_str.strip().strip('`').replace('json\n', '', 1).strip()
+@@ -933 +980,4 @@ def tryparse(json_str):
 -    try: return json.loads(json_str)
 +    try: return _normalize_windows_path_values(json.loads(json_str))
 +    except: pass
 +    repaired = _repair_windows_path_fields_in_jsonish(json_str)
 +    try: return _normalize_windows_path_values(json.loads(repaired))
-     except: pass
+@@ -935 +985 @@ def tryparse(json_str):
 -    try: return json.loads(json_str[:-1])
 +    try: return _normalize_windows_path_values(json.loads(json_str[:-1]))
-     except: pass
-     if '}' in json_str: json_str = json_str[:json_str.rfind('}') + 1]
+@@ -938 +988,3 @@ def tryparse(json_str):
 -    return json.loads(json_str)
 +    return _normalize_windows_path_values(
 +        json.loads(_repair_windows_path_fields_in_jsonish(json_str))
 +    )
-
- class MixinSession:
-     """Multi-session fallback with spring-back to primary."""

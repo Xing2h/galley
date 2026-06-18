@@ -422,6 +422,7 @@ async fn ensure_goal_synthesis_runner(
         galley,
         app,
         session_id,
+        session.project_id.as_ref().map(|id| id.as_str()),
         session.selected_llm_index,
         session.selected_llm_key.clone(),
         session.ga_runtime_kind,
@@ -592,10 +593,12 @@ async fn spawn_args_for_session_new(
     galley: &SqliteGalley,
     app: Option<&AppHandle>,
     session_id: &str,
+    project_id: Option<&str>,
     llm_index: Option<u32>,
     llm_key: Option<String>,
     runtime_kind: RuntimeKind,
 ) -> Result<SpawnArgs, SocketResponseLite> {
+    let workspace_root = workspace_root_for_project(galley, project_id).await?;
     if runtime_kind == RuntimeKind::Managed {
         let app = app.ok_or_else(|| {
             SocketResponseLite::runner_error(
@@ -607,6 +610,7 @@ async fn spawn_args_for_session_new(
             ga_path: PathBuf::new(),
             session_id: session_id.to_string(),
             cwd: None,
+            workspace_root,
             bridge_cwd: PathBuf::new(),
             llm_index: llm_index.map(i64::from),
             llm_key,
@@ -643,11 +647,37 @@ async fn spawn_args_for_session_new(
         ga_path,
         session_id: session_id.to_string(),
         cwd: None,
+        workspace_root,
         bridge_cwd,
         llm_index: llm_index.map(i64::from),
         llm_key,
         env: Vec::new(),
     })
+}
+
+async fn workspace_root_for_project(
+    galley: &SqliteGalley,
+    project_id: Option<&str>,
+) -> Result<Option<PathBuf>, SocketResponseLite> {
+    let Some(project_id) = project_id else {
+        return Ok(None);
+    };
+    let projects = galley
+        .list_projects()
+        .await
+        .map_err(SocketResponseLite::from_err)?;
+    let Some(project) = projects.into_iter().find(|p| p.id.as_str() == project_id) else {
+        return Ok(None);
+    };
+    if !project.workspace_enabled {
+        return Ok(None);
+    }
+    Ok(project
+        .root_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from))
 }
 
 fn non_empty_pref(value: Option<&str>, key: &str) -> Result<String, SocketResponseLite> {
@@ -918,6 +948,7 @@ async fn dispatch_session_new_inner(
         &galley,
         app,
         &id,
+        project_id.as_deref(),
         llm_selection.index,
         llm_selection.key.clone(),
         target_runtime_kind,

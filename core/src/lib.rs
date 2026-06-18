@@ -514,7 +514,8 @@ pub fn run() {
         },
         Migration {
             version: 7,
-            description: "add sessions origin (created_via, created_by_supervisor, created_origin_note)",
+            description:
+                "add sessions origin (created_via, created_by_supervisor, created_origin_note)",
             sql: include_str!("../migrations/007_sessions_origin.sql"),
             kind: MigrationKind::Up,
         },
@@ -624,6 +625,12 @@ pub fn run() {
             version: 25,
             description: "restore managed runtime default after native experiment",
             sql: include_str!("../migrations/025_restore_managed_runtime_default.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 26,
+            description: "project workspace binding",
+            sql: include_str!("../migrations/026_project_workspace.sql"),
             kind: MigrationKind::Up,
         },
     ];

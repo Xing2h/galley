@@ -3,8 +3,8 @@
   "upstream": {
     "source": "lsdefine/GenericAgent",
     "branch": "main",
-    "commit": "0def744157916f0c88da69f710941e4c408b3768",
-    "auditedAt": "2026-06-12"
+    "commit": "12655687aa964ea541bb0606c0051700e76991ca",
+    "auditedAt": "2026-06-18"
   },
   "patchStack": {
     "id": "galley-managed-ga-patches-v1",

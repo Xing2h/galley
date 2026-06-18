@@ -92,11 +92,11 @@ mod wire;
 use llm_cmds::*;
 use project_cmds::*;
 use session_cmds::*;
-use wire::{CONNECTION_IDLE_TIMEOUT, StreamEnvelope, write_stream_line};
-pub use wire::{SCHEMA_VERSION, SocketRequest, SocketResponse};
+use wire::{write_stream_line, StreamEnvelope, CONNECTION_IDLE_TIMEOUT};
+pub use wire::{SocketRequest, SocketResponse, SCHEMA_VERSION};
 
 #[allow(unused_imports)]
-pub(crate) use llm_cmds::{ResolvedLlmSelection, resolve_llm_selection_for_runtime};
+pub(crate) use llm_cmds::{resolve_llm_selection_for_runtime, ResolvedLlmSelection};
 
 const GOAL_WORKER_SESSION_ID_PLACEHOLDER: &str = "{{GALLEY_SESSION_ID}}";
 
