@@ -387,6 +387,7 @@ All commands support `--help`.
 | `"$GALLEY" session show <id> --tail=20` | Recent messages |
 | `"$GALLEY" session watch <id>` | Stream live runner events; no backlog |
 | `"$GALLEY" session follow <id> --tail=20` | Snapshot, live events if available, final snapshot |
+| `"$GALLEY" session wait <id> --timeout=300 --poll=5 --tail=20 --final-show` | Bounded result retrieval for Supervisor / IM use; timeout is not task failure |
 | `"$GALLEY" project list` | Available projects |
 | `"$GALLEY" project brief <id>` | Project status counts and running sessions |
 | `"$GALLEY" project show <id> --tail=20` | Project sessions plus transcript tails |
@@ -441,10 +442,22 @@ wants to look across both managed and external GA history.
 ```
 
 On success, expect `dispatch: "dispatched"`: the session was created, a runner
-was started, and the first task was sent. If `session new` returns
-`runner_error` (exit 5), do not send the same task again blindly. Tell the user
-the session may have been saved but did not start, then inspect it with
-`session show` or ask the user before retrying.
+was started, and the first task was sent. For Supervisor / IM flows that need a
+bounded answer in the same conversation, follow with:
+
+```bash
+"$GALLEY" session wait <id> --timeout=300 --poll=5 --tail=20 --final-show
+```
+
+If `session wait` returns `status: "completed"`, use the final payload to
+summarize the Galley result. If it returns `status: "timed_out"`, tell the
+user the session has started but this waiter has not retrieved an agent result
+yet; include the session id and offer to check again later. Do not describe
+`timed_out` as task failure or as proof that Galley produced no output.
+
+If `session new` returns `runner_error` (exit 5), do not send the same task
+again blindly. Tell the user the session may have been saved but did not start,
+then inspect it with `session show` or ask the user before retrying.
 
 Use `--runtime=managed` or `--runtime=external` only when the user or task
 requires a specific runtime. Otherwise omit it so the new session follows the
@@ -470,8 +483,20 @@ the session in Galley.
 
 ### "Watch progress"
 
-Prefer `session follow` for normal Supervisor use. It emits recent history,
-then live events if a live runner exists, then a final snapshot:
+Use `session wait` when the user expects a bounded result retrieval, especially
+from IM or another agent frontend:
+
+```bash
+"$GALLEY" session wait <id> --timeout=300 --poll=5 --tail=20 --final-show
+```
+
+`session wait` reads persisted state and exits with `status: "completed"` once
+a visible agent message is available, or `status: "timed_out"` when the waiter
+deadline passes. `timed_out` means the local wait stopped; the Galley task may
+still finish later.
+
+Use `session follow` for live observation. It emits recent history, then live
+events if a live runner exists, then a final snapshot:
 
 ```bash
 "$GALLEY" session follow <id> --tail=20
@@ -485,9 +510,10 @@ history:
 ```
 
 `session watch` is live-only and has no backlog. `session follow` is the
-safe wrapper for "catch up, then watch". Both commands are long-lived when a
-runner is alive. Stop the subscription when you have enough events to answer
-the user; do not leave a watcher running accidentally.
+safe wrapper for "catch up, then watch". Both `watch` and `follow` are live
+observation tools, not the final bounded-result contract for long IM tasks.
+They can outlive the local calling tool. Stop the subscription when you have
+enough events to answer the user; do not leave a watcher running accidentally.
 
 ### "Split a complex task into parallel sessions"
 
@@ -694,6 +720,11 @@ Never blindly retry. For `session send` and `llm set`, `dispatch:
 "persisted_only"` means the DB write succeeded but no live runner consumed the
 command; report that distinction instead of resending the same message. For
 `session stop`, `dispatch: "already_stopped"` is success.
+
+Local tool timeouts, `session wait` with `status: "timed_out"`, and snapshots
+that contain only the user's message are not Galley task failures. Say the
+session has started but no result has been retrieved yet, include the session
+id, and offer to check again later.
 
 ## 13. Boundaries
 

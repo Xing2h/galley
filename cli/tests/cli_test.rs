@@ -38,6 +38,13 @@ const MIG_016: &str = include_str!("../../core/migrations/016_goal_master_sessio
 const MIG_017: &str = include_str!("../../core/migrations/017_message_visibility.sql");
 const MIG_018: &str = include_str!("../../core/migrations/018_goal_deliverable.sql");
 const MIG_019: &str = include_str!("../../core/migrations/019_goal_workspace.sql");
+const MIG_020: &str = include_str!("../../core/migrations/020_message_attachments.sql");
+const MIG_021: &str = include_str!("../../core/migrations/021_native_session_runtime.sql");
+const MIG_022: &str = include_str!("../../core/migrations/022_native_memory_substrate.sql");
+const MIG_023: &str = include_str!("../../core/migrations/023_native_goal_runtime.sql");
+const MIG_024: &str = include_str!("../../core/migrations/024_native_default_runtime.sql");
+const MIG_025: &str = include_str!("../../core/migrations/025_restore_managed_runtime_default.sql");
+const MIG_026: &str = include_str!("../../core/migrations/026_project_workspace.sql");
 
 /// Build a temp .db file with all migrations applied + (optionally)
 /// seed rows. Returns the path; caller stashes it for the spawned
@@ -50,7 +57,8 @@ async fn seeded_db_at(path: &std::path::Path) -> SqlitePool {
     let pool = SqlitePool::connect_with(opts).await.expect("open db");
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
-        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019,
+        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019, MIG_020,
+        MIG_021, MIG_022, MIG_023, MIG_024, MIG_025, MIG_026,
     ] {
         sqlx::raw_sql(sql)
             .execute(&pool)
@@ -113,6 +121,47 @@ async fn seed_message(pool: &SqlitePool, id: &str, session_id: &str, content: &s
     .expect("seed fts row");
 }
 
+async fn seed_message_with_role(
+    pool: &SqlitePool,
+    id: &str,
+    session_id: &str,
+    turn_index: i64,
+    sequence: i64,
+    role: &str,
+    content: &str,
+    final_answer: Option<&str>,
+) {
+    sqlx::query(
+        "INSERT INTO messages (id, session_id, turn_index, sequence, role, content, \
+            final_answer, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, '2026-05-18T00:00:00Z')",
+    )
+    .bind(id)
+    .bind(session_id)
+    .bind(turn_index)
+    .bind(sequence)
+    .bind(role)
+    .bind(content)
+    .bind(final_answer)
+    .execute(pool)
+    .await
+    .expect("seed message");
+
+    let body = final_answer.unwrap_or(content);
+    sqlx::query(
+        "INSERT INTO messages_fts (message_id, session_id, role, turn_index, body) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(session_id)
+    .bind(role)
+    .bind(turn_index)
+    .bind(body)
+    .execute(pool)
+    .await
+    .expect("seed fts row");
+}
+
 /// Resolve the binary path. Cargo writes test binaries to
 /// `target/<profile>/deps/...` but workspace bins land at
 /// `target/<profile>/<name>`. `CARGO_BIN_EXE_galley` is set by Cargo
@@ -154,6 +203,15 @@ fn search_session_ids(stdout: &str) -> Vec<String> {
 fn assert_search_session_ids(stdout: &str, expected: &[&str]) {
     let expected = expected.iter().map(|id| id.to_string()).collect::<Vec<_>>();
     assert_eq!(search_session_ids(stdout), expected);
+}
+
+fn parse_ndjson(stdout: &str) -> Vec<serde_json::Value> {
+    stdout
+        .trim()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("ndjson line"))
+        .collect()
 }
 
 #[tokio::test]
@@ -345,6 +403,138 @@ async fn session_brief_missing_exits_3() {
     assert_eq!(code, Some(3), "stdout was: {stdout}");
     let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
     assert_eq!(payload["error"], "not_found");
+}
+
+#[tokio::test]
+async fn session_wait_completed_returns_final_payload() {
+    let td = tempdir();
+    let db = td.path().join("workbench.db");
+    let pool = seeded_db_at(&db).await;
+    seed_session(&pool, "s_wait", "wait", "idle", "2026-05-18T00:00:00Z").await;
+    seed_message_with_role(&pool, "m1", "s_wait", 1, 0, "user", "please work", None).await;
+    seed_message_with_role(&pool, "m2", "s_wait", 1, 1, "assistant", "", Some("done")).await;
+    drop(pool);
+
+    let (stdout, code) = run_galley(
+        &db,
+        &[
+            "session",
+            "wait",
+            "s_wait",
+            "--timeout=1",
+            "--poll=1",
+            "--tail=5",
+        ],
+    );
+    assert_eq!(code, Some(0), "stdout was: {stdout}");
+    let lines = parse_ndjson(&stdout);
+    assert_eq!(lines.len(), 3, "stdout was: {stdout}");
+    assert_eq!(lines[0]["schemaVersion"], 1);
+    assert_eq!(lines[0]["stream"], "wait");
+    assert_eq!(lines[0]["phase"], "initial");
+    assert_eq!(lines[1]["stream"], "wait");
+    assert_eq!(lines[1]["phase"], "final");
+    assert_eq!(lines[1]["status"], "completed");
+    assert_eq!(lines[1]["session"]["id"], "s_wait");
+    let messages = lines[1]["messages"].as_array().expect("messages array");
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[1]["role"], "agent");
+    assert_eq!(messages[1]["finalAnswer"], "done");
+    assert_eq!(lines[2]["stream"], "end");
+    assert_eq!(lines[2]["reason"], "completed");
+}
+
+#[tokio::test]
+async fn session_wait_timeout_returns_timed_out_exit_0() {
+    let td = tempdir();
+    let db = td.path().join("workbench.db");
+    let pool = seeded_db_at(&db).await;
+    seed_session(
+        &pool,
+        "s_pending",
+        "pending",
+        "running",
+        "2026-05-18T00:00:00Z",
+    )
+    .await;
+    seed_message_with_role(&pool, "m1", "s_pending", 1, 0, "user", "please work", None).await;
+    drop(pool);
+
+    let (stdout, code) = run_galley(
+        &db,
+        &[
+            "session",
+            "wait",
+            "s_pending",
+            "--timeout=0",
+            "--poll=1",
+            "--tail=20",
+        ],
+    );
+    assert_eq!(code, Some(0), "stdout was: {stdout}");
+    let lines = parse_ndjson(&stdout);
+    assert_eq!(lines.len(), 3, "stdout was: {stdout}");
+    assert_eq!(lines[1]["stream"], "wait");
+    assert_eq!(lines[1]["phase"], "final");
+    assert_eq!(lines[1]["status"], "timed_out");
+    assert_eq!(lines[1]["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(lines[2]["stream"], "end");
+    assert_eq!(lines[2]["reason"], "timeout");
+}
+
+#[tokio::test]
+async fn session_wait_missing_session_exits_3() {
+    let td = tempdir();
+    let db = td.path().join("workbench.db");
+    let _pool = seeded_db_at(&db).await;
+
+    let (stdout, code) = run_galley(&db, &["session", "wait", "sess_missing", "--timeout=0"]);
+    assert_eq!(code, Some(3), "stdout was: {stdout}");
+    let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+    assert_eq!(payload["error"], "not_found");
+}
+
+#[tokio::test]
+async fn session_wait_missing_db_exits_4() {
+    let td = tempdir();
+    let db = td.path().join("nonexistent.db");
+
+    let (stdout, code) = run_galley(&db, &["session", "wait", "s_wait", "--timeout=0"]);
+    assert_eq!(code, Some(4), "stdout was: {stdout}");
+    let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+    assert_eq!(payload["error"], "db_unavailable");
+}
+
+#[tokio::test]
+async fn session_wait_tail_limits_returned_messages() {
+    let td = tempdir();
+    let db = td.path().join("workbench.db");
+    let pool = seeded_db_at(&db).await;
+    seed_session(&pool, "s_tail", "tail", "idle", "2026-05-18T00:00:00Z").await;
+    seed_message_with_role(&pool, "m1", "s_tail", 1, 0, "user", "first", None).await;
+    seed_message_with_role(&pool, "m2", "s_tail", 1, 1, "assistant", "second", None).await;
+    seed_message_with_role(&pool, "m3", "s_tail", 2, 0, "user", "third", None).await;
+    seed_message_with_role(&pool, "m4", "s_tail", 2, 1, "assistant", "fourth", None).await;
+    drop(pool);
+
+    let (stdout, code) = run_galley(
+        &db,
+        &[
+            "session",
+            "wait",
+            "s_tail",
+            "--timeout=1",
+            "--poll=1",
+            "--tail=1",
+        ],
+    );
+    assert_eq!(code, Some(0), "stdout was: {stdout}");
+    let lines = parse_ndjson(&stdout);
+    assert_eq!(lines[1]["status"], "completed");
+    let messages = lines[1]["messages"].as_array().expect("messages array");
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["id"], "m4");
+    assert_eq!(messages[0]["content"], "fourth");
 }
 
 #[tokio::test]

@@ -90,10 +90,11 @@ mislead. SOPs branch per command:
 | `session stop`                   | `abort_sent` / `already_stopped`                   |
 | `llm set`                        | `dispatched` / `persisted_only`                    |
 
-#### `stream.reason` values (subscription commands)
+#### `stream.reason` values (streaming / wait commands)
 
 For NDJSON stream-end frames on `session watch` (§5.5b),
-`session follow` (§5.5c), and `project follow` (§5.15c):
+`session follow` (§5.5c), `session wait` (§5.5d), and
+`project follow` (§5.15c):
 
 | `reason`             | Meaning                                          |
 | -------------------- | ------------------------------------------------ |
@@ -105,6 +106,8 @@ For NDJSON stream-end frames on `session watch` (§5.5b),
 | `socket_closed`      | Watch socket closed without a stream-end frame   |
 | `no_live_sessions`   | Project follow found no live stream output       |
 | `all_live_sessions_ended` | Project follow consumed all live subscriptions |
+| `completed`          | `session wait` found a visible agent message     |
+| `timeout`            | `session wait` reached its bounded wait deadline |
 
 ### 1.2 Schema pinning
 
@@ -150,7 +153,7 @@ depending on whether the command is read-only or writes state.
 
 ### Read-only commands → direct SQLite
 
-`sessions list / search`, `session brief / show`, `project list`,
+`sessions list / search`, `session brief / show / wait`, `project list`,
 `project brief`, `project show`, `status`, `health`, `version` open
 the SQLite file directly via `GALLEY_DB_PATH` (or the platform default
 path in §2). **No daemon required.** Useful when:
@@ -167,7 +170,8 @@ running — they don't talk to it.
 per-user local socket served by a running Galley Core process.
 `session follow` and `project follow` are hybrid commands: they read
 SQLite snapshots first, then attempt live socket subscriptions when a
-runner is available.
+runner is available. `session wait` remains direct-SQLite only; it
+polls persisted messages rather than subscribing to live events.
 
 - **macOS / Linux**: Unix domain socket at `$TMPDIR/galley-$UID.sock`
   (typically `/tmp/galley-501.sock`). Permission `0600` — only the
@@ -548,6 +552,44 @@ Exit codes: `0` when the session exists and the snapshot can be read /
 `3 not_found` (session missing) / `4 db_unavailable` (DB missing or
 unopenable). Live-runner absence is reported in the end frame, not as
 exit 3.
+
+### 5.5d · `galley session wait <id> [--timeout=N] [--poll=N] [--tail=N] [--final-show[=true|false]]`
+
+**Bounded result retrieval command** — additive in schema v1. Polls the
+Galley DB for a visible agent message, then emits a final payload and
+exits. This command is intended for Supervisor / IM integrations where
+a local tool timeout must not be interpreted as child task failure.
+
+Defaults: `--timeout=300`, `--poll=5`, `--tail=20`,
+`--final-show=true`. `--poll` values below 1 second are clamped to 1.
+
+```bash
+$ galley session wait sess_abc --timeout=300 --poll=5 --tail=20 --final-show
+{"schemaVersion":1,"stream":"wait","phase":"initial","session":{…},"messages":[…]}
+{"schemaVersion":1,"stream":"wait","phase":"final","status":"completed","session":{…},"messages":[…]}
+{"schemaVersion":1,"stream":"end","reason":"completed"}
+```
+
+If the deadline passes before a visible agent message exists:
+
+```json
+{"schemaVersion":1,"stream":"wait","phase":"final","status":"timed_out","session":{…},"messages":[…]}
+{"schemaVersion":1,"stream":"end","reason":"timeout"}
+```
+
+`status:"timed_out"` means the waiter stopped waiting; it does not mean
+the Galley session failed or produced no later result. Supervisors
+should report the session id and invite a later follow-up instead of
+saying the delegated task failed.
+
+Completion is detected from the returned visible message tail: any
+`role:"agent"` row with non-empty `content` or `finalAnswer` counts as
+retrievable output. `--final-show=false` omits `messages` from the final
+payload while keeping the initial snapshot.
+
+Exit codes: `0` for `completed` and `timed_out` /
+`3 not_found` (session missing) / `4 db_unavailable` (DB missing or
+unopenable).
 
 ### 5.6 · `galley status`
 

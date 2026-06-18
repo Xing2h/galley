@@ -8,12 +8,13 @@ use crate::transport::{
     unary_command_value, WatchFrame,
 };
 use galley_core_lib::api::{
-    GalleyApi, MessageBrief, SearchScope, SessionBrief, SessionFilter, SessionId,
+    GalleyApi, MessageBrief, MessageRole, SearchScope, SessionBrief, SessionFilter, SessionId,
 };
 use galley_core_lib::db::SqliteGalley;
 use galley_core_lib::error::GalleyError;
 use serde::Serialize;
 use serde_json::Value;
+use std::time::{Duration, Instant};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +33,19 @@ struct SessionEventPayload {
     stream: &'static str,
     session_id: String,
     data: Value,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionWaitPayload {
+    schema_version: u32,
+    stream: &'static str,
+    phase: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<&'static str>,
+    session: SessionBrief,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    messages: Option<Vec<MessageBrief>>,
 }
 
 pub(crate) async fn sessions_list(
@@ -113,6 +127,44 @@ async fn session_snapshot_payload(
         session,
         messages,
     })
+}
+
+async fn session_wait_snapshot(
+    galley: &SqliteGalley,
+    id: &str,
+    tail: usize,
+) -> Result<(SessionBrief, Vec<MessageBrief>), GalleyError> {
+    let session_id = SessionId(id.to_string());
+    let session = galley.session_brief(session_id.clone()).await?;
+    let messages = galley.session_messages(session_id, Some(tail)).await?;
+    Ok((session, messages))
+}
+
+fn has_agent_output(messages: &[MessageBrief]) -> bool {
+    messages.iter().any(|message| {
+        message.role == MessageRole::Agent
+            && (!message.content.trim().is_empty()
+                || message
+                    .final_answer
+                    .as_deref()
+                    .is_some_and(|answer| !answer.trim().is_empty()))
+    })
+}
+
+fn wait_payload(
+    phase: &'static str,
+    status: Option<&'static str>,
+    session: SessionBrief,
+    messages: Option<Vec<MessageBrief>>,
+) -> SessionWaitPayload {
+    SessionWaitPayload {
+        schema_version: SCHEMA_VERSION,
+        stream: "wait",
+        phase,
+        status,
+        session,
+        messages,
+    }
 }
 
 pub(crate) async fn session_send(
@@ -236,6 +288,75 @@ pub(crate) async fn session_follow(id: String, tail: usize) -> Result<(), Galley
                 return Ok(());
             }
             Err(e) => return Err(e),
+        }
+    }
+}
+
+pub(crate) async fn session_wait(
+    id: String,
+    timeout: u64,
+    poll: u64,
+    tail: usize,
+    final_show: bool,
+) -> Result<(), GalleyError> {
+    let galley = SqliteGalley::open().await?;
+    let (session, messages) = session_wait_snapshot(&galley, &id, tail).await?;
+    let completed = has_agent_output(&messages);
+    emit_json(&wait_payload("initial", None, session, Some(messages)))?;
+
+    if completed {
+        let (session, messages) = session_wait_snapshot(&galley, &id, tail).await?;
+        emit_json(&wait_payload(
+            "final",
+            Some("completed"),
+            session,
+            final_show.then_some(messages),
+        ))?;
+        emit_json(&StreamEndPayload {
+            schema_version: SCHEMA_VERSION,
+            stream: "end",
+            reason: "completed",
+        })?;
+        return Ok(());
+    }
+
+    let timeout = Duration::from_secs(timeout);
+    let poll = Duration::from_secs(poll.max(1));
+    let started_at = Instant::now();
+
+    loop {
+        let elapsed = started_at.elapsed();
+        if elapsed >= timeout {
+            let (session, messages) = session_wait_snapshot(&galley, &id, tail).await?;
+            emit_json(&wait_payload(
+                "final",
+                Some("timed_out"),
+                session,
+                Some(messages),
+            ))?;
+            emit_json(&StreamEndPayload {
+                schema_version: SCHEMA_VERSION,
+                stream: "end",
+                reason: "timeout",
+            })?;
+            return Ok(());
+        }
+
+        tokio::time::sleep(poll.min(timeout.saturating_sub(elapsed))).await;
+        let (session, messages) = session_wait_snapshot(&galley, &id, tail).await?;
+        if has_agent_output(&messages) {
+            emit_json(&wait_payload(
+                "final",
+                Some("completed"),
+                session,
+                final_show.then_some(messages),
+            ))?;
+            emit_json(&StreamEndPayload {
+                schema_version: SCHEMA_VERSION,
+                stream: "end",
+                reason: "completed",
+            })?;
+            return Ok(());
         }
     }
 }

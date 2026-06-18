@@ -401,6 +401,33 @@ pub(crate) enum SessionCmd {
         #[arg(long, default_value_t = 20)]
         tail: usize,
     },
+    /// Poll persisted session state until an agent-visible message
+    /// appears or the bounded wait times out. Intended for Supervisor /
+    /// IM flows where a local tool timeout must not be treated as task
+    /// failure.
+    Wait {
+        /// Session id.
+        id: String,
+        /// Maximum wait time in seconds.
+        #[arg(long, default_value_t = 300)]
+        timeout: u64,
+        /// Poll interval in seconds. Values below 1 are clamped to 1.
+        #[arg(long, default_value_t = 5)]
+        poll: u64,
+        /// Return only the last N messages in wait snapshots.
+        #[arg(long, default_value_t = 20)]
+        tail: usize,
+        /// Include final tail messages in the final payload. Defaults
+        /// true; pass `--final-show=false` for a compact final row.
+        #[arg(
+            long,
+            default_value_t = true,
+            default_missing_value = "true",
+            num_args = 0..=1,
+            action = clap::ArgAction::Set
+        )]
+        final_show: bool,
+    },
     /// Create a new session with a first user message (B4 M1). Atomic:
     /// session row + first message commit together or roll back together.
     /// Returns `{session, message, dispatch}` with `dispatch=dispatched`
