@@ -9,20 +9,18 @@ live in [refactor](./refactor/README.md).
 
 ## Current Target
 
-- Package version: `0.2.10` release prep.
-- Git tag / GitHub Release: `v0.2.9` is the current published stable release;
-  `v0.2.10` is being prepared as a data-migration hotfix.
+- Package version: `0.2.10`.
+- Git tag / GitHub Release: `v0.2.10` is the current published stable release.
 - Agent API schema: `schemaVersion: 1`
-- Release tier: stable patch candidate; default update channel still points at
-  `v0.2.9` until the `v0.2.10` draft artifact is smoked, published, and
-  promoted. `beta` is kept as a legacy alias for older builds.
+- Release tier: stable patch; default update channel points at `v0.2.10`.
+  `beta` is kept as a legacy alias for older builds.
 - Product shape: dual-native local agent team orchestrator
 
 Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
 GUI is for the human operator at the desk; the CLI is for trusted Agent /
 Supervisor automation on the same machine.
 
-`v0.2.10` is a narrow data-migration hotfix for historical session restore
+`v0.2.10` is a shipped narrow data-migration hotfix for historical session restore
 after `v0.2.8` -> `v0.2.9` upgrades. It protects not-yet-upgraded databases
 from SQLite foreign-key cascades during transactional table rebuild migrations,
 and it best-effort restores already-cascaded child rows from Galley's local
@@ -31,15 +29,13 @@ policy stay unchanged.
 
 ## Current Release State
 
-`v0.2.9` remains the live stable patch until `v0.2.10` is published and
-promoted. It includes the audited bundled GenericAgent baseline at upstream
-`53b48aea`, Project Workspace reactivation without process-cwd coupling,
-Feishu / Channels polish, and the post-`v0.2.8` Core / GUI reliability set.
-
-`v0.2.10` release prep is focused on the migration/recovery fix. The GitHub
-Release must remain draft until the release owner smokes the exact artifacts.
-Only after publish and smoke should `updates/stable/latest.json` and the
-legacy `updates/beta/latest.json` be promoted from `v0.2.9` to `v0.2.10`.
+`v0.2.10` is the live stable patch. It has been published as a GitHub Release
+and promoted to the default `updates/stable/latest.json` update channel; the
+legacy `updates/beta/latest.json` alias points at the same version for older
+installed builds. It supersedes `v0.2.9` with the migration/recovery hotfix and
+keeps the audited bundled GenericAgent baseline at upstream `53b48aea`, Project
+Workspace reactivation without process-cwd coupling, Feishu / Channels polish,
+and the post-`v0.2.8` Core / GUI reliability set.
 
 Post-promote follow-up:
 
@@ -63,7 +59,7 @@ Post-promote follow-up:
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
 | Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; current baseline is audited upstream `53b48aea`; GUI / CLI split, Provider / Model config, local encrypted SQLite credentials, and Project Workspace are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | v0.2.10 adds a safe pre-plugin migration guard through 023 and best-effort child-row recovery from local backups for the v0.2.9 table-rebuild cascade hazard | [B4 M8](./refactor/B4-M8-sub-plan.md) |
-| Release path | v0.2.10 stable patch is in release prep; v0.2.9 remains published/promoted until draft smoke and explicit publish/promotion approval | [release / update SOP](./release-update-sop.md) |
+| Release path | v0.2.10 stable patch is published and promoted to the default update channel | [release / update SOP](./release-update-sop.md) |
 | Windows | Windows x64 remains the supported release target; Windows ARM is deferred until the release workflow and smoke path are added | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream `53b48aea` | [GA baseline](./ga-baseline.md) |
 
