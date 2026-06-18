@@ -1,4 +1,9 @@
-import { Folder, FolderOpen, MagnifyingGlass, Plus } from "@phosphor-icons/react";
+import {
+  Folder,
+  FolderOpen,
+  MagnifyingGlass,
+  Plus,
+} from "@phosphor-icons/react";
 
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
@@ -71,8 +76,13 @@ function ProjectQuickAction({
   return (
     <div
       className={cn(
-        "mx-1.5 flex w-[calc(100%-12px)] items-center rounded-sm transition-[background-color,color] motion-reduce:transition-none",
-        active ? "bg-selected text-ink" : "text-ink hover:bg-hover",
+        "mx-1.5 flex w-[calc(100%-12px)] items-center rounded-sm transition-[background-color,box-shadow,color] motion-reduce:transition-none",
+        // 激活态用 shadow-inner + 底色压暗,读出"被按住/陷进去"的物理
+        // 按压感,而不是平涂高亮的"被选中/标题"语义。配合文字改成
+        // "退出项目视图" + 小 ×,四重信号确保用户知道再按一次 = 退出。
+        active
+          ? "bg-selected/85 text-ink shadow-inner"
+          : "text-ink hover:bg-hover",
       )}
     >
       <button
@@ -95,7 +105,7 @@ function ProjectQuickAction({
           )}
         />
         <span className="min-w-0 flex-1 truncate text-[13px]">
-          {copy.sidebar.projects}
+          {active ? copy.sidebar.exitProjects : copy.sidebar.projects}
         </span>
       </button>
       <IconTooltip text={copy.sidebar.newProject}>

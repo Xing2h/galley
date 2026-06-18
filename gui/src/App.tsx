@@ -779,13 +779,21 @@ function App() {
       setProjectReviewNowMs(Date.now());
       setExpandedProjectIds([projectId]);
       setProjectViewOpen(true);
+      // expand 即软设 filter:New Chat 文案 / 右侧 composer 项目徽标
+      // 都跟着"最近一次展开的项目"走。只有展开动作(false→true)
+      // 更新;收起不动,所以新建对话永远落在最后展开的那个项目。
+      setActiveProjectFilter(projectId);
       return;
     }
-    setExpandedProjectIds((ids) =>
-      ids.includes(projectId)
-        ? ids.filter((id) => id !== projectId)
-        : [...ids, projectId],
-    );
+    setExpandedProjectIds((ids) => {
+      if (ids.includes(projectId)) {
+        // 收起:不动 filter,保留最后展开的项目作为 New Chat 目标。
+        return ids.filter((id) => id !== projectId);
+      }
+      // 展开:更新 filter 为这个项目,成为新的 New Chat 目标。
+      setActiveProjectFilter(projectId);
+      return [...ids, projectId];
+    });
   };
   const startProjectConversation = (projectId: string) => {
     setActiveProjectFilter(projectId);
@@ -1112,7 +1120,11 @@ function App() {
               // placeholder in the sidebar. submitOnEmpty does the
               // createSession + activateSession when the user
               // commits to a first message.
-              setActiveProjectFilter(undefined);
+              //
+              // 注意:这里不再清 activeProjectFilter。项目视图是一个
+              // 连贯工作区——New Chat 落在"最后展开/最后进入的项目"
+              // 里(由 expand 或 select-session 设置),文案自动变成
+              // "新对话 · XXX"。没有 filter 时仍是普通新对话。
               setActiveSession(undefined);
               setScreen("empty");
               setEmptyComposerFocusTick((tick) => tick + 1);
@@ -1121,7 +1133,15 @@ function App() {
               // Activate (re-spawns the bridge if this session has
               // been idle / closed / errored) and switch to main.
               // Other sessions' bridges keep running in background.
-              setActiveProjectFilter(undefined);
+              //
+              // 项目上下文跟着 session 走:点哪个项目的对话,New Chat
+              // 就落在那个项目;不属于任何项目的对话则回到普通新对话。
+              // 这让"当前项目上下文"在 expand / select / New Chat 三个
+              // 入口下保持一致。
+              const sessionProjectId = visibleSessions.find(
+                (s) => s.id === id,
+              )?.projectId;
+              setActiveProjectFilter(sessionProjectId);
               void activateSession(id);
               setScreen("main");
             }}
