@@ -734,8 +734,8 @@ function FeishuCard({
                   status={feishuStatusHintForState(derivedState, imCopy)}
                   onOpenConsole={openFeishuConsole}
                   openDisabled={busy}
-                  startSectionIndex={3}
                   statusPlacement="top"
+                  collapsible
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -1125,6 +1125,7 @@ function FeishuSetupGuide({
   onOpenConsole,
   startSectionIndex = 0,
   statusPlacement = "bottom",
+  collapsible = false,
 }: {
   imCopy: ImCopy;
   status: string;
@@ -1135,7 +1136,13 @@ function FeishuSetupGuide({
   onOpenConsole: () => void;
   startSectionIndex?: number;
   statusPlacement?: "top" | "bottom";
+  /** When true, wrap the setup sections in a collapsed-by-default
+   * disclosure. Used for the running state, where the steps are a
+   * reference fallback rather than the primary content — keeps the
+   * "service running" view focused on status, not onboarding. */
+  collapsible?: boolean;
 }) {
+  const [stepsExpanded, setStepsExpanded] = useState(false);
   const [permissionsCopied, setPermissionsCopied] = useState(false);
   const permissionsTimerRef = useRef<number | null>(null);
 
@@ -1163,6 +1170,56 @@ function FeishuSetupGuide({
     }
   };
 
+  const sectionsInner = imCopy.feishuSetupSections
+    .slice(startSectionIndex)
+    .map((section, index) => {
+      const originalIndex = startSectionIndex + index;
+      return (
+        <FeishuSetupSection
+          key={section.title}
+          index={originalIndex + 1}
+          title={section.title}
+          steps={section.steps}
+          afterStep={
+            originalIndex === 0
+              ? {
+                  stepIndex: 2,
+                  content: (
+                    <FeishuPermissionsList
+                      items={imCopy.feishuPermissionItems}
+                      copied={permissionsCopied}
+                      copyLabel={imCopy.copyFeishuPermissions}
+                      copiedLabel={imCopy.feishuPermissionsCopied}
+                      onCopy={() => void copyPermissions()}
+                    />
+                  ),
+                }
+              : null
+          }
+        >
+          {originalIndex === 0 ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={openDisabled}
+              leadingIcon={<ChatCircleText size={13} />}
+              onClick={onOpenConsole}
+            >
+              {imCopy.openFeishuConsole}
+            </Button>
+          ) : null}
+          {originalIndex === 1 && (credentialsForm || saveAction) ? (
+            <div className="space-y-3">
+              {credentialsForm}
+              {saveAction}
+            </div>
+          ) : null}
+          {originalIndex === 2 ? startAction : null}
+        </FeishuSetupSection>
+      );
+    });
+
   return (
     <div className="max-w-[76ch] space-y-3">
       {statusPlacement === "top" ? (
@@ -1170,57 +1227,28 @@ function FeishuSetupGuide({
           {status}
         </p>
       ) : null}
-      <div className="divide-y divide-line/70">
-        {imCopy.feishuSetupSections
-          .slice(startSectionIndex)
-          .map((section, index) => {
-            const originalIndex = startSectionIndex + index;
-            return (
-              <FeishuSetupSection
-                key={section.title}
-                index={originalIndex + 1}
-                title={section.title}
-                steps={section.steps}
-                afterStep={
-                  originalIndex === 0
-                    ? {
-                        stepIndex: 2,
-                        content: (
-                          <FeishuPermissionsList
-                            items={imCopy.feishuPermissionItems}
-                            copied={permissionsCopied}
-                            copyLabel={imCopy.copyFeishuPermissions}
-                            copiedLabel={imCopy.feishuPermissionsCopied}
-                            onCopy={() => void copyPermissions()}
-                          />
-                        ),
-                      }
-                    : null
-                }
-              >
-                {originalIndex === 0 ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={openDisabled}
-                    leadingIcon={<ChatCircleText size={13} />}
-                    onClick={onOpenConsole}
-                  >
-                    {imCopy.openFeishuConsole}
-                  </Button>
-                ) : null}
-                {originalIndex === 1 && (credentialsForm || saveAction) ? (
-                  <div className="space-y-3">
-                    {credentialsForm}
-                    {saveAction}
-                  </div>
-                ) : null}
-                {originalIndex === 2 ? startAction : null}
-              </FeishuSetupSection>
-            );
-          })}
-      </div>
+      {collapsible ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => setStepsExpanded((v) => !v)}
+            aria-expanded={stepsExpanded}
+            className="group/disclosure flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-left text-[12px] font-medium text-ink-muted transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35"
+          >
+            {stepsExpanded ? (
+              <CaretDown size={11} weight="bold" />
+            ) : (
+              <CaretRight size={11} weight="bold" />
+            )}
+            <span>{imCopy.feishuSetupCollapsed}</span>
+          </button>
+          {stepsExpanded ? (
+            <div className="mt-2 divide-y divide-line/70">{sectionsInner}</div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="divide-y divide-line/70">{sectionsInner}</div>
+      )}
       {statusPlacement === "bottom" ? (
         <p className="pl-7 text-[12px] leading-[1.45] text-ink-muted">
           {status}

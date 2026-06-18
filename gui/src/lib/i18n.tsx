@@ -900,8 +900,7 @@ const zhCopy = {
         "先保存凭证并启动飞书服务，再回到飞书开放平台配置长连接和事件。",
       feishuStartingHint: "正在启动飞书服务。",
       feishuReconnectingHint: "飞书连接正在重试。",
-      feishuRunningHint:
-        "飞书服务已启动。继续在飞书开放平台配置长连接、添加事件并发布应用；完成后即可在飞书客户端发消息。",
+      feishuRunningHint: "飞书服务运行中。在飞书客户端发消息即可使用。",
       feishuErrorHint:
         "接入异常。检查 App ID / App Secret、权限、长连接、事件和应用发布状态后重试。",
       feishuStoppedHint:
@@ -912,6 +911,7 @@ const zhCopy = {
       feishuServiceStarted: "服务已启动",
       feishuNotStarted: "未启动",
       openFeishuConsole: "打开飞书开放平台",
+      feishuSetupCollapsed: "查看飞书配置步骤",
       feishuAppIdLabel: "App ID",
       feishuAppSecretLabel: "App Secret",
       feishuAppIdPlaceholder: "cli_xxxxxxxxxxxxxxxx",
@@ -2238,7 +2238,7 @@ const enCopy: AppCopy = {
       feishuStartingHint: "Starting the Feishu service.",
       feishuReconnectingHint: "The Feishu connection is retrying.",
       feishuRunningHint:
-        "The Feishu service is running. Continue configuring long connection, events, and publishing in Feishu Open Platform; then message the bot from the Feishu client.",
+        "The Feishu service is running. Send a message in your Feishu client to start.",
       feishuErrorHint:
         "Connection issue. Check App ID / App Secret, permissions, long connection, events, and app publishing, then retry.",
       feishuStoppedHint:
@@ -2249,6 +2249,7 @@ const enCopy: AppCopy = {
       feishuServiceStarted: "Service running",
       feishuNotStarted: "Not started",
       openFeishuConsole: "Open Feishu Open Platform",
+      feishuSetupCollapsed: "View Feishu setup steps",
       feishuAppIdLabel: "App ID",
       feishuAppSecretLabel: "App Secret",
       feishuAppIdPlaceholder: "cli_xxxxxxxxxxxxxxxx",
