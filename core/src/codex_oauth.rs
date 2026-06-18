@@ -810,8 +810,8 @@ fn create_secure_credential_pipe(
     use windows_sys::Win32::Security::Authorization::{
         ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
     };
+    use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
-    use windows_sys::Win32::System::Memory::LocalFree;
 
     // Owner Rights (OW) resolves to the creating user for this new kernel
     // object. BA/SY keep administrators and LocalSystem unblocked for normal
