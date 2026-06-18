@@ -784,6 +784,37 @@ pub fn run() {
                 }
             }
 
+            // v0.2.9 repair guard: tauri-plugin-sql/sqlx runs SQLite
+            // migrations inside a DDL transaction, which makes the
+            // `PRAGMA foreign_keys = OFF` in table-rebuild migrations
+            // ineffective. If 021/023 have not yet run, apply pending
+            // migrations through 023 on a non-transactional connection
+            // before the plugin can cascade-delete child rows.
+            match migration_backup::ensure_safe_rebuild_migrations_before_plugin(
+                latest_migration_version,
+            ) {
+                Ok(outcome) => {
+                    eprintln!("[migration-guard] {outcome:?}");
+                }
+                Err(e) => {
+                    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                    let data_dir = migration_backup::resolve_data_dir()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| "<unable to resolve app data dir>".into());
+                    let msg = format!(
+                        "Galley 无法启动：数据库安全迁移失败。\n\n{e}\n\n你的原始数据已保留在迁移备份中，当前数据目录是：\n{data_dir}\n\n请先不要删除 app.galley.backup.* 目录。"
+                    );
+                    eprintln!("[migration-guard] FATAL: {e}");
+                    let _ = _app
+                        .dialog()
+                        .message(&msg)
+                        .kind(MessageDialogKind::Error)
+                        .title("Galley")
+                        .blocking_show();
+                    std::process::exit(2);
+                }
+            }
+
             // Register the SQL plugin only after the backup gate. The
             // plugin is configured with `plugins.sql.preload` in
             // tauri.conf.json, so registration immediately opens
@@ -796,6 +827,15 @@ pub fn run() {
                     .add_migrations(DB_URL, migrations)
                     .build(),
             )?;
+
+            // Best-effort data repair for users who already launched the
+            // bad v0.2.9 transactional rebuild. The pre-migration backup
+            // contains the deleted child rows; restore only rows whose
+            // parent session/goal still exists in the active DB.
+            match migration_backup::recover_cascaded_rows_from_backups() {
+                Ok(outcome) => eprintln!("[backup-recovery] {outcome:?}"),
+                Err(e) => eprintln!("[backup-recovery] skipped: {e}"),
+            }
 
             // Open the shared SqliteGalley pool ONCE and manage it as
             // Tauri state. Previously every Tauri command called
