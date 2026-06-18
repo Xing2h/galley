@@ -8,6 +8,8 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from runner import managed_im_supervisor, managed_runtime
 
 
@@ -38,6 +40,66 @@ def _restore_stdio(stdout: Any, stderr: Any, real_stdout: Any, real_stderr: Any)
 def _clear_frontends_modules() -> None:
     sys.modules.pop("frontends.fsapp", None)
     sys.modules.pop("frontends", None)
+
+
+class _BrokenPipeOut(io.StringIO):
+    def write(self, _s: str) -> int:
+        raise BrokenPipeError()
+
+
+def test_emit_broken_pipe_exits_parentless(monkeypatch: Any) -> None:
+    class ExitCalledError(Exception):
+        pass
+
+    codes: list[int] = []
+
+    def fake_exit(code: int) -> None:
+        codes.append(code)
+        raise ExitCalledError()
+
+    monkeypatch.setattr(managed_im_supervisor, "_EXIT_FOR_PARENT_LOSS", fake_exit)
+
+    with pytest.raises(ExitCalledError):
+        managed_im_supervisor._emit(_BrokenPipeOut(), platform="feishu", state="running")
+
+    assert codes == [0]
+
+
+def test_parent_watchdog_detects_missing_parent(monkeypatch: Any) -> None:
+    monkeypatch.setattr(managed_im_supervisor, "_parent_process_alive", lambda _pid: False)
+
+    reason = managed_im_supervisor._parent_loss_reason(parent_pid=12345, original_ppid=100)
+
+    assert reason == "Galley Core process 12345 disappeared"
+
+
+def test_parent_watchdog_detects_ppid_change(monkeypatch: Any) -> None:
+    monkeypatch.setattr(managed_im_supervisor, "_parent_process_alive", lambda _pid: True)
+    monkeypatch.setattr(os, "getppid", lambda: 321)
+
+    reason = managed_im_supervisor._parent_loss_reason(parent_pid=123, original_ppid=100)
+
+    assert reason == "parent process changed from 100 to 321"
+
+
+def test_run_feishu_reports_existing_supervisor_lock(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    held_lock = managed_im_supervisor._SupervisorLock(
+        state_dir / managed_im_supervisor.IM_SUPERVISOR_LOCK_NAME
+    )
+    assert held_lock.acquire()
+    out = io.StringIO()
+    try:
+        code = managed_im_supervisor._run_feishu(_args(tmp_path / "ga", state_dir), out)
+    finally:
+        held_lock.close()
+
+    assert code == 1
+    events = [json.loads(line) for line in out.getvalue().splitlines()]
+    assert events[-1]["state"] == "error"
+    assert "already running" in events[-1]["lastError"]
+    assert events[-1]["logPath"].endswith("feishu.log")
 
 
 def test_run_feishu_injects_config_temp_dir_and_prompt(

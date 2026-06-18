@@ -2,10 +2,13 @@ diff --git a/frontends/fsapp.py b/frontends/fsapp.py
 index ad959f6..4f13dc2 100644
 --- a/frontends/fsapp.py
 +++ b/frontends/fsapp.py
-@@ -101 +101 @@ _MSG_TYPE_MAP = {"image": "[image]", "audio": "[audio]", "file": "[file]", "medi
+@@ -1 +1 @@
+-import argparse, asyncio, importlib.util, json, os, queue as Q, re, sys, threading, time, uuid
++import argparse, asyncio, importlib.metadata, importlib.util, json, os, queue as Q, re, sys, threading, time, uuid
+@@ -101 +101 @@
 -TEMP_DIR = os.path.join(PROJECT_ROOT, "temp")
 +TEMP_DIR = os.environ.get("GALLEY_FEISHU_TEMP_DIR") or os.path.join(PROJECT_ROOT, "temp")
-@@ -329,0 +330,63 @@ agent_lock = threading.Lock()
+@@ -329,0 +330,129 @@
 +GALLEY_STARTUP_FAILURE_LIMIT = 3
 +_galley_connected_once = False
 +
@@ -34,6 +37,19 @@ index ad959f6..4f13dc2 100644
 +            f"lark-oapi websocket hooks/private seams ({', '.join(missing)} missing). "
 +            "Verify Feishu connection status hooks before upgrading lark-oapi."
 +        )
++
++
++def _lark_oapi_version():
++    try:
++        return importlib.metadata.version("lark-oapi")
++    except importlib.metadata.PackageNotFoundError:
++        return getattr(lark, "__version__", "unknown")
++
++
++def _galley_hook_path(cli):
++    if _has_galley_reconnect_hooks(cli):
++        return "public reconnect hooks + private connect hook"
++    return "private connect/reconnect hooks"
 +
 +
 +class GalleyStatusWsClient(lark.ws.Client):
@@ -69,7 +85,60 @@ index ad959f6..4f13dc2 100644
 +        if not ok:
 +            _emit_galley_status("reconnecting", f"Feishu reconnect attempt {cnt + 1} failed")
 +        return ok
-@@ -332,0 +396,9 @@ def _load_config():
++
++
++def _teardown_lark_client(cli):
++    """在重连前彻底停掉上一个 cli 的连接和 loop task。
++
++    lark ws.Client 没有 stop()。它的 _ping_loop / _receive_message_loop /
++    _select 都挂在 lark_oapi.ws.client 的模块级 loop 上，且无法自行退出——
++    连接断开后这些 task 仍残留，旧连接变成僵尸继续收消息并在 lark SDK
++    内部除零（division by zero）。必须从外部取消 task 并 stop loop。
++
++    主线程在 cli.start() 的 loop.run_until_complete(_select()) 上阻塞，
++    所以 loop 此刻是 running 的（卡在 sleep），可以用
++    run_coroutine_threadsafe 安排 _disconnect 并 stop loop。
++    run_until_complete 在 loop.stop() 后会抛 RuntimeError 退出，调用方
++    （main 的 while True）捕获后进下一轮，下一轮前会重建一个干净 loop。
++    """
++    import lark_oapi.ws.client as wsmod
++    lp = wsmod.loop
++    # 1. 关闭 websocket（client.py 的 _disconnect 会清 _conn 等状态）。
++    try:
++        if getattr(cli, "_conn", None) is not None and not lp.is_closed():
++            if lp.is_running():
++                fut = asyncio.run_coroutine_threadsafe(cli._disconnect(), lp)
++                fut.result(timeout=5)
++            else:
++                lp.run_until_complete(cli._disconnect())
++    except Exception:
++        pass
++    # 2. 取消 loop 上的所有 task（ping_loop / receive_message_loop / select）。
++    try:
++        if not lp.is_closed():
++            tasks = [t for t in asyncio.all_tasks(loop=lp) if not t.done()]
++            for t in tasks:
++                t.cancel()
++            if tasks and not lp.is_running():
++                lp.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
++    except Exception:
++        pass
++    # 3. stop loop，让 run_until_complete 退出。
++    if not lp.is_closed() and lp.is_running():
++        try:
++            lp.call_soon_threadsafe(lp.stop)
++        except Exception:
++            pass
++    try:
++        if not lp.is_running() and not lp.is_closed():
++            lp.close()
++    except Exception:
++        pass
++    # 4. 重建一个干净 loop 赋回 lark 模块，保证下一轮 start() 干净起步。
++    new_loop = asyncio.new_event_loop()
++    asyncio.set_event_loop(new_loop)
++    wsmod.loop = new_loop
+@@ -332,0 +462,9 @@
 +    raw = os.environ.get("GALLEY_FEISHU_CONFIG_JSON")
 +    if raw is not None:
 +        try:
@@ -79,16 +148,36 @@ index ad959f6..4f13dc2 100644
 +        except Exception as e:
 +            raise RuntimeError(f"load Galley Feishu config failed: {e}") from e
 +        raise RuntimeError("Galley Feishu config must be a JSON object")
-@@ -851,2 +923,4 @@ def main():
+@@ -714,0 +853,3 @@
++                if ctx.get('summary'):
++                    detail = _build_step_detail(resp, ctx.get('tool_calls') or [])
++                    card.step(ctx['summary'], detail)
+@@ -811,0 +953,13 @@
++    try:
++        return _handle_message_impl(data)
++    except Exception:
++        # lark SDK 的 _handle_data_frame 会 catch 异常并只打
++        # "err: {e}"（无 traceback），导致除零等错误无法定位。
++        # 这里补完整 traceback 到 feishu.log，然后 re-raise 保持
++        # lark 的错误处理（返回 500 给服务端触发重投递）。
++        print("[handle_message] uncaught exception:", flush=True)
++        traceback.print_exc()
++        raise
++
++
++def _handle_message_impl(data):
+@@ -851,2 +1005,4 @@
 -        print(f"错误: 请在 mykey 配置中填写 fs_app_id 和 fs_app_secret\n配置文件: {CONFIG_PATH}", flush=True)
 -        sys.exit(1)
 +        message = f"请在 mykey 配置中填写 fs_app_id 和 fs_app_secret\n配置文件: {CONFIG_PATH}"
 +        print(f"错误: {message}", flush=True)
 +        _emit_galley_status("error", message)
 +        return 1
-@@ -854,0 +929 @@ def main():
+@@ -854,0 +1011 @@
 +    startup_failures = 0
-@@ -858 +933,18 @@ def main():
+@@ -855,0 +1013 @@
++        cli = None
+@@ -858 +1016,23 @@
 -            cli = lark.ws.Client(APP_ID, APP_SECRET, event_handler=handler, log_level=lark.LogLevel.INFO)
 +            cli = GalleyStatusWsClient(
 +                APP_ID,
@@ -108,13 +197,24 @@ index ad959f6..4f13dc2 100644
 +                    "Feishu long connection disconnected",
 +                )
 +                cli.on_reconnected = lambda: _emit_galley_status("running")
-@@ -866,0 +959,6 @@ def main():
++            print(
++                f"[INFO] lark-oapi={_lark_oapi_version()} "
++                f"hookPath={_galley_hook_path(cli)} teardown=module-loop-reset",
++                flush=True,
++            )
+@@ -866,0 +1047,12 @@
 +            if not _galley_connected_once:
 +                startup_failures += 1
 +                if startup_failures >= GALLEY_STARTUP_FAILURE_LIMIT:
 +                    _emit_galley_status("error", str(e))
 +                    return 1
 +            _emit_galley_status("reconnecting", str(e))
-@@ -880 +978 @@ if __name__ == "__main__":
++        finally:
++            # 彻底清理上一个 cli 的连接和 loop task，避免僵尸连接残留
++            # 导致 division by zero 和消息重复投递。即使 start() 正常退出
++            # （不会发生）或 return，teardown 也安全（_conn 为 None 时跳过）。
++            if cli is not None:
++                _teardown_lark_client(cli)
+@@ -880 +1072 @@
 -        main()
 +        raise SystemExit(main())

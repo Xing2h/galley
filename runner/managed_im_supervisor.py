@@ -6,6 +6,7 @@ prompt, state paths, and process lifetime owned by Galley.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import sys
@@ -18,6 +19,10 @@ from typing import IO, Any
 from runner import managed_runtime
 
 IM_SUPERVISOR_PROMPT_ENV = "GALLEY_IM_SUPERVISOR_PROMPT_TEXT"
+GALLEY_CORE_PID_ENV = "GALLEY_CORE_PID"
+IM_SUPERVISOR_LOCK_NAME = "supervisor.lock"
+PARENT_WATCH_INTERVAL_SEC = 2.0
+_EXIT_FOR_PARENT_LOSS = os._exit
 
 
 def _capture_real_stdout() -> IO[str]:
@@ -32,7 +37,200 @@ def _emit(out: IO[str], **payload: Any) -> None:
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z"),
     )
-    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), file=out)
+    try:
+        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), file=out)
+    except BrokenPipeError:
+        _exit_parentless("Galley Core status pipe closed")
+    except OSError as e:
+        if e.errno == errno.EPIPE:
+            _exit_parentless("Galley Core status pipe closed")
+        raise
+
+
+def _exit_parentless(reason: str) -> None:
+    try:
+        print(f"[managed-im-supervisor] exiting: {reason}", file=sys.__stderr__, flush=True)
+    except Exception:
+        pass
+    _EXIT_FOR_PARENT_LOSS(0)
+    raise SystemExit(0)
+
+
+def _parse_core_pid() -> int | None:
+    raw = os.environ.get(GALLEY_CORE_PID_ENV)
+    if not raw:
+        return None
+    try:
+        pid = int(raw)
+    except ValueError:
+        return None
+    if pid <= 0 or pid == os.getpid():
+        return None
+    return pid
+
+
+def _parent_process_alive(pid: int) -> bool:
+    if os.name == "nt":  # pragma: no cover - exercised on Windows smoke only
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+            process_query_limited_information = 0x1000
+            synchronize = 0x00100000
+            wait_timeout = 0x00000102
+            handle = kernel32.OpenProcess(
+                process_query_limited_information | synchronize,
+                False,
+                wintypes.DWORD(pid),
+            )
+            if not handle:
+                return False
+            try:
+                result = int(kernel32.WaitForSingleObject(handle, 0))
+                return result == wait_timeout
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:
+            return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _parent_loss_reason(parent_pid: int | None, original_ppid: int | None) -> str | None:
+    if parent_pid is None:
+        return None
+    if not _parent_process_alive(parent_pid):
+        return f"Galley Core process {parent_pid} disappeared"
+    if original_ppid is not None and hasattr(os, "getppid"):
+        current_ppid = os.getppid()
+        if current_ppid not in {original_ppid, parent_pid}:
+            return f"parent process changed from {original_ppid} to {current_ppid}"
+    return None
+
+
+def _start_parent_watchdog(parent_pid: int | None) -> None:
+    if parent_pid is None:
+        return
+    original_ppid = os.getppid() if hasattr(os, "getppid") else None
+
+    def _watch() -> None:
+        while True:
+            time.sleep(PARENT_WATCH_INTERVAL_SEC)
+            reason = _parent_loss_reason(parent_pid, original_ppid)
+            if reason:
+                _exit_parentless(reason)
+
+    threading.Thread(target=_watch, name="galley-im-parent-watchdog", daemon=True).start()
+
+
+class _SupervisorLock:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._file: IO[str] | None = None
+        self._locked = False
+
+    def acquire(self) -> bool:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.touch(exist_ok=True)
+        f = open(self.path, "r+", encoding="utf-8", buffering=1)
+        try:
+            if os.name == "nt":  # pragma: no cover - exercised on Windows smoke only
+                import msvcrt
+
+                if not f.read(1):
+                    f.seek(0)
+                    f.write("\0")
+                    f.flush()
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+            else:
+                import fcntl
+
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError):
+            f.close()
+            return False
+        self._file = f
+        self._locked = True
+        return True
+
+    def write_metadata(self, *, platform: str, state_dir: Path) -> None:
+        if not self._file:
+            return
+        self._file.seek(0)
+        self._file.truncate()
+        self._file.write(
+            json.dumps(
+                {
+                    "pid": os.getpid(),
+                    "platform": platform,
+                    "stateDir": str(state_dir),
+                    "corePid": os.environ.get(GALLEY_CORE_PID_ENV),
+                    "updatedAt": datetime.now(timezone.utc)
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z"),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+        self._file.write("\n")
+        self._file.flush()
+
+    def close(self) -> None:
+        if not self._file:
+            return
+        try:
+            if self._locked:
+                if os.name == "nt":  # pragma: no cover - exercised on Windows smoke only
+                    import msvcrt
+
+                    self._file.seek(0)
+                    msvcrt.locking(self._file.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+                else:
+                    import fcntl
+
+                    fcntl.flock(self._file.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        try:
+            self._file.close()
+        finally:
+            self._file = None
+            self._locked = False
+
+    def __del__(self) -> None:
+        self.close()
+
+
+def _acquire_supervisor_lock(
+    *,
+    platform: str,
+    state_dir: Path,
+    log_path: Path,
+    out: IO[str],
+) -> _SupervisorLock | None:
+    lock = _SupervisorLock(state_dir / IM_SUPERVISOR_LOCK_NAME)
+    if not lock.acquire():
+        _emit(
+            out,
+            platform=platform,
+            state="error",
+            lastError=(
+                f"Another Galley {platform} supervisor is already running for "
+                f"state directory: {state_dir}"
+            ),
+            logPath=str(log_path),
+        )
+        return None
+    lock.write_metadata(platform=platform, state_dir=state_dir)
+    return lock
 
 
 def _install_paths(ga_path: str) -> None:
@@ -54,13 +252,29 @@ def _redirect_logs(log_path: Path) -> IO[str]:
     return logf
 
 
+def _flush_and_release_lock(logf: IO[str], lock: _SupervisorLock) -> None:
+    try:
+        logf.flush()
+    except Exception:
+        pass
+    lock.close()
+
+
 def _run_wechat(args: argparse.Namespace, out: IO[str]) -> int:
     state_dir = Path(args.state_dir).expanduser().resolve()
     temp_dir = state_dir / "temp"
     token_file = state_dir / "token.json"
     qr_file = state_dir / f"wx_qr_{time.time_ns()}_{os.getpid()}.png"
-    logf = _redirect_logs(state_dir / "wechat.log")
     state_dir.mkdir(parents=True, exist_ok=True)
+    lock = _acquire_supervisor_lock(
+        platform=args.platform,
+        state_dir=state_dir,
+        log_path=state_dir / "wechat.log",
+        out=out,
+    )
+    if lock is None:
+        return 1
+    logf = _redirect_logs(state_dir / "wechat.log")
     temp_dir.mkdir(parents=True, exist_ok=True)
     for old_qr in state_dir.glob("wx_qr*.png"):
         try:
@@ -81,6 +295,7 @@ def _run_wechat(args: argparse.Namespace, out: IO[str]) -> int:
         import frontends.wechatapp as wechatapp  # type: ignore[import-not-found]
     except Exception as e:
         _emit(out, platform="wechat", state="error", lastError=f"import failed: {e}")
+        _flush_and_release_lock(logf, lock)
         return 1
 
     wechatapp._TEMP_DIR = str(temp_dir)
@@ -136,6 +351,7 @@ def _run_wechat(args: argparse.Namespace, out: IO[str]) -> int:
             login_thread.join(timeout=0.25)
         if login_result["error"] is not None:
             _emit(out, platform="wechat", state="error", lastError=str(login_result["error"]))
+            _flush_and_release_lock(logf, lock)
             return 1
 
     threading.Thread(target=wechatapp.agent.run, daemon=True).start()
@@ -160,10 +376,7 @@ def _run_wechat(args: argparse.Namespace, out: IO[str]) -> int:
         _emit(out, platform="wechat", state="error", lastError=str(e))
         return 1
     finally:
-        try:
-            logf.flush()
-        except Exception:
-            pass
+        _flush_and_release_lock(logf, lock)
     return 0
 
 
@@ -171,8 +384,16 @@ def _run_feishu(args: argparse.Namespace, out: IO[str]) -> int:
     state_dir = Path(args.state_dir).expanduser().resolve()
     temp_dir = state_dir / "temp"
     user_data_dir = state_dir / "ga_config"
-    logf = _redirect_logs(state_dir / "feishu.log")
     state_dir.mkdir(parents=True, exist_ok=True)
+    lock = _acquire_supervisor_lock(
+        platform=args.platform,
+        state_dir=state_dir,
+        log_path=state_dir / "feishu.log",
+        out=out,
+    )
+    if lock is None:
+        return 1
+    logf = _redirect_logs(state_dir / "feishu.log")
     temp_dir.mkdir(parents=True, exist_ok=True)
     user_data_dir.mkdir(parents=True, exist_ok=True)
     os.environ["GA_WORKSPACE_ROOT"] = str(state_dir)
@@ -189,6 +410,7 @@ def _run_feishu(args: argparse.Namespace, out: IO[str]) -> int:
         import frontends.fsapp as fsapp  # type: ignore[import-not-found]
     except Exception as e:
         _emit(out, platform="feishu", state="error", lastError=f"import failed: {e}")
+        _flush_and_release_lock(logf, lock)
         return 1
 
     os.chdir(state_dir)
@@ -225,6 +447,7 @@ def _run_feishu(args: argparse.Namespace, out: IO[str]) -> int:
         config = fsapp.check_config(init_agent=False)
     except Exception as e:
         _emit(out, platform="feishu", state="error", lastError=f"config check failed: {e}")
+        _flush_and_release_lock(logf, lock)
         return 1
     if not config.get("ready"):
         _emit(
@@ -234,6 +457,7 @@ def _run_feishu(args: argparse.Namespace, out: IO[str]) -> int:
             lastError="Feishu App ID and App Secret are required",
             logPath=str(state_dir / "feishu.log"),
         )
+        _flush_and_release_lock(logf, lock)
         return 1
 
     try:
@@ -246,10 +470,7 @@ def _run_feishu(args: argparse.Namespace, out: IO[str]) -> int:
         _emit(out, platform="feishu", state="error", lastError=str(e))
         return 1
     finally:
-        try:
-            logf.flush()
-        except Exception:
-            pass
+        _flush_and_release_lock(logf, lock)
     return 0
 
 
@@ -263,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     out = _capture_real_stdout()
+    _start_parent_watchdog(_parse_core_pid())
     if not managed_runtime.is_managed_runtime():
         _emit(out, platform=args.platform, state="error", lastError="not a managed runtime")
         return 1

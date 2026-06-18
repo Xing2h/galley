@@ -4,6 +4,8 @@ Patch stack id: `galley-managed-ga-patches-v1`
 
 Last replay verified: `2026-06-18` against upstream
 `12655687aa964ea541bb0606c0051700e76991ca`.
+(patch 0009 replayed against `37a58c0` and confirmed byte-identical to
+`managed-ga/code/frontends/fsapp.py`.)
 
 Current patches:
 
@@ -17,7 +19,7 @@ Current patches:
 | `0006-managed-browser-control-recovery.patch` | `TMWebDriver.py`, `ga.py`, `assets/tmwd_cdp_bridge/background.js`, `assets/tmwd_cdp_bridge/content.js` | Preserve Galley's managed Browser Control recovery semantics: extension-connected/no-tabs diagnostics, page wake-up messages, and MV3 service-worker keepalive / fast reconnect behavior. | Medium: upstream frequently touches the browser bridge service-worker loop. | Remove when upstream exposes equivalent extension status and recovery hints. |
 | `0007-managed-codex-backend.patch` | `llmcore.py` | Preserve Galley's ChatGPT / Codex managed model backend, including credential IPC refresh, account header propagation, Codex-specific Responses payload shape, and forced streaming. | Medium: upstream OpenAI request assembly changes can alter nearby contexts. | Remove when upstream supports Galley's Codex credential and request contract directly. |
 | `0008-managed-image-attachments.patch` | `agentmain.py`, `llmcore.py` | Let Galley's managed runtime receive local image attachment paths from the bridge, encode them as real multimodal content blocks, and preserve non-text image blocks through the native tool client. | Medium: touches the managed task loop and native content-block filtering. | Remove when GenericAgent upstream exposes a stable public image-input contract for frontend callers. |
-| `0009-managed-feishu-config-env.patch` | `frontends/fsapp.py` | Let Galley's managed IM launcher inject Feishu app config from process memory, keep Feishu media temp files under Galley managed state, and observe reconnect retries. | Low: touches config loading, temp path constants, and an optional status hook only. | Remove when upstream Feishu frontend supports explicit config, temp paths, and reconnect status callbacks. |
+| `0009-managed-feishu-config-env.patch` | `frontends/fsapp.py` | Let Galley's managed IM launcher inject Feishu app config from process memory, keep Feishu media temp files under Galley managed state, observe reconnect retries, tear down the lark websocket connection / event-loop tasks on each reconnect cycle so dead connections don't linger as zombies that divide by zero, log the lark-oapi hook path, and keep final-turn cards showing the turn summary/detail panel before final output. | Medium: touches config loading, temp path constants, an optional status hook, final-turn card rendering, and lark-oapi websocket lifecycle internals (module-level event loop, `_disconnect`). Re-verify `_teardown_lark_client` and the `GalleyStatusWsClient` private seams (`_connect`/`_reconnect`/`_try_connect`) before upgrading lark-oapi. | Remove when upstream Feishu frontend supports explicit config, temp paths, reconnect status callbacks, final-turn card summary panels, and a clean connection stop API. |
 
 Rules:
 

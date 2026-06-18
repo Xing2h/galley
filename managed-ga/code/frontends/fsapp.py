@@ -1,4 +1,4 @@
-import argparse, asyncio, importlib.util, json, os, queue as Q, re, sys, threading, time, uuid
+import argparse, asyncio, importlib.metadata, importlib.util, json, os, queue as Q, re, sys, threading, time, uuid
 from pathlib import Path
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -357,6 +357,19 @@ def _assert_galley_lark_ws_contract(cli):
         )
 
 
+def _lark_oapi_version():
+    try:
+        return importlib.metadata.version("lark-oapi")
+    except importlib.metadata.PackageNotFoundError:
+        return getattr(lark, "__version__", "unknown")
+
+
+def _galley_hook_path(cli):
+    if _has_galley_reconnect_hooks(cli):
+        return "public reconnect hooks + private connect hook"
+    return "private connect/reconnect hooks"
+
+
 class GalleyStatusWsClient(lark.ws.Client):
     async def _connect(self):
         # lark-oapi 1.6.8 exposes reconnect lifecycle hooks, but not a first
@@ -390,6 +403,59 @@ class GalleyStatusWsClient(lark.ws.Client):
         if not ok:
             _emit_galley_status("reconnecting", f"Feishu reconnect attempt {cnt + 1} failed")
         return ok
+
+
+def _teardown_lark_client(cli):
+    """在重连前彻底停掉上一个 cli 的连接和 loop task。
+
+    lark ws.Client 没有 stop()。它的 _ping_loop / _receive_message_loop /
+    _select 都挂在 lark_oapi.ws.client 的模块级 loop 上，且无法自行退出——
+    连接断开后这些 task 仍残留，旧连接变成僵尸继续收消息并在 lark SDK
+    内部除零（division by zero）。必须从外部取消 task 并 stop loop。
+
+    主线程在 cli.start() 的 loop.run_until_complete(_select()) 上阻塞，
+    所以 loop 此刻是 running 的（卡在 sleep），可以用
+    run_coroutine_threadsafe 安排 _disconnect 并 stop loop。
+    run_until_complete 在 loop.stop() 后会抛 RuntimeError 退出，调用方
+    （main 的 while True）捕获后进下一轮，下一轮前会重建一个干净 loop。
+    """
+    import lark_oapi.ws.client as wsmod
+    lp = wsmod.loop
+    # 1. 关闭 websocket（client.py 的 _disconnect 会清 _conn 等状态）。
+    try:
+        if getattr(cli, "_conn", None) is not None and not lp.is_closed():
+            if lp.is_running():
+                fut = asyncio.run_coroutine_threadsafe(cli._disconnect(), lp)
+                fut.result(timeout=5)
+            else:
+                lp.run_until_complete(cli._disconnect())
+    except Exception:
+        pass
+    # 2. 取消 loop 上的所有 task（ping_loop / receive_message_loop / select）。
+    try:
+        if not lp.is_closed():
+            tasks = [t for t in asyncio.all_tasks(loop=lp) if not t.done()]
+            for t in tasks:
+                t.cancel()
+            if tasks and not lp.is_running():
+                lp.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+    except Exception:
+        pass
+    # 3. stop loop，让 run_until_complete 退出。
+    if not lp.is_closed() and lp.is_running():
+        try:
+            lp.call_soon_threadsafe(lp.stop)
+        except Exception:
+            pass
+    try:
+        if not lp.is_running() and not lp.is_closed():
+            lp.close()
+    except Exception:
+        pass
+    # 4. 重建一个干净 loop 赋回 lark 模块，保证下一轮 start() 干净起步。
+    new_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(new_loop)
+    wsmod.loop = new_loop
 
 
 def _load_config():
@@ -784,6 +850,9 @@ def _make_task_hook(card, task_id, on_final):
             if ctx.get('exit_reason'):
                 resp = ctx.get('response')
                 raw = resp.content if hasattr(resp, 'content') else str(resp)
+                if ctx.get('summary'):
+                    detail = _build_step_detail(resp, ctx.get('tool_calls') or [])
+                    card.step(ctx['summary'], detail)
                 on_final(raw)
             elif ctx.get('summary'):
                 detail = _build_step_detail(ctx.get('response'), ctx.get('tool_calls') or [])
@@ -881,6 +950,19 @@ def _run_async(coro):
 
 
 def handle_message(data):
+    try:
+        return _handle_message_impl(data)
+    except Exception:
+        # lark SDK 的 _handle_data_frame 会 catch 异常并只打
+        # "err: {e}"（无 traceback），导致除零等错误无法定位。
+        # 这里补完整 traceback 到 feishu.log，然后 re-raise 保持
+        # lark 的错误处理（返回 500 给服务端触发重投递）。
+        print("[handle_message] uncaught exception:", flush=True)
+        traceback.print_exc()
+        raise
+
+
+def _handle_message_impl(data):
     event, message, sender = data.event, data.event.message, data.event.sender
     message_id = getattr(message, "message_id", "") or ""
     if not _claim_message_once(message_id):
@@ -928,6 +1010,7 @@ def main():
     retry_delay = 5
     startup_failures = 0
     while True:
+        cli = None
         try:
             client = create_client()
             cli = GalleyStatusWsClient(
@@ -948,6 +1031,11 @@ def main():
                     "Feishu long connection disconnected",
                 )
                 cli.on_reconnected = lambda: _emit_galley_status("running")
+            print(
+                f"[INFO] lark-oapi={_lark_oapi_version()} "
+                f"hookPath={_galley_hook_path(cli)} teardown=module-loop-reset",
+                flush=True,
+            )
             print("=" * 50 + "\n飞书 Agent 已启动（长连接模式）\n" + f"App ID: {APP_ID}\n配置: {CONFIG_PATH}\n等待消息...\n" + "=" * 50, flush=True)
             cli.start()
             retry_delay = 5
@@ -962,6 +1050,12 @@ def main():
                     _emit_galley_status("error", str(e))
                     return 1
             _emit_galley_status("reconnecting", str(e))
+        finally:
+            # 彻底清理上一个 cli 的连接和 loop task，避免僵尸连接残留
+            # 导致 division by zero 和消息重复投递。即使 start() 正常退出
+            # （不会发生）或 return，teardown 也安全（_conn 为 None 时跳过）。
+            if cli is not None:
+                _teardown_lark_client(cli)
         print(f"[INFO] {retry_delay}s 后重连飞书长连接...", flush=True)
         time.sleep(retry_delay)
         retry_delay = min(retry_delay * 2, 120)

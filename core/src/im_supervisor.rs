@@ -30,6 +30,7 @@ const WECHAT_PREF: &str = "im_supervisor_wechat";
 const FEISHU_PREF: &str = "im_supervisor_feishu";
 const FEISHU_CONFIG_PREF: &str = "im_supervisor_feishu_config";
 const FEISHU_SECRET_REF: &str = "im-supervisor:feishu:app-secret";
+const GALLEY_CORE_PID_ENV: &str = "GALLEY_CORE_PID";
 const PLATFORMS: [&str; 2] = [WECHAT, FEISHU];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -205,6 +206,7 @@ impl ImSupervisorManager {
         ));
         env.push(("GALLEY_SUPERVISOR_SOP_PATH".into(), sop_path_str));
         env.push(("GALLEY_IM_PLATFORM".into(), platform.into()));
+        env.push((GALLEY_CORE_PID_ENV.into(), std::process::id().to_string()));
         append_platform_env(platform, &mut env).await?;
 
         let python = managed_python_for_app(&app)?;
