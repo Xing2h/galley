@@ -9,42 +9,48 @@ live in [refactor](./refactor/README.md).
 
 ## Current Target
 
-- Package version: `0.2.9`.
-- Git tag / GitHub Release: `v0.2.9` is the current GitHub Latest stable release.
+- Package version: `0.2.10` release prep.
+- Git tag / GitHub Release: `v0.2.9` is the current published stable release;
+  `v0.2.10` is being prepared as a data-migration hotfix.
 - Agent API schema: `schemaVersion: 1`
-- Release tier: stable patch; default update channel points at `v0.2.9`, with
-  `beta` kept as a legacy alias for older builds.
+- Release tier: stable patch candidate; default update channel still points at
+  `v0.2.9` until the `v0.2.10` draft artifact is smoked, published, and
+  promoted. `beta` is kept as a legacy alias for older builds.
 - Product shape: dual-native local agent team orchestrator
 
 Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
 GUI is for the human operator at the desk; the CLI is for trusted Agent /
 Supervisor automation on the same machine.
 
-`v0.2.9` upgrades the audited managed GenericAgent baseline to upstream
-`53b48aea`, reintroduces Project folder binding as GA Project Workspace, and
-includes the post-v0.2.8 GUI / Core / Channels polish set. Project Workspace
-does not restore the old Project-root-as-process-cwd behavior: GUI folder
-selection enables it, while CLI/API callers still opt in explicitly.
+`v0.2.10` is a narrow data-migration hotfix for historical session restore
+after `v0.2.8` -> `v0.2.9` upgrades. It protects not-yet-upgraded databases
+from SQLite foreign-key cascades during transactional table rebuild migrations,
+and it best-effort restores already-cascaded child rows from Galley's local
+pre-migration backups. Product shape, Agent API schema, and update-channel
+policy stay unchanged.
 
 ## Current Release State
 
-`v0.2.9` is the live stable patch. It includes the audited bundled GenericAgent
-baseline at upstream `53b48aea`, Project Workspace reactivation without
-process-cwd coupling, Feishu / Channels polish, and the post-`v0.2.8` Core /
-GUI reliability set.
+`v0.2.9` remains the live stable patch until `v0.2.10` is published and
+promoted. It includes the audited bundled GenericAgent baseline at upstream
+`53b48aea`, Project Workspace reactivation without process-cwd coupling,
+Feishu / Channels polish, and the post-`v0.2.8` Core / GUI reliability set.
 
-The GitHub Release is published as Latest, and `updates/stable/latest.json`
-points at `v0.2.9`. `updates/beta/latest.json` is kept as a legacy alias for
-builds compiled before the stable endpoint rename and currently also points at
-`v0.2.9`.
+`v0.2.10` release prep is focused on the migration/recovery fix. The GitHub
+Release must remain draft until the release owner smokes the exact artifacts.
+Only after publish and smoke should `updates/stable/latest.json` and the
+legacy `updates/beta/latest.json` be promoted from `v0.2.9` to `v0.2.10`.
 
 Post-promote follow-up:
 
-1. Dogfood update from an installed `v0.2.7` or older build if an older install
-   is still available.
-2. On Windows, smoke in-app update while Galley has loaded bundled Python, then
+1. Smoke update from an installed `v0.2.8` or `v0.2.9` build with historical
+   sessions and confirm message/tool history restores.
+2. If an already-affected database has local pre-migration backups, confirm
+   the best-effort recovery path restores child rows without replacing newer
+   active database state.
+3. On Windows, smoke in-app update while Galley has loaded bundled Python, then
    repeat manual overwrite install over a backgrounded Galley process.
-3. Keep Windows ARM out of the stable supported matrix. Add it later only after
+4. Keep Windows ARM out of the stable supported matrix. Add it later only after
    the release workflow, bundled Python, updater manifest, and smoke path all
    support `aarch64-pc-windows-msvc`.
 
@@ -56,8 +62,8 @@ Post-promote follow-up:
 | CLI / Agent API | Feature-complete for v0.2; schema frozen | [agent-api](./agent-api.md) |
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
 | Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; current baseline is audited upstream `53b48aea`; GUI / CLI split, Provider / Model config, local encrypted SQLite credentials, and Project Workspace are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
-| Data migration | Backup mechanism exists; current schema covers runtime identity, managed models/providers, Goal state, internal message visibility, and GUI-created message attachments | [B4 M8](./refactor/B4-M8-sub-plan.md) |
-| Release path | v0.2.9 is published as GitHub Latest and promoted to stable / beta update channels | [release / update SOP](./release-update-sop.md) |
+| Data migration | v0.2.10 adds a safe pre-plugin migration guard through 023 and best-effort child-row recovery from local backups for the v0.2.9 table-rebuild cascade hazard | [B4 M8](./refactor/B4-M8-sub-plan.md) |
+| Release path | v0.2.10 stable patch is in release prep; v0.2.9 remains published/promoted until draft smoke and explicit publish/promotion approval | [release / update SOP](./release-update-sop.md) |
 | Windows | Windows x64 remains the supported release target; Windows ARM is deferred until the release workflow and smoke path are added | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream `53b48aea` | [GA baseline](./ga-baseline.md) |
 
@@ -82,7 +88,7 @@ Detailed phase narratives are intentionally not duplicated here. Use:
 
 ## Release Version Rules
 
-- Current package metadata uses `0.2.9`. For the next release, update:
+- Current package metadata uses `0.2.10`. For the next release, update:
   - `package.json`
   - `core/tauri.conf.json`
   - `core/Cargo.toml`
