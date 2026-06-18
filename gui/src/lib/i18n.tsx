@@ -261,6 +261,7 @@ const zhCopy = {
     byTheWayPrefixHint: "请先以 /btw 开头",
     imageOnlyFallback: "请看这张图片。",
     pastedImage: "已粘贴图片",
+    attachImage: "添加图片",
     removeImage: "移除图片",
     goalButton: "Goal",
     goalTooltip: "作为 Goal 运行",
@@ -1187,10 +1188,13 @@ const zhCopy = {
     imageSaveFailedMessage: "Galley 没能保存这张图片。",
     imageOpenFailed: "打开失败",
     imageOpenFailedMessage: "Galley 没能打开这张图片。",
-    imageBlocked: "这次不能带图片",
+    imageBlocked: "图片发送受限",
     imageBlockedGoal: "Goal、/btw 和回复 Agent 提问暂不支持图片。请先发送普通消息。",
     imageBlockedExternal:
-      "图片粘贴目前只支持内置 GA。请切到内置 GA，或先移除图片。",
+      "当前外部 GA 尚不支持图片输入，请移除图片后发送，或改用内置 GA 新建会话。",
+    imageTooLarge: "图片过大，单张上限 10 MB。",
+    imageUnsupported:
+      "不支持的图片格式，请粘贴或选择 PNG / JPEG / WebP。",
     toolsReinjected: "工具已重新注入",
     toolsReinjectedMessage: (count: number) =>
       `已为本对话注入 ${count} 条工具定义。`,
@@ -1570,6 +1574,7 @@ const enCopy: AppCopy = {
     byTheWayPrefixHint: "Start with /btw first",
     imageOnlyFallback: "Please look at this image.",
     pastedImage: "Pasted image",
+    attachImage: "Attach image",
     removeImage: "Remove image",
     goalButton: "Goal",
     goalTooltip: "Run as a Goal",
@@ -2529,7 +2534,10 @@ const enCopy: AppCopy = {
     imageBlockedGoal:
       "Goal, /btw, and replies to Agent questions do not support images yet. Send a normal message first.",
     imageBlockedExternal:
-      "Image paste currently works only with bundled GA. Switch to bundled GA, or remove the image.",
+      "External GA does not support image input yet. Remove the image before sending, or start a new session with bundled GA.",
+    imageTooLarge: "Image is too large. The limit is 10 MB per image.",
+    imageUnsupported:
+      "Unsupported image format. Please paste or pick a PNG, JPEG, or WebP image.",
     toolsReinjected: "Tools reinjected",
     toolsReinjectedMessage: (count) =>
       `Injected ${count} tool definitions into this conversation.`,
