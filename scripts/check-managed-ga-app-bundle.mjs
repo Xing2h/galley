@@ -33,9 +33,9 @@ const criticalMemorySeedFiles = [
   "web_setup_sop.md",
   "verify_sop.md",
   "supervisor_sop.md",
+  "project_mode_sop.md",
   "L4_raw_sessions/salient_mining_sop.md",
   "L4_raw_sessions/compress_session.py",
-  "skill_search/SKILL.md",
 ];
 const forbiddenMemorySeedFiles = new Set([
   "global_mem.txt",
