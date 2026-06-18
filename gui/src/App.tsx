@@ -299,6 +299,22 @@ function App() {
       }),
     );
   };
+  // Centralized reason → copy routing for the Composer's onImageBlocked.
+  // The Composer only emits the reason; the toast copy (and which key it
+  // lives under) is an App-level concern, so the mapping stays here.
+  const handleImageBlocked = (
+    reason: "goal" | "external" | "too-large" | "unsupported",
+  ) => {
+    const message =
+      reason === "goal"
+        ? copy.toasts.imageBlockedGoal
+        : reason === "external"
+          ? copy.toasts.imageBlockedExternal
+          : reason === "too-large"
+            ? copy.toasts.imageTooLarge
+            : copy.toasts.imageUnsupported;
+    showImageBlockedToast(message);
+  };
   const openModelConfigFromSwitcher =
     activeRuntimeKind === "managed" ? () => openSettings("models") : undefined;
   const openLLMSwitcherFallback = () => {
@@ -1165,9 +1181,8 @@ function App() {
                   }}
                   onOpenLLMSwitcher={openLLMSwitcherFallback}
                   onGoalSubmit={startGoalFromComposer}
-                  onImageSubmitBlocked={() =>
-                    showImageBlockedToast(copy.toasts.imageBlockedGoal)
-                  }
+                  imagesEnabled={activeRuntimeKind === "managed"}
+                  onImageBlocked={handleImageBlocked}
                   onSubmit={(t, images) => {
                     if (requiresManagedModelConfig) {
                       openModelsForMissingConfig();
@@ -1232,9 +1247,8 @@ function App() {
                   goal={activeSessionGoal}
                   sessionGoals={sessionGoals}
                   onGoalSubmit={startGoalFromComposer}
-                  onImageSubmitBlocked={() =>
-                    showImageBlockedToast(copy.toasts.imageBlockedGoal)
-                  }
+                  imagesEnabled={activeSession?.gaRuntimeKind === "managed"}
+                  onImageBlocked={handleImageBlocked}
                   pendingApprovals={pendingApprovals}
                   approvalDecisions={approvalDecisions}
                   onSubmit={(t, images) => {

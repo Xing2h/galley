@@ -6,6 +6,7 @@ import { AskUserBubble } from "@/components/conversation/AskUserBubble";
 import {
   Composer,
   type ComposerLLMOption,
+  type ImageBlockReason,
 } from "@/components/conversation/Composer";
 import {
   Conversation,
@@ -130,7 +131,8 @@ export interface MainViewProps {
    * predictable across all screens.
    */
   conversationWidth?: "compact" | "wide";
-  onImageSubmitBlocked?: (kind: "goal") => void;
+  imagesEnabled?: boolean;
+  onImageBlocked?: (reason: ImageBlockReason) => void;
 }
 
 /**
@@ -169,7 +171,8 @@ export function MainView({
   sessionGoals,
   pendingAskUser,
   conversationWidth = "compact",
-  onImageSubmitBlocked,
+  imagesEnabled = true,
+  onImageBlocked,
 }: MainViewProps) {
   const copy = useCopy();
   const stillWaiting = pendingApprovals.length > 0;
@@ -792,7 +795,8 @@ export function MainView({
             onOpenLLMSwitcher={onOpenLLMSwitcher}
             goal={goal}
             showFooterHint
-            onImageSubmitBlocked={onImageSubmitBlocked}
+            imagesEnabled={imagesEnabled}
+            onImageBlocked={onImageBlocked}
           />
         </div>
       </div>

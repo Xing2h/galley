@@ -6,6 +6,7 @@ import {
   Check,
   Cube,
   Gear,
+  Paperclip,
   Stop,
   Target,
   X,
@@ -104,6 +105,38 @@ const SUPPORTED_PASTE_IMAGE_TYPES = new Set([
   "image/webp",
 ]);
 const MAX_PENDING_IMAGES = 4;
+// Client-side pre-validation, kept in lock-step with Rust Core limits in
+// `core/src/commands/session.rs` (MAX_IMAGE_BYTES = 10 MB). Validating
+// here means oversized / unsupported images never reach the send button —
+// the user sees the error at paste time, not after typing a message.
+const MAX_IMAGE_BYTES_CLIENT = 10 * 1024 * 1024;
+// Anthropic recommends capping the long edge at 1568px; larger images are
+// server-side downsampled anyway but the user still pays the upload
+// bandwidth and the token cost. Downsampling here avoids both.
+const IMAGE_MAX_LONG_EDGE = 1568;
+// Quality for JPEG re-encode (only reached when the source is JPEG and
+// needs resampling). PNG resampling stays lossless.
+const IMAGE_RESAMPLE_QUALITY = 0.92;
+const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp";
+
+type ImageBlockReason = "goal" | "external" | "too-large" | "unsupported";
+export type { ImageBlockReason };
+
+/** Thrown by `readImageFile` for failures the caller can surface to the
+ * user as a toast (rather than the old silent `console.warn`). The
+ * `reason` maps 1:1 onto `ImageBlockReason` minus `"goal"|"external"`,
+ * which are intake-time gates handled before `readImageFile` runs. */
+class ImageError extends Error {
+  reason: Exclude<ImageBlockReason, "goal" | "external">;
+  constructor(
+    reason: Exclude<ImageBlockReason, "goal" | "external">,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ImageError";
+    this.reason = reason;
+  }
+}
 
 const COMPOSER_ACTION_BUTTON = cn(
   "flex size-8 items-center justify-center rounded-full border transition-[background-color,border-color,color,box-shadow,transform]",
@@ -237,8 +270,19 @@ export interface ComposerProps {
   goal?: GoalBrief;
   /** Show the compact keyboard/state hint below the Composer. */
   showFooterHint?: boolean;
-  /** Called when an attached image blocks a non-message path. */
-  onImageSubmitBlocked?: (kind: "goal") => void;
+  /** When false, all image intake (paste / drop / file picker) is
+   * disabled and the 📎 button is hidden — used for runtimes that
+   * cannot deliver images to the agent (external GA). Defaults to
+   * true so existing callers keep working. */
+  imagesEnabled?: boolean;
+  /** Called when an image is rejected at intake or submit. `reason`
+   * selects the toast copy:
+   *   - `"goal"`: image present on a Goal / /btw / reply path
+   *   - `"external"`: image intake on a non-image-capable runtime
+   *   - `"too-large"`: single image exceeds the client size cap
+   *   - `"unsupported"`: mime not in the supported set (HEIC, GIF, …)
+   * Replaces the old `onImageSubmitBlocked` (only carried `"goal"`). */
+  onImageBlocked?: (reason: ImageBlockReason) => void;
 }
 
 /**
@@ -272,7 +316,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       goal,
       onGoalSubmit,
       showFooterHint = false,
-      onImageSubmitBlocked,
+      imagesEnabled = true,
+      onImageBlocked,
     },
     ref,
   ) {
@@ -296,6 +341,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const isControlled = value !== undefined;
     const text = isControlled ? value : internal;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Paste fold state (uncontrolled mode only — controlled callers
     // own their own state and we can't intercept paste cleanly there):
@@ -312,12 +358,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const pastesRef = useRef<Map<number, string>>(new Map());
     const pasteCounterRef = useRef(0);
     const pendingCursorRef = useRef<number | null>(null);
+    // Mirror of pendingImages for the unmount cleanup below. Render-time
+    // effects (remove / submit) already revoke their own URLs; this is
+    // the last-resort sweep if the Composer unmounts mid-draft (e.g. the
+    // session view switches away).
+    const pendingImagesRef = useRef<PendingImageAttachment[]>([]);
 
     useEffect(() => {
       if (autoFocus && textareaRef.current) {
         textareaRef.current.focus();
       }
     }, [autoFocus]);
+
+    // Keep the mirror current, then revoke everything on unmount. The
+    // empty dep array on the cleanup means it only fires when the
+    // Composer leaves the tree, not on every pendingImages change.
+    useEffect(() => {
+      pendingImagesRef.current = pendingImages;
+    }, [pendingImages]);
+    useEffect(() => {
+      return () => {
+        for (const image of pendingImagesRef.current) {
+          URL.revokeObjectURL(image.previewUrl);
+        }
+      };
+    }, []);
 
     // Imperative API for callers that need to seed the textarea
     // without rewiring as a controlled component. Adding it via ref
@@ -397,7 +462,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       }
       pastesRef.current.clear();
       pasteCounterRef.current = 0;
-      setPendingImages([]);
+      // Revoke every pending previewUrl before clearing — on submit the
+      // blobs are persisted to disk by Rust Core and re-served via
+      // convertFileSrc, so the in-memory object URLs are dead weight.
+      setPendingImages((current) => {
+        for (const image of current) URL.revokeObjectURL(image.previewUrl);
+        return [];
+      });
       setPreviewIndex(null);
     };
 
@@ -414,29 +485,82 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         return full !== undefined ? full : match;
       });
 
+    // Shared image intake for paste / drop / file picker. Centralizing
+    // the limit check + error routing here means the three entry points
+    // can't drift apart on behavior. Each file is read concurrently;
+    // results land in `pendingImages` as they resolve, gated by the
+    // max-attachments cap to avoid racing past it when several land in
+    // the same tick. `acceptImageFiles` owns no Promise itself so the
+    // caller (paste / drop / input change) stays free to do its own
+    // preventDefault bookkeeping.
+    const acceptImageFiles = (files: File[]) => {
+      const remaining = MAX_PENDING_IMAGES - pendingImages.length;
+      if (remaining <= 0) return;
+      for (const file of files.slice(0, remaining)) {
+        void readImageFile(file)
+          .then((image) => {
+            setPendingImages((current) =>
+              current.length >= MAX_PENDING_IMAGES
+                ? current
+                : [...current, image],
+            );
+          })
+          .catch((err) => {
+            if (err instanceof ImageError) {
+              onImageBlocked?.(err.reason);
+            } else {
+              console.warn("[Composer] failed to read image", err);
+            }
+          });
+      }
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+      // Only react to drops carrying files — text/URI drops should fall
+      // through to the browser default (e.g. dropping a URL onto the
+      // textarea should still insert it as text).
+      const hasFiles = Array.from(e.dataTransfer.types).includes("Files");
+      if (!hasFiles) return;
+      e.preventDefault();
+      if (!imagesEnabled) {
+        onImageBlocked?.("external");
+        return;
+      }
+      const files = Array.from(e.dataTransfer.files).filter((file) =>
+        SUPPORTED_PASTE_IMAGE_TYPES.has(file.type),
+      );
+      if (files.length === 0) {
+        onImageBlocked?.("unsupported");
+        return;
+      }
+      void acceptImageFiles(files);
+    };
+
+    const handleFileInputChange = (
+      e: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+      const files = Array.from(e.target.files ?? []);
+      // Reset so picking the same file twice in a row still fires
+      // onChange (the value is otherwise "already selected").
+      e.target.value = "";
+      if (files.length === 0) return;
+      void acceptImageFiles(files);
+    };
+
     const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const imageItems = Array.from(e.clipboardData.items).filter((item) =>
         SUPPORTED_PASTE_IMAGE_TYPES.has(item.type),
       );
       if (imageItems.length > 0) {
         e.preventDefault();
-        const remaining = MAX_PENDING_IMAGES - pendingImages.length;
-        if (remaining <= 0) return;
-        for (const item of imageItems.slice(0, remaining)) {
-          const file = item.getAsFile();
-          if (!file) continue;
-          void readPastedImage(file)
-            .then((image) => {
-              setPendingImages((current) =>
-                current.length >= MAX_PENDING_IMAGES
-                  ? current
-                  : [...current, image],
-              );
-            })
-            .catch((err) => {
-              console.warn("[Composer] failed to read pasted image", err);
-            });
+        if (!imagesEnabled) {
+          onImageBlocked?.("external");
+          return;
         }
+        const files = imageItems
+          .map((item) => item.getAsFile())
+          .filter((file): file is File => file !== null);
+        void acceptImageFiles(files);
         return;
       }
       // Controlled callers manage their own state; can't intercept
@@ -480,7 +604,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       () =>
         pendingImages.map((image) => ({
           id: image.id,
-          src: image.dataUrl,
+          src: image.previewUrl,
           alt: copy.composer.pastedImage,
         })),
       [copy.composer.pastedImage, pendingImages],
@@ -524,7 +648,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
 
     const openGoalConfirmation = () => {
       if (hasPendingImages) {
-        onImageSubmitBlocked?.("goal");
+        onImageBlocked?.("goal");
         return;
       }
       const trimmed = expandPastePlaceholders(text).trim();
@@ -571,7 +695,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       }
       if (effectiveGoalArmed) {
         if (hasPendingImages) {
-          onImageSubmitBlocked?.("goal");
+          onImageBlocked?.("goal");
           return;
         }
         openGoalConfirmation();
@@ -603,6 +727,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             "focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand/20",
             disabled && "opacity-60",
           )}
+          // onDragOver must preventDefault or the browser treats the drop
+          // as navigation / file-open; onDrop does the real work and is
+          // a no-op for non-file drags (see handleDrop).
+          onDragOver={(e) => {
+            if (Array.from(e.dataTransfer.types).includes("Files")) {
+              e.preventDefault();
+            }
+          }}
+          onDrop={handleDrop}
         >
           <textarea
             ref={textareaRef}
@@ -621,6 +754,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             className="block w-full resize-none overflow-y-auto border-0 bg-transparent p-0 text-[14.5px] leading-[1.55] text-ink outline-none placeholder:text-ink-muted"
           />
 
+          {/* Hidden file input backing the 📎 button. Visually absent but
+              focusable for a11y; the button above triggers its click.
+              `value=""` reset happens in handleFileInputChange so the same
+              file can be picked twice in a row. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={IMAGE_ACCEPT}
+            onChange={handleFileInputChange}
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden
+          />
+
           {pendingImages.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               {pendingImages.map((image, imageIndex) => (
@@ -635,7 +783,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     className="block h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35"
                   >
                     <img
-                      src={image.dataUrl}
+                      src={image.previewUrl}
                       alt={copy.composer.pastedImage}
                       className="h-full w-full object-cover"
                     />
@@ -646,9 +794,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       aria-label={copy.composer.removeImage}
                       onClick={(event) => {
                         event.stopPropagation();
-                        setPendingImages((current) =>
-                          current.filter((item) => item.id !== image.id),
-                        );
+                        setPendingImages((current) => {
+                          const next = current.filter(
+                            (item) => item.id !== image.id,
+                          );
+                          if (next.length !== current.length) {
+                            // Release the object URL we minted in
+                            // readImageFile so it doesn't outlive the
+                            // tile. Safe to revoke immediately — the
+                            // <img> is unmounting with this state update.
+                            URL.revokeObjectURL(image.previewUrl);
+                          }
+                          return next;
+                        });
                         setPreviewIndex((current) => {
                           if (current == null) return null;
                           if (current === imageIndex) return null;
@@ -683,6 +841,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             {goal && <GoalContextBadge goal={goal} />}
 
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              {imagesEnabled && (
+                <TooltipLabel text={copy.composer.attachImage}>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={disabled || stopMode}
+                    aria-label={copy.composer.attachImage}
+                    className={cn(
+                      "flex size-8 items-center justify-center rounded-full text-ink-muted transition-colors",
+                      "hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35",
+                      (disabled || stopMode) &&
+                        "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-ink-muted",
+                    )}
+                  >
+                    <Paperclip size={16} weight="thin" />
+                  </button>
+                </TooltipLabel>
+              )}
               {effectiveGoalArmed && (
                 <span className="hidden min-w-0 truncate text-[11px] font-medium text-ink-soft sm:inline">
                   {copy.composer.goalArmedHint}
@@ -850,34 +1026,123 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
   },
 );
 
-function readPastedImage(file: File): Promise<PendingImageAttachment> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === "string" ? reader.result : "";
-      if (!dataUrl) {
-        reject(new Error("empty image data URL"));
+/**
+ * Read a user-supplied image File into a {@link PendingImageAttachment}.
+ *
+ * Pipeline:
+ *   1. Validate mime + size up front (throws {@link ImageError} so the
+ *      caller can toast a specific reason instead of silently dropping).
+ *   2. Decode via an object URL (streamed by the browser, cheaper than
+ *      holding a full base64 string while we only need dimensions).
+ *   3. If the long edge exceeds {@link IMAGE_MAX_LONG_EDGE}, downsample
+ *      via canvas. PNG stays lossless (only resampled, not re-quantized)
+ *      so code/UI screenshots keep crisp character edges — JPEG uses
+ *      {@link IMAGE_RESAMPLE_QUALITY}. Images already within the cap
+ *      skip the canvas entirely (zero re-encode loss).
+ *   4. Produce a compact `dataUrl` (for the IPC round-trip into
+ *      `persist_user_message`) and a `previewUrl` object URL (for the
+ *      thumbnail tile + dialog, so the 16×16 preview no longer decodes
+ *      a full-resolution image). Caller owns the `previewUrl` lifetime.
+ */
+function readImageFile(file: File): Promise<PendingImageAttachment> {
+  if (!SUPPORTED_PASTE_IMAGE_TYPES.has(file.type)) {
+    // HEIC / GIF / AVIF / anything-weird lands here. We deliberately do
+    // not transcode: HEIC decode is only reliable on macOS WKWebView,
+    // and Galley runs on Windows/Linux Chromium too — a silent
+    // half-working path is worse than a clear "unsupported" toast.
+    return Promise.reject(
+      new ImageError("unsupported", `unsupported image type: ${file.type}`),
+    );
+  }
+  if (file.size > MAX_IMAGE_BYTES_CLIENT) {
+    return Promise.reject(
+      new ImageError(
+        "too-large",
+        `image too large: ${file.size} > ${MAX_IMAGE_BYTES_CLIENT}`,
+      ),
+    );
+  }
+
+  const decodeUrl = URL.createObjectURL(file);
+  const mimeType = file.type as PendingImageAttachment["mimeType"];
+
+  return new Promise<PendingImageAttachment>((resolve, reject) => {
+    const img = new Image();
+    img.onerror = () => {
+      URL.revokeObjectURL(decodeUrl);
+      reject(new Error("image failed to decode"));
+    };
+    img.onload = () => {
+      const naturalWidth = img.naturalWidth || 0;
+      const naturalHeight = img.naturalHeight || 0;
+      const longEdge = Math.max(naturalWidth, naturalHeight);
+      const needsResample =
+        longEdge > IMAGE_MAX_LONG_EDGE &&
+        naturalWidth > 0 &&
+        naturalHeight > 0;
+
+      const finalize = (blob: Blob, width: number, height: number) => {
+        // Two outputs from the same blob: a data URL for IPC, and an
+        // object URL for preview. readAsDataURL is the bridge into the
+        // Tauri invoke payload; the object URL lets <img> stream-decode.
+        const reader = new FileReader();
+        reader.onerror = () => {
+          URL.revokeObjectURL(decodeUrl);
+          URL.revokeObjectURL(URL.createObjectURL(blob));
+          reject(reader.error ?? new Error("image read failed"));
+        };
+        reader.onload = () => {
+          URL.revokeObjectURL(decodeUrl);
+          const dataUrl = typeof reader.result === "string" ? reader.result : "";
+          if (!dataUrl) {
+            reject(new Error("empty image data URL"));
+            return;
+          }
+          resolve({
+            id: randomImageId(),
+            dataUrl,
+            previewUrl: URL.createObjectURL(blob),
+            mimeType,
+            byteSize: blob.size,
+            width: width || undefined,
+            height: height || undefined,
+          });
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      if (!needsResample) {
+        finalize(file, naturalWidth, naturalHeight);
         return;
       }
-      const image: PendingImageAttachment = {
-        id: randomImageId(),
-        dataUrl,
-        mimeType: file.type as PendingImageAttachment["mimeType"],
-        byteSize: file.size,
-      };
-      const probe = new Image();
-      probe.onload = () => {
-        resolve({
-          ...image,
-          width: probe.naturalWidth || undefined,
-          height: probe.naturalHeight || undefined,
-        });
-      };
-      probe.onerror = () => resolve(image);
-      probe.src = dataUrl;
+
+      const scale = IMAGE_MAX_LONG_EDGE / longEdge;
+      const targetWidth = Math.round(naturalWidth * scale);
+      const targetHeight = Math.round(naturalHeight * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        // No 2D context (rare headless / GPU-loss case): fall back to
+        // the original bytes rather than failing the whole paste.
+        finalize(file, naturalWidth, naturalHeight);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            finalize(file, naturalWidth, naturalHeight);
+            return;
+          }
+          finalize(blob, targetWidth, targetHeight);
+        },
+        mimeType,
+        IMAGE_RESAMPLE_QUALITY,
+      );
     };
-    reader.readAsDataURL(file);
+    img.src = decodeUrl;
   });
 }
 

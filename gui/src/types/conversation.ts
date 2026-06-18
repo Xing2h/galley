@@ -97,7 +97,16 @@ export interface MessageAttachment {
 
 export interface PendingImageAttachment {
   id: string;
+  /** Base64 data URL of the (downsampled) image — crosses the IPC
+   * boundary into `persist_user_message`. Kept compact so the React
+   * state and the Tauri invoke payload stay small. */
   dataUrl: string;
+  /** Object URL for on-screen preview (thumbnail tile + dialog).
+   * Backed by the same blob as `dataUrl` but as a URL the `<img>`
+   * can stream-decode, instead of holding the full base64 string.
+   * Owner must `URL.revokeObjectURL` it when the attachment is
+   * removed / submitted / unmounted. */
+  previewUrl: string;
   mimeType: "image/png" | "image/jpeg" | "image/webp";
   byteSize: number;
   width?: number;

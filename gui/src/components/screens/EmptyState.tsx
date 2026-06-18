@@ -5,6 +5,7 @@ import {
   Composer,
   type ComposerHandle,
   type ComposerLLMOption,
+  type ImageBlockReason,
 } from "@/components/conversation/Composer";
 import { Epigraph } from "@/components/screens/Epigraph";
 import type { EpigraphCondition } from "@/lib/epigraphs";
@@ -57,7 +58,8 @@ export interface EmptyStateProps {
    * job, not this quiet line's. Defaults to `quiet`.
    */
   epigraphCondition?: EpigraphCondition;
-  onImageSubmitBlocked?: (kind: "goal") => void;
+  imagesEnabled?: boolean;
+  onImageBlocked?: (reason: ImageBlockReason) => void;
 }
 
 /**
@@ -87,7 +89,8 @@ export function EmptyState({
   projectName,
   focusTick = 0,
   epigraphCondition = "quiet",
-  onImageSubmitBlocked,
+  imagesEnabled = true,
+  onImageBlocked,
 }: EmptyStateProps) {
   const copy = useCopy();
   const composerRef = useRef<ComposerHandle>(null);
@@ -131,7 +134,8 @@ export function EmptyState({
           onConfigureModels={onConfigureModels}
           requiresModelConfig={requiresModelConfig}
           onOpenLLMSwitcher={onOpenLLMSwitcher}
-          onImageSubmitBlocked={onImageSubmitBlocked}
+          imagesEnabled={imagesEnabled}
+          onImageBlocked={onImageBlocked}
         />
 
         {projectName && (
