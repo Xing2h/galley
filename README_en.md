@@ -7,11 +7,15 @@
 <p align="center">
   <strong>Orchestrate multiple AI agents as one team, on your own computer</strong>
   <br/>
-  <sub>Humans drive and approve from the GUI; Supervisor Agents dispatch via the CLI; both share one set of sessions and history</sub>
+  Humans drive and approve from the GUI; Supervisor Agents dispatch via the CLI; both share one set of sessions and history
 </p>
 
 <p align="center">
-  <sub>Bundled GenericAgent Runtime · Project / Goal orchestration · IM Channels · GUI / CLI dual-native · Local-first</sub>
+  <img alt="Bundled GenericAgent Runtime" src="https://img.shields.io/badge/Bundled%20GenericAgent%20Runtime-C68762?style=flat-square" />
+  <img alt="Project / Goal orchestration" src="https://img.shields.io/badge/Project%20%2F%20Goal%20orchestration-C68762?style=flat-square" />
+  <img alt="IM Channels" src="https://img.shields.io/badge/IM%20Channels-C68762?style=flat-square" />
+  <img alt="GUI / CLI dual-native" src="https://img.shields.io/badge/GUI%20%2F%20CLI%20dual--native-C68762?style=flat-square" />
+  <img alt="Local-first" src="https://img.shields.io/badge/Local--first-C68762?style=flat-square" />
 </p>
 
 <p align="center">

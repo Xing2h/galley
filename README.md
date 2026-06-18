@@ -7,11 +7,15 @@
 <p align="center">
   <strong>把多个 AI Agent 当成一支团队，在自己的电脑上编排</strong>
   <br/>
-  <sub>人用 GUI 推进与审批，Supervisor Agent 用 CLI 调度，共享同一份 session 与历史</sub>
+  人用 GUI 推进与审批，Supervisor Agent 用 CLI 调度，共享同一份 session 与历史
 </p>
 
 <p align="center">
-  <sub>内置 GenericAgent Runtime · Project / Goal 编排 · IM Channels · GUI / CLI 双原生 · 本地优先</sub>
+  <img alt="内置 GenericAgent Runtime" src="https://img.shields.io/badge/%E5%86%85%E7%BD%AE%20GenericAgent%20Runtime-C68762?style=flat-square" />
+  <img alt="Project / Goal 编排" src="https://img.shields.io/badge/Project%20%2F%20Goal%20%E7%BC%96%E6%8E%92-C68762?style=flat-square" />
+  <img alt="IM Channels" src="https://img.shields.io/badge/IM%20Channels-C68762?style=flat-square" />
+  <img alt="GUI / CLI 双原生" src="https://img.shields.io/badge/GUI%20%2F%20CLI%20%E5%8F%8C%E5%8E%9F%E7%94%9F-C68762?style=flat-square" />
+  <img alt="本地优先" src="https://img.shields.io/badge/%E6%9C%AC%E5%9C%B0%E4%BC%98%E5%85%88-C68762?style=flat-square" />
 </p>
 
 <p align="center">
