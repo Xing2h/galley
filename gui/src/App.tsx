@@ -45,6 +45,7 @@ import {
   currentLLMDisplayName,
   managedModelsToLLMs,
 } from "@/lib/managed-model-options";
+import { sortProjectsForNavigation } from "@/lib/projects";
 import { bucketSession } from "@/lib/sessions";
 import type { EpigraphCondition } from "@/lib/epigraphs";
 import { useAppUpdateStore } from "@/stores/app-update";
@@ -717,9 +718,22 @@ function App() {
       setProjectViewOpen(false);
       return;
     }
-    setExpandedProjectIds([]);
+    // 进入项目视图时自动 expand 第一个项目(已按 pinned 优先、再按
+    // 最近 active 排序),并据此软设 filter——这样用户一进来,New Chat
+    // 立刻有归属,不会经历"项目视图里 New Chat 是个死按钮"的尴尬态。
+    // 没有项目时保持空(filter 仍 undefined),交给空状态 CTA 承接。
+    const firstProject = sortProjectsForNavigation(
+      projects,
+      visibleSessions,
+    )[0];
     setProjectReviewNowMs(Date.now());
     setProjectViewOpen(true);
+    if (firstProject) {
+      setExpandedProjectIds([firstProject.id]);
+      setActiveProjectFilter(firstProject.id);
+    } else {
+      setExpandedProjectIds([]);
+    }
   };
   const openProjectInSidebar = (projectId: string) => {
     setProjectReviewNowMs(Date.now());

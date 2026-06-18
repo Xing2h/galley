@@ -311,6 +311,7 @@ export function Sidebar({
               onTogglePinProject={onTogglePinProject}
               onEditProject={onEditProject}
               onDeleteProject={onDeleteProject}
+              onNewProject={onNewProject}
             />
           </SidebarProjectReviewPresence>
         )}

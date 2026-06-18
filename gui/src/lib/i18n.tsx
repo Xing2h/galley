@@ -105,6 +105,7 @@ const zhCopy = {
     unpin: "取消置顶",
     addToProject: "加入项目",
     noProjects: "还没有项目",
+    createFirstProject: "新建第一个项目",
     removeFromProject: "从项目移除",
     archive: "归档",
     newConversationInProjectTitle: (projectName: string) =>
@@ -1412,6 +1413,7 @@ const enCopy: AppCopy = {
     unpin: "Unpin",
     addToProject: "Add to project",
     noProjects: "No projects yet",
+    createFirstProject: "Create your first project",
     removeFromProject: "Remove from project",
     archive: "Archive",
     newConversationInProjectTitle: (projectName) =>

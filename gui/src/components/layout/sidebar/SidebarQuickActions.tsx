@@ -118,12 +118,15 @@ function ProjectQuickAction({
           aria-label={copy.sidebar.newProject}
           className={cn(
             "mr-0.5 inline-flex size-[32px] shrink-0 items-center justify-center rounded-sm",
-            "text-ink-muted transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
+            // 只调图标本身权重,不加任何底色,保持 quick actions 那一排
+            // 通透无背景的语言一致。size 提到 14 与 Folder 图标对齐,
+            // weight 从 thin→regular 让笔画更扎实,色从 muted→soft 提一档。
+            "text-ink-soft transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
             "hover:bg-hover hover:text-ink active:translate-y-px active:bg-selected/60 active:duration-[45ms]",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
           )}
         >
-          <Plus size={12} weight="thin" />
+          <Plus size={14} weight="regular" />
         </button>
       </IconTooltip>
     </div>

@@ -86,6 +86,7 @@ export function SidebarProjectReview({
   onTogglePinProject,
   onEditProject,
   onDeleteProject,
+  onNewProject,
 }: {
   projects: Project[];
   sessionsByProjectId: Map<string, Session[]>;
@@ -112,6 +113,10 @@ export function SidebarProjectReview({
   onTogglePinProject?: (id: string) => void;
   onEditProject?: (id: string) => void;
   onDeleteProject?: (id: string) => void;
+  /** 空状态 CTA:点开 CreateProjectDialog。新用户第一次进项目视图
+   * 时,projects 为空——原来的斜体灰字 noProjects 是死路,这里
+   * 换成可点按钮,把死路变入口。 */
+  onNewProject?: () => void;
 }) {
   const copy = useCopy();
   const [olderProjectsOpen, setOlderProjectsOpen] = useState(false);
@@ -190,9 +195,7 @@ export function SidebarProjectReview({
   return (
     <section className="pb-2 pt-1">
       {projects.length === 0 ? (
-        <div className="px-5 py-5 text-[12px] italic text-ink-muted">
-          {copy.sidebar.noProjects}
-        </div>
+        <SidebarProjectReviewEmpty onNewProject={onNewProject} />
       ) : (
         <>
           {activeProjects.length > 0 && (
@@ -217,6 +220,51 @@ export function SidebarProjectReview({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * Empty state for Project Review. Replaces the old passive italic hint
+ * (`noProjects`) with an actionable CTA: this is the moment new users
+ * hit "I want projects but have none" — turn the dead end into an entry
+ * point. Falls back to the muted hint text only when the host doesn't
+ * wire `onNewProject` (defensive — matches the sidebar's "affordance
+ * only when host enables it" pattern).
+ */
+function SidebarProjectReviewEmpty({
+  onNewProject,
+}: {
+  onNewProject?: () => void;
+}) {
+  const copy = useCopy();
+  if (!onNewProject) {
+    return (
+      <div className="px-5 py-5 text-[12px] italic text-ink-muted">
+        {copy.sidebar.noProjects}
+      </div>
+    );
+  }
+  return (
+    <div className="px-3 py-5">
+      <button
+        type="button"
+        onClick={onNewProject}
+        className={cn(
+          "flex w-full cursor-pointer items-center gap-2 rounded-sm border border-brand/30 bg-selected/50 px-3 py-2.5 text-left",
+          "text-[12.5px] font-medium text-ink-soft transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
+          "hover:border-brand/50 hover:bg-selected hover:text-ink active:translate-y-px active:duration-[45ms]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+        )}
+      >
+        <Plus size={13} weight="thin" className="shrink-0 text-brand-strong" />
+        <span className="min-w-0 flex-1 truncate">
+          {copy.sidebar.createFirstProject}
+        </span>
+      </button>
+      <p className="mt-2 px-1 text-[11px] italic leading-relaxed text-ink-muted">
+        {copy.sidebar.noProjects}
+      </p>
+    </div>
   );
 }
 
