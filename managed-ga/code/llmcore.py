@@ -857,7 +857,7 @@ class ToolClient:
         raw_text = ''
         for chunk in gen:
             raw_text += chunk; yield chunk
-        _write_llm_log('Response', raw_text, self.log_path)
+        _write_llm_log('Response', raw_text, self.log_path, model=self.backend.model)
         return self._parse_mixed_response(raw_text)
 
     def _prepare_tool_instruction(self, tools):
@@ -974,15 +974,15 @@ def _ensure_text_block(blocks):
     blocks.insert(1, {"type": "text", "text": txt})
     return txt
 
-def _write_llm_log(label, content, log_path=None):
+def _write_llm_log(label, content, log_path=None, model=''):
     if not log_path:
         state_root = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or os.path.dirname(os.path.abspath(__file__)))
         log_path = os.path.join(state_root, f'temp/model_responses/model_responses_{os.getpid()}.txt')
     os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
     ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if model: model = f' model={model}'
     with open(log_path, 'a', encoding='utf-8', errors='replace') as f:
-        f.write(f"=== {label} === {ts}\n{content}\n\n")
-
+        f.write(f"=== {label} === {ts}{model}\n{content}\n\n")
 _WINDOWS_PATH_KEYS = {'path', 'file_path', 'filepath'}
 _WINDOWS_PATH_FIELD_RE = re.compile(
     r'("(?P<key>path|file_path|filepath)"\s*:\s*)"{1,2}'
@@ -1029,6 +1029,7 @@ def _normalize_windows_path_values(value):
     if isinstance(value, list):
         return [_normalize_windows_path_values(v) for v in value]
     return value
+
 
 def tryparse(json_str):
     try: return _normalize_windows_path_values(json.loads(json_str))
@@ -1164,7 +1165,7 @@ class NativeToolClient:
             while True:
                 chunk = next(gen); yield chunk
         except StopIteration as e: resp = e.value
-        if resp: _write_llm_log('Response', resp.raw, self.log_path)
+        if resp: _write_llm_log('Response', resp.raw, self.log_path, model=self.backend.model)
         if resp and hasattr(resp, 'tool_calls') and resp.tool_calls: self._pending_tool_ids = [tc.id for tc in resp.tool_calls]
         return resp
 

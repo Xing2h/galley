@@ -39,6 +39,7 @@ import {
   getPref,
 } from "@/lib/db";
 import { pushCloseHintCopy } from "@/lib/close-hint";
+import { applyManagedRuntimeDiagnostics } from "@/lib/managed-runtime-diagnostics";
 import { useAppUpdateStore } from "@/stores/app-update";
 import { useManagedModelsStore } from "@/stores/managed-models";
 import { usePrefsStore } from "@/stores/prefs";
@@ -84,7 +85,7 @@ export async function hydrateApp(): Promise<void> {
     const managedRuntime = await invoke<ManagedRuntimeDiagnostics>(
       "ensure_managed_runtime_layout",
     );
-    useRuntimeStore.getState().patchRuntimeInfo({ managedRuntime });
+    applyManagedRuntimeDiagnostics(managedRuntime);
   } catch (e) {
     console.warn("[hydrate] managed runtime layout init failed.", e);
   }

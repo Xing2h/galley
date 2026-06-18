@@ -64,6 +64,7 @@ def _install_fsapp_stubs(monkeypatch: Any) -> None:
 def _load_managed_fsapp(monkeypatch: Any, tmp_path: Path) -> Any:
     _install_fsapp_stubs(monkeypatch)
     monkeypatch.setenv("GA_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+    monkeypatch.setenv("GALLEY_FEISHU_TEMP_DIR", str(tmp_path / "feishu-temp"))
     path = (
         Path(__file__).resolve().parents[2]
         / "managed-ga"
@@ -75,7 +76,12 @@ def _load_managed_fsapp(monkeypatch: Any, tmp_path: Path) -> Any:
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules["_galley_test_fsapp"] = module
-    spec.loader.exec_module(module)
+    old_dont_write_bytecode = sys.dont_write_bytecode
+    try:
+        sys.dont_write_bytecode = True
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = old_dont_write_bytecode
     return module
 
 

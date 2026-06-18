@@ -95,6 +95,7 @@ def test_native_tool_client_keeps_non_text_image_blocks(tmp_path: Path) -> None:
         def __init__(self) -> None:
             self.history: list[dict[str, Any]] = []
             self.name = "fake"
+            self.model = "fake-model"
             self.merged: dict[str, Any] | None = None
 
         def ask(self, merged: dict[str, Any]) -> Any:

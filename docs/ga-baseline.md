@@ -15,17 +15,16 @@ audited against.
 
 ## Current Baseline
 
-Locked commit: `12655687aa964ea541bb0606c0051700e76991ca`
+Locked commit: `53b48aea07ad78ef577444ca6efa83693399f168`
 
 - Source: `lsdefine/GenericAgent` upstream `main`
 - Date audited: 2026-06-18
-- Previous baseline: `0def744157916f0c88da69f710941e4c408b3768`
-- Delta: 30 commits
+- Previous baseline: `12655687aa964ea541bb0606c0051700e76991ca`
+- Delta: 1 commit
 - Result: no external bridge protocol or dependency break; `pyproject.toml`
-  did not change. Managed runtime needed refreshed state-root coverage for
-  upstream Workspace / Project Mode files, plus patch-context refreshes for
-  Browser Control, ChatGPT / Codex, image attachments, and WeChat paths.
-- Devlog: [Project Workspace and GA upstream upgrade 0def7441 -> 12655687](./devlog/2026-06-18-project-workspace-and-ga-upstream-12655687.md)
+  did not change. Managed runtime picked up upstream `llmcore.py` response-log
+  model metadata while preserving Galley's managed state-root routing.
+- Devlog: [GA upstream upgrade 12655687 -> 53b48aea](./devlog/2026-06-18-ga-upstream-upgrade-12655687-to-53b48aea.md)
 
 Relevant compatibility notes:
 
@@ -42,9 +41,9 @@ Relevant compatibility notes:
 - `ga.py`: upstream browser wake-up behavior remains compatible. Managed mode
   preserves Galley's non-interactive `code_run` stdin close and Browser Control
   recovery diagnostics.
-- `llmcore.py`: upstream added Responses Codex metadata. Galley's ChatGPT /
-  Codex managed backend remains a managed patch because it is a Galley
-  credential IPC contract.
+- `llmcore.py`: upstream added Responses Codex metadata and now includes the
+  active model in response logs. Galley's ChatGPT / Codex managed backend
+  remains a managed patch because it is a Galley credential IPC contract.
 - `memory/`: upstream removed `skill_search`, added macOS AX control support,
   and refreshed SOP content. The managed state seed follows upstream memory
   files while excluding generated long-term memory artifacts.

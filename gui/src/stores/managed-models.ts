@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 
+import { applyManagedRuntimeDiagnostics } from "@/lib/managed-runtime-diagnostics";
 import {
   deleteManagedModelProvider,
   deleteManagedModel,
@@ -10,7 +11,6 @@ import {
   saveManagedModel,
   reorderManagedModels,
 } from "@/lib/managed-models";
-import { useRuntimeStore } from "@/stores/runtime";
 import type { ManagedRuntimeDiagnostics } from "@/types/inspector";
 import type {
   ManagedModelRecord,
@@ -144,7 +144,7 @@ async function refreshManagedRuntimeDiagnostics(): Promise<void> {
     const managedRuntime = await invoke<ManagedRuntimeDiagnostics>(
       "ensure_managed_runtime_layout",
     );
-    useRuntimeStore.getState().patchRuntimeInfo({ managedRuntime });
+    applyManagedRuntimeDiagnostics(managedRuntime);
   } catch (e) {
     console.warn("[managed-models] refresh managed runtime diagnostics failed.", e);
   }
