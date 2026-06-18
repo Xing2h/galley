@@ -4,8 +4,9 @@ name: Check
 # to main. Verifies release-target health WITHOUT producing release
 # artifacts, so it stays much faster than the release workflow.
 #
-# Gates: actionlint, pnpm typecheck, pnpm lint, pnpm test, managed GA
-# payload check, cargo check, and cargo test. Target jobs run in parallel;
+# Gates: actionlint, pnpm typecheck, pnpm lint, pnpm test, IPC protocol
+# drift check, managed GA payload check, cargo check, and cargo test.
+# Target jobs run in parallel;
 # fail-fast: false so every platform reports independently and we get
 # a complete picture.
 #
@@ -78,6 +79,9 @@ jobs:
       - name: Test
         working-directory: ./gui
         run: pnpm test
+
+      - name: IPC protocol drift gate
+        run: node scripts/check-ipc-protocol-drift.mjs
 
       - name: Managed GA payload gate
         run: node scripts/check-managed-ga-payload.mjs

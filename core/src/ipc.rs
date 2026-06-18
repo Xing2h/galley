@@ -124,7 +124,7 @@ pub struct ReadyEvent {
 pub struct TurnStartEvent {
     pub session_id: String,
     pub turn_index: i64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<String>,
     pub timestamp: String,
 }
@@ -192,7 +192,7 @@ pub struct TurnEndEvent {
     pub response_content: String,
     #[serde(default)]
     pub exit_reason: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<String>,
     #[serde(default)]
     pub absolute_turn_index: Option<i64>,
@@ -205,7 +205,7 @@ pub struct TurnProgressEvent {
     pub session_id: String,
     pub delta: String,
     pub source: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<String>,
     pub timestamp: String,
 }
@@ -226,7 +226,7 @@ pub struct RunCompleteEvent {
     pub exit_reason: Value,
     pub final_content: String,
     pub total_turns: i64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<String>,
     pub timestamp: String,
 }
@@ -250,7 +250,7 @@ pub struct ErrorEvent {
     pub context: Option<String>,
     #[serde(default)]
     pub traceback: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<String>,
     pub timestamp: String,
 }
@@ -343,7 +343,7 @@ pub struct UserMessageCommand {
     pub text: String,
     #[serde(default)]
     pub images: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<String>,
     #[serde(default)]
     pub absolute_turn_index: Option<i64>,
@@ -502,12 +502,33 @@ mod tests {
         // The wire format uses "kind" tag + snake_case variants.
         assert!(s.contains("\"kind\":\"user_message\""));
         assert!(s.contains("\"text\":\"hello\""));
+        assert!(
+            !s.contains("visibility"),
+            "None visibility should be omitted so Python uses its default: {s}"
+        );
         // Verify Python side can parse this — round-trip back.
         let parsed: IpcCommand = serde_json::from_str(&s).unwrap();
         match parsed {
             IpcCommand::UserMessage(m) => assert_eq!(m.text, "hello"),
             _ => panic!("wrong"),
         }
+    }
+
+    #[test]
+    fn serialize_optional_visibility_omits_none() {
+        let event = IpcEvent::TurnProgress(TurnProgressEvent {
+            session_id: "s1".to_string(),
+            delta: "partial".to_string(),
+            source: "workbench".to_string(),
+            visibility: None,
+            timestamp: "t".to_string(),
+        });
+        let s = serde_json::to_string(&event).unwrap();
+        assert!(s.contains("\"kind\":\"turn_progress\""));
+        assert!(
+            !s.contains("visibility"),
+            "None visibility should serialize as an omitted optional field, not null: {s}"
+        );
     }
 
     #[test]
