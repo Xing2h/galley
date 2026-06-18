@@ -59,19 +59,21 @@ project delete).
 | Path | What |
 |---|---|
 | `SKILL.md` | The skill body Claude reads on trigger. |
-| `references/galley-supervisor-sop.md` | Full Supervisor SOP (verbatim copy of `docs/integrations/galley-supervisor-sop.md` from the Galley repo). Claude reads this for edge cases. |
+| `references/galley-supervisor-sop.md` | Copy-first Lite Supervisor SOP (verbatim copy of `docs/integrations/galley-supervisor-sop.md`). |
+| `references/galley-supervisor-reference.md` | Detailed command and advanced workflow reference (verbatim copy of `docs/integrations/galley-supervisor-reference.md`). |
 
 ## Schema + stability
 
-This skill targets **Galley CLI schema_version=1** (frozen for v0.2.0-beta.1).
+This skill targets **Galley CLI schema_version=1** (frozen for the v0.2.x line).
 Schema is additive-only inside v1; breaking changes bump to v2 and will
 ship as a new skill version.
 
 ## Updates
 
 The canonical SOP lives in [`docs/integrations/galley-supervisor-sop.md`](https://github.com/wangjc683/galley/blob/main/docs/integrations/galley-supervisor-sop.md)
-in the Galley repo. When that updates, the `references/` copy in this
-skill is re-synced — pull the latest skill version.
+and the full reference lives in [`docs/integrations/galley-supervisor-reference.md`](https://github.com/wangjc683/galley/blob/main/docs/integrations/galley-supervisor-reference.md).
+When either updates, the `references/` copies in this skill are re-synced —
+pull the latest skill version.
 
 ## See also
 

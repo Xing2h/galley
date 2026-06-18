@@ -11,9 +11,10 @@ orchestrator; each session is one ongoing agent task. You drive sessions on
 the user's behalf, including splitting a complex user goal into focused
 session tasks when that helps parallelize work.
 
-> Full spec for edge cases: [`references/galley-supervisor-sop.md`](references/galley-supervisor-sop.md)
-> (Galley Supervisor SOP v0.2.0-beta.1 · schema_version=1). The body below is the
-> hot path; read the SOP when you hit something not covered here.
+> Copy-first SOP: [`references/galley-supervisor-sop.md`](references/galley-supervisor-sop.md)
+> Detailed reference: [`references/galley-supervisor-reference.md`](references/galley-supervisor-reference.md)
+> (Galley Supervisor SOP v0.2.x · schema_version=1). The body below is the
+> hot path; read the reference for command details and edge cases.
 
 ---
 
@@ -122,6 +123,7 @@ Core is available; writes need Core alive.
 | `galley session brief <id>` | one-line summary |
 | `galley session show <id> --tail=20` | last N messages |
 | `galley session follow <id> --tail=20` | snapshot, live events if available, final snapshot |
+| `galley session wait <id> --timeout=300 --poll=5 --tail=20 --final-show` | bounded result retrieval; timeout is not task failure |
 | `galley status` | global counts |
 | `galley health` | DB / GA path / Python checks |
 | `galley project list` | list projects |
@@ -186,6 +188,16 @@ the session was created, a runner was started, and the first task was sent. If
 `session new` returns `runner_error` (exit 5), do not resend blindly; inspect
 the session and tell the user the task may have been saved but did not start.
 
+For long-running work, use bounded result retrieval:
+
+```bash
+"$GALLEY" session wait <id> --timeout=300 --poll=5 --tail=20 --final-show
+```
+
+If `session wait` returns `status: "timed_out"`, say the waiter has not fetched
+a result yet. Do not call the Galley task failed unless the session itself says
+so.
+
 ### "那个 session 怎么样了" / "how's session X going"
 
 ```bash
@@ -226,6 +238,9 @@ to live events when a runner is available:
 ```bash
 "$GALLEY" session follow <id> --tail=20
 ```
+
+Use `session wait` when the user needs a bounded answer from a long task,
+especially from IM / Supervisor flows where the local tool runner may time out.
 
 Use raw `session watch` only when you specifically need live IPC events with
 no backlog. Both `follow` and `watch` can be long-lived while the runner is
@@ -384,7 +399,7 @@ They land on **stdout** (not stderr) — read one stream.
 
 ---
 
-## Out of scope (v0.2.0-beta.1)
+## Out of scope (v0.2.x)
 
 Refuse these — they're not in the surface:
 
@@ -410,7 +425,8 @@ Refuse these — they're not in the surface:
 
 ## See also
 
-- [`references/galley-supervisor-sop.md`](references/galley-supervisor-sop.md) — full SOP (edge cases, extended scenarios, `not in v0.2.0-beta.1` list)
+- [`references/galley-supervisor-sop.md`](references/galley-supervisor-sop.md) — copy-first Lite SOP
+- [`references/galley-supervisor-reference.md`](references/galley-supervisor-reference.md) — detailed commands, edge cases, and advanced workflows
 - [PRD §11](https://github.com/wangjc683/galley/blob/main/docs/PRD.md) — CLI command surface
 - [agent-api.md](https://github.com/wangjc683/galley/blob/main/docs/agent-api.md) — full schema (authoritative if SOP and schema diverge)
 - [AGENTS.md "Galley 架构原则"](https://github.com/wangjc683/galley/blob/main/AGENTS.md) — localhost only / CLI public contract / data stays in Galley

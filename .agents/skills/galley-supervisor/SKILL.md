@@ -11,9 +11,10 @@ orchestrator; each session is one ongoing agent task. You drive sessions on
 the user's behalf, including splitting a complex user goal into focused
 session tasks when that helps parallelize work.
 
-> Full spec for edge cases: [`references/galley-supervisor-sop.md`](references/galley-supervisor-sop.md)
-> (Galley Supervisor SOP v0.2.0-beta.1 · schema_version=1). The body below is the
-> hot path; read the SOP when you hit something not covered here.
+> Copy-first SOP: [`references/galley-supervisor-sop.md`](references/galley-supervisor-sop.md)
+> Detailed reference: [`references/galley-supervisor-reference.md`](references/galley-supervisor-reference.md)
+> (Galley Supervisor SOP v0.2.x · schema_version=1). The body below is the
+> hot path; read the reference for command details and edge cases.
 
 ---
 
@@ -23,9 +24,10 @@ session tasks when that helps parallelize work.
    commands create duplicates.
 2. **Destructive ≠ silent.** `archive` / `stop` / `project delete` need user
    confirmation. Brief, get a yes, then run.
-3. **Origin always.** Every write command takes `--supervisor=` +
-   `--reason=`. You are `codex-skill-galley-supervisor/v1`. Reason in the
-   user's own words (or honest paraphrase) so the audit trail makes sense.
+3. **Origin whenever supported.** Every write command that accepts origin
+   fields takes `--supervisor=` + `--reason=`. You are
+   `codex-skill-galley-supervisor/v1`. `llm set` is the v0.2 exception; it
+   has no origin flags.
 
 ---
 
@@ -38,13 +40,14 @@ users haven't installed the symlink).
 ### macOS / Linux
 
 ```bash
-GALLEY="$(cat ~/.config/galley/cli-path)"
+DISCOVERY="${XDG_CONFIG_HOME:-$HOME/.config}/galley/cli-path"
+GALLEY="$(sed -n '1p' "$DISCOVERY")"
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-$GALLEY = Get-Content "$env:APPDATA\galley\cli-path"
+$GALLEY = Get-Content "$env:APPDATA\galley\cli-path" | Select-Object -First 1
 ```
 
 If the file is missing → the user hasn't launched Galley yet (or runs a
@@ -59,6 +62,12 @@ across versions.
 From here on, **every** CLI invocation uses `"$GALLEY"` (the absolute path
 from the discovery file).
 
+When you need strict forward compatibility, pin the schema:
+
+```bash
+"$GALLEY" --schema=1 status
+```
+
 ---
 
 ## Step 2: Command cheatsheet
@@ -66,9 +75,10 @@ from the discovery file).
 Full schema in [agent-api.md](https://github.com/wangjc683/galley/blob/main/docs/agent-api.md)
 (schema_version=1, additive-only). All commands support `--help` and emit
 NDJSON / JSON on stdout. Reads work without Galley Core running (direct
-SQLite); writes need Core alive.
+SQLite); `follow` commands start from SQLite snapshots and add live events when
+Core is available; writes need Core alive.
 
-### Inventory (read · no Core required, except `watch`)
+### Inventory (read / follow)
 
 | Command | When |
 |---|---|
@@ -79,30 +89,35 @@ SQLite); writes need Core alive.
 | `galley sessions search "<kw>"` | FTS5 full-text |
 | `galley session brief <id>` | one-line summary |
 | `galley session show <id> --tail=20` | last N messages |
+| `galley session follow <id> --tail=20` | snapshot, live events if available, final snapshot |
+| `galley session wait <id> --timeout=300 --poll=5 --tail=20 --final-show` | bounded result retrieval; timeout is not task failure |
 | `galley status` | global counts |
 | `galley health` | DB / GA path / Python checks |
 | `galley project list` | list projects |
+| `galley project brief <id>` | project status counts |
+| `galley project show <id> --tail=20` | project sessions plus recent messages |
+| `galley project follow <id> --tail=10 --until-idle --final-show` | follow a project until child sessions are idle |
 | `galley llm list` | available LLMs |
 | `galley version` | CLI + schema version |
 
-### Operate session (write · needs Core)
+### Operate session (write / live stream · needs Core)
 
 | Command | Notes |
 |---|---|
 | `galley session new "<task>" --supervisor=… --reason=…` | atomic create+send. The `<task>` is the user's task description, not your prose. |
 | `galley session send <id> "<text>" --supervisor=… --reason=…` | add a user message to existing session |
-| `galley session btw <id> "<question>"` | "side question" — **not persisted**, only works while bridge is alive |
-| `galley session stop <id>` | interrupt current turn (reversible — user can `send` again) |
-| `galley session archive <id> --supervisor=…` | hide from sidebar (reversible) |
-| `galley session restore <id>` | undo archive |
-| `galley session move <id> --to=<project-id>` | move to project. Omit `--to` to unassign. |
+| `galley session btw <id> "<question>" --supervisor=… --reason=…` | "side question" — **not persisted**, only works while bridge is alive |
+| `galley session stop <id> --supervisor=… --reason=…` | interrupt current turn (reversible — user can `send` again) |
+| `galley session archive <id> --supervisor=… --reason=…` | hide from sidebar (reversible) |
+| `galley session restore <id> --supervisor=… --reason=…` | undo archive |
+| `galley session move <id> --to=<project-id> --supervisor=… --reason=…` | move to project. Omit `--to` to unassign. |
 | `galley session watch <id>` | streaming NDJSON (long-lived) |
 
 ### Project + LLM (write · needs Core)
 
 | Command | Notes |
 |---|---|
-| `galley project create "<name>"` | id minted server-side |
+| `galley project create "<name>" --supervisor=… --reason=…` | id minted server-side |
 | `galley project delete <id> --supervisor=… --reason=…` | **irreversible**. Returns `detachedSessions` count (sessions survive, unassigned). |
 | `galley llm set <session-id> <llm-name>` | LLM name is case-insensitive; match against `galley llm list` |
 
@@ -135,9 +150,20 @@ If clear:
     --reason="user requested via Codex"
 ```
 
-Return the new `session.id`. If `dispatch: "persisted_only"` comes back,
-that's **normal** — the CLI doesn't spawn bridges; user activating the
-session in GUI is what fires the agent. Don't resend on `persisted_only`.
+Return the new `session.id`. On success, expect `dispatch: "dispatched"`:
+the session was created, a runner was started, and the first task was sent. If
+`session new` returns `runner_error` (exit 5), do not resend blindly; inspect
+the session and tell the user the task may have been saved but did not start.
+
+For long-running work, use bounded result retrieval:
+
+```bash
+"$GALLEY" session wait <id> --timeout=300 --poll=5 --tail=20 --final-show
+```
+
+If `session wait` returns `status: "timed_out"`, say the waiter has not fetched
+a result yet. Do not call the Galley task failed unless the session itself says
+so.
 
 ### "那个 session 怎么样了" / "how's session X going"
 
@@ -162,8 +188,58 @@ Main task continuation:
 Side question (doesn't disturb main flow, **not persisted**):
 
 ```bash
-"$GALLEY" session btw <id> "<quick question>"
+"$GALLEY" session btw <id> "<quick question>" \
+    --supervisor=codex-skill-galley-supervisor/v1 \
+    --reason="quick side question via Codex"
 ```
+
+### "盯一下进度" / "watch progress"
+
+Prefer `session follow`; it catches up from SQLite first and only subscribes
+to live events when a runner is available:
+
+```bash
+"$GALLEY" session follow <id> --tail=20
+```
+
+Use `session wait` when the user needs a bounded answer from a long task,
+especially from IM / Supervisor flows where the local tool runner may time out.
+
+Use raw `session watch` only when you specifically need live IPC events with
+no backlog. Both `follow` and `watch` can be long-lived while the runner is
+alive, so stop the subscription when you have enough events to answer.
+
+### "把复杂任务拆开并行跑" / "split this complex task"
+
+Use a Project as the visible container. First inspect, then reuse or create the
+Project, then create child sessions with `--project=<id>`:
+
+```bash
+"$GALLEY" status
+"$GALLEY" project list
+"$GALLEY" sessions search "<keywords>"
+"$GALLEY" project create "<short user-goal name>" \
+    --supervisor=codex-skill-galley-supervisor/v1 \
+    --reason="create container via Codex"
+"$GALLEY" session new "<child task A>" --project=<project-id> \
+    --supervisor=codex-skill-galley-supervisor/v1 \
+    --reason="split user task into child task A"
+"$GALLEY" session new "<child task B>" --project=<project-id> \
+    --supervisor=codex-skill-galley-supervisor/v1 \
+    --reason="split user task into child task B"
+"$GALLEY" project follow <project-id> --tail=80 --until-idle --final-show
+```
+
+Each child prompt should preserve the user's goal, name only that session's
+responsibility, and state scope limits such as "do not book, pay, or change
+files" unless the user explicitly asked for those actions.
+
+`project follow --until-idle --final-show` exits after no child session is
+`connecting`, `running`, or `waiting_approval` for a short quiet window, and
+prints a final snapshot. If you used plain `project follow` or interrupted the
+stream, run `project show <project-id> --tail=80`. Summarize by child-session
+responsibility, evidence, conflicts, and next action. Do not delete the Project
+after finishing unless the user explicitly confirms.
 
 ### "归档 / 停掉 / 删掉那个 session" / "archive / stop / delete"
 
@@ -228,8 +304,9 @@ You: 「project 'demo' 包含 5 个 sessions：xxx / yyy / ...
 
 ## Step 5: Origin convention
 
-Every write command takes `--supervisor=` + `--reason=`. Galley persists
-both to an audit log; the user sees them in the per-session timeline.
+Every write command that accepts origin fields takes `--supervisor=` +
+`--reason=`. Galley persists both to an audit log; the user sees them in the
+per-session timeline.
 
 ### `--supervisor=`
 
@@ -265,7 +342,7 @@ Every command exits with one of:
 | `0` | success | OK | Continue. Note `dispatch: "persisted_only"` is **not** an error. |
 | `1` | `internal` | rare bug | Surface to user as "Galley internal error". Don't retry. |
 | `2` | `invalid_args` | bad params | Fix the args, retry once (e.g. wrong LLM name → `llm list` then retry). |
-| `3` | `not_found` | id doesn't exist | Don't retry — go re-look up the id with `sessions list` / `search`. |
+| `3` | `not_found` | id doesn't exist, or no live runner for `watch` | Re-look up the id; for watch, fall back to `show`. |
 | `4` | `db_unavailable` | Core not running or DB locked | Ask user to open Galley. Don't retry blindly. |
 | `5` | `runner_error` | bridge dead / IPC failed (e.g. `btw` / `llm set` on cold session) | Ask user to activate the session in GUI to warm up the bridge. |
 
@@ -279,14 +356,14 @@ They land on **stdout** (not stderr) — read one stream.
 
 ### Retry policy quick reference
 
-- `exit 0` → continue. `dispatch: "persisted_only"` is normal.
+- `exit 0` → continue. `dispatch: "persisted_only"` and `dispatch: "already_stopped"` are normal.
 - `exit 1 / 4 / 5` → don't retry, tell the user the specific cause.
 - `exit 2` → fix params, retry **once**.
 - `exit 3` → re-lookup the id, then retry with the right one.
 
 ---
 
-## Out of scope (v0.2.0-beta.1)
+## Out of scope (v0.2.x)
 
 Refuse these — they're not in the surface:
 
@@ -312,7 +389,8 @@ Refuse these — they're not in the surface:
 
 ## See also
 
-- [`references/galley-supervisor-sop.md`](references/galley-supervisor-sop.md) — full SOP (edge cases, extended scenarios, `not in v0.2.0-beta.1` list)
+- [`references/galley-supervisor-sop.md`](references/galley-supervisor-sop.md) — copy-first Lite SOP
+- [`references/galley-supervisor-reference.md`](references/galley-supervisor-reference.md) — detailed commands, edge cases, and advanced workflows
 - [PRD §11](https://github.com/wangjc683/galley/blob/main/docs/PRD.md) — CLI command surface
 - [agent-api.md](https://github.com/wangjc683/galley/blob/main/docs/agent-api.md) — full schema (authoritative if SOP and schema diverge)
 - [AGENTS.md "Galley 架构原则"](https://github.com/wangjc683/galley/blob/main/AGENTS.md) — localhost only / CLI public contract / data stays in Galley

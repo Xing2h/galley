@@ -153,7 +153,7 @@ docs/        Product, architecture, workflow, and history
 | Understand architecture | [architecture](./docs/architecture.md) |
 | Product or roadmap change | [PRD](./docs/PRD.md) |
 | CLI / Agent API change | [agent-api](./docs/agent-api.md) |
-| Supervisor / Agent integration | [Supervisor SOP](./docs/integrations/galley-supervisor-sop.md) |
+| Supervisor / Agent integration | [Supervisor SOP](./docs/integrations/galley-supervisor-sop.md), then [Supervisor reference](./docs/integrations/galley-supervisor-reference.md) |
 | GenericAgent compatibility | [GA baseline](./docs/ga-baseline.md) |
 | Managed / bundled GA runtime | [managed GA runtime](./docs/managed-ga-runtime.md) |
 | Desktop packaging / runtime | [desktop runtime](./docs/desktop-runtime.md) |
