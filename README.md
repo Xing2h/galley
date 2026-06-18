@@ -7,7 +7,7 @@
 <p align="center">
   <strong>在自己的电脑上同时运行多个 AI Agent 会话，随时切换、管理和继续</strong>
   <br/>
-  自带 GenericAgent 内核 · GUI / CLI 双原生 · 本地优先
+  内置 GenericAgent Runtime · Project / Goal 编排 · IM Channels · GUI / CLI 双原生
 </p>
 
 <p align="center">
@@ -49,9 +49,9 @@ Galley 在你的电脑上并行运行多个 AI agent session。Human 用 GUI 看
 
 | | |
 |---|---|
-| 📦 **开箱即用**<br/>内置 GenericAgent runtime、bundled CPython 3.11 和运行依赖。 | 🪟 **多 session + Project 编排**<br/>多任务并行跑；复杂目标可由 Supervisor Agent 拆到一个 Project 下统一汇总。 |
-| ⚙️ **GUI + CLI 双原生**<br/>人在 GUI 里操作，Supervisor Agent 通过稳定的 `galley` CLI 操作；两边共享同一份 session 和历史。 | 💬 **Channels**<br/>在 **Settings → Channels** 扫码接入微信；Galley 运行时，可以直接从微信给 Galley 发消息。更多聊天软件后续扩展。 |
-| 🔒 **Localhost-only**<br/>Core 只监听 Unix socket / Windows named pipe；远程传输交给 Supervisor Agent。 | 🔧 **工具时间线 + 审批**<br/>工具调用、参数、结果、时延内联展示；高风险动作可审批、白名单或 YOLO。 |
+| 📦 **开箱即用**<br/>内置 GenericAgent runtime、bundled CPython 3.11 和运行依赖。 | 🧭 **项目工作区 + 多会话**<br/>为项目选择一个文件夹后，成为该项目工作区，适合代码仓库或资料夹里的连续任务，多条会话可以围绕同一个项目推进和汇总。 |
+| 🎯 **Galley Goal**<br/>把一个长期目标交给 Galley，确认时长和 Subagent 数量，Galley 会在后台持续推进，直到完成目标或者预算耗尽。 | ⚙️ **GUI + CLI 双原生**<br/>人在 GUI 里操作，Supervisor Agent 通过稳定的 `galley` CLI 操作；两边共享同一份 session 和历史。 |
+| 💬 **IM Channels**<br/>接入微信 / 飞书，通过 IM 软件继续与 Galley 发消息，更可以远程调度 Galley Desktop。 | 🔧 **工具时间线 + 审批**<br/>工具调用、参数、结果、时延内联展示；高风险动作可审批、白名单或 YOLO。 |
 | 🌐 **浏览器控制**<br/>连接 Chrome / Edge / Chromium 后，agent 可以操作你已登录的浏览器。发挥你的想象空间。 | 💾 **持久化 + 搜索 + 后台常驻**<br/>关窗不退出，远程通过 Supervisor Agent 调度，回来继续聊、搜索历史会话。 |
 
 ---
@@ -96,7 +96,7 @@ GUI 启动后进 **Settings → Agent**：
 | **复制 SOP** | 复制短版 [`galley-supervisor-sop.md`](./docs/integrations/galley-supervisor-sop.md)，发给你的 Agent，让它学会检查、继续、新开、拆分和等待 Galley 任务；高级细节见 [Supervisor reference](./docs/integrations/galley-supervisor-reference.md) |
 | **查看 Agent API 文档** | 打开完整命令清单、JSON schema 和 exit code |
 
-用户无需学习 CLI，直接用自然语言告诉 Supervisor Agent，让它安排 Galley 做什么即可。复制给 Agent 的 SOP 是轻量热路径；复杂命令和高级编排留在 reference / Agent API。复杂任务不会直接变成一个“大 prompt”：Supervisor 会先选择编排模式，简单问题直接读或跟进一个 session，复杂目标用 Project 承载一组 sessions 并行跑，结束后汇总。也可以在 **Settings → Channels** 接入微信，扫码后从微信给 Galley 发消息。
+用户无需学习 CLI，直接用自然语言告诉 Supervisor Agent，让它安排 Galley 做什么即可。复制给 Agent 的 SOP 是轻量热路径；复杂命令和高级编排留在 reference / Agent API。复杂任务不会直接变成一个“大 prompt”：简单问题直接读或跟进一个 session；项目 / 资料夹任务用 Project Workspace 绑定工作区；长期目标用 Goal 先确认时长和 Subagent 数量，再在后台持续推进。也可以在 **Settings → Channels** 接入微信 / 飞书，通过 IM 软件继续给 Galley 发消息，远程调度 Galley Desktop。
 
 <details>
 <summary>展开 CLI 示例</summary>
@@ -124,6 +124,17 @@ galley session new "只读检查 packaging、release workflow、bundled resource
   --project=proj_from_create --supervisor=ga-claude-1 --reason="检查发布打包"
 
 galley project follow proj_from_create --tail=80 --until-idle --final-show
+
+# 长目标：先 proposal，等用户明确确认后再启动 Goal controller
+galley goal propose "发布下一个 patch 版本" \
+  --supervisor=ga-claude-1 --reason="准备 Goal 计划等待用户确认"
+
+galley goal run --proposal=<proposal-id> \
+  --confirm-token=<internalConfirmToken> \
+  --supervisor=ga-claude-1 --reason="用户已确认启动 Goal"
+
+galley goal status <goal-id>
+galley goal deliverable get <goal-id>
 
 # 长连接看一个 session 的事件流
 galley session watch <id>
@@ -155,6 +166,7 @@ GUI 和 CLI 都接到同一个 Rust Core；Core 管 session 生命周期、SQLit
               |      Galley Core       | <----  unix socket / named pipe
               |          Rust          |        0600 / no token / no TLS
               |  - session lifecycle   |
+              |  - projects + goals    |
               |  - SQLite authority    |
               |  - runner + events     |
               +-----------+------------+
@@ -179,7 +191,7 @@ GUI 和 CLI 都接到同一个 Rust Core；Core 管 session 生命周期、SQLit
 
 (1) GUI 跟 CLI 是**对等前端**，不是 GUI 包 CLI；
 
-(2) **Rust core 是权威层**，session 状态、SQLite 写、runner 生命周期都归它管；
+(2) **Rust core 是权威层**，session / Project / Goal 状态、SQLite 写、runner 生命周期都归它管；
 
 (3) 默认路径是 **Galley-managed GA**：GenericAgent 是内置 agent 内核。
 
