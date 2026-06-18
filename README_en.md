@@ -7,7 +7,7 @@
 <p align="center">
   <strong>Run, manage, and resume multiple AI agent sessions on your own computer</strong>
   <br/>
-  Bundled GenericAgent · Project / Goal orchestration · Channels · GUI / CLI dual-native
+  Bundled GenericAgent kernel · GUI / CLI dual-native · Local-first
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
 
 ## What Is Galley
 
-Galley runs multiple AI agent sessions in parallel on your own computer. Humans use the GUI to watch progress, send instructions, and approve actions; Supervisor Agents use the CLI to orchestrate the same session team. Use sessions for ordinary work, Project Workspace for repository work, and Galley Goal for longer objectives where Core owns the task board, worker sessions, and deliverable.
+Galley runs multiple AI agent sessions in parallel on your own computer. Humans use the GUI to watch progress, send instructions, and approve actions; Supervisor Agents use the CLI to orchestrate the same session team.
 
 | For Humans | For Agents | Ready By Default |
 |---|---|---|
@@ -49,11 +49,10 @@ Already have your own [GenericAgent](https://github.com/lsdefine/GenericAgent) e
 
 | | |
 |---|---|
-| 📦 **Out of the box**<br/>Bundled GenericAgent runtime, CPython 3.11, and runtime dependencies. | 🧭 **Project Workspace + multi-session**<br/>Bind a Project to a folder; Galley passes repository context through GA Workspace while Core keeps owning session orchestration. |
-| 🎯 **Galley Goal**<br/>Long-running objectives start only after confirmation. Core owns the task board, worker sessions, and deliverable. | ⚙️ **GUI + CLI dual-native**<br/>Humans operate in the GUI; Supervisor Agents operate through the stable `galley` CLI. Both share the same sessions and history. |
-| 💬 **Channels**<br/>Connect WeChat or Feishu from **Settings -> Channels**. WeChat uses QR login; Feishu uses an internal app's App ID / Secret. | 🔧 **Tool timeline + approvals**<br/>Tool calls, args, results, and timing are shown inline; risky actions can use approval, allowlists, or YOLO mode. |
+| 📦 **Out of the box**<br/>Bundled GenericAgent runtime, CPython 3.11, and runtime dependencies. | 🪟 **Multi-session + Project orchestration**<br/>Run multiple tasks in parallel; complex goals can be split into one Project and synthesized by a Supervisor Agent. |
+| ⚙️ **GUI + CLI dual-native**<br/>Humans operate in the GUI; Supervisor Agents operate through the stable `galley` CLI. Both share the same sessions and history. | 💬 **Channels**<br/>Connect WeChat from **Settings -> Channels** by scanning a QR code; while Galley is running, you can message Galley from WeChat. More messaging apps can be added later. |
+| 🔒 **Localhost-only**<br/>Core listens only on a Unix socket / Windows named pipe; remote transport belongs to the Supervisor Agent. | 🔧 **Tool timeline + approvals**<br/>Tool calls, args, results, and timing are shown inline; risky actions can use approval, allowlists, or YOLO mode. |
 | 🌐 **Browser Control**<br/>After connecting Chrome / Edge / Chromium, the agent can operate your signed-in browser. There is a lot of room to explore. | 💾 **Persistence + search + background mode**<br/>Close the window, keep working via a Supervisor Agent, then come back to continue or search past sessions. |
-| 🔒 **Localhost-only**<br/>Core listens only on a Unix socket / Windows named pipe; remote transport belongs to the Supervisor Agent. | 🧩 **Bundled / external GA compatibility**<br/>Galley maintains the bundled GA patch stack; external GA stays user-owned, and Galley only reads and compares baseline state. |
 
 ---
 
@@ -88,24 +87,16 @@ If you already have a GenericAgent environment, choose the GA folder from **Sett
 
 ---
 
-## Supervisor / Goal / Channels
+## Supervisor / Channels
 
-Galley is not only a desktop shell for humans. It is also an interface for **Supervisor Agents** and messaging Channels:
+In the running GUI, open **Settings -> Agent**:
 
-| Entry | Use |
+| Button | What it does |
 |---|---|
-| Settings -> Agent / Copy SOP | Copies the short [`galley-supervisor-sop.md`](./docs/integrations/galley-supervisor-sop.md) for Codex, Claude, or your own supervisor; advanced details live in the [Supervisor reference](./docs/integrations/galley-supervisor-reference.md). |
-| `galley` CLI | Stable JSON Agent API for listing sessions, sending messages, waiting for results, and reading events. |
-| Project Workspace | Give a repository or folder to GA Workspace / Project Mode while Galley Core still owns the sessions. |
-| Galley Goal | Long-objective mode: create a plan, wait for confirmation, then let Core manage the task board, worker sessions, and final deliverable. |
-| Settings -> Channels | Connect WeChat or Feishu so natural-language messages from chat can become Galley tasks. |
+| **Copy SOP** | Copies the short [`galley-supervisor-sop.md`](./docs/integrations/galley-supervisor-sop.md), so your Agent can inspect, continue, start, split, and wait for Galley work; advanced details live in the [Supervisor reference](./docs/integrations/galley-supervisor-reference.md) |
+| **Open Agent API docs** | Opens the full command reference, JSON schemas, and exit codes |
 
-You do not need to learn the CLI yourself. Tell your Supervisor Agent what you want in natural language, and let it decide how to operate Galley. The copied SOP is a lightweight hot path; detailed commands and advanced orchestration live in the reference / Agent API. Complex work does not become one giant prompt: simple requests follow one session; repository work can use Project Workspace; longer objectives use Goal, where Galley confirms the plan before starting background worker sessions.
-
-Channels currently support:
-
-- **WeChat**: scan a QR code in Settings -> Channels to turn mobile messages into Galley tasks.
-- **Feishu**: create an internal app in the Feishu Open Platform, then enter its App ID / Secret in Galley. The secret is stored in local credentials; access scope is controlled by your Feishu app configuration.
+You do not need to learn the CLI yourself. Tell your Supervisor Agent what you want in natural language, and let it decide how to operate Galley. The copied SOP is a lightweight hot path; detailed commands and advanced orchestration live in the reference / Agent API. Complex work does not become one giant prompt: the Supervisor first chooses an orchestration mode, follows one session for simple requests, and uses a Project-backed group of sessions for independent work that needs synthesis. You can also connect WeChat from **Settings -> Channels**, scan the QR code, and message Galley from WeChat.
 
 <details>
 <summary>Show CLI examples</summary>
@@ -133,17 +124,6 @@ galley session new "Read-only check of packaging, release workflow, bundled reso
   --project=proj_from_create --supervisor=ga-claude-1 --reason="check release packaging"
 
 galley project follow proj_from_create --tail=80 --until-idle --final-show
-
-# Long objective: create a proposal, wait for explicit confirmation, then start Goal controller
-galley goal propose "ship the next patch release" \
-  --supervisor=ga-claude-1 --reason="prepare Goal plan for user confirmation"
-
-galley goal run --proposal=<proposal-id> \
-  --confirm-token=<internalConfirmToken> \
-  --supervisor=ga-claude-1 --reason="user confirmed Goal start"
-
-galley goal status <goal-id>
-galley goal deliverable get <goal-id>
 
 # Watch one session's event stream
 galley session watch <id>
@@ -175,7 +155,6 @@ Both GUI and CLI talk to the same Rust Core. Core owns session lifecycle, SQLite
               |      Galley Core       | <----  unix socket / named pipe
               |          Rust          |        0600 / no token / no TLS
               |  - session lifecycle   |
-              |  - projects + goals    |
               |  - SQLite authority    |
               |  - runner + events     |
               +-----------+------------+
@@ -199,8 +178,8 @@ Both GUI and CLI talk to the same Rust Core. Core owns session lifecycle, SQLite
 ```
 
 1. GUI and CLI are **peer frontends**, not GUI wrapping CLI.
-2. **Rust Core is authoritative** for session / Project / Goal state, SQLite writes, and runner lifecycle.
-3. The default path is **Galley-managed GA**: GenericAgent is the bundled agent kernel. In `v0.2.9`, the audited upstream baseline is `53b48aea07ad78ef577444ca6efa83693399f168`.
+2. **Rust Core is authoritative** for session state, SQLite writes, and runner lifecycle.
+3. The default path is **Galley-managed GA**: GenericAgent is the bundled agent kernel.
 
 **Tech stack:** Tauri v2 + React 19 + TypeScript 5.8 + Tailwind v4 / Rust (Galley Core + Galley CLI) / Python (runner, wraps GenericAgent) / SQLite + FTS5 trigram
 
