@@ -3,7 +3,7 @@
 ## Date / Status / Related
 
 - Date: 2026-06-18
-- Status: release prep in progress
+- Status: shipped
 - Related:
   - [Project status](../project-status.md)
   - [GA baseline](../ga-baseline.md)
@@ -22,8 +22,8 @@ settled, and the managed GA baseline caught up to official upstream latest.
 
 - Ship `v0.2.9` as a stable patch release, not a minor release; Agent API stays
   at `schemaVersion: 1`.
-- Promote the stable update channel after GitHub Release publish and smoke, so
-  installed users can upgrade in Galley.
+- Promote the stable update channel after GitHub Release publish, so installed
+  users can upgrade in Galley.
 - Keep Windows ARM out of this release; supported release targets remain macOS
   Apple Silicon, macOS Intel, and Windows x64.
 - Keep external GA non-invasive. The release updates Galley's verified baseline
@@ -38,12 +38,17 @@ settled, and the managed GA baseline caught up to official upstream latest.
 - Re-enable Project root as process cwd: the v0.2.9 path uses GA Workspace and
   avoids the old memory / SOP coupling failure mode.
 
-## Open Questions
+## Outcome
 
-- Whether to run a full installed-app dogfood on Windows before promotion if
-  CI artifacts are green but no Windows machine is immediately available.
+- Published `v0.2.9` as GitHub Latest.
+- Promoted `updates/stable/latest.json` and legacy `updates/beta/latest.json`
+  to `0.2.9`.
+- Verified release CI for macOS Apple Silicon, macOS Intel, and Windows x64.
+- Fixed two release-gate issues during publish: Windows `LocalFree` import drift
+  in `windows-sys 0.61`, and stale app-bundle managed GA seed expectations after
+  upstream removed `skill_search`.
 
-## Next
+## Follow-Up
 
-- Finish local release gates, push `main` and `v0.2.9`, review the draft
-  GitHub Release, smoke artifacts, publish, and promote `stable`.
+- Run installed-app dogfood on Windows when a Windows machine is available,
+  especially bundled Python startup plus updater-over-backgrounded-app behavior.

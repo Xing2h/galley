@@ -10,34 +10,33 @@ live in [refactor](./refactor/README.md).
 ## Current Target
 
 - Package version: `0.2.9`.
-- Git tag / GitHub Release: `v0.2.9` is the current release candidate.
+- Git tag / GitHub Release: `v0.2.9` is the current GitHub Latest stable release.
 - Agent API schema: `schemaVersion: 1`
-- Release tier: stable patch; default update channel is being prepared for
-  `v0.2.9`, with `beta` kept as a legacy alias for older builds.
+- Release tier: stable patch; default update channel points at `v0.2.9`, with
+  `beta` kept as a legacy alias for older builds.
 - Product shape: dual-native local agent team orchestrator
 
 Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
 GUI is for the human operator at the desk; the CLI is for trusted Agent /
 Supervisor automation on the same machine.
 
-Current v0.2.9 release work upgrades the audited managed GenericAgent baseline
-to upstream `53b48aea`, reintroduces Project folder binding as GA Project
-Workspace, and includes the post-v0.2.8 GUI / Core / Channels polish set.
-Project Workspace does not restore the old Project-root-as-process-cwd
-behavior: GUI folder selection enables it, while CLI/API callers still opt in
-explicitly.
+`v0.2.9` upgrades the audited managed GenericAgent baseline to upstream
+`53b48aea`, reintroduces Project folder binding as GA Project Workspace, and
+includes the post-v0.2.8 GUI / Core / Channels polish set. Project Workspace
+does not restore the old Project-root-as-process-cwd behavior: GUI folder
+selection enables it, while CLI/API callers still opt in explicitly.
 
 ## Current Release State
 
-`v0.2.9` is being prepared as the next stable patch. It includes the audited
-bundled GenericAgent baseline at upstream `53b48aea`, Project Workspace
-reactivation without process-cwd coupling, Feishu / Channels polish, and the
-post-`v0.2.8` Core / GUI reliability set.
+`v0.2.9` is the live stable patch. It includes the audited bundled GenericAgent
+baseline at upstream `53b48aea`, Project Workspace reactivation without
+process-cwd coupling, Feishu / Channels polish, and the post-`v0.2.8` Core /
+GUI reliability set.
 
-Until `v0.2.9` publish and promotion complete, the live default update channel
-still points at `v0.2.8`. `GALLEY_UPDATER_ENDPOINT` points at
-`updates/stable/latest.json`; `updates/beta/latest.json` is kept as a legacy
-alias for builds compiled before the stable endpoint rename.
+The GitHub Release is published as Latest, and `updates/stable/latest.json`
+points at `v0.2.9`. `updates/beta/latest.json` is kept as a legacy alias for
+builds compiled before the stable endpoint rename and currently also points at
+`v0.2.9`.
 
 Post-promote follow-up:
 
@@ -56,9 +55,9 @@ Post-promote follow-up:
 | Core architecture | Rust Galley Core is authoritative | [architecture demo](./architecture-demo.md) |
 | CLI / Agent API | Feature-complete for v0.2; schema frozen | [agent-api](./agent-api.md) |
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
-| Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; current unreleased baseline is audited upstream `53b48aea`; GUI / CLI split, Provider / Model config, local encrypted SQLite credentials, and Project Workspace are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
+| Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; current baseline is audited upstream `53b48aea`; GUI / CLI split, Provider / Model config, local encrypted SQLite credentials, and Project Workspace are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | Backup mechanism exists; current schema covers runtime identity, managed models/providers, Goal state, internal message visibility, and GUI-created message attachments | [B4 M8](./refactor/B4-M8-sub-plan.md) |
-| Release path | v0.2.9 release prep is active; v0.2.8 remains live until publish + promotion complete | [release / update SOP](./release-update-sop.md) |
+| Release path | v0.2.9 is published as GitHub Latest and promoted to stable / beta update channels | [release / update SOP](./release-update-sop.md) |
 | Windows | Windows x64 remains the supported release target; Windows ARM is deferred until the release workflow and smoke path are added | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream `53b48aea` | [GA baseline](./ga-baseline.md) |
 
