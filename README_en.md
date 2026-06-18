@@ -5,9 +5,13 @@
 <h1 align="center">Galley</h1>
 
 <p align="center">
-  <strong>Run, manage, and resume multiple AI agent sessions on your own computer</strong>
+  <strong>Orchestrate multiple AI agents as one team, on your own computer</strong>
   <br/>
-  Bundled GenericAgent Runtime · Project / Goal orchestration · IM Channels · GUI / CLI dual-native
+  <sub>Humans drive and approve from the GUI; Supervisor Agents dispatch via the CLI; both share one set of sessions and history</sub>
+</p>
+
+<p align="center">
+  <sub>Bundled GenericAgent Runtime · Project / Goal orchestration · IM Channels · GUI / CLI dual-native · Local-first</sub>
 </p>
 
 <p align="center">
@@ -33,15 +37,30 @@
 
 ---
 
+## Contents
+
+- [What Is Galley](#what-is-galley)
+- [Highlights](#highlights)
+- [Quick Start](#quick-start)
+- [Supervisor / Channels](#supervisor--channels)
+- [Architecture](#architecture)
+- [Under the Hood](#under-the-hood)
+- [Why "Galley"?](#why-galley)
+- [Screenshots](#screenshots)
+- [Contributing / Building From Source](#contributing--building-from-source)
+- [Acknowledgments](#acknowledgments)
+
+---
+
 ## What Is Galley
 
-Galley runs multiple AI agent sessions in parallel on your own computer. Humans use the GUI to watch progress, send instructions, and approve actions; Supervisor Agents use the CLI to orchestrate the same session team.
+Galley runs multiple AI agent sessions in parallel on your own computer, ready to switch, take over, and resume at any time. You watch progress, send instructions, and approve actions in the GUI; a Supervisor Agent orchestrates the same session team through the CLI — two roles, one shared state.
 
 | For Humans | For Agents | Ready By Default |
 |---|---|---|
-| Manage sessions, projects, tool timelines, and approvals in the GUI | The `galley` CLI is a stable contract for Supervisor Agents | Bundled GenericAgent runtime, CPython 3.11, runtime dependencies, and Browser Control setup assets |
+| Manage sessions, projects, tool timelines, and approvals in the GUI | The `galley` CLI is a stable public contract for Supervisor Agents | Bundled GenericAgent runtime, CPython 3.11, runtime dependencies, and Browser Control assets |
 
-Already have your own [GenericAgent](https://github.com/lsdefine/GenericAgent) environment? Connect it from **Settings -> Runtime**. Galley does not modify your external GA code, memory, SOP, or `mykey.py`.
+Already have your own [GenericAgent](https://github.com/lsdefine/GenericAgent)? Connect it from **Settings → Runtime**. Once attached, Galley stays strictly read-only and never touches your external GA code, memory, SOP, or `mykey.py`.
 
 ---
 
@@ -49,10 +68,10 @@ Already have your own [GenericAgent](https://github.com/lsdefine/GenericAgent) e
 
 | | |
 |---|---|
-| 📦 **Out of the box**<br/>Bundled GenericAgent runtime, CPython 3.11, and runtime dependencies. | 🧭 **Project workspace + multiple sessions**<br/>Choose a folder for a Project to make it the Project workspace. It fits ongoing work in code repositories or document folders, with multiple sessions advancing and summarizing around the same project. |
-| 🎯 **Galley Goal**<br/>Hand Galley a long-term goal, confirm the duration and Subagent count, and Galley keeps working in the background until the goal is complete or the budget runs out. | ⚙️ **GUI + CLI dual-native**<br/>Humans operate in the GUI; Supervisor Agents operate through the stable `galley` CLI. Both share the same sessions and history. |
-| 💬 **IM Channels**<br/>Connect WeChat / Feishu, continue messaging Galley through IM apps, and remotely dispatch Galley Desktop. | 🔧 **Tool timeline + approvals**<br/>Tool calls, args, results, and timing are shown inline; risky actions can use approval, allowlists, or YOLO mode. |
-| 🌐 **Browser Control**<br/>After connecting Chrome / Edge / Chromium, the agent can operate your signed-in browser. There is a lot of room to explore. | 💾 **Persistence + search + background mode**<br/>Close the window, keep working via a Supervisor Agent, then come back to continue or search past sessions. |
+| 📦 **Out of the box**<br/>Download and run. The bundled GenericAgent runtime, CPython 3.11, and all runtime dependencies mean no Python setup of your own. | 🧭 **Project workspace + multiple sessions**<br/>Point a folder — a code repo or a document directory — at a Project workspace; multiple sessions advance around the same project in parallel, then converge. |
+| 🎯 **Galley Goal**<br/>Hand Galley a long-term goal, set the duration and Subagent budget, and it keeps working in the background until the goal is met or the budget runs out. | ⚙️ **GUI + CLI dual-native**<br/>You operate in the GUI; a Supervisor Agent goes through the stable `galley` CLI. Both share the same sessions and history, not separate worlds. |
+| 💬 **IM Channels**<br/>Connect WeChat / Feishu, keep the conversation going through everyday chat apps, and dispatch Galley Desktop remotely. | 🔧 **Tool timeline + approvals**<br/>Every tool call's args, result, and timing are visible inline; risky actions support per-call approval, allowlists, or YOLO mode. |
+| 🌐 **Browser Control**<br/>Connect Chrome / Edge / Chromium and the agent can operate your signed-in browser. The rest is up to your imagination. | 💾 **Persistence + search + background mode**<br/>Close the window without quitting, dispatch remotely while away, then come back and pick up the thread. Past sessions are fully searchable. |
 
 ---
 
@@ -79,9 +98,9 @@ Galley is not code-signed yet. If macOS blocks the first launch, run:
 xattr -dr com.apple.quarantine /Applications/Galley.app
 ```
 
-On Windows, when SmartScreen says the publisher is unknown, choose "More info" -> "Run anyway".
+On Windows, when SmartScreen says the publisher is unknown, choose "More info" → "Run anyway".
 
-If you already have a GenericAgent environment, choose the GA folder from **Settings -> Runtime -> Connect external GA**.
+If you already have a GenericAgent environment, choose the GA folder from **Settings → Runtime → Connect external GA**.
 
 </details>
 
@@ -89,14 +108,22 @@ If you already have a GenericAgent environment, choose the GA folder from **Sett
 
 ## Supervisor / Channels
 
-In the running GUI, open **Settings -> Agent**:
+In the running GUI, open **Settings → Agent**:
 
 | Button | What it does |
 |---|---|
 | **Copy SOP** | Copies the short [`galley-supervisor-sop.md`](./docs/integrations/galley-supervisor-sop.md), so your Agent can inspect, continue, start, split, and wait for Galley work; advanced details live in the [Supervisor reference](./docs/integrations/galley-supervisor-reference.md) |
 | **Open Agent API docs** | Opens the full command reference, JSON schemas, and exit codes |
 
-You do not need to learn the CLI yourself. Tell your Supervisor Agent what you want in natural language, and let it decide how to operate Galley. The copied SOP is a lightweight hot path; detailed commands and advanced orchestration live in the reference / Agent API. Complex work does not become one giant prompt: simple requests can read from or follow one session; project / folder work uses Project Workspace to bind a workspace; long-term goals use Goal to confirm duration and Subagent count first, then keep working in the background. You can also connect WeChat / Feishu from **Settings -> Channels**, continue messaging Galley through IM apps, and remotely dispatch Galley Desktop.
+You don't need to learn the CLI yourself — tell your Supervisor Agent what you want in natural language and let it operate Galley. The copied SOP is a lightweight hot path; detailed commands and advanced orchestration stay in the reference and Agent API.
+
+Work scales to the right container instead of becoming one giant prompt:
+
+- **Simple requests** — read from or follow a single session;
+- **Project / folder work** — bind a workspace with Project Workspace and run sessions in parallel;
+- **Long-term goals** — use Goal to set duration and Subagent budget first, then let it run in the background.
+
+You can also connect WeChat / Feishu from **Settings → Channels** to assign work and dispatch Galley Desktop through chat apps.
 
 <details>
 <summary>Show CLI examples</summary>
@@ -154,7 +181,7 @@ Full command reference, JSON schemas, and exit codes live in [`docs/agent-api.md
 
 ## Architecture
 
-Both GUI and CLI talk to the same Rust Core. Core owns session lifecycle, SQLite writes, runner management, and event broadcasting.
+Both the GUI and the CLI talk to the same Rust Core; Core owns session lifecycle, SQLite writes, and runner event broadcasting.
 
 ```text
 +----------------+                  +----------------+
@@ -189,9 +216,9 @@ Both GUI and CLI talk to the same Rust Core. Core owns session lifecycle, SQLite
               +------------------------+
 ```
 
-1. GUI and CLI are **peer frontends**, not GUI wrapping CLI.
-2. **Rust Core is authoritative** for session / Project / Goal state, SQLite writes, and runner lifecycle.
-3. The default path is **Galley-managed GA**: GenericAgent is the bundled agent kernel.
+- GUI and CLI are **peer frontends** — not GUI wrapping CLI, but two equals each talking to Core directly;
+- **Rust Core is authoritative** — session / Project / Goal state, SQLite writes, and runner lifecycle all belong to it;
+- The default path is **Galley-managed GA** — GenericAgent as the bundled agent kernel, ready out of the box.
 
 **Tech stack:** Tauri v2 + React 19 + TypeScript 5.8 + Tailwind v4 / Rust (Galley Core + Galley CLI) / Python (runner, wraps GenericAgent) / SQLite + FTS5 trigram
 
@@ -199,6 +226,24 @@ More docs:
 [Architecture](./docs/architecture.md) ·
 [Contributing](./CONTRIBUTING.md) ·
 [Docs index](./docs/README.md)
+
+---
+
+## Under the Hood
+
+A few design choices that aren't in the feature list but shape Galley's engineering quality:
+
+- **Peer frontends, not a GUI wrapping a CLI.** The GUI and CLI each connect to the Rust Core independently. If either side exits, sessions and data are unaffected; a new frontend (an IM channel, a future Web client) only needs to speak the same Core protocol — no orchestration logic to rewrite.
+
+- **The Rust Core is the single authority.** The state machines for sessions / Projects / Goals, SQLite writes, and runner lifecycle all converge in one place. Frontends read projections and send intents; they hold no writable state, which removes multi-end state drift at the root.
+
+- **A local-first security model.** Inter-process traffic runs over a Unix socket / named pipe with `0600` permissions, localhost only, no token, no TLS — because the trust boundary is "the same user on the same machine." Not forcing network-style auth onto a local tool is a deliberate subtraction.
+
+- **The Agent API is a frozen public contract.** CLI output carries a `schemaVersion`, frozen within 0.2.x; every command carries an origin triple (`via` / `supervisor` / `reason`), and the GUI timeline reconstructs who changed a session, why, and when. A Supervisor can program against it with confidence.
+
+- **Discipline at the dual-runtime boundary.** The default uses bundled GA (CPython 3.11 and dependencies included, ready out of the box); when attaching an external GenericAgent, Galley stays strictly read-only — it never touches the external GA's code, memory, SOP, or `mykey.py`, so your existing environment stays clean.
+
+- **A persistence layer built to evolve.** SQLite is the authoritative store, with ordered migrations that make upgrades replayable; past sessions are indexed with FTS5 trigram so even Chinese substrings are searchable, staying resident in the background and instantly searchable when you return.
 
 ---
 
@@ -228,25 +273,25 @@ cd galley
 # Python runner tests
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest
+.venv/bin/python -m pytest          # unit tests
 GA_PATH=/path/to/GenericAgent BRIDGE_PYTHON=/path/to/python .venv/bin/python -m pytest -m e2e
 
 # Desktop app development / build
 cd gui
 pnpm install
-pnpm tauri dev
-pnpm tauri build
+pnpm tauri dev                       # macOS / Windows desktop dev mode
+pnpm tauri build                     # produces .app / .dmg / .exe
 
 # Galley CLI standalone build
 cd ../core
-cargo build --release -p galley-cli
+cargo build --release -p galley-cli  # produces target/release/galley
 ```
 
 See [docs/release-workflow.md](./docs/release-workflow.md) for the CI release flow and [docs/windows-build-checklist.md](./docs/windows-build-checklist.md) for manual Windows builds.
 
 ## Acknowledgments
 
-[**lsdefine/GenericAgent**](https://github.com/lsdefine/GenericAgent) is Galley's current agent kernel. Galley's bundled runtime is built on GenericAgent while preserving compatibility with external GA environments; Galley adds local orchestration, peer GUI / CLI frontends, session persistence, approvals, search, and an out-of-the-box packaged experience.
+[**lsdefine/GenericAgent**](https://github.com/lsdefine/GenericAgent) is Galley's current agent kernel. Galley's bundled runtime is built on GenericAgent while preserving compatibility with external GA environments; on top of that, Galley adds local orchestration, peer GUI / CLI frontends, session persistence, approvals, search, and an out-of-the-box packaged experience.
 
 Paper: [GenericAgent: A Token-Efficient Self-Evolving LLM Agent via Contextual Information Density Maximization (arXiv:2604.17091)](https://arxiv.org/abs/2604.17091)
 
