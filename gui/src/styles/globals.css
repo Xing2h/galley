@@ -66,8 +66,18 @@
   --color-info: #7a7a8e;
 
   /* --- type registers (3 families per DESIGN.md "方案 C") --- */
+  /* Serif register: Latin stays on Newsreader (self-hosted, for the
+     "read prose" register — agent answers, headings, wordmark). CJK
+     intentionally resolves to the same system sans as --font-sans
+     (PingFang SC on macOS, Microsoft YaHei on Windows) rather than a
+     serif — see DESIGN.md §2.2 (2026-06-20 note) for the decision.
+     Latin-serif + CJK-sans is a deliberate mixed-register: Newsreader's
+     Latin reads as "document", PingFang/YaHei's CJK reads as "clean
+     system text", and the combo avoids the serif/sans CJK split that
+     fragmented the main conversation column. */
   --font-serif:
-    "Newsreader", "Source Han Serif SC", "Songti SC", Georgia, serif;
+    "Newsreader", "PingFang SC", "Microsoft YaHei", "Source Han Sans SC",
+    Georgia, serif;
   --font-sans:
     "Inter", "PingFang SC", "Source Han Sans SC", -apple-system,
     BlinkMacSystemFont, sans-serif;

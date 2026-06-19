@@ -21,8 +21,10 @@ import type { MessageAttachment, Origin } from "@/types/conversation";
 /**
  * User message — document-style callout, NOT a chat bubble.
  *
- * Per DESIGN.md §4.3 (as amended 2026-05-14):
- *   - font-sans 15px medium
+ * Per DESIGN.md §4.3 (as amended 2026-05-14; size/weight unified 2026-06-20):
+ *   - font-sans 15px medium — same size & weight as the agent answer body
+ *     (MarkdownView PROSE_AGENT). Speaking turns are peers; the apricot
+ *     fill + left bar distinguish the user turn, not typography.
  *   - left border 4px brand-strong (apricot) — primary visual anchor
  *     for scroll-back. In long conversations users navigate by their
  *     own questions; the brand bar makes each user turn a strong
@@ -245,7 +247,7 @@ export const MessageUser = memo(function MessageUser({
       <div
         data-role="user-msg"
         className={cn(
-          "relative border-l-4 border-brand-strong bg-brand-tint py-2.5 pl-4 pr-10 text-[15px] font-medium leading-[1.65] text-ink",
+          "relative border-l-4 border-brand-strong bg-brand-tint py-2.5 pl-4 pr-10 text-[15px] font-medium leading-[1.7] text-ink",
           "select-text",
         )}
       >

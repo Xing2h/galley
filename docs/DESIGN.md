@@ -141,13 +141,13 @@ OLED，也不走冷灰蓝 IDE / dashboard 感。
 
 | Register | 字体（英 / 中） | 用途 |
 |---|---|---|
-| **Serif（被读）** | Newsreader / 思源宋体 | agent 回复、Markdown prose、少量品牌 / origin prose |
+| **Serif（被读）** | Newsreader / 苹方 · 雅黑（CJK 走 sans，见 2026-06-20 注记） | agent 回复、Markdown prose、少量品牌 / origin prose |
 | **Sans（默认 UI）** | Inter / 苹方 / 思源黑体 | app chrome、按钮、菜单、metadata、session row、Settings / Dialog / Onboarding 功能标题 |
 | **Mono（技术 ID）** | JetBrains Mono | shell 命令、路径、JSON、tool 名 |
 
 字号 / 行高：
 
-- Body: 16px / line-height 1.65–1.7
+- Body: 15px / line-height 1.7（agent 正文 normal 400，用户消息 medium 500；2026-06-20 字号统一，字重经 dogfood 对比后定为 agent 400 + 用户消息 500 的非对称组合——详见 §2.2 2026-06-20 注记）
 - Subtle: 13px / line-height 1.5
 - Hint: 11px uppercase tracked
 - Prose heading（Newsreader medium）: 20–24px
@@ -166,16 +166,57 @@ OLED，也不走冷灰蓝 IDE / dashboard 感。
 
 - 全局 `body` 用 `-webkit-font-smoothing: antialiased`（灰度抗锯齿，偏细的"薄字"
   观感，统一 UI chrome）。
-- **CJK 正文回答例外**：`MarkdownView` 在内容为 CJK-dominant 时，把 prose 容器
-  覆盖为 `-webkit-font-smoothing: auto`（macOS 上即原生次像素抗锯齿）。原因有二：
-  ① `antialiased` + 中文衬线 fallback 在 macOS WebKit 下会把字形**顶部削掉**
-  （无 CSS 裁剪边界，纯栅格化层面），换 `auto` 走原生栅格即修复；② 回答区是用户
-  读字最多的地方，次像素渲染**笔画更实、更易读**。
-- 由此 agent 中文回答比 chrome **略重一档**——这是刻意的"内容 > 界面"阅读层级，
-  不是不一致的瑕疵。**不要**为了"统一"把这个 `auto` 覆盖去掉（会回退裁切 bug）。
+- **CJK prose 例外**：`MarkdownView` 在内容为 CJK-dominant 时，把 prose 容器
+  覆盖为 `-webkit-font-smoothing: auto`（macOS 上即原生次像素抗锯齿）。
+  - 起源（2026-06-09）：当时 CJK fallback 是 Songti SC（衬线），`antialiased`
+    + 中文衬线在 macOS WebKit 下会把字形顶部削掉，换 `auto` 修复。
+  - 现因（2026-06-20 CJK 改走苹方 / 雅黑后仍然保留）：苹方在 `antialiased`
+    下笔画偏薄、边缘半透明化，长段落阅读发虚；`auto` 的次像素渲染让笔画更实。
+    agent 正文 / narration / thinking 是用户读字最多的区域，值得这一档。
+  - 这是有意的**不对称**：agent 正文走 `auto`（笔画实），用户消息走全局
+    `antialiased`（笔画薄）。同字体同字号同字重下，阅读面更 crisp、输入面更
+    soft。dogfood（2026-06-20）验证过——两端都 `antialiased` 时 agent 正文太薄，
+    两端都 `auto` 时对比被拉平，唯独这个不对称成立。**不要**为了"统一"去掉。
 - 相邻问题：CommonMark 把 `名叫**"下一个字"**` 这类"`**` 紧贴 CJK + 引号"判为
   字面量；`MarkdownView` 的 `remarkCjkAdjacentQuotedStrong` 插件把这种 LLM 高频
   写法还原成 strong。
+
+2026-06-20 CJK 去 serif，全 app 中文统一到 sans:
+
+- 此前 `--font-serif` 的 CJK 落到系统宋体（macOS Songti SC / Windows
+  SimSun）。Songti SC 字面偏紧、SimSun 在 Windows 上更差，且中文衬线
+  与 Newsreader 的现代衬线气质不搭。曾尝试 self-host 思源宋体（Source
+  Han Serif）做子集化替换，dogfood 后不满意——根因不是混排，而是
+  serif 本身在 Galley 这种工具型 app 里不对味：agent 长段中文读起来
+  像论文 / 古籍，和「干净、现代、专业」的目标调性错位。
+- 决定 CJK 全部走 sans，`--font-serif` 的中文 fallback 改为
+  `"PingFang SC", "Microsoft YaHei", "Source Han Sans SC"`——和
+  `--font-sans` 同一套系统黑体。英文 prose 仍保留 Newsreader（拉丁
+  衬线），形成「Latin serif + CJK sans」的混排，这是 Apple 自家页面
+  和多数中文科技媒体的常用范式，读起来精致而非错配。
+- 效果：主对话区的 agent 正文、用户消息、TurnMarker、工具标签全部
+  统一到苹方（mac）/ 雅黑（win），不再有 serif/sans 中文 register
+  切换造成的视觉碎裂。跨平台也更干净——mac 拿苹方、win 拿雅黑，都
+  是各自平台最优的黑体。
+- 连带决策（字号统一 + 字重非对称）：CJK 字体统一后，原 agent 正文
+  16.5px 与用户消息 15px 的落差失去字体差异的遮蔽，显突兀。遂把字号
+  拉齐到 **15px / line-height 1.7**。字重经 dogfood 多轮对比，最终定为
+  **非对称**：agent 正文 **normal（400）**，用户消息 **medium（500）**。
+  配合 font-smoothing 的不对称（agent `auto` / 用户消息全局 `antialiased`），
+  两个区域用不同方式各自达到「恰到好处」：
+    - agent 正文 = 细骨架（400）+ 实边缘（auto）= 清晰但不臃肿，宜长读
+    - 用户消息 = 粗骨架（500）+ 柔边缘（antialiased）= 醒目但不抢戏
+  两套机制反向补偿，不互相打架。对话双方靠用户消息的 apricot 色块
+  （`bg-brand-tint` + 4px brand-strong 左条）区分说话方，不靠字号层级。
+  `**strong**` 保持 medium（500）——正文 400 + strong 500 一档可见加粗。
+  h1–h4 markdown 标题字号不动（结构层级该保留）。
+- 上面的 2026-06-09 font-smoothing `auto` 覆盖**保留**，但依据更新：
+  曾一度以为换苹方后该覆盖无用且有害（agent 正文比用户消息重），尝试
+  删除；dogfood 反馈删除后 agent 正文太薄太虚——苹方在 `antialiased` 下
+  笔画偏薄，长段落阅读需要 `auto` 的次像素渲染让笔画更实。遂加回。新的
+  依据见上方 2026-06-09 注记的「现因」段：不再是 Songti 削顶 bug（衬线
+  特有，已随去 serif 消失），而是苹方在 antialiased 下的偏薄问题 + 刻意
+  的「阅读面 crisp / 输入面 soft」不对称。
 
 ### 2.3 Icon set
 
@@ -530,7 +571,7 @@ Final answer 跟 Thinking summary 都通过 `react-markdown` + `remark-gfm` + Sh
 
 | markdown | 渲染 |
 |---|---|
-| `p` | Newsreader 16.5px (`agent`) / Newsreader italic 14px muted (`thinking`) |
+| `p` | 15px normal / line-height 1.7（Latin Newsreader, CJK 苹方·雅黑）`agent` / 14px italic muted `thinking` |
 | `h1` | Newsreader medium 22px |
 | `h2` | Newsreader medium 19px |
 | `h3` | Newsreader medium 17px（故意接近正文，避免视觉跳跃） |
@@ -543,7 +584,7 @@ Final answer 跟 Thinking summary 都通过 `react-markdown` + `remark-gfm` + Sh
 | `a` | text-brand-strong + 1px 下划线 + 安全 _blank |
 | `table` (GFM) | `overflow-x-auto` 容器 + border-collapse + th `bg-surface` + 单元格 padding 12px×8px |
 | `hr` | 1px line + my-5 |
-| `strong` | font-medium（不到 bolder，跟 Newsreader 协调） |
+| `strong` | font-medium（正文 normal 400，strong 500，一档可见加粗） |
 | `em` | italic |
 | `~~del~~` (GFM) | line-through ink-muted |
 | `![alt](url)` | `https://` 与绝对本地 raster 图片（png / jpg / jpeg / webp / gif）内联预览；本地路径支持 macOS/Linux 绝对路径、Windows drive path、`file://`；相对路径、`http://`、`data:`、`svg`、加载失败降级为图片链接 pill |

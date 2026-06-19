@@ -91,6 +91,23 @@ export const MarkdownView = memo(function MarkdownView({
       : variant === "narration"
         ? PROSE_NARRATION
         : PROSE_THINKING;
+  // CJK prose overrides the global `antialiased` with `auto` (subpixel
+  // antialiasing). Two reasons, both still valid after the 2026-06-20
+  // CJK→sans switch (PingFang / YaHei):
+  //  ① PingFang under `antialiased` renders thin — grayscale AA softens
+  //    stroke edges into translucency, so glyphs lose density. `auto`
+  //    keeps strokes solid via subpixel rendering, which matters most in
+  //    the long-form reading zones (agent answer, narration, thinking).
+  // ② This deliberately makes agent prose render slightly heavier than
+  //    the user message (which stays on global `antialiased`). That is
+  //    the point: same font / size / weight, but the reading surface
+  //    gets crisper glyphs while the input surface stays soft. If both
+  //    go `auto` the contrast flattens; if both go `antialiased` the
+  //    prose reads as too thin (confirmed by dogfood 2026-06-20). The
+  //    asymmetry is the feature.
+  // (Pre-2026-06-20 this was also needed to dodge a Songti SC glyph-
+  // clipping bug; that rationale is gone with the serif, the thinness
+  // rationale remains.)
   const usesCjkSerif = cjkDominant(source);
   const proseStyle = {
     "--galley-prose-serif": "var(--font-serif)",
@@ -159,7 +176,8 @@ const PROSE_BASE = cn(
   "[&_td]:border [&_td]:border-line [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_td]:text-ink",
   // hr inside markdown.
   "[&_hr]:my-5 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-line",
-  // Strong / em — keep weight in line with Newsreader.
+  // Strong / em — keep weight in line with Newsreader. Body is normal
+  // (400), so strong at medium (500) is one visible weight step up.
   "[&_strong]:font-medium [&_strong]:text-ink",
   "[&_em]:italic",
   "[&_del]:text-ink-muted [&_del]:line-through",
@@ -168,7 +186,11 @@ const PROSE_BASE = cn(
 const PROSE_AGENT = cn(
   PROSE_BASE,
   // The "final answer floats in the document" register (DESIGN.md §4.3).
-  "font-[var(--galley-prose-serif)] text-[16.5px] leading-[1.7] tracking-[0.005em] text-ink",
+  // Body is normal (400): light skeleton + the CJK `auto` smoothing
+  // (above) gives solid edges — clear but not dense, right for long-form
+  // reading. The user message carries medium (500) for anchor weight;
+  // the two reach their own "just right" via different means.
+  "font-[var(--galley-prose-serif)] text-[15px] leading-[1.7] tracking-[0.005em] text-ink",
 );
 
 const PROSE_NARRATION = cn(
@@ -176,7 +198,7 @@ const PROSE_NARRATION = cn(
   // Intermediate LLM narrator prose must match the in-flight body
   // register. Otherwise a pre-tool sentence streams as `agent`, then
   // snaps smaller/softer once turn_end classifies it as narration.
-  "font-[var(--galley-prose-serif)] text-[16.5px] leading-[1.7] tracking-[0.005em] text-ink",
+  "font-[var(--galley-prose-serif)] text-[15px] leading-[1.7] tracking-[0.005em] text-ink",
 );
 
 const PROSE_THINKING = cn(

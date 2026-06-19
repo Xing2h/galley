@@ -37,6 +37,11 @@ node_modules/
 
 # Tauri / GUI build artifacts
 gui/dist/
+# Repo-root target/ can appear if cargo is run from the repo root instead of
+# core/; ignore it so stray build output (e.g. orphan tauri-sidecars placeholders)
+# never shows up as untracked noise. Per-workspace target/ dirs below are also
+# covered explicitly.
+/target/
 core/target/
 core/gen/
 core/tauri.updater.generated.conf.json
