@@ -44,7 +44,7 @@ export const MessageAgent = memo(function MessageAgent({
   // We fall back to the same outer wrapper styles as the markdown
   // path so the visual register is identical regardless of source.
   return (
-    <div className="font-serif text-[16.5px] leading-[1.7] tracking-[0.005em] text-ink [&_code]:rounded-[4px] [&_code]:bg-hover [&_code]:px-1.5 [&_code]:py-px [&_code]:font-mono [&_code]:text-[14px] [&_code]:text-ink-soft [&_p]:mb-3 [&_p:last-child]:mb-0">
+    <div className="font-serif [font-size:var(--conversation-body-size)] [line-height:var(--conversation-body-leading)] tracking-[0.005em] text-ink [&_code]:rounded-[4px] [&_code]:bg-hover [&_code]:px-1.5 [&_code]:py-px [&_code]:font-mono [&_code]:text-[0.86em] [&_code]:text-ink-soft [&_p]:mb-3 [&_p:last-child]:mb-0">
       {/* Trivial guard: undefined / null children render nothing.
           isValidElement is here to make it explicit that React
           elements are intentional pass-throughs. */}

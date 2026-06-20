@@ -144,14 +144,14 @@ const PROSE_BASE = cn(
   // own outer spacing without collapse fighting.
   "[&>:first-child]:mt-0 [&>:last-child]:mb-0",
   // Paragraphs.
-  "[&_p]:my-3 [&_p]:leading-[1.7] [&_p:last-child]:mb-0",
+  "[&_p]:my-3 [&_p]:[line-height:var(--conversation-body-leading)] [&_p:last-child]:mb-0",
   // Headings (Newsreader, slight weight contrast against body).
-  "[&_h1]:mt-5 [&_h1]:mb-3 [&_h1]:font-[var(--galley-prose-serif)] [&_h1]:text-[22px] [&_h1]:font-medium [&_h1]:leading-[1.3] [&_h1]:tracking-[0.005em] [&_h1]:text-ink",
-  "[&_h2]:mt-5 [&_h2]:mb-2.5 [&_h2]:font-[var(--galley-prose-serif)] [&_h2]:text-[19px] [&_h2]:font-medium [&_h2]:leading-[1.35] [&_h2]:text-ink",
+  "[&_h1]:mt-5 [&_h1]:mb-3 [&_h1]:font-[var(--galley-prose-serif)] [&_h1]:[font-size:var(--conversation-heading-1-size)] [&_h1]:font-medium [&_h1]:leading-[1.3] [&_h1]:tracking-[0.005em] [&_h1]:text-ink",
+  "[&_h2]:mt-5 [&_h2]:mb-2.5 [&_h2]:font-[var(--galley-prose-serif)] [&_h2]:[font-size:var(--conversation-heading-2-size)] [&_h2]:font-medium [&_h2]:leading-[1.35] [&_h2]:text-ink",
   // h3 deliberately close to body size — DESIGN.md §4.3 calls this
   // out as a way to avoid jarring jumps inside the document flow.
-  "[&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:font-[var(--galley-prose-serif)] [&_h3]:text-[17px] [&_h3]:font-medium [&_h3]:text-ink",
-  "[&_h4]:mt-3 [&_h4]:mb-1.5 [&_h4]:font-[var(--galley-prose-serif)] [&_h4]:text-[15.5px] [&_h4]:font-medium [&_h4]:text-ink",
+  "[&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:font-[var(--galley-prose-serif)] [&_h3]:[font-size:var(--conversation-heading-3-size)] [&_h3]:font-medium [&_h3]:text-ink",
+  "[&_h4]:mt-3 [&_h4]:mb-1.5 [&_h4]:font-[var(--galley-prose-serif)] [&_h4]:[font-size:var(--conversation-heading-4-size)] [&_h4]:font-medium [&_h4]:text-ink",
   // Lists. ::marker pulls list bullets into the muted register so
   // they read as structure rather than content.
   "[&_ul]:my-3 [&_ul]:ml-5 [&_ul]:list-disc",
@@ -190,7 +190,7 @@ const PROSE_AGENT = cn(
   // (above) gives solid edges — clear but not dense, right for long-form
   // reading. The user message carries medium (500) for anchor weight;
   // the two reach their own "just right" via different means.
-  "font-[var(--galley-prose-serif)] text-[15px] leading-[1.7] tracking-[0.005em] text-ink",
+  "font-[var(--galley-prose-serif)] [font-size:var(--conversation-body-size)] [line-height:var(--conversation-body-leading)] tracking-[0.005em] text-ink",
 );
 
 const PROSE_NARRATION = cn(
@@ -198,14 +198,14 @@ const PROSE_NARRATION = cn(
   // Intermediate LLM narrator prose must match the in-flight body
   // register. Otherwise a pre-tool sentence streams as `agent`, then
   // snaps smaller/softer once turn_end classifies it as narration.
-  "font-[var(--galley-prose-serif)] text-[15px] leading-[1.7] tracking-[0.005em] text-ink",
+  "font-[var(--galley-prose-serif)] [font-size:var(--conversation-body-size)] [line-height:var(--conversation-body-leading)] tracking-[0.005em] text-ink",
 );
 
 const PROSE_THINKING = cn(
   PROSE_BASE,
   // Thinking summary register: italic serif muted (a notch lighter
   // than the answer body).
-  "font-[var(--galley-prose-serif)] text-[14px] italic leading-[1.55] text-ink-soft",
+  "font-[var(--galley-prose-serif)] [font-size:var(--conversation-thinking-size)] italic [line-height:var(--conversation-thinking-leading)] text-ink-soft",
 );
 
 const CJK_SCRIPT =
@@ -595,7 +595,7 @@ const COMPONENTS: Components = {
       <div className="my-3.5 overflow-x-auto">
         <table
           className={cn(
-            "w-max min-w-full border-collapse text-[14px]",
+            "w-max min-w-full border-collapse [font-size:var(--conversation-table-size)]",
             className,
           )}
           {...props}

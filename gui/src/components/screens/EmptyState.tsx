@@ -8,6 +8,10 @@ import {
   type ImageBlockReason,
 } from "@/components/conversation/Composer";
 import { Epigraph } from "@/components/screens/Epigraph";
+import {
+  conversationTypographyStyle,
+  type ConversationFontSize,
+} from "@/lib/conversation-font-size";
 import type { EpigraphCondition } from "@/lib/epigraphs";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -45,6 +49,7 @@ export interface EmptyStateProps {
    * compact = 560 (intimate hero feel), wide = 1200 (matches MainView).
    */
   conversationWidth?: "compact" | "wide";
+  conversationFontSize?: ConversationFontSize;
   /** Active project context for the next lazily-created session. */
   projectName?: string;
   /** Bumped by the host when a navigation action should return focus here. */
@@ -86,6 +91,7 @@ export function EmptyState({
   requiresModelConfig = false,
   onOpenLLMSwitcher,
   conversationWidth = "compact",
+  conversationFontSize = "standard",
   projectName,
   focusTick = 0,
   epigraphCondition = "quiet",
@@ -112,7 +118,10 @@ export function EmptyState({
   }, [focusTick]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-app px-16 py-12">
+    <div
+      className="flex min-h-0 flex-1 flex-col items-center justify-center bg-app px-16 py-12"
+      style={conversationTypographyStyle(conversationFontSize)}
+    >
       <div
         className={cn(
           "w-full",

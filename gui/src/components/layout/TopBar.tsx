@@ -17,7 +17,7 @@ import {
   Target,
   Warning,
 } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -32,6 +32,7 @@ import { formatShortcutReadable } from "@/lib/shortcuts";
 import type { ResolvedTheme, ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { BrowserControlStatus } from "@/lib/browser-control";
+import type { ConversationFontSize } from "@/lib/conversation-font-size";
 import type { ImSupervisorState } from "@/lib/im-supervisor";
 import type { GoalBrief } from "@/types/goal";
 
@@ -66,12 +67,14 @@ export interface TopBarProps {
   onOpenGoal?: (goalId: string) => void;
   onStopGoal?: (goalId: string) => void;
   /**
-   * Conversation column width mode. "compact" = 760px (default), "wide"
-   * = 1400px. Renders an icon button next to Settings that flips
-   * between the two modes.
+   * Conversation column width mode. "compact" = 760px (default),
+   * "wide" = 1200px. Renders an icon button next to the font-size
+   * control that flips between the two modes.
    */
   conversationWidth?: "compact" | "wide";
   onToggleConversationWidth?: () => void;
+  conversationFontSize?: ConversationFontSize;
+  onChangeConversationFontSize?: (size: ConversationFontSize) => void;
   themePreference?: ThemePreference;
   resolvedTheme?: ResolvedTheme;
   onChangeThemePreference?: (preference: ThemePreference) => void;
@@ -228,6 +231,8 @@ export function TopBar({
   onStopGoal,
   conversationWidth = "compact",
   onToggleConversationWidth,
+  conversationFontSize = "standard",
+  onChangeConversationFontSize,
   themePreference = "system",
   resolvedTheme = "light",
   onChangeThemePreference,
@@ -343,6 +348,8 @@ export function TopBar({
         <TopBarUtilityCluster
           conversationWidth={conversationWidth}
           onToggleConversationWidth={onToggleConversationWidth}
+          conversationFontSize={conversationFontSize}
+          onChangeConversationFontSize={onChangeConversationFontSize}
           themePreference={themePreference}
           resolvedTheme={resolvedTheme}
           onChangeThemePreference={onChangeThemePreference}
@@ -427,6 +434,8 @@ function TopBarStatusCluster({
 function TopBarUtilityCluster({
   conversationWidth,
   onToggleConversationWidth,
+  conversationFontSize,
+  onChangeConversationFontSize,
   themePreference,
   resolvedTheme,
   onChangeThemePreference,
@@ -434,6 +443,8 @@ function TopBarUtilityCluster({
 }: {
   conversationWidth: "compact" | "wide";
   onToggleConversationWidth?: () => void;
+  conversationFontSize: ConversationFontSize;
+  onChangeConversationFontSize?: (size: ConversationFontSize) => void;
   themePreference: ThemePreference;
   resolvedTheme: ResolvedTheme;
   onChangeThemePreference?: (preference: ThemePreference) => void;
@@ -454,6 +465,10 @@ function TopBarUtilityCluster({
       <WidthToggleButton
         mode={conversationWidth}
         onToggle={onToggleConversationWidth}
+      />
+      <ConversationFontSizeMenu
+        value={conversationFontSize}
+        onChange={onChangeConversationFontSize}
       />
       {onChangeThemePreference && (
         <ThemePreferenceMenu
@@ -1228,6 +1243,207 @@ function SessionTitleEditor({
       )}
     />
   );
+}
+
+const FONT_SIZE_OPTIONS: Array<{
+  value: ConversationFontSize;
+  glyphClass: string;
+  triggerSizePx: number;
+}> = [
+  {
+    value: "small",
+    glyphClass: "text-[12px]",
+    triggerSizePx: 13,
+  },
+  {
+    value: "standard",
+    glyphClass: "text-[16px]",
+    triggerSizePx: 15.5,
+  },
+  { value: "large", glyphClass: "text-[22px]", triggerSizePx: 17.5 },
+];
+
+const FONT_SIZE_THUMB_STEP_PX = 58;
+
+function ConversationFontSizeMenu({
+  value,
+  onChange,
+}: {
+  value: ConversationFontSize;
+  onChange?: (size: ConversationFontSize) => void;
+}) {
+  const copy = useCopy().topbar.conversationFontSize;
+  const selectedIndex = Math.max(
+    0,
+    FONT_SIZE_OPTIONS.findIndex((option) => option.value === value),
+  );
+  const selectedOption = FONT_SIZE_OPTIONS[selectedIndex];
+  const selectedLabel = fontSizeLabel(copy, value);
+
+  const selectByIndex = (index: number) => {
+    const option = FONT_SIZE_OPTIONS[index];
+    if (option) onChange?.(option.value);
+  };
+
+  const onRadioKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      selectByIndex(
+        (selectedIndex - 1 + FONT_SIZE_OPTIONS.length) %
+          FONT_SIZE_OPTIONS.length,
+      );
+      return;
+    }
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      selectByIndex((selectedIndex + 1) % FONT_SIZE_OPTIONS.length);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      selectByIndex(0);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      selectByIndex(FONT_SIZE_OPTIONS.length - 1);
+    }
+  };
+
+  return (
+    <Popover.Root>
+      <TooltipLabel text={selectedLabel}>
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            aria-label={selectedLabel}
+            className={cn(
+              "inline-flex size-7 items-center justify-center rounded-md border",
+              "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
+              "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+              "border-transparent text-ink-soft hover:bg-hover hover:text-ink",
+            )}
+          >
+            <FontSizeTriggerGlyph size={selectedOption.triggerSizePx} />
+          </button>
+        </Popover.Trigger>
+      </TooltipLabel>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          side="bottom"
+          sideOffset={6}
+          className={cn(
+            "galley-pop-in z-[70] rounded-md border border-line bg-elevated px-3 py-2.5 shadow-elevated",
+            "text-[12px] text-ink",
+          )}
+        >
+          <div
+            role="radiogroup"
+            aria-label={copy.aria}
+            onKeyDown={onRadioKeyDown}
+            className="relative w-[172px]"
+          >
+            <div
+              aria-hidden
+              className="absolute left-5 right-5 top-4 h-px bg-line"
+            />
+            <span
+              aria-hidden
+              className={cn(
+                "absolute left-[12px] top-0 size-8 rounded-full bg-brand/75 shadow-[var(--shadow-brand-control)]",
+                "transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none",
+              )}
+              style={{
+                transform: `translateX(${
+                  selectedIndex * FONT_SIZE_THUMB_STEP_PX
+                }px)`,
+              }}
+            />
+            <div className="relative z-10 grid grid-cols-3 gap-1">
+              {FONT_SIZE_OPTIONS.map((option) => {
+                const checked = option.value === value;
+                const label = fontSizeLabel(copy, option.value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    tabIndex={checked ? 0 : -1}
+                    onClick={() => onChange?.(option.value)}
+                    className={cn(
+                      "group flex min-w-0 flex-col items-center gap-1.5 rounded-sm px-0.5 pb-0.5 pt-0 outline-none",
+                      "focus-visible:ring-2 focus-visible:ring-brand/30",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex size-8 items-center justify-center rounded-full border font-medium leading-none",
+                        "transition-[border-color,color] duration-150 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none",
+                        checked
+                          ? "border-transparent text-elevated"
+                          : "border-line bg-elevated text-ink-muted group-hover:border-line-strong group-hover:text-ink-soft",
+                        option.glyphClass,
+                      )}
+                    >
+                      A
+                    </span>
+                    <span
+                      className={cn(
+                        "truncate text-[10.5px] leading-3",
+                        checked ? "text-ink" : "text-ink-muted",
+                      )}
+                    >
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+function FontSizeTriggerGlyph({ size }: { size: number }) {
+  return (
+    <svg
+      aria-hidden
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      className="shrink-0"
+    >
+      <path
+        d="M5.5 20L12 4L18.5 20"
+        stroke="currentColor"
+        strokeWidth="1.05"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <path
+        d="M8.4 13.4H15.6"
+        stroke="currentColor"
+        strokeWidth="1.05"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
+function fontSizeLabel(
+  copy: ReturnType<typeof useCopy>["topbar"]["conversationFontSize"],
+  value: ConversationFontSize,
+): string {
+  if (value === "small") return copy.small;
+  if (value === "large") return copy.large;
+  return copy.standard;
 }
 
 /**

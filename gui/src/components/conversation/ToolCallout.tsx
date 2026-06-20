@@ -496,7 +496,7 @@ function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
               className="shrink-0 text-ink-soft"
             />
           )}
-          <span className="truncate text-[12px]">
+          <span className="truncate [font-size:var(--conversation-tool-label-size)]">
             {toolLabel ?? (
               // Unknown tool: surface the GA name itself as the
               // primary label (mono) so the pill still has a usable
@@ -513,7 +513,7 @@ function InlineToolPill({ tool }: { tool: ConversationToolEvent }) {
             primary label slot. */}
         <span className="flex shrink-0 items-center gap-1.5">
           {meta && (
-            <span className="font-mono text-[11px] text-ink-muted">
+            <span className="font-mono [font-size:var(--conversation-tool-mono-size)] text-ink-muted">
               {tool.name}
             </span>
           )}

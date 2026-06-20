@@ -61,9 +61,10 @@ export interface ComposerHandle {
 }
 
 /**
- * Maximum textarea height in pixels (auto-grow cap). 280px ≈ 10 lines
- * at our 14.5px / 1.55 line-height. Past this the textarea scrolls
- * internally — beyond ~10 lines the layout would crowd the
+ * Maximum textarea height in pixels (auto-grow cap). The pixel cap stays
+ * fixed across conversation font-size preferences: smaller text gets more
+ * visible lines, larger text scrolls earlier, matching the density goal.
+ * Past this the textarea scrolls internally so the layout doesn't crowd the
  * conversation document above.
  */
 const COMPOSER_MAX_HEIGHT_PX = 280;
@@ -751,7 +752,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             // height auto-grows via the effect above, so manual resize
             // would just fight it. `overflow-y-auto` handles the rare
             // case where content exceeds the max-height cap.
-            className="block w-full resize-none overflow-y-auto border-0 bg-transparent p-0 text-[14.5px] leading-[1.55] text-ink outline-none placeholder:text-ink-muted"
+            className="block w-full resize-none overflow-y-auto border-0 bg-transparent p-0 [font-size:var(--conversation-composer-size)] leading-[1.55] text-ink outline-none placeholder:text-ink-muted"
           />
 
           {/* Hidden file input backing the 📎 button. Visually absent but

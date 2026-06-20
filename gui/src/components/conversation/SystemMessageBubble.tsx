@@ -86,7 +86,7 @@ export function SystemMessageBubble({
         <MarkdownView
           source={content}
           variant="agent"
-          className="[&_li]:text-[13px] [&_li]:text-ink-soft [&_p]:text-[13px] [&_p]:leading-[1.6] [&_p]:text-ink-soft"
+          className="[&_li]:[font-size:var(--conversation-goal-narration-size)] [&_li]:text-ink-soft [&_p]:[font-size:var(--conversation-goal-narration-size)] [&_p]:[line-height:var(--conversation-goal-narration-leading)] [&_p]:text-ink-soft"
         />
       </div>
     );

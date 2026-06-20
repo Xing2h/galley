@@ -247,7 +247,7 @@ export const MessageUser = memo(function MessageUser({
       <div
         data-role="user-msg"
         className={cn(
-          "relative border-l-4 border-brand-strong bg-brand-tint py-2.5 pl-4 pr-10 text-[15px] font-medium leading-[1.7] text-ink",
+          "relative border-l-4 border-brand-strong bg-brand-tint py-2.5 pl-4 pr-10 [font-size:var(--conversation-body-size)] font-medium [line-height:var(--conversation-body-leading)] text-ink",
           "select-text",
         )}
       >

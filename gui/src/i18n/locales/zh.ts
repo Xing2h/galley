@@ -124,6 +124,12 @@ export const zhCopy = {
     wideWidth: "切到宽松阅读宽度",
     compactWidthTitle: "切到紧凑阅读",
     wideWidthTitle: "切到宽松阅读",
+    conversationFontSize: {
+      aria: "选择对话字号",
+      small: "小字号",
+      standard: "标准字号",
+      large: "大字号",
+    },
     yoloOn: "YOLO 已开启",
     yoloTooltip: "YOLO 模式：跳过所有工具审批",
     yoloView: "YOLO 已开启 · 点击查看",

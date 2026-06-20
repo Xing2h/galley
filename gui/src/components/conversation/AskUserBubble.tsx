@@ -56,7 +56,7 @@ export function AskUserBubble({
         <PauseCircle size={12} weight="bold" />
         {copy.conversation.waitingForYou}
       </div>
-      <div className="mb-3 whitespace-pre-wrap text-[15px] leading-[1.65] text-ink">
+      <div className="mb-3 whitespace-pre-wrap [font-size:var(--conversation-body-size)] [line-height:var(--conversation-body-leading)] text-ink">
         {pending.question}
       </div>
       {pending.candidates.length > 0 && (

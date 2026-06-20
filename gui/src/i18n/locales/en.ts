@@ -127,6 +127,12 @@ export const enCopy: AppCopy = {
     wideWidth: "Switch to wide reading width",
     compactWidthTitle: "Switch to compact reading",
     wideWidthTitle: "Switch to wide reading",
+    conversationFontSize: {
+      aria: "Choose conversation text size",
+      small: "Small text",
+      standard: "Standard text",
+      large: "Large text",
+    },
     yoloOn: "YOLO is on",
     yoloTooltip: "YOLO mode: skips all tool approvals",
     yoloView: "YOLO is on · View details",

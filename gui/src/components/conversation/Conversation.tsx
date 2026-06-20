@@ -327,7 +327,7 @@ export function TurnMarker({
       <div
         onClick={hasDetail ? () => setOpen((v) => !v) : undefined}
         className={cn(
-          "mb-2.5 mt-6 flex min-w-0 items-center gap-2 text-[12px] text-ink-soft",
+          "mb-2.5 mt-6 flex min-w-0 items-center gap-2 [font-size:var(--conversation-step-size)] text-ink-soft",
           hasDetail &&
             "cursor-pointer transition-colors duration-150 hover:text-ink",
         )}

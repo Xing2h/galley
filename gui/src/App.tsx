@@ -203,6 +203,10 @@ function App() {
   const acknowledgeYoloIntro = usePrefsStore((s) => s.acknowledgeYoloIntro);
   const conversationWidth = usePrefsStore((s) => s.conversationWidth);
   const setConversationWidth = usePrefsStore((s) => s.setConversationWidth);
+  const conversationFontSize = usePrefsStore((s) => s.conversationFontSize);
+  const setConversationFontSize = usePrefsStore(
+    (s) => s.setConversationFontSize,
+  );
   const languagePreference = usePrefsStore((s) => s.languagePreference);
   const setLanguagePreference = usePrefsStore((s) => s.setLanguagePreference);
   const themePreference = usePrefsStore((s) => s.themePreference);
@@ -942,6 +946,10 @@ function App() {
                 conversationWidth === "wide" ? "compact" : "wide",
               );
             }}
+            conversationFontSize={conversationFontSize}
+            onChangeConversationFontSize={(size) => {
+              void setConversationFontSize(size);
+            }}
             themePreference={themePreference}
             resolvedTheme={resolvedTheme}
             onChangeThemePreference={(preference) => {
@@ -1079,6 +1087,7 @@ function App() {
                 <EmptyState
                   llmDisplayName={llmDisplayName}
                   conversationWidth={conversationWidth}
+                  conversationFontSize={conversationFontSize}
                   projectName={activeProject?.name}
                   focusTick={emptyComposerFocusTick}
                   epigraphCondition={epigraphCondition}
@@ -1326,6 +1335,7 @@ function App() {
                   isStopping={isStopping}
                   pendingAskUser={pendingAskUser}
                   conversationWidth={conversationWidth}
+                  conversationFontSize={conversationFontSize}
                   activeSessionId={activeSessionId}
                 />
               )}

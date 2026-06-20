@@ -24,6 +24,10 @@ import {
   composerRegisterCopyKey,
   resolveComposerRegister,
 } from "@/lib/composer-register";
+import {
+  conversationTypographyStyle,
+  type ConversationFontSize,
+} from "@/lib/conversation-font-size";
 import { useCopy } from "@/lib/i18n";
 import { cleanPartialContent, extractPreamble } from "@/lib/ipc-handlers";
 import { cn } from "@/lib/utils";
@@ -131,6 +135,7 @@ export interface MainViewProps {
    * predictable across all screens.
    */
   conversationWidth?: "compact" | "wide";
+  conversationFontSize?: ConversationFontSize;
   imagesEnabled?: boolean;
   onImageBlocked?: (reason: ImageBlockReason) => void;
 }
@@ -171,6 +176,7 @@ export function MainView({
   sessionGoals,
   pendingAskUser,
   conversationWidth = "compact",
+  conversationFontSize = "standard",
   imagesEnabled = true,
   onImageBlocked,
 }: MainViewProps) {
@@ -546,7 +552,10 @@ export function MainView({
   }, []);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-app">
+    <div
+      className="relative flex min-h-0 flex-1 flex-col bg-app"
+      style={conversationTypographyStyle(conversationFontSize)}
+    >
       {/* Scrollable conversation column. Width follows the TopBar
           toggle: 760px (typography sweet spot) by default, 1200px
           in wide mode. Bottom stack matches — see MainViewProps doc

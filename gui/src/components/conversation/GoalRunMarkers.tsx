@@ -84,7 +84,7 @@ export function GoalCommissionMarker({
       {/* Objective — user register (this is the operator's own words),
           same DNA as MessageUser: 4px brand bar + brand-tint + sharp
           right edge + Inter medium. */}
-      <div className="relative select-text border-l-4 border-brand-strong bg-brand-tint py-2.5 pl-4 pr-4 text-[15px] font-medium leading-[1.65] text-ink">
+      <div className="relative select-text border-l-4 border-brand-strong bg-brand-tint py-2.5 pl-4 pr-4 [font-size:var(--conversation-body-size)] font-medium [line-height:var(--conversation-body-leading)] text-ink">
         <span className="block whitespace-pre-wrap break-words">{content}</span>
       </div>
     </div>

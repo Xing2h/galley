@@ -13,6 +13,10 @@ import {
   readCachedThemePreference,
   type ThemePreference,
 } from "@/lib/theme";
+import {
+  isConversationFontSize,
+  type ConversationFontSize,
+} from "@/lib/conversation-font-size";
 import { findCandidateByAlias } from "@/lib/python-probe";
 import { DEFAULT_APPROVAL_CONFIG, DEFAULT_GA_CONFIG } from "@/stores/defaults";
 import { useRuntimeStore } from "@/stores/runtime";
@@ -23,7 +27,7 @@ import type { RuntimeKind } from "@/types/session";
 /**
  * prefsStore — user preferences + GA spawn config.
  *
- * Holds the five long-lived prefs that survive app restarts (when
+ * Holds the long-lived prefs that survive app restarts (when
  * persistable):
  *
  *   - gaConfig            (python / gaPath / bridgeCwd / useExternalPython)
@@ -32,6 +36,7 @@ import type { RuntimeKind } from "@/types/session";
  *   - yoloMode            (pref: yolo_mode)
  *   - yoloIntroSeen       (pref: yolo_intro_seen)
  *   - conversationWidth   (pref: conversation_width)
+ *   - conversationFontSize (pref: conversation_font_size)
  *   - languagePreference  (pref: language_preference)
  *   - themePreference     (pref: theme_preference)
  *
@@ -43,7 +48,7 @@ import type { RuntimeKind } from "@/types/session";
  * a pref change into the rest of the app belongs here, not in the
  * receiving slices.
  *
- * hydratePrefs loads the four persistable prefs from SQLite and
+ * hydratePrefs loads the persistable prefs from SQLite and
  * returns {hasGAConfig} so the top-level orchestrator at
  * gui/src/lib/hydrate.ts knows whether to route to Onboarding.
  */
@@ -130,6 +135,12 @@ interface PrefsState {
   conversationWidth: "compact" | "wide";
 
   /**
+   * Main conversation typography size. Scoped to the conversation document
+   * and Composer, not global UI chrome.
+   */
+  conversationFontSize: ConversationFontSize;
+
+  /**
    * UI language preference. `system` is the default and resolves from
    * OS / WebView language preference at render time.
    */
@@ -163,6 +174,9 @@ interface PrefsActions {
   // ---- Conversation width ----
   setConversationWidth: (mode: "compact" | "wide") => Promise<void>;
 
+  // ---- Conversation font size ----
+  setConversationFontSize: (size: ConversationFontSize) => Promise<void>;
+
   // ---- Language ----
   setLanguagePreference: (preference: LanguagePreference) => Promise<void>;
 
@@ -184,8 +198,9 @@ interface PrefsActions {
 
   // ---- Hydration ----
   /**
-   * Load the four persistable prefs (yolo_mode / yolo_intro_seen /
-   * conversation_width / ga_config) from SQLite. Best-effort: each
+   * Load persistable prefs (yolo_mode / yolo_intro_seen /
+   * conversation_width / conversation_font_size / ga_config) from SQLite.
+   * Best-effort: each
    * pref miss falls back to the demo / default value. Returns
    * `{hasGAConfig}` so the top-level orchestrator at lib/hydrate.ts
    * can route fresh-install users to Onboarding and skip the LLM
@@ -213,6 +228,7 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
   yoloMode: true,
   yoloIntroSeen: true,
   conversationWidth: "compact",
+  conversationFontSize: "standard",
   languagePreference: "system",
   themePreference: readCachedThemePreference(),
 
@@ -286,6 +302,19 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
       await setPref("conversation_width", mode);
     } catch (e) {
       console.warn("[prefs] setConversationWidth: pref persistence failed.", e);
+    }
+  },
+
+  // ---- Conversation font size ----
+  setConversationFontSize: async (size) => {
+    set({ conversationFontSize: size });
+    try {
+      await setPref("conversation_font_size", size);
+    } catch (e) {
+      console.warn(
+        "[prefs] setConversationFontSize: pref persistence failed.",
+        e,
+      );
     }
   },
 
@@ -413,6 +442,19 @@ export const usePrefsStore = create<PrefsStore>((set, get) => ({
     } catch (e) {
       console.warn(
         "[prefs] hydratePrefs: conversation_width pref load failed.",
+        e,
+      );
+    }
+    try {
+      const fontSize = await getPref<unknown>("conversation_font_size");
+      set({
+        conversationFontSize: isConversationFontSize(fontSize)
+          ? fontSize
+          : "standard",
+      });
+    } catch (e) {
+      console.warn(
+        "[prefs] hydratePrefs: conversation_font_size pref load failed.",
         e,
       );
     }
