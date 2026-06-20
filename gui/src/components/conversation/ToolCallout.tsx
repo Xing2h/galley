@@ -417,11 +417,11 @@ function ResultBlock({ content }: { content: string }) {
  * Per-tool display metadata for the inline pill. Maps GA's native
  * tool name to (Phosphor icon, Chinese friendly label).
  *
- * The pill renders Chinese as the left-zone primary label (matches
- * the conversation document's Chinese serif register) and surfaces
- * the GA name as right-zone mono metadata — so audit-minded users
- * can still scan the wire-level tool that ran without losing the
- * prose-friendly main view. See pill render below for the layout.
+ * The pill renders Chinese as the left-zone primary label (matching
+ * the conversation document's prose register) and surfaces the GA
+ * name as right-zone mono metadata — so audit-minded users can still
+ * scan the wire-level tool that ran without losing the prose-friendly
+ * main view. See pill render below for the layout.
  *
  * Icons: web_scan (read) vs web_execute_js (act) get different
  * glyphs (GlobeSimple vs CursorClick) so the two browser tools are

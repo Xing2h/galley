@@ -4,9 +4,9 @@ import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { MessageActions } from "@/components/conversation/MessageActions";
 
 /**
- * Final agent answer — Newsreader 16.5px, no callout chrome, "floats
- * in the document". Per DESIGN.md §4.3 + the prototype's msg-agent
- * style.
+ * Final agent answer — uses the conversation body typography vars,
+ * no callout chrome, and "floats in the document". Per DESIGN.md
+ * §4.3 + the prototype's msg-agent style.
  *
  * Markdown rendering: a `string` child is parsed via react-markdown
  * + remark-gfm + Shiki (see MarkdownView). A pre-built ReactNode

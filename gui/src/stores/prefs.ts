@@ -114,19 +114,15 @@ interface PrefsState {
 
   /**
    * Conversation reading column width. Notion-style two-mode toggle:
-   *   - "compact": 760px max-width — typographic sweet spot
-   *     (~70-78 chars/line at 16.5px Newsreader), preserves the
-   *     "document you're reading" feel that anchors the product
-   *     register. The default on first launch.
-   *   - "wide":   1400px max-width — for wide-monitor users who
-   *     don't want most of the screen to be empty margin, and for
+   *   - "compact": 760px max-width — comfortable document measure
+   *     for normal reading. The default on first launch.
+   *   - "wide":   1200px max-width — for wide-monitor users and for
    *     sessions with lots of long code blocks / tool callouts /
    *     file_read outputs that get cramped at 760.
    *
-   * Applies ONLY to the scrollable conversation column. The bottom
-   * stack (ApprovalDock + Composer + hint) stays at 760 regardless
-   * — the input zone is fixed-width so the textarea doesn't grow
-   * into hard-to-track horizontal sweep when toggled wide.
+   * Applies to the scrollable conversation column and the bottom
+   * stack (ApprovalDock + Composer + hint) in lockstep, so the width
+   * toggle has an obvious effect in both MainView and EmptyState.
    *
    * Global preference, not per-session: your monitor doesn't change
    * between sessions so your preference shouldn't either. Persisted

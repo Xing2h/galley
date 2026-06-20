@@ -342,6 +342,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const isControlled = value !== undefined;
     const text = isControlled ? value : internal;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const composerRootRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Paste fold state (uncontrolled mode only — controlled callers
@@ -370,6 +371,58 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         textareaRef.current.focus();
       }
     }, [autoFocus]);
+
+    useEffect(() => {
+      const blurBeforeOutsidePointerTarget = (event: PointerEvent) => {
+        if (document.activeElement !== textareaRef.current) return;
+        if (event.button !== 0 || event.ctrlKey) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (composerRootRef.current?.contains(target)) return;
+        const clickTarget = target.closest<HTMLElement>(
+          'button, a[href], [role="button"], [role="menuitem"], [role="radio"]',
+        );
+        let nativeClickSeen = false;
+
+        const markNativeClick = (clickEvent: MouseEvent) => {
+          if (!clickTarget) return;
+          const nativeTarget = clickEvent.target;
+          if (!(nativeTarget instanceof Node)) return;
+          if (
+            nativeTarget === clickTarget ||
+            clickTarget.contains(nativeTarget)
+          ) {
+            nativeClickSeen = true;
+          }
+        };
+
+        // Some desktop WebView focus paths can turn the first outside
+        // click into "blur only". Blur during capture instead, then
+        // let the same pointer event continue to the intended target.
+        textareaRef.current?.blur();
+        if (!clickTarget) return;
+
+        document.addEventListener("click", markNativeClick, true);
+        window.setTimeout(() => {
+          document.removeEventListener("click", markNativeClick, true);
+          if (nativeClickSeen || !clickTarget.isConnected) return;
+          clickTarget.click();
+        }, 80);
+      };
+
+      document.addEventListener(
+        "pointerdown",
+        blurBeforeOutsidePointerTarget,
+        true,
+      );
+      return () => {
+        document.removeEventListener(
+          "pointerdown",
+          blurBeforeOutsidePointerTarget,
+          true,
+        );
+      };
+    }, []);
 
     // Keep the mirror current, then revoke everything on unmount. The
     // empty dep array on the cleanup means it only fires when the
@@ -723,6 +776,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     return (
       <>
         <div
+          ref={composerRootRef}
           className={cn(
             "rounded-md border border-line bg-elevated px-3.5 pb-2 pt-3.5 shadow-card transition-[border-color,box-shadow] duration-150",
             "focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand/20",

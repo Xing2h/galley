@@ -594,9 +594,8 @@ const LLM_RUNNING_MARKER =
  * proper ToolCallout pill.
  *
  * Without stripping, the streaming partial flashes the raw marker as
- * Newsreader serif prose, then snaps to the compact pill when
- * turn_end fires — a noticeable "floppy" transition users notice
- * right away.
+ * document prose, then snaps to the compact pill when turn_end fires
+ * — a noticeable "floppy" transition users notice right away.
  *
  * The variation selector after the hammer (`️`) is optional —
  * some renderers and terminal pipes drop it.
@@ -649,9 +648,9 @@ const TOOL_DISPATCH_VERBOSE_PARTIAL = /🛠️?\s+Tool:\s+`/;
  *
  * Stripped wholesale (including content). The structured outcome
  * lands at turn_end via `toolResults[]`; ToolCallout's resultPreview
- * surfaces it there. Showing raw tool stdout as Newsreader prose
- * during streaming is uglier than a brief "stream pauses" feel
- * during tool execution.
+ * surfaces it there. Showing raw tool stdout as document prose during
+ * streaming is uglier than a brief "stream pauses" feel during tool
+ * execution.
  */
 const FIVE_BACKTICK_BLOCK = /`{5}\n[\s\S]*?\n`{5}\n?/g;
 
@@ -703,7 +702,7 @@ const PHASE_PREAMBLE = /^\*{0,2}当前阶段\*{0,2}\s*[：:][\s\S]*?(?=\n\n|$)/g
 /**
  * Mirror of bridge's `_clean_response_for_display`. Strips GA's
  * structured tags so the user sees the prose-ish final answer
- * Newsreader can render directly. Bridge emits the raw responseContent
+ * MarkdownView can render directly. Bridge emits the raw responseContent
  * in turn_end (to keep the wire faithful); this is the desktop
  * equivalent of that python helper.
  */

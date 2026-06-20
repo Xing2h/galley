@@ -1,6 +1,12 @@
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { useEffect, memo, useRef, useState } from "react";
+import {
+  useEffect,
+  memo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   Archive,
   CaretRight,
@@ -96,6 +102,7 @@ export const SidebarSessionRow = memo(function SidebarSessionRow({
   );
   const showActionTrigger = hasRowActions && !isEditing;
   const [actionsOpen, setActionsOpen] = useState(false);
+  const ignoreNextRowClickRef = useRef(false);
   // Four-state sidebar display (Stage 3 round 7+10, V0.2 ask_user):
   //   1. running                  — bold brand spinner + italic "正在工作 · 第 N 步" subline
   //   2. pending ask_user         — warning PauseCircle + "⏸ 等你回复" subline (V0.2)
@@ -244,10 +251,36 @@ export const SidebarSessionRow = memo(function SidebarSessionRow({
       : showRunningActivity || goalRunning
         ? "bg-brand-soft/60 hover:bg-brand-soft/80"
         : "hover:bg-hover";
+  const activateRow = () => {
+    if (isEditing) return;
+    onClick?.();
+  };
+  const handleRowPointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (isEditing || event.defaultPrevented || event.button !== 0) return;
+    // macOS Ctrl-click is a context-menu gesture; don't turn it into a
+    // session switch while the user is asking for row actions.
+    if (event.ctrlKey) return;
+
+    activateRow();
+    ignoreNextRowClickRef.current = true;
+    window.setTimeout(() => {
+      ignoreNextRowClickRef.current = false;
+    }, 500);
+  };
+  const handleRowClick = () => {
+    if (ignoreNextRowClickRef.current) {
+      ignoreNextRowClickRef.current = false;
+      return;
+    }
+    activateRow();
+  };
   const row = (
     <div
       data-galley-context-menu-trigger={hasRowActions ? "" : undefined}
-      onClick={isEditing ? undefined : onClick}
+      onPointerDown={handleRowPointerDown}
+      onClick={handleRowClick}
       className={cn(
         "group relative mx-1.5 grid min-h-[48px] grid-cols-[16px_minmax(0,1fr)] items-start gap-2 overflow-hidden rounded-sm px-3 py-1.5",
         "transition-[background-color,box-shadow,color]",

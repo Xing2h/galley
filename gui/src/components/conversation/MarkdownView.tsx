@@ -45,9 +45,9 @@ import { makeAppError } from "@/types/app-error";
  *     mankind. Languages outside the list fall back to the plain
  *     mono code block — same visual chrome, just no token colours.
  *
- * Styling philosophy: every override pulls from the existing
- * Newsreader / Inter / JetBrains-Mono token system so the
- * conversation reads as one document, not a stylesheet collage.
+ * Styling philosophy: every override pulls from the conversation
+ * typography / UI / mono token system so the conversation reads as
+ * one document, not a stylesheet collage.
  *
  * The component-level overrides give us this without touching
  * globals.css — typography lives at the boundary, not in CSS
@@ -145,7 +145,7 @@ const PROSE_BASE = cn(
   "[&>:first-child]:mt-0 [&>:last-child]:mb-0",
   // Paragraphs.
   "[&_p]:my-3 [&_p]:[line-height:var(--conversation-body-leading)] [&_p:last-child]:mb-0",
-  // Headings (Newsreader, slight weight contrast against body).
+  // Headings (document prose face, slight weight contrast against body).
   "[&_h1]:mt-5 [&_h1]:mb-3 [&_h1]:font-[var(--galley-prose-serif)] [&_h1]:[font-size:var(--conversation-heading-1-size)] [&_h1]:font-medium [&_h1]:leading-[1.3] [&_h1]:tracking-[0.005em] [&_h1]:text-ink",
   "[&_h2]:mt-5 [&_h2]:mb-2.5 [&_h2]:font-[var(--galley-prose-serif)] [&_h2]:[font-size:var(--conversation-heading-2-size)] [&_h2]:font-medium [&_h2]:leading-[1.35] [&_h2]:text-ink",
   // h3 deliberately close to body size — DESIGN.md §4.3 calls this
@@ -176,7 +176,7 @@ const PROSE_BASE = cn(
   "[&_td]:border [&_td]:border-line [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_td]:text-ink",
   // hr inside markdown.
   "[&_hr]:my-5 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-line",
-  // Strong / em — keep weight in line with Newsreader. Body is normal
+  // Strong / em — keep weight in line with the prose body. Body is normal
   // (400), so strong at medium (500) is one visible weight step up.
   "[&_strong]:font-medium [&_strong]:text-ink",
   "[&_em]:italic",

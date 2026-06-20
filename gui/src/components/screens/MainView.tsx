@@ -118,11 +118,10 @@ export interface MainViewProps {
   pendingAskUser?: PendingAskUser | null;
   /**
    * Conversation column width mode (TopBar toggle). "compact" caps
-   * the scrollable reading column at 760px (typography sweet spot
-   * for 16.5px Newsreader prose); "wide" caps it at 1200px — a
-   * compromise between Notion's prose-only 1040 and the original
-   * 1400 proposal, sized for Workbench's mixed prose + code block
-   * + tool callout content (~108ch prose / ~135ch code per line).
+   * the scrollable reading column at 760px for a comfortable document
+   * measure; "wide" caps it at 1200px — a compromise between
+   * Notion's prose-only 1040 and the original 1400 proposal, sized
+   * for Workbench's mixed prose + code block + tool callout content.
    *
    * Both the scrollable conversation column AND the bottom stack
    * (ApprovalDock + Composer + hint) follow this mode in lockstep.

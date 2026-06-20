@@ -213,8 +213,8 @@ function normalizedInlineText(value?: string | null): string {
  *   - Swiss structural register: upright (not italic), tabular
  *     figures, a thin vertical rule separating the step label from
  *     the summary. The cool, precise metadata deliberately contrasts
- *     with the warm Newsreader serif of the answer body below —
- *     structure reads as structure, prose reads as prose.
+ *     with the document-prose body below — structure reads as
+ *     structure, prose reads as prose.
  *   - 12px keeps it from competing with the body content below.
  *
  * Why "第 N 步" and not "第 N 轮": Chinese 「轮」 collides with the
@@ -400,10 +400,10 @@ function ThinkingStatus({
 /**
  * Inline expansion of TurnMarker — surfaces the LLM's per-step
  * reasoning on demand. Renders via MarkdownView "thinking" variant
- * (italic serif ink-soft). This is read-content — the LLM's actual
- * reasoning prose — so it keeps the warm serif register, deliberately
- * distinct from the cool Swiss sans of the TurnMarker row above
- * (structure vs prose). No border, no background, no leading
+ * (italic document prose, ink-soft). This is read-content — the LLM's
+ * actual reasoning prose — deliberately distinct from the cool Swiss
+ * sans of the TurnMarker row above (structure vs prose). No border,
+ * no background, no leading
  * icon — keeps the chrome out of the way so the prose stays the focus.
  *
  * Source order: thinking → preamble. Mirrors how the LLM actually
