@@ -213,11 +213,28 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Read bundled-Python version pins
+        id: pbs
+        shell: bash
+        # Surface bundle-python.sh's PBS_RELEASE / PBS_PYTHON_VERSION pins as
+        # step outputs so the tarball cache key tracks them automatically.
+        # Bumping PBS in the script then invalidates the cache without a
+        # matching manual edit here.
+        run: |
+          pbs_release="$(grep -E '^PBS_RELEASE=' scripts/bundle-python.sh | head -1 | cut -d= -f2 | tr -d '"')"
+          pbs_python="$(grep -E '^PBS_PYTHON_VERSION=' scripts/bundle-python.sh | head -1 | cut -d= -f2 | tr -d '"')"
+          if [[ -z "$pbs_release" || -z "$pbs_python" ]]; then
+            echo "Could not read PBS_RELEASE / PBS_PYTHON_VERSION from scripts/bundle-python.sh" >&2
+            exit 1
+          fi
+          echo "release=$pbs_release" >> "$GITHUB_OUTPUT"
+          echo "python=$pbs_python" >> "$GITHUB_OUTPUT"
+
       - name: Cache python-build-standalone tarball
         uses: actions/cache@v5
         with:
           path: .cache/pbs
-          key: pbs-tarball-${{ matrix.target }}-20260510
+          key: pbs-tarball-${{ matrix.target }}-${{ steps.pbs.outputs.release }}-${{ steps.pbs.outputs.python }}
 
       - name: Bundle Python interpreter + GA core deps
         shell: bash

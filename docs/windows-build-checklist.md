@@ -1,6 +1,8 @@
 # Windows build checklist
 
-> Status: **draft**. Tracks what's needed to produce a Galley `.exe` installer on Windows manually and the smoke tests to run on Win release artifacts.
+> Status: **fallback / smoke path**. Tracks what's needed to produce a Galley
+> `.exe` installer on Windows manually and the smoke tests to run on Win
+> release artifacts.
 >
 > Galley v0.2+ release path is **CI-driven** — see [release-workflow.md](./release-workflow.md). This document is the **fallback / offline build path** and Windows smoke checklist: use it when CI is unavailable, when smoke-testing a CI-produced `.exe`, or when validating a local change on a Win machine before pushing.
 
@@ -159,6 +161,6 @@ GitHub Actions is now the primary release path:
 
 - `.github/workflows/check.yml` verifies macOS Apple Silicon, macOS Intel, and Windows x64 before merge / push.
 - `.github/workflows/release.yml` builds the three release artifacts and creates a draft GitHub Release.
-- `.github/workflows/promote-update-channel.yml` promotes a published, smoke-tested release into the beta update channel.
+- `.github/workflows/promote-update-channel.yml` promotes a published, smoke-tested release into the stable update channel (with `beta` kept as a legacy alias for older installed builds).
 
 Keep this checklist for Windows smoke testing and for fallback local builds when CI is unavailable.

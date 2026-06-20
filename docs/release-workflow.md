@@ -87,9 +87,12 @@ Semver 0.x.y，pre-1.0 阶段：
 
 ### 3. 版本号 bump
 
-把版本号同步改四处：
+把版本号同步改五处（与 [release SOP](./release-update-sop.md) Pre-Flight 清单一致）：
 
 ```bash
+# package.json (root)
+"version": "0.2.0-alpha.1"
+
 # gui/package.json
 "version": "0.2.0-alpha.1"
 

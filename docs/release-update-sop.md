@@ -126,7 +126,7 @@ Pass criteria:
 Use one small commit so a bad release prep can be reverted cleanly.
 
 ```bash
-git add gui/package.json core/tauri.conf.json core/Cargo.toml cli/Cargo.toml
+git add package.json gui/package.json core/tauri.conf.json core/Cargo.toml cli/Cargo.toml
 git commit -m "Bump version ${RELEASE_TAG}"
 ```
 
@@ -169,6 +169,12 @@ Open the draft Release in GitHub and check:
   to mark this release as GitHub Latest after smoke.
 - Release notes follow the template below. They are user-facing, not just
   commit messages.
+- **Commit coverage**: run `git log <PREVIOUS_TAG>..HEAD --oneline` and confirm
+  every user-facing commit maps to a What's New bullet (or was explicitly
+  decided to omit). Do not rely on GitHub's auto-generated commit list as proof
+  of coverage — the What's New section must be audited against the commit log,
+  not the other way around. A release that ships a new feature plus a fix is
+  not a "hotfix" even if it started as one.
 - Assets are present for supported platforms.
 - Updater artifacts are present:
   - macOS `.app.tar.gz` plus `.sig`
