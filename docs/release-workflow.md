@@ -273,6 +273,10 @@ manifest 都存在、signature 是 inline 内容、平台 asset URL 可访问。
 
 ### Step 7. 后续
 
+- [ ] 同步 [project status](./project-status.md)。如果这次提交只改 release
+      状态文档，跑 `git diff --check`、提交并推送即可；确认 GitHub Actions
+      触发后不用等完整 `check.yml`。只有 post-release commit 改到代码、脚本、
+      workflow、打包配置或 release / update-channel 逻辑时才等待 CI。
 - [ ] 用户群 / Twitter / 朋友圈 / 微博发版通告（人工）
 - [ ] 监控 [GitHub Issues](https://github.com/wangjc683/galley/issues) 头 24h，回 bug report
 - [ ] 如果 24h 内发现 critical bug：走 hotfix 流程（下方）

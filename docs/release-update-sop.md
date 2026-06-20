@@ -413,7 +413,29 @@ After verification passes, edit the GitHub Release notes if needed so installed
 users are told they can update in Galley, not that they should wait for the
 update channel.
 
-### 9. Dogfood App Update
+### 9. Sync Project Status Docs
+
+After publish and update-channel verification, update
+[project status](./project-status.md) so the repository reflects the released
+state.
+
+For a docs-only status sync, do not wait for full `check.yml` before moving on.
+Run the lightweight whitespace check, commit, push, and confirm that GitHub
+Actions was triggered. Let CI finish in the background.
+
+```bash
+git diff --check
+git add docs/project-status.md
+git commit -m "Update release status for ${RELEASE_TAG}"
+git push origin main
+```
+
+Wait for CI only if the post-release commit touches code, scripts, workflows,
+packaging config, or release / update-channel logic. Those changes can affect
+future builds or updater behavior; a pure status document cannot affect the
+already-published installers or live update manifest.
+
+### 10. Dogfood App Update
 
 Use an installed older release build, not `tauri dev`.
 
