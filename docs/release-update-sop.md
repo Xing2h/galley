@@ -193,13 +193,27 @@ alpha template below.
 Writing rules:
 
 - Chinese first, English second. Both sections should be complete; do not use a
-  thin machine translation.
+  thin machine translation. Keep the two halves in sync — a bullet in one must
+  appear in the other.
 - Keep the headings stable: `## What's New`, `## 安装指南`, `---`,
   `## What's New`, `## Installation Guide`.
 - Write bullets as `功能区域：用户看得见的变化` in Chinese and
   `Area: user-visible change` in English.
+- Tone: concise and professional. One bullet per user-visible change, one
+  sentence each. Lead with the change, not the symptom — "新增字号切换"
+  (adds a font-size switcher), not "修复了用户反馈的字号问题". Drop
+  hedge / filler like "修复了一个 case", "保持不变", or describing the
+  pre-release state for its own sake. If a sentence does not tell the user
+  something they can see or act on, cut it.
+- Scope to what changed this tag, not the whole product. Before drafting, run
+  `git log <PREVIOUS_TAG>..HEAD --oneline` and walk every commit; map each
+  user-facing commit to a bullet. A release that ships a new feature plus a
+  fix is not a "hotfix" even if it started as one — title and bullets must
+  reflect everything shipped.
 - For patch releases, 3-5 focused bullets are enough. For larger releases, keep
-  the list scannable instead of turning it into a changelog dump.
+  the list scannable instead of turning it into a changelog dump. Related
+  changes (e.g. several typography commits) collapse into one bullet rather
+  than one per commit.
 - Keep established product terms such as `Galley`, `GA`, `GenericAgent`,
   `Agent / CLI`, `Browser Control`, `Channels`, and `ChatGPT / Codex`.
 - Use `内置 GA` in Chinese and `Bundled GA` in English. Do not expose
@@ -207,10 +221,9 @@ Writing rules:
 - Installation links must point directly to GitHub Release assets.
 - Always include the macOS quarantine command and Windows SmartScreen note while
   Galley is unsigned.
-- Stable / patch release notes should end in the promoted state: after update
-  channel promotion, replace any "wait for in-app update" text with a direct
-  "installed users can update in Galley" note. Keep the waiting text only while
-  reviewing the draft before promotion.
+- Omit general compatibility / non-change statements ("no Agent API / DB / GA
+  baseline changes", "reduce heat and resource usage") unless they change what
+  a user does next. The release notes describe changes, not reassurances.
 
 Replace `<TAG>` with the Git tag (for example `v0.2.5`) and `<VERSION>` with
 the package version (for example `0.2.5`).
@@ -241,8 +254,6 @@ xattr -dr com.apple.quarantine /Applications/Galley.app
 
 如果 Windows SmartScreen 提示风险，点击「更多信息」->「仍要运行」。
 
-已安装旧版的用户可以在 Galley 里检查更新，升级到 <TAG>。
-
 ---
 
 ## What's New
@@ -269,8 +280,6 @@ xattr -dr com.apple.quarantine /Applications/Galley.app
 - [Download for Windows](https://github.com/wangjc683/galley/releases/download/<TAG>/Galley_<VERSION>_Windows_x64-setup.exe)
 
 If Windows SmartScreen shows a warning, click "More info" -> "Run anyway".
-
-Existing users can check for updates in Galley and upgrade to <TAG>.
 
 **Full Changelog**: https://github.com/wangjc683/galley/compare/<PREVIOUS_TAG>...<TAG>
 ````
