@@ -168,6 +168,7 @@ impl RunnerProcess {
         for (k, v) in &args.env {
             cmd.env(k, v);
         }
+        cmd.env("GALLEY_CORE_PID", std::process::id().to_string());
         process_command::configure_python(&mut cmd);
 
         let mut child = cmd

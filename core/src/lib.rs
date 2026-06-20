@@ -174,7 +174,7 @@ fn set_tray_window_visible(app: &tauri::AppHandle<tauri::Wry>, visible: bool) {
     let _ = tray_menu.toggle_window_item.set_text(label);
 }
 
-fn show_main_window(app: &tauri::AppHandle<tauri::Wry>) {
+pub(crate) fn show_main_window(app: &tauri::AppHandle<tauri::Wry>) {
     use tauri::Manager;
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = window.show();
@@ -888,9 +888,11 @@ pub fn run() {
             // Windows named pipe on Windows). CLI clients connect here to
             // send write commands + watch event streams from B2 M4 onward.
             // Per AGENTS.md § Localhost Only: fs-perm
-            // auth, no TCP / token. If bind fails or another instance
-            // owns the socket, start() returns a dormant guard and Galley
-            // Core keeps running — CLI clients will see exit 4 in that case.
+            // auth, no TCP / token. If another instance owns the socket,
+            // start() asks that instance to show its window and this
+            // duplicate startup exits before creating more background work.
+            // Other bind failures remain non-fatal — CLI clients will see
+            // exit 4 in that case.
             //
             // The guard is managed in app state so its Drop runs at app
             // teardown, unlinking the socket file on Unix.
@@ -909,6 +911,10 @@ pub fn run() {
                     manager,
                 )) {
                     Ok(guard) => {
+                        if guard.another_instance_is_active() {
+                            _app.handle().exit(0);
+                            return Ok(());
+                        }
                         _app.manage(guard);
                     }
                     Err(e) => {

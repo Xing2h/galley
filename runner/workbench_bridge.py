@@ -27,6 +27,7 @@ import queue
 import re
 import sys
 import threading
+import time
 import traceback
 import uuid
 from pathlib import Path
@@ -131,6 +132,91 @@ def _compact_args(args: dict[str, Any], max_len: int = 200) -> str:
 _managed_model_config_from_env = managed_runtime.managed_model_config_from_env
 
 _SUPPORTED_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp"}
+GALLEY_CORE_PID_ENV = "GALLEY_CORE_PID"
+PARENT_WATCH_INTERVAL_SEC = 2.0
+_EXIT_FOR_PARENT_LOSS = os._exit
+
+
+def _exit_parentless(reason: str) -> None:
+    try:
+        print(f"[workbench-bridge] exiting: {reason}", file=sys.__stderr__, flush=True)
+    except Exception:
+        pass
+    _EXIT_FOR_PARENT_LOSS(0)
+    raise SystemExit(0)
+
+
+def _parse_core_pid() -> int | None:
+    raw = os.environ.get(GALLEY_CORE_PID_ENV)
+    if not raw:
+        return None
+    try:
+        pid = int(raw)
+    except ValueError:
+        return None
+    if pid <= 0 or pid == os.getpid():
+        return None
+    return pid
+
+
+def _parent_process_alive(pid: int) -> bool:
+    if os.name == "nt":  # pragma: no cover - exercised on Windows smoke only
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+            process_query_limited_information = 0x1000
+            synchronize = 0x00100000
+            wait_timeout = 0x00000102
+            handle = kernel32.OpenProcess(
+                process_query_limited_information | synchronize,
+                False,
+                wintypes.DWORD(pid),
+            )
+            if not handle:
+                return False
+            try:
+                result = int(kernel32.WaitForSingleObject(handle, 0))
+                return result == wait_timeout
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:
+            return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _parent_loss_reason(parent_pid: int | None, original_ppid: int | None) -> str | None:
+    if parent_pid is None:
+        return None
+    if not _parent_process_alive(parent_pid):
+        return f"Galley Core process {parent_pid} disappeared"
+    if original_ppid is not None and hasattr(os, "getppid"):
+        current_ppid = os.getppid()
+        if current_ppid not in {original_ppid, parent_pid}:
+            return f"parent process changed from {original_ppid} to {current_ppid}"
+    return None
+
+
+def _start_parent_watchdog(parent_pid: int | None) -> None:
+    if parent_pid is None:
+        return
+    original_ppid = os.getppid() if hasattr(os, "getppid") else None
+
+    def _watch() -> None:
+        while True:
+            time.sleep(PARENT_WATCH_INTERVAL_SEC)
+            reason = _parent_loss_reason(parent_pid, original_ppid)
+            if reason:
+                _exit_parentless(reason)
+
+    threading.Thread(target=_watch, name="galley-bridge-parent-watchdog", daemon=True).start()
 
 
 def _mime_for_image_path(path: Path) -> str | None:
@@ -1606,6 +1692,7 @@ def main() -> int:
     parser.add_argument("--llm-no", type=int, default=0)
     parser.add_argument("--llm-name", default=None)
     args = parser.parse_args()
+    _start_parent_watchdog(_parse_core_pid())
 
     ga_path = str(Path(args.ga_path).expanduser().resolve())
     if not Path(ga_path).is_dir():

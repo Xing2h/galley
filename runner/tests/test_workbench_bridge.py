@@ -25,6 +25,7 @@ from runner.workbench_bridge import (
     _llm_display_name,
     _managed_model_config_from_env,
     _message_to_content_blocks,
+    _parent_loss_reason,
 )
 
 # ---------------- _classify_error ----------------
@@ -96,6 +97,30 @@ def test_classify_case_insensitive() -> None:
     """Keyword matching is case-insensitive against the error message."""
     hint, _ = _classify_error("AUTHENTICATION DENIED", "runtime")
     assert hint == "check_llm_config"
+
+
+# ---------------- parent watchdog ----------------
+
+
+def test_parent_watchdog_detects_missing_core_pid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("runner.workbench_bridge._parent_process_alive", lambda _pid: False)
+
+    reason = _parent_loss_reason(parent_pid=12345, original_ppid=100)
+
+    assert reason == "Galley Core process 12345 disappeared"
+
+
+def test_parent_watchdog_detects_ppid_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("runner.workbench_bridge._parent_process_alive", lambda _pid: True)
+    monkeypatch.setattr(os, "getppid", lambda: 321)
+
+    reason = _parent_loss_reason(parent_pid=123, original_ppid=100)
+
+    assert reason == "parent process changed from 100 to 321"
 
 
 # ---------------- _llm_display_name ----------------

@@ -42,10 +42,14 @@
 //!
 //! Two cases:
 //!   - **another Galley instance running**: try-connect succeeds → log a
-//!     diagnostic + return without binding. The other instance owns the
-//!     socket; we don't fight it.
+//!     diagnostic, ask it to show its main window, then return a guard
+//!     that lets the duplicate startup exit before it creates background
+//!     work. The other instance owns the socket; we don't fight it.
 //!   - **stale socket file** (previous process crashed before cleanup):
-//!     try-connect fails (ECONNREFUSED) → unlink stale file → bind fresh.
+//!     try-connect fails fast (ECONNREFUSED) → unlink stale file → bind
+//!     fresh. A probe timeout is treated as a possibly busy live instance,
+//!     not stale, because starting a duplicate Core is the more damaging
+//!     failure mode.
 //!
 //! See [B2 playbook M3 G5](../../docs/refactor/B2-bridge-ownership.md) for
 //! the residual narrow race window between try-connect and the next
@@ -76,11 +80,11 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast;
 
 #[cfg(windows)]
-use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOptions};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::time::timeout;
 
 mod common;
@@ -155,21 +159,23 @@ pub async fn start(
     {
         if path.exists() {
             // Probe with a 200ms timeout — owners should accept fast on
-            // localhost; if it hangs longer than this we treat it as
-            // stale and reclaim.
+            // localhost. A timeout is not proof of staleness: if the
+            // existing Core is overloaded, deleting its socket and binding
+            // a duplicate would make the process pile-up worse.
             match timeout(Duration::from_millis(200), UnixStream::connect(&path)).await {
-                Ok(Ok(_)) => {
+                Ok(Ok(mut stream)) => {
                     eprintln!(
                         "[socket] another Galley instance is bound to {} — \
                          not starting a second listener",
                         path.display()
                     );
-                    return Ok(SocketGuard::dormant());
+                    let _ = request_existing_instance_activation(&mut stream).await;
+                    return Ok(SocketGuard::another_instance());
                 }
-                _ => {
-                    // ECONNREFUSED or timeout → stale socket file. Unlink
-                    // before bind() — bind() doesn't replace existing
-                    // files on Unix.
+                Ok(Err(_)) => {
+                    // ECONNREFUSED → stale socket file. Unlink before
+                    // bind() — bind() doesn't replace existing files on
+                    // Unix.
                     if let Err(e) = std::fs::remove_file(&path) {
                         eprintln!(
                             "[socket] failed to remove stale socket {}: {} — \
@@ -177,10 +183,34 @@ pub async fn start(
                             path.display(),
                             e
                         );
-                        return Ok(SocketGuard::dormant());
+                        return Ok(SocketGuard::unavailable());
                     }
                 }
+                Err(_) => {
+                    eprintln!(
+                        "[socket] probing {} timed out — assuming another \
+                         Galley instance is busy and not starting a duplicate listener",
+                        path.display()
+                    );
+                    return Ok(SocketGuard::another_instance());
+                }
             }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| std::io::Error::other("named pipe path not UTF-8"))?;
+        if let Ok(mut stream) = ClientOptions::new().open(path_str) {
+            eprintln!(
+                "[socket] another Galley instance is bound to {} — \
+                 not starting a second listener",
+                path.display()
+            );
+            let _ = request_existing_instance_activation(&mut stream).await;
+            return Ok(SocketGuard::another_instance());
         }
     }
 
@@ -210,9 +240,24 @@ pub async fn start(
             // We don't error here — bind failure shouldn't kill Galley
             // Core. The CLI will just see a connection refusal and
             // report exit 4 (db_unavailable / "Galley Core not running").
-            Ok(SocketGuard::dormant())
+            Ok(SocketGuard::unavailable())
         }
     }
+}
+
+async fn request_existing_instance_activation<W>(stream: &mut W) -> std::io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let req = serde_json::json!({
+        "command": "app.activate",
+        "schemaVersion": SCHEMA_VERSION,
+        "requestId": "startup-activate",
+    });
+    let line = serde_json::to_string(&req).unwrap();
+    stream.write_all(line.as_bytes()).await?;
+    stream.write_all(b"\n").await?;
+    stream.flush().await
 }
 
 #[cfg(unix)]
@@ -446,6 +491,21 @@ async fn dispatch_line(
             request_id,
             serde_json::json!({ "schemaVersion": SCHEMA_VERSION }),
         )),
+        "app.activate" => {
+            if let Some(app) = app {
+                crate::show_main_window(app);
+                DispatchResult::Unary(SocketResponse::ok(
+                    request_id,
+                    serde_json::json!({ "activated": true }),
+                ))
+            } else {
+                DispatchResult::Unary(SocketResponse::err(
+                    request_id,
+                    "app_unavailable",
+                    "app handle unavailable",
+                ))
+            }
+        }
         // ---- B2 M4 write commands ----
         "session.send" => {
             DispatchResult::Unary(dispatch_session_send(request_id, req.args, app, manager).await)
@@ -512,20 +572,48 @@ async fn dispatch_line(
 /// unlink the OTHER instance's socket).
 pub struct SocketGuard {
     path: Option<PathBuf>,
+    state: SocketGuardState,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SocketGuardState {
+    Active,
+    AnotherInstance,
+    Unavailable,
 }
 
 impl SocketGuard {
-    fn dormant() -> Self {
-        Self { path: None }
+    fn another_instance() -> Self {
+        Self {
+            path: None,
+            state: SocketGuardState::AnotherInstance,
+        }
+    }
+    fn unavailable() -> Self {
+        Self {
+            path: None,
+            state: SocketGuardState::Unavailable,
+        }
     }
     fn active(path: PathBuf) -> Self {
-        Self { path: Some(path) }
+        Self {
+            path: Some(path),
+            state: SocketGuardState::Active,
+        }
     }
 
     /// True iff this guard owns a real listener (vs being the "another
     /// instance owned it" no-op variant). Test helper.
     pub fn is_active(&self) -> bool {
         self.path.is_some()
+    }
+
+    /// True when startup found or conservatively assumed an already-running
+    /// Galley instance. When possible, the existing instance has also been
+    /// sent an activation request. The duplicate app should exit before
+    /// starting background services.
+    pub fn another_instance_is_active(&self) -> bool {
+        self.state == SocketGuardState::AnotherInstance
     }
 }
 
@@ -696,6 +784,14 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dispatch_app_activate_requires_app_handle() {
+        let mgr = RunnerManager::new();
+        let resp = expect_unary(dispatch_line(r#"{"command":"app.activate"}"#, None, &mgr).await);
+        assert!(!resp.ok);
+        assert_eq!(resp.error.as_deref(), Some("app_unavailable"));
+    }
+
+    #[tokio::test]
     async fn dispatch_invalid_json() {
         let mgr = RunnerManager::new();
         let resp = expect_unary(dispatch_line("not-json", None, &mgr).await);
@@ -743,8 +839,9 @@ mod tests {
 
     #[test]
     fn socket_guard_dormant_does_nothing_on_drop() {
-        let guard = SocketGuard::dormant();
+        let guard = SocketGuard::unavailable();
         assert!(!guard.is_active());
+        assert!(!guard.another_instance_is_active());
         drop(guard); // no panic, no side effect
     }
 }
