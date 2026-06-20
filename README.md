@@ -291,7 +291,7 @@ cd ../core
 cargo build --release -p galley-cli  # 出 target/release/galley
 ```
 
-CI release 流程见 [docs/release-workflow.md](./docs/release-workflow.md)；手动 Windows build 见 [docs/windows-build-checklist.md](./docs/windows-build-checklist.md)。
+CI release 流程见 [docs/release-update-sop.md](./docs/release-update-sop.md)（[背景与故障排查](./docs/release-workflow.md)）；手动 Windows build 见 [docs/windows-build-checklist.md](./docs/windows-build-checklist.md)。
 
 ## 致谢
 

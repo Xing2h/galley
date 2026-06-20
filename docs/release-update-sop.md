@@ -1,9 +1,9 @@
 # Release / Update SOP
 
-> Maintainer checklist for shipping a Galley release and promoting the app
-> update channel. Use this as the runbook during release day. Use
-> [release workflow](./release-workflow.md) for deeper background and edge
-> cases.
+> The release-day runbook. This is the authoritative checklist for shipping a
+> Galley release and promoting the app update channel. For background, edge
+> cases, troubleshooting, and history, read
+> [release workflow](./release-workflow.md).
 
 ## Principle
 

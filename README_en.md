@@ -291,7 +291,7 @@ cd ../core
 cargo build --release -p galley-cli  # produces target/release/galley
 ```
 
-See [docs/release-workflow.md](./docs/release-workflow.md) for the CI release flow and [docs/windows-build-checklist.md](./docs/windows-build-checklist.md) for manual Windows builds.
+See [docs/release-update-sop.md](./docs/release-update-sop.md) for the CI release flow ([background and troubleshooting](./docs/release-workflow.md)) and [docs/windows-build-checklist.md](./docs/windows-build-checklist.md) for manual Windows builds.
 
 ## Acknowledgments
 

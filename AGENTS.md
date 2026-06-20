@@ -159,7 +159,7 @@ docs/        Product, architecture, workflow, and history
 | Desktop packaging / runtime | [desktop runtime](./docs/desktop-runtime.md) |
 | Rust core refactor / B-phase work | [refactor README](./docs/refactor/README.md) |
 | Architecture invariant proof | [architecture demo](./docs/architecture-demo.md) |
-| Release work | [release workflow](./docs/release-workflow.md) |
+| Release work | [release / update SOP](./docs/release-update-sop.md) (runbook), [release workflow](./docs/release-workflow.md) (background) |
 | Closing a long coding session or syncing project knowledge | [session close SOP](./docs/session-close-sop.md) |
 | Windows smoke | [Windows checklist](./docs/windows-build-checklist.md) |
 | GUI / engineering conventions | [engineering workflow](./docs/engineering-workflow.md) |

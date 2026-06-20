@@ -1,408 +1,229 @@
 # Release workflow
 
-> Maintainer-facing document. Use this when preparing or debugging a Galley
-> release.
+> Background, edge cases, and troubleshooting for shipping a Galley release.
+> This is **not** the release-day runbook — for the step-by-step procedure
+> (pre-flight, tag, review, smoke, publish, promote, verify), follow the
+> [release / update SOP](./release-update-sop.md). Read this doc when a release
+> goes off the happy path, or when you need the reasoning behind a step.
 
-Galley 发版 SOP。本文档定义 v0.2 起的正式发版流程，配合 `.github/workflows/release.yml` 工作。
+> Related
+> - Release-day runbook: [`docs/release-update-sop.md`](./release-update-sop.md)
+> - Workflow files: [`.github/workflows/release.yml`](../.github/workflows/release.yml) (tag-triggered build + draft Release) / [`.github/workflows/promote-update-channel.yml`](../.github/workflows/promote-update-channel.yml) (manual; publishes the default in-app update channel) / [`.github/workflows/check.yml`](../.github/workflows/check.yml) (three-platform build check on PR)
+> - Windows manual build guide: [`docs/windows-build-checklist.md`](./windows-build-checklist.md) — when CI is unavailable or you need a local `.exe`
 
-> **相关文档**
-> - Release day checklist: [`docs/release-update-sop.md`](./release-update-sop.md)
-> - 工作流文件: [`.github/workflows/release.yml`](../.github/workflows/release.yml) (tag 触发发版) / [`.github/workflows/promote-update-channel.yml`](../.github/workflows/promote-update-channel.yml) (手动更新默认应用内更新通道) / [`.github/workflows/check.yml`](../.github/workflows/check.yml) (PR 时三平台 build 验证)
-> - Win 手动 build 指南: [`docs/windows-build-checklist.md`](./windows-build-checklist.md) — 当 CI 不可用、需要本地出一份 .exe 时参考
+## Overview
 
-## 总览
-
-```
-开发：本地 pnpm tauri dev (dogfood)
+```text
+Development: local pnpm tauri dev (dogfood)
        ↓
-版本号 bump (tauri.conf.json + package.json)
+Version bump (tauri.conf.json + package.json + Cargo.toml)
        ↓
 git commit + git tag v0.2.0-alpha.1 + git push origin main v0.2.0-alpha.1
        ↓
-GitHub Actions release.yml 自动触发
+GitHub Actions release.yml fires automatically
        │
        ├─ macos-15 (arm64 runner, native) → Galley_0.2.0-alpha.1_macOS_aarch64.dmg
-       ├─ macos-15 (arm64 runner, cross)  → Galley_0.2.0-alpha.1_macOS_x64.dmg   ← v0.1.2 起 CI 出，cross-compile + Rosetta 2
+       ├─ macos-15 (arm64 runner, cross)  → Galley_0.2.0-alpha.1_macOS_x64.dmg   ← cross-compile + Rosetta 2 since v0.1.2
        └─ windows-2022                    → Galley_0.2.0-alpha.1_Windows_x64-setup.exe
        ↓
-ubuntu-latest 收集产物 + gh release create --draft
+ubuntu-latest collects artifacts + gh release create --draft
        ↓
-手动 review: GitHub Release 页面看 draft、edit 加亮 notes、本地下载 smoke test
+Manual review: open the draft on the GitHub Release page, edit in release notes, download + smoke test locally
        ↓
-Agent / automation stops here until release owner confirms this exact draft build
+Agent / automation stops here until the release owner confirms this exact draft build
        ↓
-点 publish → 用户可见 + 可下载
+Click publish → user-visible + downloadable
        ↓
-alpha 内测 / 尝鲜：停在这里，只供手动下载
-stable / patch：继续运行 Promote Update Channel → 默认更新通道 manifest 指向该版本
+alpha / dogfood builds stop here for manual download only
+stable / patch builds continue to Promote Update Channel → default update-channel manifest points at this version
 ```
 
-构建时间预估：每个 platform job 4-7 min（缓存命中后），三个并行。全流程 push tag 到 draft release ready 大约 **10-12 min**。
+Estimated build time: 4-7 min per platform job (with cache hits), three in
+parallel. Push tag to draft-release-ready is roughly **10-12 min** end to end.
 
-**Mac Intel CI 路径**（v0.1.2 起）：macos-15 arm64 runner + cross-compile + Rosetta 2，详细 trial 验证见 [trial run 26016317898](https://github.com/wangjc683/galley/actions/runs/26016317898)。Rosetta 装载 ~3min，cross-compile 跟 native build 相比多约 2-3min。比保 GitHub macos-13 deprecated runner 更长寿（macos-13 在 2026-27 deprecation 路径上）。本地 build 路径仍然是兜底（CI 不可用 / 紧急 hotfix 时走 [Manual fallback](#manual-fallback-ci-stalled-or-skipped) 方案 B）。
+**Mac Intel CI path** (since v0.1.2): macos-15 arm64 runner + cross-compile +
+Rosetta 2, validated by [trial run 26016317898](https://github.com/wangjc683/galley/actions/runs/26016317898).
+Rosetta install ~3 min; cross-compile adds ~2-3 min vs native build. More
+durable than keeping GitHub's deprecated macos-13 runner (on a 2026-27
+deprecation path). Local build remains the fallback (see
+[Manual fallback](#manual-fallback-ci-stalled-or-skipped) scheme B when CI is
+unavailable or skipped).
 
-**Windows ARM 状态**：当前正式 release matrix 只支持 Windows x64。
-Windows ARM 需要先补 `windows-11-arm` / `aarch64-pc-windows-msvc` workflow
-job、`bundle-python.sh win-arm64`、updater manifest `windows-aarch64` 生成与
-校验，以及对应 smoke path。未完成这些前，不把 Windows ARM 作为稳定版
-release asset。
+**Windows ARM status**: the current release matrix only supports Windows x64.
+Windows ARM needs a `windows-11-arm` / `aarch64-pc-windows-msvc` workflow job,
+`bundle-python.sh win-arm64`, updater-manifest `windows-aarch64` generation and
+validation, and a matching smoke path. Until those are in place, Windows ARM
+is not a stable release asset.
 
-## 版本号策略
+## Version numbering
 
-Semver 0.x.y，pre-1.0 阶段：
+Semver 0.x.y, pre-1.0:
 
-| 例子 | 含义 | 触发场景 |
+| Example | Meaning | Trigger |
 |---|---|---|
-| `v0.2.0` | 增功能 release | 新 feature ship (e.g. Win 支持上线) |
-| `v0.2.1` | 补丁 release | post-release bug fix / dogfood polish |
-| `v0.2.0-alpha.1` | alpha 预发版 | 内测 / 尝鲜 / dogfood 版 |
-| `v0.2.0-beta.1` | beta 预发版 | 更接近公开发布的 dogfood 版 |
-| `v0.2.0-rc.1` | release candidate | 稳定版前最后验证版 |
-| `v1.0.0` | 第一个稳定版 | 用户量起来 + 自动更新就绪 + 关键功能稳定 |
-
-预发版 tag 包含 `-`，CI 自动 mark prerelease，GitHub Release 列表不会把它推作「latest」给普通用户。
-
-## 发版前 Pre-flight 清单
-
-每次正式 release 前过一遍：
-
-### 1. 代码完备
-
-- [ ] `main` 分支 CI 全绿（`check.yml` 三平台通过）
-- [ ] 本地 `pnpm typecheck` / `pnpm lint` / `cargo check` 干净
-- [ ] 本地 `pnpm tauri dev` smoke 跑通核心流程（新对话 / multi-step / 审批 / 切 LLM）
-- [ ] 如果包含 managed GA runtime / GA baseline / bundled dependency 变更：
-      `./scripts/bundle-python.sh <target-arch>` 通过，且
-      `./scripts/check-bundled-python-managed-ga.sh` 能用生成的 bundled Python
-      导入 `managed-ga/code`
-- [ ] 如果包含 managed GA runtime 变更：`node scripts/check-managed-ga-payload.mjs` 通过；本地成品包用 `node scripts/check-managed-ga-app-bundle.mjs <Galley.app>` 通过
-- [ ] 如果包含 GA upstream 升级：[upstream upgrade workflow](./ga-baseline.md#upgrade-procedure) 走完，external baseline 和 managed GA rebase 都验证过，devlog 写好
-
-### 2. 文档完备
-
-- [ ] 本次 release 有对应 devlog（`docs/devlog/YYYY-MM-DD-*.md`），叙事完整 + 6 段
-- [ ] [project status](./project-status.md) 更新到当前
-- [ ] PRD / DESIGN.md 如有变化已同步
-- [ ] 上一次 release 以来的 commits 简要回顾一遍，对应到 release notes 草稿
-
-### 3. 版本号 bump
-
-把版本号同步改五处（与 [release SOP](./release-update-sop.md) Pre-Flight 清单一致）：
-
-```bash
-# package.json (root)
-"version": "0.2.0-alpha.1"
-
-# gui/package.json
-"version": "0.2.0-alpha.1"
-
-# core/tauri.conf.json
-"version": "0.2.0-alpha.1"
-
-# core/Cargo.toml
-version = "0.2.0-alpha.1"
-
-# cli/Cargo.toml
-version = "0.2.0-alpha.1"
-```
-
-提交一个独立 commit：`Bump version v0.2.0-alpha.1`。**不要**跟功能 commit 混在一起——回滚版本号方便。
-
-### 4. 跑预发版
-
-正式 tag 之前先打一个 RC：
-
-```bash
-git tag v0.2.0-rc.1
-git push origin v0.2.0-rc.1
-```
-
-CI 跑完产生 3 份预发版产物（GitHub Release 上标 Prerelease）。下载 + 装 + 跑核心流程。RC 没问题再打正式 tag。
-
-> 如果是纯 bugfix（`v0.2.1`）改动很小且回归测试过了，可以跳 RC 直接打正式 tag。
-
-## 正式发版步骤
-
-### Step 1. 打 tag 并推
-
-```bash
-git tag v0.2.0
-git push origin main v0.2.0
-```
-
-> 推 main + tag 一起，避免 tag 引用了未推送的 commit 导致 CI fetch 失败。
-
-### Step 2. 等 CI（~15-20 min）
-
-打开 https://github.com/wangjc683/galley/actions 看进度。三个 build job 并行。`release` job 等三个全过才跑。
-
-CI 完成时：GitHub 顶部红圈通知 + 邮件提醒（默认订阅）。
-
-### Step 3. Review draft release
-
-进 https://github.com/wangjc683/galley/releases 看到一个 draft `Galley v0.2.0`：
-
-- **产物列表**：确认 CI 出 3 个文件
-  - `Galley_0.2.0_macOS_aarch64.dmg`
-  - `Galley_0.2.0_macOS_x64.dmg`
-  - `Galley_0.2.0_Windows_x64-setup.exe`
-- **Auto-generated notes**：GitHub 根据 tag 间的 commit 自动列出来。点 **Edit** 按下面模板加工：
-
-```markdown
-## What's new
-- 高亮 1-3 件用户视角能感知的核心变化（不是 commit 列表）
-- 用 user-facing 语言：「Windows 版本上线」而不是「Y plan custom chrome implemented」
-
-## Improvements
-- 列出小改进（UX 打磨、性能、bug fix）
-
-## Known issues
-- 已知未修的问题 + workaround
-- 比如：「Win 11 用户：Snap Layouts hover 选择器暂未支持，请用 Win+Arrow 替代」
-
-## Installation
-- **macOS Apple Silicon (M1+)**: 下 `aarch64.dmg`
-- **macOS Intel**: 下 `x64.dmg`
-- **Windows 10/11**: 下 `x64-setup.exe`，运行安装
-
-首次启动 macOS 会因为没签名提示风险 → 右键 → 打开。Win 类似 → SmartScreen 警告 → 更多信息 → 仍要运行。
-
-## Upstream
-GA baseline: `<commit-hash>` (e.g. 6bb3104)
-
----
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-```
-
-底部 GitHub 自动加的 commit list 保留作为详细变更记录。
-
-**Agent stop point**: 到这里不能 publish。Agent 只能汇总 draft URL、三平台
-installer 链接、CI / asset / notes 检查结果，然后等 release owner 下载并测试
-这一次 draft build。用户在发版开始时说「可以发布」只代表可以准备 release，
-不代表可以跳过 draft build 的安装包 smoke。
-
-### Step 4. Smoke test 三份产物
-
-把 CI 出的 2 个文件（+ 可选的本地 build Intel 包）下载到本地，按下表跑核心流程：
-
-| 平台 | 装法 | smoke 路径 |
-|---|---|---|
-| Mac arm64 | 右键 → 打开 `.dmg` → 拖进 Applications | 跑新对话 / 切 LLM / 触发一次审批 |
-| Mac x64 (Intel) | 本地 build（不在 CI matrix）；JC 自用机器，按需 smoke | 同上 |
-| Win x64 | 双击 `-setup.exe` 装 | 按 [windows-build-checklist.md §4](./windows-build-checklist.md#4--smoke-test-checklist) 25 项 |
-
-任何 smoke 项失败：**不要 publish**，先 `git tag -d v0.2.0 && git push origin :v0.2.0` 删 tag、修 bug、bump 到 `v0.2.1`（或推 `v0.2.0-rc.2` 重新预发）。
-
-如果是 Agent 协助发版，必须等 release owner 明确回复这一次 draft build 已经
-安装 / smoke 通过，并说可以 publish。CI 绿、assets 齐、release notes 写好，
-都不等价于 publish 授权。
-
-### Step 5. Publish
-
-只有 release owner 对这一次 draft build 给出明确 publish 授权后，才能执行本步。
-
-Release 页面右上角 → **Publish release**。一秒钟从 draft 变公开。
-
-GitHub 自动：
-- 发邮件给 watchers
-- 在 repo 顶部 banner 显示「New release」
-- Release atom feed 更新
-
-**关于 "Latest" 标记**（如果想让 repo 主页右侧 sidebar widget 显示该 release）：
-
-GitHub API 不允许 prerelease 标 Latest（实测 422 Validation Failed "Latest release cannot be draft or prerelease"）。所以发完 prerelease 后 sidebar widget 会显示 "X tags · Create a new release" 看起来像空的。
-
-**两个选择：**
-
-a) **接受 sidebar 空**：所有 release 保留 prerelease flag，主页 sidebar 不 promote。用户必须点 "Releases" 链接看才知道有。dogfood/internal 阶段可接受。
-
-b) **摘 prerelease flag + 标 Latest**：选信心最高的 release：
-   ```bash
-   gh release edit vX.Y.Z-rc.N --prerelease=false --latest
-   ```
-   失去 GitHub 灰色 "Pre-release" badge，但 sidebar 现出且能下。title 文字（如 "macOS (Release Candidate)"）+ notes 内部说明仍然传达 tier。
-   v0.1 和 v0.2.0-alpha.2 都用了 b（详 [2026-05-15 v0.1 ship devlog](./devlog/2026-05-15-v0.1-ship-and-ci-fallback.md#d3-github-不允许-prerelease-标-latestmac-rc-摘掉-prerelease-flag)）。注意这只影响 GitHub release 展示；自动更新仍由 update channel 决定。
-
-### Step 6. Promote update channel
-
-自动更新不要直接依赖 GitHub 的 `/releases/latest`。Galley 使用独立分支
-`galley-update-channel` 上的静态 manifest：
-
-```text
-https://raw.githubusercontent.com/wangjc683/galley/galley-update-channel/updates/stable/latest.json
-```
-
-`updates/beta/latest.json` 是旧客户端兼容别名。`GALLEY_UPDATER_ENDPOINT` 应该
-配置成 stable URL。首次配置时这个 URL 可以还不存在；release publish 后跑
-promote workflow 才会写入。
-
-Stable / patch release 发布后默认继续跑 Promote Update Channel；这不是可选
-收尾，而是让老版本用户能在 Galley 里升级到新版的正式 release gate。
-
-内测 / 尝鲜用的 alpha / RC / beta tester 版本默认只发布 GitHub Pre-release
-供手动下载，不跑 Promote Update Channel。只有当我们明确决定让当前更新频道
-用户也收到这个版本时，才把对应 tag 填进 promote workflow。
-
-如果正式版需要暂不推送应用内更新，必须在 release notes 和
-`docs/project-status.md` 里明确标记 `manual-download only` 或 `hold updater`。
-
-操作：
-
-1. 确认 GitHub Release 已经 Publish，不是 Draft。
-2. 打开 https://github.com/wangjc683/galley/actions/workflows/promote-update-channel.yml
-3. 点 **Run workflow**。
-4. `tag` 填刚发布的 tag，例如 `v0.2.0-beta.1`。
-5. `channel` 选 `stable`。
-
-workflow 会拒绝 draft release，下载该 release 的 artifacts，重新生成 Tauri
-`latest.json`，然后把 `updates/stable/latest.json` 推到
-`galley-update-channel` 分支；同时维护 `updates/beta/latest.json` 作为旧客户端
-兼容别名。用户侧下一次后台检查会看到这个版本。
-
-promote workflow 推送后会运行同一份 live channel verifier：
-
-```bash
-node scripts/check-update-channel.mjs \
-  --repo wangjc683/galley \
-  --tag v0.2.0-beta.1 \
-  --channel stable \
-  --cache-bust
-```
-
-这个检查必须过：它会确认 raw `latest.json` 返回 200、版本号匹配、三平台
-manifest 都存在、signature 是 inline 内容、平台 asset URL 可访问。
-`--cache-bust` 用来避开 GitHub raw CDN 短时间返回旧 manifest 的情况。
-如果这里失败，不要把 update channel 当作已经发布。
-
-### Step 7. 后续
-
-- [ ] 同步 [project status](./project-status.md)。如果这次提交只改 release
-      状态文档，跑 `git diff --check`、提交并推送即可；确认 GitHub Actions
-      触发后不用等完整 `check.yml`。只有 post-release commit 改到代码、脚本、
-      workflow、打包配置或 release / update-channel 逻辑时才等待 CI。
-- [ ] 用户群 / Twitter / 朋友圈 / 微博发版通告（人工）
-- [ ] 监控 [GitHub Issues](https://github.com/wangjc683/galley/issues) 头 24h，回 bug report
-- [ ] 如果 24h 内发现 critical bug：走 hotfix 流程（下方）
-
-## Hotfix 流程
-
-发版后头 48h 内发现严重 bug：
-
-1. `git checkout -b hotfix/v0.2.1` 从 `v0.2.0` tag 开（不要从 main，main 可能已有未发版的 commit）
-2. 修 bug、加测试
-3. bump 到 `v0.2.1`
-4. Merge back to main + tag + push
-5. 走正常发版流程，但 RC 可跳过（影响小、改动小）
-
-## Dry-run · 不打 tag 验证 CI 健康
-
-如果想验证「release.yml 本身能正确跑完三平台 build」而不想真发版（不留 tag、不创建 draft Release），用 GitHub Actions 的 **manual dispatch**：
-
-1. 打开 https://github.com/wangjc683/galley/actions/workflows/release.yml
-2. 右上角点 **Run workflow** → 选 `Branch: main` → 点绿色 **Run workflow** 按钮
-3. CI 会触发完整 build matrix（三平台并行 build）
-4. **release job 自动跳过**（`if: startsWith(github.ref, 'refs/tags/v')` 守门）—— 不创建 Release、不上传到任何 Release
-5. 三个 build job 都绿 = CI 工作流健康
-6. Artifacts 在 run 详情页右侧可下载（保留 90 天），想本地装一下 smoke test 也行
-
-从自动更新接入后，dry-run 也会校验 updater signing 配置。跑之前 GitHub repo
-里需要已有：
+| `v0.2.0` | feature release | new feature ships (e.g. Windows support lands) |
+| `v0.2.1` | patch release | post-release bug fix / dogfood polish |
+| `v0.2.0-alpha.1` | alpha pre-release | internal test / early adopter / dogfood |
+| `v0.2.0-beta.1` | beta pre-release | dogfood build closer to public release |
+| `v0.2.0-rc.1` | release candidate | final validation before stable |
+| `v1.0.0` | first stable | user volume + auto-update ready + critical features stable |
+
+Pre-release tags contain `-`, so CI auto-marks them prerelease and GitHub does
+not promote them as "latest" to ordinary users.
+
+## Release procedure
+
+The end-to-end release procedure — pre-flight, commit version bump, tag and
+push, wait for CI, review the draft, smoke, publish, promote, verify, dogfood —
+lives in the [release / update SOP](./release-update-sop.md). That is the
+authoritative runbook; follow it in order on release day. This document covers
+only the background, edge cases, and troubleshooting the SOP intentionally
+keeps terse.
+
+## Hotfix procedure
+
+For a severe bug found within 48h of release:
+
+1. `git checkout -b hotfix/v0.2.1` from the `v0.2.0` tag (not from main — main
+   may already carry un-released commits).
+2. Fix the bug, add tests.
+3. Bump to `v0.2.1`.
+4. Merge back to main + tag + push.
+5. Run the normal release procedure, but the RC can be skipped (small blast
+   radius, small diff).
+
+## Dry run
+
+To verify that `release.yml` itself can complete the three-platform build
+without actually releasing (no tag, no draft Release), use GitHub Actions
+**manual dispatch**:
+
+1. Open https://github.com/wangjc683/galley/actions/workflows/release.yml
+2. Top right → **Run workflow** → pick `Branch: main` → click the green
+   **Run workflow** button.
+3. CI fires the full build matrix (three platforms in parallel).
+4. The **release job is skipped automatically**
+   (`if: startsWith(github.ref, 'refs/tags/v')` guard) — no Release is created,
+   nothing is uploaded to any Release.
+5. All three build jobs green = the CI workflow is healthy.
+6. Artifacts are downloadable from the run detail page (retained 90 days); you
+   can install one locally for smoke if you want.
+
+Since auto-update was wired in, dry run also validates the updater signing
+configuration. Before running it, the repo needs these in place:
 
 - Secret: `TAURI_SIGNING_PRIVATE_KEY`
-- Secret: `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，如果 key 有密码
+- Secret: `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key has a password
 - Variable: `GALLEY_UPDATER_PUBKEY`
 - Variable: `GALLEY_UPDATER_ENDPOINT`
 
-适用场景：
-- CI 配置改动后想验证还能跑（比如调整 matrix / 升级 actions 版本）
-- 怀疑某个平台 break 了但不想等下次真发版才发现
-- 给 PR contributor 看「你的改动确实能在三个 OS build」
+When to use a dry run:
 
-不会产生：tag 污染 git 历史、draft Release 占 Releases 页。
+- After a CI config change, to verify the matrix still builds (e.g. adjusting
+  the matrix or upgrading action versions).
+- When you suspect a platform broke but don't want to wait for the next real
+  release to find out.
+- To show a PR contributor that their change builds on all three OSes.
 
-## 预发版（RC）流程
+It produces no tag pollution in git history and no draft Release cluttering the
+Releases page.
 
-跟正式发版几乎一样，区别：
+## Prerelease (RC) procedure
 
-- tag 包含 `-`（如 `v0.2.0-rc.1`、`v0.2.0-rc.2`）
-- CI 自动 mark prerelease，GitHub Release 不推作 latest
-- Release notes 标 **RC** 字样
-- 不发用户群通告，只内部 dogfood
+Almost identical to a stable release, with these differences:
+
+- The tag contains `-` (e.g. `v0.2.0-rc.1`, `v0.2.0-rc.2`).
+- CI auto-marks it prerelease; GitHub does not promote it as latest.
+- Release notes are marked **RC**.
+- No community announcement; internal dogfood only.
 
 ## Tiered release strategy
 
-不同平台 / 测试覆盖差距大时，**拆成多个独立 release**，每个标自己的 quality tier。今天 v0.1 用过：
+When platform / test coverage gaps are large, **split into multiple independent
+releases**, each tagged with its own quality tier. Used during v0.1:
 
-- macOS RC（作者本地 smoke 完整跑过）→ `v0.1.0-rc.1`
-- Windows Alpha（作者无 Win 机器，社区 dogfood）→ `v0.1.0-alpha.1`
+- macOS RC (author has fully smoked locally) → `v0.1.0-rc.1`
+- Windows Alpha (author has no Windows machine; community dogfood) → `v0.1.0-alpha.1`
 
-详 [2026-05-15 v0.1 ship devlog §D1](./devlog/2026-05-15-v0.1-ship-and-ci-fallback.md#d1-tiered-releasemacos-rc--windows-alpha-分两个-release)。
+See [2026-05-15 v0.1 ship devlog §D1](./devlog/2026-05-15-v0.1-ship-and-ci-fallback.md#d1-tiered-releasemacos-rc--windows-alpha-分两个-release).
 
-### 为什么不塞同一个 release
+### Why not one combined release
 
-把不同 tier 的 artifact 塞一个 release，notes 里说明 tier 差异——用户容易忽略 notes 直接下载，下到 Alpha 质量当 RC 用。**两个 release 视觉上 hard separation 更清楚**：Release 列表上用户看 "macOS RC (Latest)" + "Windows Alpha (Pre-release)" 两条，一眼就懂。
+Putting artifacts of different tiers into one release with a notes-level
+explanation of the difference means users ignore the notes and download anyway,
+ending up using Alpha quality as if it were RC. **Two releases give a hard
+visual separation**: the Release list shows "macOS RC (Latest)" + "Windows Alpha
+(Pre-release)" as two entries, and the meaning is obvious at a glance.
 
-### 何时用 tiered
+### When to use tiered
 
-- 平台 smoke 覆盖差距大（如今天 Mac 测过 + Win 没测过）
-- 功能 readiness 差距大（如 Mac 完整 + Win 有 known feature gap）
-- 用户群差距大（如已有 Mac 用户 + Win 是新平台）
+- Large platform smoke-coverage gap (e.g. Mac tested + Windows not tested).
+- Large feature-readiness gap (e.g. Mac complete + Windows has a known feature
+  gap).
+- Large audience gap (e.g. existing Mac users + Windows is a new platform).
 
-### Tag 命名
+### Tag naming
 
-Semver 兼容的 prerelease 后缀，按信心从高到低排：
+Semver-compatible prerelease suffixes, ordered by confidence high to low:
 
-| 后缀 | 含义 |
+| Suffix | Meaning |
 |---|---|
 | `vX.Y.Z` | final / stable |
 | `vX.Y.Z-rc.N` | Release Candidate |
 | `vX.Y.Z-beta.N` | Beta |
 | `vX.Y.Z-alpha.N` | Alpha |
 
-Tiered release 不同平台用不同后缀，**但版本号 base 应该一致**（都是 `vX.Y.Z`），便于追溯同一代码线。
+Different platforms in a tiered release use different suffixes, **but the
+version-number base should be the same** (all `vX.Y.Z`) so the same code line is
+traceable.
 
-### Latest 标记 + cross-link
+### Latest badge + cross-link
 
-参考 [Step 5 Publish "Latest" 标记](#step-5-publish) 摘 prerelease flag + 标 Latest。Tiered release 之间 release notes 互相 link：
+To make the repo sidebar show a tiered release, remove the prerelease flag and
+mark it Latest (see the SOP's publish step; GitHub does not let a prerelease be
+Latest). Cross-link tiered releases in their notes:
 
 ```markdown
-跟 [macOS RC v0.1.0-rc.1](https://.../tag/v0.1.0-rc.1) 同代码 → 理论同功能
+Same code as [macOS RC v0.1.0-rc.1](https://.../tag/v0.1.0-rc.1) → theoretically same features
 ```
 
-让用户知道还有其它平台的 release。
+So users know there are releases for other platforms.
 
-## Manual fallback：CI stalled or skipped
+## Manual fallback: CI stalled or skipped
 
-CI 出 build 不可用时，手动 fallback 路径。
+When CI-built artifacts are unavailable, use the manual fallback path.
 
-### 触发条件
+### Triggers
 
-按优先级：
+In priority order:
 
-1. ⏳ macos-13 Intel runner **queue > 30 min** → fallback（详 [CI 故障排查](#symptom-macos-13-runner-排不到)）
-2. ❌ 单平台 build 失败但其它平台 OK → fallback（用 success 平台 artifact + 失败平台留待修）
-3. 🚫 完全不想跑 CI（已经本地 build + 信心高 + 紧急）→ fallback
+1. ⏳ macos-13 Intel runner **queue > 30 min** → fallback (see
+   [CI troubleshooting](#ci-troubleshooting)).
+2. ❌ One platform's build fails but others are OK → fallback (use the
+   successful platforms' artifacts + leave the failed platform for later).
+3. 🚫 You simply don't want to run CI (already built locally + high confidence
+   + urgent) → fallback.
 
-### 完整命令序列
+### Full command sequence
 
 ```bash
-# 1. 取消卡住或不要的 CI run
-gh run list --workflow=release.yml --limit 3   # 找 run ID
+# 1. Cancel the stuck or unwanted CI run
+gh run list --workflow=release.yml --limit 3   # find the run ID
 gh run cancel <run-id>
 
-# 2a. 已 success 的 CI artifact 下载到本地
-gh run download <run-id> -n galley-macos-15-aarch64   # 出 Galley_X.Y.Z_macOS_aarch64.dmg
-gh run download <run-id> -n galley-windows-2022-x64 # 出 Galley_X.Y.Z_Windows_x64-setup.exe
+# 2a. Download successful CI artifacts locally
+gh run download <run-id> -n galley-macos-15-aarch64   # → Galley_X.Y.Z_macOS_aarch64.dmg
+gh run download <run-id> -n galley-windows-2022-x64   # → Galley_X.Y.Z_Windows_x64-setup.exe
 
-# 2b. 本地 build 兜 self-arch（Mac x64 / aarch64）— 别忘了重命名
+# 2b. Local build for self-arch (Mac x64 / aarch64) — remember to rename
 cd gui && pnpm tauri build --target x86_64-apple-darwin
 ../scripts/rename-artifact.sh x86_64-apple-darwin
-# 产物：core/target/x86_64-apple-darwin/release/bundle/dmg/Galley_X.Y.Z_macOS_x64.dmg
+# artifact: core/target/x86_64-apple-darwin/release/bundle/dmg/Galley_X.Y.Z_macOS_x64.dmg
 
-# 3. 起草 GitHub Release notes 到 /tmp/galley-<tag>-notes.md
-# 模板见 docs/release-update-sop.md；下方 "Announcement templates" 只用于群公告 / 社媒通告
+# 3. Draft the GitHub Release notes to /tmp/galley-<tag>-notes.md
+# Use the release-notes template in docs/release-update-sop.md.
 
-# 4. 创建 draft release（不直接 publish，留给你 review）
+# 4. Create a draft release (don't publish directly — leave it for review)
 gh release create vX.Y.Z-rc.N \
   --draft --prerelease \
   --title "Galley vX.Y.Z-rc.N · macOS (Release Candidate)" \
@@ -410,67 +231,93 @@ gh release create vX.Y.Z-rc.N \
   Galley_X.Y.Z_macOS_aarch64.dmg \
   Galley_X.Y.Z_macOS_x64.dmg
 
-# 5. 上 GitHub UI 看 draft（Markdown 渲染 / files / metadata）
+# 5. Open the draft on GitHub UI (Markdown render / files / metadata)
 
 # 6. publish
 gh release edit vX.Y.Z-rc.N --draft=false
 
-# 7. 想标 Latest（必须先去 prerelease flag）
+# 7. To mark Latest (must drop the prerelease flag first)
 gh release edit vX.Y.Z-rc.N --prerelease=false --latest
 ```
 
-### 关键注意
+### Key notes
 
-- **不要忘 `--prerelease` flag** in step 4 —— 第一次出 RC/Alpha release 应该是 prerelease。Tier 等级靠 title + notes 表达，prerelease flag 是 GitHub 层标记
-- **本地 build 产物文件名跟 CI 产物一致**（`Galley_X.Y.Z_<arch>.<ext>`），命名一致用户不困惑
-- **手动 fallback 的 CI 跑废没关系**——`release.yml` 的 `release` job 始终因 `needs: build` 等不到失败 / 卡住的 build，不会自动创建 Release，不冲突
-- **Tag 已 push 但 release 没出？** Tag 已经在 origin → `gh release create <tag>` 直接用现有 tag，不需要 `--target` flag
+- **Don't forget the `--prerelease` flag** in step 4 — an RC/Alpha release
+  should be prerelease. The tier is conveyed by title + notes; the prerelease
+  flag is the GitHub-level marker.
+- **Keep local-build artifact filenames identical to CI artifacts**
+  (`Galley_X.Y.Z_<arch>.<ext>`); consistent naming avoids user confusion.
+- **A wasted CI run during manual fallback is harmless** — `release.yml`'s
+  `release` job always fails to reach the failed / stuck `build` job
+  (`needs: build`), so it never auto-creates a Release. No conflict.
+- **Tag pushed but no release appeared?** The tag is already on origin →
+  `gh release create <tag>` uses the existing tag; no `--target` flag needed.
 
-## CI 故障排查
+## CI troubleshooting
 
-### Symptom: macos-13 runner 排不到
+### Symptom: macos-13 runner won't schedule
 
-GitHub Actions 偶发某些 runner 排队。等 5-10 min 通常自然解决。
+GitHub Actions occasionally queues certain runners. Waiting 5-10 min usually
+resolves it.
 
-**持续超过 30 min**：
+**Persisting beyond 30 min**:
 
-1. 去 https://www.githubstatus.com 看 Actions 状态——如果整体故障，等
-2. 如果只是 macos-13 排队 → **切到 manual fallback**（详 [Manual fallback section](#manual-fallbackci-stalled-or-skipped)）
-   - 取消卡住的 run
-   - 用其他平台已 build 的 artifact + 本地 `pnpm tauri build` 兜
-   - `gh release create` 手动出 release
-3. 本质问题：macos-13 是 deprecated runner（[Intel runner deprecation 应对](#intel-runner-deprecation-应对)），长期不可靠
+1. Check https://www.githubstatus.com for overall Actions status — if it's a
+   platform-wide outage, wait.
+2. If only macos-13 is queued → **switch to manual fallback** (see
+   [Manual fallback](#manual-fallback-ci-stalled-or-skipped)):
+   - Cancel the stuck run.
+   - Use the other platforms' built artifacts + a local `pnpm tauri build` for
+     the missing arch.
+   - `gh release create` to produce the release manually.
+3. Root cause: macos-13 is a deprecated runner (see
+   [Intel runner deprecation](#intel-runner-deprecation)); unreliable long-term.
 
-今天 v0.1 release（2026-05-15）就这么走的——详 [2026-05-15 v0.1 ship devlog](./devlog/2026-05-15-v0.1-ship-and-ci-fallback.md)。
+The v0.1 release (2026-05-15) went this way — see
+[2026-05-15 v0.1 ship devlog](./devlog/2026-05-15-v0.1-ship-and-ci-fallback.md).
 
-### Symptom: cargo check 在 Win 上挂 linker error
+### Symptom: cargo check linker error on Windows
 
-通常是 Rust + MSVC 版本组合问题。check `dtolnay/rust-toolchain@stable` 是不是用了不兼容版本。临时 workaround：pin Rust 版本（如 `dtolnay/rust-toolchain@1.78`）。
+Usually a Rust + MSVC version-combination issue. Check whether
+`dtolnay/rust-toolchain@stable` resolved to an incompatible version. Temporary
+workaround: pin a Rust version (e.g. `dtolnay/rust-toolchain@1.78`).
 
-### Symptom: pnpm 报 lockfile mismatch
+### Symptom: pnpm lockfile mismatch
 
-`pnpm install --frozen-lockfile` 严格 lockfile 模式。如果近期改了 dependencies 但忘提交 `pnpm-lock.yaml`，CI 就挂。本地跑一次 `pnpm install` 再提交锁文件。
+`pnpm install --frozen-lockfile` enforces a strict lockfile. If you changed
+dependencies recently but forgot to commit `pnpm-lock.yaml`, CI fails. Run
+`pnpm install` locally once and commit the lockfile.
 
-### Symptom: tauri build 在 Win 报 NSIS 缺资源
+### Symptom: tauri build on Windows reports missing NSIS resources
 
-`bundle.windows.nsis.installerIcon` 路径错。检查 `core/tauri.conf.json` 的 icon 配置。
+The `bundle.windows.nsis.installerIcon` path is wrong. Check the icon config in
+`core/tauri.conf.json`.
 
-### Symptom: 产物 artifact 上传后 `release` job 找不到
+### Symptom: `release` job can't find artifacts after upload
 
-`actions/download-artifact@v4` 的 `merge-multiple: true` 把所有 artifact 平铺到 `artifacts/` 下。如果 `softprops/action-gh-release@v2` 的 `files: artifacts/**/*` 没匹配到任何文件，说明 build job 的 `path` glob 不对。看 release job 的 `List artifacts` 步输出。
+`actions/download-artifact` with `merge-multiple: true` flattens all artifacts
+under `artifacts/`. If `softprops/action-gh-release`'s `files: artifacts/**/*`
+matches nothing, the build job's `path` glob is wrong. Inspect the release
+job's `List artifacts` step output.
 
-## Intel runner deprecation 应对
+## Intel runner deprecation
 
-`macos-13` runner GitHub 已经标 deprecated（具体下线日期 GitHub 没公告，估计 2026 年底-2027 年）。**v0.1.0-alpha.2 起 Galley 已经从 CI matrix 撤掉 macos-13**——比 GitHub 强制下线提前走。
+GitHub has marked the `macos-13` runner deprecated (no public shutdown date, but
+estimated end of 2026 to 2027). **Since v0.1.0-alpha.2 Galley has removed
+macos-13 from the CI matrix** — ahead of GitHub's forced shutdown.
 
-历史走过的兜底路径（按时间序）：
+Fallback paths taken, in chronological order:
 
-- **v0.1.0-alpha.2 / v0.1.1-alpha.1**: 方案 B —— JC 本地 Intel Mac build + `gh release upload` 手挂
-- **v0.1.2 起**: 方案 C —— macos-15 arm64 runner cross-compile x86_64 + Rosetta 2 装载，全 CI 自动出。trial 验证 2026-05-18 [run 26016317898](https://github.com/wangjc683/galley/actions/runs/26016317898) 通过，merge 到 main 作为默认 CI 行为
+- **v0.1.0-alpha.2 / v0.1.1-alpha.1**: scheme B — JC's local Intel Mac build +
+  `gh release upload` to attach manually.
+- **v0.1.2 onward**: scheme C — macos-15 arm64 runner cross-compiles x86_64 +
+  Rosetta 2 install, fully CI-automated. Trial-validated 2026-05-18,
+  [run 26016317898](https://github.com/wangjc683/galley/actions/runs/26016317898),
+  merged to main as the default CI behavior.
 
-### 方案 C（当前主力，v0.1.2 起）
+### Scheme C (current main path, since v0.1.2)
 
-`release.yml` matrix 第二行：
+The second row of the `release.yml` matrix:
 
 ```yaml
 - platform: macos-15
@@ -480,7 +327,8 @@ GitHub Actions 偶发某些 runner 排队。等 5-10 min 通常自然解决。
   bundle_glob: "*.dmg"
 ```
 
-加 conditional Rosetta install step（`if: matrix.target == 'x86_64-apple-darwin'`）：
+With a conditional Rosetta install step
+(`if: matrix.target == 'x86_64-apple-darwin'`):
 
 ```yaml
 - name: Install Rosetta 2 (x86_64 cross-compile on arm64 host)
@@ -488,211 +336,151 @@ GitHub Actions 偶发某些 runner 排队。等 5-10 min 通常自然解决。
   run: softwareupdate --install-rosetta --agree-to-license
 ```
 
-`bundle-python.sh mac-x64` 下 x86_64 PBS Python tarball，在 arm64 host 上通过 Rosetta 2 跑 `pip install` 装 GA deps。`pnpm tauri build --target x86_64-apple-darwin` Rust cross-compile 出 Mac Intel binary。`hdiutil` 自动出 x86_64 .dmg。
+`bundle-python.sh mac-x64` downloads the x86_64 PBS Python tarball and runs
+`pip install` for the GA deps on the arm64 host via Rosetta 2.
+`pnpm tauri build --target x86_64-apple-darwin` cross-compiles the Mac Intel
+binary. `hdiutil` produces the x86_64 `.dmg` automatically.
 
-Trial 实测 binary arch：
+Trial-verified binary arch:
+
 ```
 Galley.app/Contents/MacOS/desktop:                Mach-O x86_64 ✓
 Galley.app/Contents/Resources/python/bin/python3.11:  Mach-O x86_64 ✓
 ```
 
-耗时：~7min vs arm64 native ~4min（Rosetta install +~3min，cross-compile +~0min on cached Rust target）。
+Timing: ~7 min vs arm64 native ~4 min (Rosetta install +~3 min, cross-compile
++~0 min on a cached Rust target).
 
-### 方案 B（v0.1.2 起仅作兜底）
+### Scheme B (fallback only, since v0.1.2)
 
-CI stalled / 紧急 hotfix / Rosetta 装载在某次 runner image update 后失败时，仍可本地 build:
+When CI stalls / urgent hotfix / Rosetta install fails after a runner-image
+update, a local build still works:
 
-- JC 在 Intel Mac 上 `pnpm tauri build --target x86_64-apple-darwin`
-- `scripts/rename-artifact.sh x86_64-apple-darwin` 插 `macOS` slug
-- `gh release upload v<X.Y.Z> Galley_<X.Y.Z>_macOS_x64.dmg` 挂到 same Release
+- On an Intel Mac: `pnpm tauri build --target x86_64-apple-darwin`
+- `scripts/rename-artifact.sh x86_64-apple-darwin` inserts the `macOS` slug
+- `gh release upload v<X.Y.Z> Galley_<X.Y.Z>_macOS_x64.dmg` attaches to the
+  same Release
 
-### 方案 A（drop Intel Mac 支持）
+### Scheme A (drop Intel Mac support)
 
-不再考虑——方案 C 跑通后 Intel CI 维护成本可控；Galley 早期用户里 Intel Mac 占比仍可观。
+No longer considered — with scheme C working, Intel CI maintenance cost is
+manageable, and Intel Mac share among early Galley users is still meaningful.
 
-历史记忆：2026-05-15 alpha.2 起为方案 B，2026-05-18 v0.1.1-alpha.1 ship 后验证 + merge 方案 C 成主力。
+History: scheme B from 2026-05-15 alpha.2; validated + merged scheme C as the
+main path after the 2026-05-18 v0.1.1-alpha.1 ship.
 
 ## Announcement templates
 
-发版同时通常要发通告。每次内容不同，但结构可复用。**这一节是模板，不是文案本身**——具体每次复制改填，发布完通告写到 `/tmp/galley-announce-{zh,en}.md` 用一次就丢，**不入库**。
+Per-release announcements are written to a throwaway `/tmp/galley-announce-{zh,en}.md`
+file each release, used once, and **not committed to the repo**. The structure is
+recreated from scratch each time — there is no in-repo template body to maintain.
+For the release-day flow itself, follow the
+[release / update SOP](./release-update-sop.md).
 
-### 中文（GA 群 / 微信 / 飞书）
+## Future work (v0.6+)
 
-```markdown
-🚢 Galley vX.Y 版本上线了
+### Code signing
 
-[一两句 product positioning / why care]
+To eliminate the "unsigned app" warning on first launch:
 
-[✅ feature 5-7 个，emoji 视觉锚点]
+**macOS (Apple Developer Program, $99/year)**:
+- Apply for a Developer ID Application certificate.
+- Add CI secrets: `APPLE_CERTIFICATE` (.p12 base64) +
+  `APPLE_CERTIFICATE_PASSWORD` + `APPLE_ID` + `APPLE_PASSWORD` +
+  `APPLE_TEAM_ID`.
+- Add codesign + notarize steps to `release.yml`.
+- One-time effort ~2-3 h + $99/year.
 
-📌 [non-invasive 一句话或核心承诺]
+**Windows (code-signing certificate, $200-400/year)**:
+- Buy a certificate from SSL.com / Sectigo.
+- Add CI secret: signing cert + password.
+- Add a signtool step to `release.yml`.
+- One-time effort ~1-2 h + annual fee.
 
-[多 release tier 时分块列出，否则一段]
+**Decision point**: invest only once there is real user volume beyond the
+dogfood group.
 
-🍎 macOS (tier 阶段，[guarantor])
-👉 [URL]
+### Auto-update (`tauri-plugin-updater`)
 
-🪟 Windows (tier 阶段，[guarantor])
-👉 [URL]
+Phase one has wired in the check-for-update entry in Settings → About / Runtime
+and the post-launch background check. When a new version is found, it downloads
+and prepares the update in the background, then waits for the user to restart
+to apply it. It is only truly enabled when both of these release configs are
+provided:
 
-📦 GitHub：[repo URL]
-🐛 反馈：Issues 或本群
+- `GALLEY_UPDATER_PUBKEY`: the Tauri updater public key embedded in the app
+- `GALLEY_UPDATER_ENDPOINT`: HTTPS updater-manifest URL
+- `TAURI_SIGNING_PRIVATE_KEY`: Tauri updater private key, as a GitHub Secret
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: optional, if the key has a password
 
-⚠️ [安装注意事项 / unsigned 绕过 / SmartScreen 等]
+Until configured, the UI shows "Dev build not connected to an update channel",
+but Dev and local builds are unaffected. Generate the key pair:
 
-[下一步路线图一句话，链 PRD]
-```
-
-### 英文短版（Twitter / X · ≤ 280 chars）
-
-```markdown
-🚢 Galley vX.Y just shipped — [one-line product positioning].
-
-[3-5 features in commas, no list]
-
-[brand attributes: e.g., Local-first. Non-invasive.]
-
-[next milestone hook]
-
-→ [repo URL]
-```
-
-### 英文长版（Hacker News / Reddit / blog post lead）
-
-```markdown
-**Galley vX.Y: [longer positioning]**
-
-[2-3 sentences context — what is it, who is it for]
-
-Today's vX.Y ships:
-- Feature 1
-- Feature 2
-- ...
-
-[Non-invasive / differentiator paragraph]
-
-**Where this is going (next major)**: [roadmap hook]
-
-**[Special characteristic, e.g., Local-first]**: [explanation]
-
-**Today's releases:**
-- macOS [tier]: [URL] ([smoke status])
-- Windows [tier]: [URL] ([smoke status])
-
-**Built on**: [tech stack]. Code: [repo URL]
-
-[Additional docs links]
-```
-
-### 必备字段
-
-每个通告（无论语言 / 长度）必须有：
-
-- 版本号 + tier（RC / Alpha / Final）
-- Download URLs（per platform release）
-- Repo URL
-- 反馈 channel（Issues / 用户群）
-- 安装 caveat（unsigned app 处理）
-
-### 不要做的
-
-- ❌ 不要把通告 commit 到仓库——每次内容不同，模板才可复用
-- ❌ 不要在通告里承诺没在 PRD 上 publish 的路线图（已 publish 的路线图复述可以）
-- ❌ 不要省 "unsigned" 安装绕过说明——用户首次启动碰到 Gatekeeper / SmartScreen 卡死不会自己想到
-
-## 未来工作 (v0.6+)
-
-### 代码签名
-
-为了消除用户首次启动的「未签名警告」：
-
-**Mac (Apple Developer Program $99/年)**:
-- 申请 Developer ID Application certificate
-- CI 加 secret: `APPLE_CERTIFICATE` (.p12 base64) + `APPLE_CERTIFICATE_PASSWORD` + `APPLE_ID` + `APPLE_PASSWORD` + `APPLE_TEAM_ID`
-- 在 `release.yml` 加 codesign + notarize 步
-- 工时 ~2-3 h 一次性 + $99/年
-
-**Windows (代码签名证书 $200-400/年)**:
-- 从 SSL.com / Sectigo 买证书
-- CI 加 secret: signing cert + password
-- 在 `release.yml` 加 signtool 步
-- 工时 ~1-2 h 一次性 + 年费
-
-**判断节点**：dogfood 群体之外有真用户量时才投入。
-
-### 自动更新 (`tauri-plugin-updater`)
-
-第一阶段已经接入 Settings -> About / Runtime 的检查更新入口，以及启动后的
-后台检查。发布构建发现新版本后会后台下载并准备更新，等待用户重启生效。
-只有在同时提供下面的 release 配置时才会真正启用更新通道：
-
-- `GALLEY_UPDATER_PUBKEY`: 嵌入 app 的 Tauri updater public key
-- `GALLEY_UPDATER_ENDPOINT`: HTTPS updater manifest URL
-- `TAURI_SIGNING_PRIVATE_KEY`: Tauri updater private key, GitHub Secret
-- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: 可选，Tauri updater private key 密码
-
-还没有配置时，UI 会显示「Dev 构建未连接更新通道」，
-但不会影响 Dev 或本地 build。生成 key pair：
-
-保护逻辑：只要有 session 正在运行，Galley 不会下载 / 安装 / relaunch 更新。
-后台检查可以先记住「发现新版本」，等所有任务结束后再继续准备。
+Protection logic: as long as any session is running, Galley will not download /
+install / relaunch an update. The background check can remember "new version
+found" and continue preparing it only after all tasks finish.
 
 ```bash
 pnpm --dir gui tauri signer generate -w ~/.config/galley/updater.key
 ```
 
-`updater.key.pub` 文件本身是 Tauri 需要的 base64 public key。可以 decode
-检查它是否还原为 minisign public key，但不要把 decode 后的两行文本放进
-GitHub Variable：
+`updater.key.pub` is the base64 public key Tauri needs. You can decode it to
+check it round-trips to a minisign public key, but do not put the decoded
+two-line text into the GitHub Variable:
 
 ```bash
 base64 -D < ~/.config/galley/updater.key.pub
 ```
 
-配置位置：
+Where to configure:
 
 - GitHub Secrets:
   - `TAURI_SIGNING_PRIVATE_KEY`
-  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，如果生成 key 时设置了密码
+  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, if you set a password when generating
+    the key
 - GitHub Variables:
-  - `GALLEY_UPDATER_PUBKEY`: `updater.key.pub` 文件内容
+  - `GALLEY_UPDATER_PUBKEY`: the contents of `updater.key.pub`
   - `GALLEY_UPDATER_ENDPOINT`
 
-Release workflow 会在 CI 里临时写入
-`core/tauri.updater.generated.conf.json`，把 public key / endpoint 合并进
-Tauri config，同时打开 `bundle.createUpdaterArtifacts`。CI 已经在独立步骤准备
-CLI sidecar，所以这个临时 config 也会把 `beforeBuildCommand` 收窄成
-`pnpm --dir gui build`，避免 Windows Tauri bundle 阶段重新执行 bash-only
-repo script。workflow 会上传 updater artifacts：
+The release workflow writes a temporary
+`core/tauri.updater.generated.conf.json` in CI, merging the public key /
+endpoint into the Tauri config and turning on `bundle.createUpdaterArtifacts`.
+CI already prepares the CLI sidecar in a separate step, so this temporary config
+also narrows `beforeBuildCommand` to `pnpm --dir gui build` to avoid re-running
+bash-only repo scripts during the Windows Tauri-bundle phase. The workflow
+uploads updater artifacts:
 
-- macOS: `Galley_<version>_macOS_<arch>.app.tar.gz` 和 `.sig`
-- Windows: `Galley_<version>_Windows_x64-setup.exe` 和 `.sig`
+- macOS: `Galley_<version>_macOS_<arch>.app.tar.gz` and `.sig`
+- Windows: `Galley_<version>_Windows_x64-setup.exe` and `.sig`
 
-Windows ARM updater artifacts 暂不生成；启用前必须同步更新
-`scripts/generate-tauri-update-manifest.mjs` 和
-`scripts/check-update-channel.mjs`，否则 live manifest 验证会与 release
-assets 脱节。
+Windows ARM updater artifacts are not generated yet; enabling them requires
+synchronously updating `scripts/generate-tauri-update-manifest.mjs` and
+`scripts/check-update-channel.mjs`, otherwise the live-manifest validation will
+drift from the release assets.
 
-Release workflow 还会把 `latest.json` candidate 放进 draft Release，方便 review。
-真正对用户生效的 manifest 由 `promote-update-channel.yml` 手动发布到默认
-应用内更新通道：
+The release workflow also drops a `latest.json` candidate into the draft Release
+for review. The manifest that actually affects users is published to the default
+in-app update channel by `promote-update-channel.yml`:
 
 ```text
 https://raw.githubusercontent.com/wangjc683/galley/galley-update-channel/updates/stable/latest.json
 ```
 
-`updates/beta/latest.json` 继续保留为 legacy alias，让旧版本安装包也能收到
-后续更新。
+`updates/beta/latest.json` is kept as a legacy alias so older installed builds
+still receive later updates.
 
-manifest 规则：
+Manifest rules:
 
-- manifest 里的 `signature` 必须是 `.sig` 文件内容，不是 `.sig` URL。
-- manifest 里的 `url` 指向对应平台的 updater 包。
-- live channel 必须通过 `scripts/check-update-channel.mjs --cache-bust`
-  验证后才算完成。
-- 不依赖 `/releases/latest/download/latest.json` 作为更新通道；使用上面的显式
-  `galley-update-channel` endpoint，避免 draft / prerelease / smoke 前版本泄漏。
+- `signature` in the manifest must be the `.sig` file's contents, not the
+  `.sig` URL.
+- `url` in the manifest points at the corresponding platform's updater package.
+- The live channel must pass
+  `scripts/check-update-channel.mjs --cache-bust` before it counts as published.
+- Do not depend on `/releases/latest/download/latest.json` as the update
+  channel; use the explicit `galley-update-channel` endpoint above to avoid
+  leaking draft / prerelease / pre-smoke versions.
 
-### Linux 构建
+### Linux builds
 
-`ubuntu-latest` runner + AppImage / deb 打包。低优先级，等真有 Linux 用户问。
+`ubuntu-latest` runner + AppImage / deb packaging. Low priority, waiting for
+real Linux users to ask.
