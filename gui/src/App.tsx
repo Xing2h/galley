@@ -283,7 +283,7 @@ function App() {
   // The Composer only emits the reason; the toast copy (and which key it
   // lives under) is an App-level concern, so the mapping stays here.
   const handleImageBlocked = (
-    reason: "goal" | "external" | "too-large" | "unsupported",
+    reason: "goal" | "external" | "too-large" | "unsupported" | "too-many",
   ) => {
     const message =
       reason === "goal"
@@ -292,7 +292,9 @@ function App() {
           ? copy.toasts.imageBlockedExternal
           : reason === "too-large"
             ? copy.toasts.imageTooLarge
-            : copy.toasts.imageUnsupported;
+            : reason === "too-many"
+              ? copy.toasts.imageTooMany
+              : copy.toasts.imageUnsupported;
     showImageBlockedToast(message);
   };
   const openModelConfigFromSwitcher =

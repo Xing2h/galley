@@ -1219,6 +1219,7 @@ export const zhCopy = {
     imageBlockedExternal:
       "当前外部 GA 尚不支持图片输入，请移除图片后发送，或改用内置 GA 新建会话。",
     imageTooLarge: "图片过大，单张上限 10 MB。",
+    imageTooMany: "最多添加 4 张图片，移除一张再继续。",
     imageUnsupported:
       "不支持的图片格式，请粘贴或选择 PNG / JPEG / WebP。",
     toolsReinjected: "工具已重新注入",

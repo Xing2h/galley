@@ -77,7 +77,14 @@ export function useImageAttachments({
   // in `pendingImages` as they resolve, gated by the max-attachments cap
   // to avoid racing past it when several land in the same tick.
   const acceptImageFiles = (files: File[]) => {
+    if (files.length === 0) return;
     const remaining = MAX_PENDING_IMAGES - pendingImages.length;
+    // At cap, or this batch would overflow it: take what fits and tell the
+    // user the rest were dropped (otherwise the extra images vanish with no
+    // feedback — the silent-failure bug this gate fixes).
+    if (files.length > remaining) {
+      onImageBlocked?.("too-many");
+    }
     if (remaining <= 0) return;
     for (const file of files.slice(0, remaining)) {
       void readImageFile(file)

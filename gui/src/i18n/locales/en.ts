@@ -1270,6 +1270,7 @@ export const enCopy: AppCopy = {
     imageBlockedExternal:
       "External GA does not support image input yet. Remove the image before sending, or start a new session with bundled GA.",
     imageTooLarge: "Image is too large. The limit is 10 MB per image.",
+    imageTooMany: "You can attach up to 4 images. Remove one to add another.",
     imageUnsupported:
       "Unsupported image format. Please paste or pick a PNG, JPEG, or WebP image.",
     toolsReinjected: "Tools reinjected",
