@@ -150,4 +150,4 @@ austere 不等于 cryptic。以下场景**保留必要的解释句**：
 - 英文逐区域草稿：见 [english-copy-draft](./english-copy-draft.md)。本准则
   通过后，英文改写在该草稿基础上按 B 方向再收紧。
 - 题词 / Composer 三寄存器的哲学落点：见
-  `.kiro/specs/philosophical-voice/`。
+  [philosophical voice spec](./specs/philosophical-voice/requirements.md)。

@@ -27,7 +27,7 @@ import type { ResolvedLanguage } from "@/lib/language";
  * state-bound Wittgenstein line shown above the empty-state Composer:
  * a translated line in the user's software language, with the German
  * original on an always-on secondary line. See
- * `.kiro/specs/philosophical-voice/`.
+ * `docs/specs/philosophical-voice/`.
  */
 export type EpigraphCondition = "silent" | "quiet" | "working" | "fresh";
 

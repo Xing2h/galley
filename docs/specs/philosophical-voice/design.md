@@ -2,7 +2,7 @@
 
 > Feature: Philosophical Voice (Part A: Epigraph · Part B: Composer Voice)
 > Spec status: Draft — design under review.
-> Reads with: `.kiro/specs/philosophical-voice/requirements.md`
+> Reads with: `requirements.md`
 
 ## Overview
 

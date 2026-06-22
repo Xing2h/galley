@@ -30,7 +30,7 @@ export interface EpigraphProps {
  * The region is non-interactive and labeled for screen readers without
  * stealing focus.
  *
- * See `.kiro/specs/philosophical-voice/` (Requirements 1, 2, 5).
+ * See `docs/specs/philosophical-voice/` (Requirements 1, 2, 5).
  */
 export function Epigraph({ condition = "fresh", className }: EpigraphProps) {
   const language = useLanguage();

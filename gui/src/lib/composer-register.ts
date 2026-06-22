@@ -9,7 +9,7 @@
  * is produced separately by EmptyState's own placeholder copy and is
  * intentionally not modeled here.
  *
- * See `.kiro/specs/philosophical-voice/` (Requirement 3).
+ * See `docs/specs/philosophical-voice/` (Requirement 3).
  */
 
 /** The register an in-session Composer can be in. `commissioning`
