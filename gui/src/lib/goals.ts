@@ -49,6 +49,19 @@ export function goalPillLabel(status: GoalStatus, copy: TopbarCopy): string {
   return `Goal · ${goalStageLabel(status, copy)}`;
 }
 
+/**
+ * Title for a Goal's master session — `Goal · <objective>`, with the
+ * objective whitespace-collapsed and truncated so the session-list row
+ * stays single-line. An empty objective falls back to a bare `Goal`.
+ */
+export function goalMasterSessionTitle(objective: string): string {
+  const normalized = objective.replace(/\s+/g, " ").trim();
+  if (!normalized) return "Goal";
+  const limit = 44;
+  if (normalized.length <= limit) return `Goal · ${normalized}`;
+  return `Goal · ${normalized.slice(0, limit)}…`;
+}
+
 export function listActiveGoals() {
   return invoke<GoalBrief[]>("list_active_goals");
 }

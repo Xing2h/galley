@@ -73,3 +73,26 @@ export function saveFeishuImConfig(input: SaveFeishuImConfigInput) {
 export function deleteFeishuImConfig() {
   return invoke<FeishuImConfig>("delete_feishu_im_config");
 }
+
+/**
+ * Collapse several per-channel supervisor states into the single state for
+ * the aggregate indicator. Severity-ordered: any `error`/`expired` surfaces
+ * as `error`, then a pending scan, then a transitional `starting`/
+ * `reconnecting`, then `running`, then `stopped`; nullish channels are
+ * ignored. Returns null when no channel reports a state.
+ */
+export function aggregateChannelsState(
+  states: Array<ImSupervisorState | null | undefined>,
+): ImSupervisorState | null {
+  const present = states.filter(Boolean) as ImSupervisorState[];
+  if (present.some((state) => state === "error" || state === "expired")) {
+    return "error";
+  }
+  if (present.includes("waiting_scan")) return "waiting_scan";
+  if (present.some((state) => state === "starting" || state === "reconnecting")) {
+    return "starting";
+  }
+  if (present.includes("running")) return "running";
+  if (present.includes("stopped")) return "stopped";
+  return present[0] ?? null;
+}

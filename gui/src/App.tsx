@@ -31,13 +31,14 @@ import { useProjectNavigation } from "@/hooks/useProjectNavigation";
 import { useThemeAndCloseHintEffects } from "@/hooks/useThemeAndCloseHintEffects";
 import {
   getGoalStatus,
+  goalMasterSessionTitle,
   markGoalResultSeen,
   startDesktopGoal,
   stopGoal,
 } from "@/lib/goals";
 import {
+  aggregateChannelsState,
   restartEnabledImSupervisors,
-  type ImSupervisorState,
 } from "@/lib/im-supervisor";
 import { ensureHistoryReplayComplete } from "@/lib/ipc-handlers";
 import { resolveLanguagePreference } from "@/lib/language";
@@ -65,30 +66,6 @@ import { makeAppError } from "@/types/app-error";
 import type { PendingImageAttachment } from "@/types/conversation";
 import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
 import type { ApprovalDecision } from "@/types/ipc";
-
-function goalMasterSessionTitle(objective: string): string {
-  const normalized = objective.replace(/\s+/g, " ").trim();
-  if (!normalized) return "Goal";
-  const limit = 44;
-  if (normalized.length <= limit) return `Goal · ${normalized}`;
-  return `Goal · ${normalized.slice(0, limit)}…`;
-}
-
-function aggregateChannelsState(
-  states: Array<ImSupervisorState | null | undefined>,
-): ImSupervisorState | null {
-  const present = states.filter(Boolean) as ImSupervisorState[];
-  if (present.some((state) => state === "error" || state === "expired")) {
-    return "error";
-  }
-  if (present.includes("waiting_scan")) return "waiting_scan";
-  if (present.some((state) => state === "starting" || state === "reconnecting")) {
-    return "starting";
-  }
-  if (present.includes("running")) return "running";
-  if (present.includes("stopped")) return "stopped";
-  return present[0] ?? null;
-}
 
 /**
  * V0.1 Stage 2 #8 — App entry.
