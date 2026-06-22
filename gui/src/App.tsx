@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ToastHost } from "@/components/error-card/ToastHost";
 import { AppShell } from "@/components/layout/AppShell";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { resolveSidebarRuntimeIndicator } from "@/components/layout/sidebar/runtime-indicator";
 import { TopBar } from "@/components/layout/TopBar";
 import { CommandPalette } from "@/components/overlay/CommandPalette";
 import { ThemeProvider } from "@/components/theme/ThemeContext";
@@ -253,14 +254,11 @@ function App() {
   );
   const requiresManagedModelConfig =
     activeRuntimeKind === "managed" && !hasConfiguredManagedModel;
-  const sidebarRuntimeIndicator =
-    activeRuntimeKind === "managed"
-      ? hasConfiguredManagedModel
-        ? "hidden"
-        : "configure-models"
-      : gaConfig.gaPath.trim() !== "" && gaConfig.python.trim() !== ""
-        ? "external-ready"
-        : "external-unconfigured";
+  const sidebarRuntimeIndicator = resolveSidebarRuntimeIndicator(
+    activeRuntimeKind,
+    hasConfiguredManagedModel,
+    gaConfig,
+  );
   const openSettings = (tab: SettingsTab = "runtime") => {
     setSettingsTab(tab);
     setSettingsOpen(true);
