@@ -40,6 +40,13 @@ export function useImageAttachments({
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Drag-over affordance: `isDropActive` drives the Composer's drop
+  // overlay; `dragDepthRef` is an enter/leave counter so the overlay
+  // doesn't flicker as the drag crosses child elements (the classic
+  // dragenter/dragleave bubbling trap).
+  const [isDropActive, setIsDropActive] = useState(false);
+  const dragDepthRef = useRef(0);
+
   // Mirror of pendingImages for the unmount cleanup below. Render-time
   // paths (remove / clear) already revoke their own URLs; this is the
   // last-resort sweep if the Composer unmounts mid-draft (e.g. the
@@ -105,12 +112,37 @@ export function useImageAttachments({
     }
   };
 
+  // A file drag (vs a text / URI drag, which should fall through to the
+  // browser default so dropping a URL still inserts it as text).
+  const isFileDrag = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer.types).includes("Files");
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(e)) return;
+    dragDepthRef.current += 1;
+    setIsDropActive(true);
+  };
+
+  // preventDefault marks the Composer a valid drop target (and gives the
+  // OS its copy cursor). No setState here — the overlay's visibility is
+  // owned by the enter/leave counter, so we don't re-render on every
+  // dragover tick.
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(e)) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDropActive(false);
+  };
+
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    // Only react to drops carrying files — text/URI drops should fall
-    // through to the browser default (e.g. dropping a URL onto the
-    // textarea should still insert it as text).
-    const hasFiles = Array.from(e.dataTransfer.types).includes("Files");
-    if (!hasFiles) return;
+    // Any drop ends the drag, so clear the overlay first thing.
+    dragDepthRef.current = 0;
+    setIsDropActive(false);
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     if (!imagesEnabled) {
       onImageBlocked?.("external");
@@ -197,6 +229,10 @@ export function useImageAttachments({
     previewIndex,
     setPreviewIndex,
     fileInputRef,
+    isDropActive,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
     handleDrop,
     handleFileInputChange,
     tryAcceptPastedImages,

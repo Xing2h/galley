@@ -279,6 +279,8 @@ export const enCopy: AppCopy = {
     pastedImage: "Pasted image",
     attachImage: "Attach image",
     removeImage: "Remove image",
+    dropToAttach: "Drop to add images",
+    dropUnavailable: "Images aren't supported on this runtime",
     goalButton: "Goal",
     goalTooltip: "Run as a Goal",
     cancelGoalMode: "Cancel Goal mode",

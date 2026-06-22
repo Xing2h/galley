@@ -265,6 +265,8 @@ export const zhCopy = {
     pastedImage: "已粘贴图片",
     attachImage: "添加图片",
     removeImage: "移除图片",
+    dropToAttach: "拖放以添加图片",
+    dropUnavailable: "当前运行时不支持图片",
     goalButton: "Goal",
     goalTooltip: "作为 Goal 运行",
     cancelGoalMode: "取消 Goal 模式",

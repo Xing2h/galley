@@ -334,6 +334,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       previewIndex,
       setPreviewIndex,
       fileInputRef,
+      isDropActive,
+      handleDragEnter,
+      handleDragOver,
+      handleDragLeave,
       handleDrop,
       handleFileInputChange,
       tryAcceptPastedImages,
@@ -652,20 +656,39 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         <div
           ref={composerRootRef}
           className={cn(
-            "rounded-md border border-line bg-elevated px-3.5 pb-2 pt-3.5 shadow-card transition-[border-color,box-shadow] duration-150",
+            "relative rounded-md border border-line bg-elevated px-3.5 pb-2 pt-3.5 shadow-card transition-[border-color,box-shadow] duration-150",
             "focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand/20",
             disabled && "opacity-60",
           )}
-          // onDragOver must preventDefault or the browser treats the drop
-          // as navigation / file-open; onDrop does the real work and is
-          // a no-op for non-file drags (see handleDrop).
-          onDragOver={(e) => {
-            if (Array.from(e.dataTransfer.types).includes("Files")) {
-              e.preventDefault();
-            }
-          }}
+          // Drag handlers gate on a file drag (text / URI drags fall
+          // through to the textarea default). onDragOver must preventDefault
+          // or the browser treats the drop as navigation / file-open; the
+          // enter/leave pair drives the drop overlay below.
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          {isDropActive && (
+            <div
+              // Purely visual: pointer-events-none lets the drag events
+              // reach the elements beneath, so the enter/leave counter
+              // stays balanced and the drop still lands on this container.
+              className={cn(
+                "pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 rounded-md border-2 border-dashed text-center",
+                imagesEnabled
+                  ? "border-brand/60 bg-brand-soft/85 text-brand-strong"
+                  : "border-line bg-surface/85 text-ink-muted",
+              )}
+            >
+              {imagesEnabled && <Paperclip size={20} weight="bold" />}
+              <span className="text-[13px] font-medium">
+                {imagesEnabled
+                  ? copy.composer.dropToAttach
+                  : copy.composer.dropUnavailable}
+              </span>
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             rows={2}
