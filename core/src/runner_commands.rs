@@ -1,6 +1,6 @@
 //! Tauri-command surface that wraps [`crate::runner_manager::RunnerManager`].
 //!
-//! Five `#[tauri::command]`s are registered:
+//! Seven `#[tauri::command]`s are registered:
 //!
 //! 1. [`spawn_runner`] — spawn a new Python runner subprocess + start an
 //!    emit task that fans broadcast events to the GUI
@@ -10,6 +10,12 @@
 //! 4. [`kill_runner`] — immediate SIGKILL (no graceful negotiation)
 //! 5. [`runner_stderr_tail`] — pull the last 8 stderr lines for the
 //!    abnormal-exit toast
+//! 6. [`probe_ga_runtime`] — validate an external GA checkout before a
+//!    session is created (implementation in the `probe` submodule)
+//! 7. [`shutdown_all_runners`] — graceful shutdown of every live runner
+//!
+//! External-runtime spawn-arg preparation lives in the `external_spawn`
+//! submodule; the managed-runtime spawn path stays in this file.
 //!
 //! ## Event channel contract
 //!
@@ -47,15 +53,21 @@ use crate::runner_manager::{
 };
 use crate::{
     codex_oauth, credential_store, managed_model_config, managed_prompt, managed_runtime,
-    process_command,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::broadcast::error::RecvError;
+
+mod external_spawn;
+mod probe;
+
+pub(crate) use external_spawn::normalize_external_ga_path;
+use external_spawn::prepare_external_spawn_args;
+pub use probe::{ProbeGaRuntimeArgs, ProbeGaRuntimeLlm, ProbeGaRuntimeResult};
+use probe::run_ga_runtime_probe;
 
 /// JSON-friendly mirror of [`SpawnArgs`]. The TS side sends camelCase keys
 /// (per the broader serde convention used by all our Tauri commands).
@@ -343,68 +355,6 @@ pub(crate) async fn prepare_managed_spawn_args(
     Ok(args)
 }
 
-fn prepare_external_spawn_args(
-    mut args: SpawnArgs,
-    app: &AppHandle,
-) -> Result<SpawnArgs, RunnerSpawnError> {
-    args.ga_path = normalize_external_ga_path(&args.ga_path)?;
-
-    // bridgeCwd is Galley's implementation detail, not user GA state.
-    // Dev should run from the repo root; production should run from the
-    // packaged resources dir. Ignore stale persisted bridgeCwd values such as
-    // old developer-machine defaults.
-    args.bridge_cwd = managed_runtime::bridge_cwd_for_app(app).map_err(|e| {
-        RunnerSpawnError::BridgeCwdInvalid {
-            detail: format!("resolving Galley bridge cwd failed: {e}"),
-        }
-    })?;
-    Ok(args)
-}
-
-pub(crate) fn normalize_external_ga_path(raw: &PathBuf) -> Result<PathBuf, RunnerSpawnError> {
-    normalize_external_ga_path_with_home(
-        raw,
-        directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf()),
-    )
-}
-
-fn normalize_external_ga_path_with_home(
-    raw: &PathBuf,
-    home_dir: Option<PathBuf>,
-) -> Result<PathBuf, RunnerSpawnError> {
-    let raw = raw.to_str().ok_or_else(|| RunnerSpawnError::PathEncoding {
-        detail: format!("ga_path not UTF-8: {}", raw.display()),
-    })?;
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err(RunnerSpawnError::GaPathInvalid {
-            detail: "ga_path is empty".into(),
-        });
-    }
-    let path = expand_home_relative_path(trimmed, home_dir.as_deref())
-        .unwrap_or_else(|| PathBuf::from(trimmed));
-    if !path.is_dir() {
-        return Err(RunnerSpawnError::GaPathInvalid {
-            detail: format!("not a directory: {}", path.display()),
-        });
-    }
-    Ok(path)
-}
-
-fn expand_home_relative_path(raw: &str, home_dir: Option<&Path>) -> Option<PathBuf> {
-    let suffix = match raw {
-        "~" => "",
-        s if s.starts_with("~/") || s.starts_with("~\\") => &s[2..],
-        _ => return None,
-    };
-    let home = home_dir?;
-    if suffix.is_empty() {
-        Some(home.to_path_buf())
-    } else {
-        Some(home.join(suffix))
-    }
-}
-
 fn elapsed_ms(started_at: Instant) -> f64 {
     started_at.elapsed().as_secs_f64() * 1000.0
 }
@@ -529,258 +479,9 @@ pub async fn runner_stderr_tail(
     Ok(manager.stderr_tail(&session_id).await.unwrap_or_default())
 }
 
-/// JSON-friendly args for a lightweight external-GA runtime probe.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProbeGaRuntimeArgs {
-    pub python: String,
-    pub ga_path: String,
-    #[serde(default)]
-    pub smoke_test: bool,
-    #[serde(default)]
-    pub timeout_ms: Option<u64>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ProbeGaRuntimeLlm {
-    pub index: i64,
-    pub name: String,
-    pub is_current: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ProbeGaRuntimeResult {
-    pub ok: bool,
-    #[serde(default)]
-    pub llms: Vec<ProbeGaRuntimeLlm>,
-    #[serde(default)]
-    pub smoke_tested: bool,
-    #[serde(default)]
-    pub error_stage: Option<String>,
-    #[serde(default)]
-    pub error: Option<String>,
-    #[serde(default)]
-    pub traceback: Option<String>,
-    #[serde(default)]
-    pub stderr: Option<String>,
-}
-
-const GA_RUNTIME_PROBE_SCRIPT: &str = r#"
-import json
-import os
-import sys
-import traceback
-
-_real_stdout = os.fdopen(os.dup(1), "w", encoding="utf-8", buffering=1)
-sys.stdout = sys.stderr
-
-def emit(payload):
-    _real_stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    _real_stdout.flush()
-
-def collect_llms(agent):
-    rows = []
-    for index, name, is_current in agent.list_llms():
-        rows.append({
-            "index": int(index),
-            "name": str(name),
-            "isCurrent": bool(is_current),
-        })
-    if not rows:
-        raise RuntimeError("GA did not report any configured LLMs.")
-    return rows
-
-def run_smoke(agent):
-    client = getattr(agent, "llmclient", None)
-    backend = getattr(client, "backend", None)
-    if backend is None or not hasattr(backend, "raw_ask"):
-        raise RuntimeError("Current LLM backend does not expose raw_ask().")
-
-    saved = {}
-    for name, value in (
-        ("stream", False),
-        ("max_tokens", 1),
-        ("max_retries", 0),
-        ("connect_timeout", 10),
-        ("read_timeout", 30),
-    ):
-        if hasattr(backend, name):
-            saved[name] = getattr(backend, name)
-            setattr(backend, name, value)
-    try:
-        messages = [{"role": "user", "content": "Reply with OK only."}]
-        text = ""
-        for chunk in backend.raw_ask(messages):
-            text += str(chunk)
-            if len(text) > 240:
-                break
-        compact = text.strip()
-        if "!!!Error" in compact:
-            raise RuntimeError(compact[:500])
-    finally:
-        for name, value in saved.items():
-            setattr(backend, name, value)
-
-def main():
-    ga_path = os.environ["GALLEY_PROBE_GA_PATH"]
-    smoke_test = os.environ.get("GALLEY_PROBE_SMOKE_TEST") == "1"
-    stage = "runtime"
-    llms = []
-    try:
-        if ga_path not in sys.path:
-            sys.path.insert(0, ga_path)
-        frontends_dir = os.path.join(ga_path, "frontends")
-        if frontends_dir not in sys.path:
-            sys.path.insert(0, frontends_dir)
-        os.chdir(ga_path)
-
-        import agentmain
-
-        agent = agentmain.GeneraticAgent()
-        llms = collect_llms(agent)
-        if smoke_test:
-            stage = "llm"
-            run_smoke(agent)
-        emit({
-            "ok": True,
-            "llms": llms,
-            "smokeTested": smoke_test,
-        })
-    except Exception as exc:
-        emit({
-            "ok": False,
-            "llms": llms,
-            "smokeTested": smoke_test and stage == "llm",
-            "errorStage": stage,
-            "error": str(exc),
-            "traceback": traceback.format_exc(),
-        })
-        raise SystemExit(1)
-
-main()
-"#;
-
 #[tauri::command]
 pub async fn probe_ga_runtime(args: ProbeGaRuntimeArgs) -> Result<ProbeGaRuntimeResult, String> {
     Ok(run_ga_runtime_probe(args).await)
-}
-
-async fn run_ga_runtime_probe(args: ProbeGaRuntimeArgs) -> ProbeGaRuntimeResult {
-    let timeout = Duration::from_millis(args.timeout_ms.unwrap_or(45_000));
-    let ga_path = PathBuf::from(&args.ga_path);
-    if !ga_path.is_dir() {
-        return probe_failure(
-            "runtime",
-            format!("GA path is not a directory: {}", ga_path.display()),
-            None,
-            None,
-        );
-    }
-
-    let state_root = std::env::temp_dir().join(format!(
-        "galley-ga-probe-{}-{}",
-        std::process::id(),
-        chrono::Utc::now().timestamp_millis()
-    ));
-    if let Err(e) = std::fs::create_dir_all(&state_root) {
-        return probe_failure(
-            "runtime",
-            format!("creating probe state dir failed: {e}"),
-            None,
-            None,
-        );
-    }
-
-    let mut cmd = tokio::process::Command::new(&args.python);
-    cmd.args(["-c", GA_RUNTIME_PROBE_SCRIPT])
-        .current_dir(&ga_path)
-        .env("GALLEY_PROBE_GA_PATH", &args.ga_path)
-        .env(
-            "GALLEY_PROBE_SMOKE_TEST",
-            if args.smoke_test { "1" } else { "0" },
-        )
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .env("GALLEY_GA_STATE_ROOT", &state_root)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    process_command::configure_python(&mut cmd);
-
-    let output = match tokio::time::timeout(timeout, cmd.output()).await {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => {
-            let _ = std::fs::remove_dir_all(&state_root);
-            return probe_failure(
-                "spawn",
-                format!("could not run '{}': {e}", args.python),
-                None,
-                None,
-            );
-        }
-        Err(_) => {
-            let _ = std::fs::remove_dir_all(&state_root);
-            return probe_failure(
-                "timeout",
-                format!(
-                    "GA runtime probe did not finish within {}ms",
-                    timeout.as_millis()
-                ),
-                None,
-                None,
-            );
-        }
-    };
-    let _ = std::fs::remove_dir_all(&state_root);
-
-    parse_probe_output(&output.stdout, &output.stderr).unwrap_or_else(|| {
-        probe_failure(
-            "runtime",
-            "GA runtime probe did not return JSON".into(),
-            Some(String::from_utf8_lossy(&output.stderr).into_owned()),
-            Some(String::from_utf8_lossy(&output.stdout).into_owned()),
-        )
-    })
-}
-
-fn parse_probe_output(stdout: &[u8], stderr: &[u8]) -> Option<ProbeGaRuntimeResult> {
-    let stdout = String::from_utf8_lossy(stdout);
-    let stderr = compact_output(&String::from_utf8_lossy(stderr));
-    let line = stdout
-        .lines()
-        .rev()
-        .map(str::trim)
-        .find(|line| line.starts_with('{'))?;
-    let mut result: ProbeGaRuntimeResult = serde_json::from_str(line).ok()?;
-    if !stderr.is_empty() {
-        result.stderr = Some(stderr);
-    }
-    Some(result)
-}
-
-fn probe_failure(
-    stage: &str,
-    error: String,
-    stderr: Option<String>,
-    traceback: Option<String>,
-) -> ProbeGaRuntimeResult {
-    ProbeGaRuntimeResult {
-        ok: false,
-        llms: Vec::new(),
-        smoke_tested: false,
-        error_stage: Some(stage.into()),
-        error: Some(error),
-        traceback,
-        stderr: stderr.map(|s| compact_output(&s)).filter(|s| !s.is_empty()),
-    }
-}
-
-fn compact_output(raw: &str) -> String {
-    let lines: Vec<&str> = raw.lines().filter(|line| !line.trim().is_empty()).collect();
-    let start = lines.len().saturating_sub(12);
-    lines[start..].join("\n")
 }
 
 #[tauri::command]
@@ -861,6 +562,7 @@ use crate::ipc::IpcEvent;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn spawn_args_from_json_camelcase() {
@@ -906,128 +608,6 @@ mod tests {
     }
 
     #[test]
-    fn external_ga_path_normalization_trims_pasted_whitespace() {
-        let dir = tempfile::TempDir::new().expect("tempdir");
-        let raw = PathBuf::from(format!(" {} ", dir.path().display()));
-        let normalized = normalize_external_ga_path(&raw).expect("normalize");
-        assert_eq!(normalized, dir.path());
-    }
-
-    #[test]
-    fn external_ga_path_normalization_rejects_empty_after_trim() {
-        match normalize_external_ga_path(&PathBuf::from("  ")) {
-            Err(RunnerSpawnError::GaPathInvalid { detail }) => {
-                assert_eq!(detail, "ga_path is empty");
-            }
-            Err(other) => panic!("expected GaPathInvalid, got {}", other),
-            Ok(_) => panic!("expected error, got Ok"),
-        }
-    }
-
-    #[test]
-    fn external_ga_path_normalization_expands_home_relative_paths() {
-        let home = tempfile::TempDir::new().expect("home tempdir");
-        let dir = home.path().join("GenericAgent");
-        std::fs::create_dir(&dir).expect("ga dir");
-        let normalized = normalize_external_ga_path_with_home(
-            &PathBuf::from(" ~/GenericAgent "),
-            Some(home.path().to_path_buf()),
-        )
-        .expect("normalize");
-        assert_eq!(normalized, dir);
-    }
-
-    #[test]
-    fn external_ga_path_normalization_expands_windows_style_home_relative_paths() {
-        let home = tempfile::TempDir::new().expect("home tempdir");
-        let dir = home.path().join("GenericAgent");
-        std::fs::create_dir(&dir).expect("ga dir");
-        let normalized = normalize_external_ga_path_with_home(
-            &PathBuf::from(" ~\\GenericAgent "),
-            Some(home.path().to_path_buf()),
-        )
-        .expect("normalize");
-        assert_eq!(normalized, dir);
-    }
-
-    #[test]
-    fn parse_probe_output_reads_last_json_line_and_keeps_stderr_tail() {
-        let stdout = br#"
-noise before json
-{"ok":true,"llms":[{"index":0,"name":"NativeClaudeSession/sonnet","isCurrent":true}],"smokeTested":true}
-"#;
-        let stderr = b"line 1\nline 2\n";
-        let parsed = parse_probe_output(stdout, stderr).expect("parse probe output");
-        assert!(parsed.ok);
-        assert!(parsed.smoke_tested);
-        assert_eq!(parsed.llms.len(), 1);
-        assert_eq!(parsed.llms[0].index, 0);
-        assert_eq!(parsed.llms[0].name, "NativeClaudeSession/sonnet");
-        assert_eq!(parsed.stderr.as_deref(), Some("line 1\nline 2"));
-    }
-
-    #[test]
-    fn probe_failure_compacts_long_stderr() {
-        let stderr = (0..20)
-            .map(|i| format!("line {i}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let failure = probe_failure("runtime", "failed".into(), Some(stderr), None);
-        assert!(!failure.ok);
-        let compact = failure.stderr.expect("stderr");
-        assert!(!compact.contains("line 0"));
-        assert!(compact.contains("line 8"));
-        assert!(compact.contains("line 19"));
-    }
-
-    #[tokio::test]
-    async fn ga_runtime_probe_loads_fake_ga_and_runs_smoke() {
-        let Some(python) = available_python() else {
-            return;
-        };
-        let ga = tempfile::TempDir::new().expect("fake ga");
-        std::fs::write(
-            ga.path().join("agentmain.py"),
-            r#"
-class Backend:
-    name = "demo"
-    model = "demo"
-    stream = False
-    max_tokens = None
-    max_retries = 0
-    connect_timeout = 1
-    read_timeout = 1
-    def raw_ask(self, messages):
-        yield "OK"
-
-class Client:
-    def __init__(self):
-        self.backend = Backend()
-
-class GeneraticAgent:
-    def __init__(self):
-        self.llmclient = Client()
-    def list_llms(self):
-        return [(0, "Fake/demo", True)]
-"#,
-        )
-        .expect("write fake ga");
-
-        let result = run_ga_runtime_probe(ProbeGaRuntimeArgs {
-            python,
-            ga_path: ga.path().to_string_lossy().into_owned(),
-            smoke_test: true,
-            timeout_ms: Some(5_000),
-        })
-        .await;
-
-        assert!(result.ok, "{result:?}");
-        assert!(result.smoke_tested);
-        assert_eq!(result.llms.len(), 1);
-        assert_eq!(result.llms[0].name, "Fake/demo");
-    }
-
-    #[test]
     fn runner_closed_payload_serializes_camelcase() {
         let p = RunnerClosedPayload {
             session_id: "s1".into(),
@@ -1065,18 +645,5 @@ class GeneraticAgent:
         assert!(s.contains("\"event\":"));
         assert!(s.contains("\"kind\":\"ready\""));
         assert!(s.contains("\"protocolVersion\":\"0.1\""));
-    }
-
-    fn available_python() -> Option<String> {
-        for candidate in ["python3", "python"] {
-            if std::process::Command::new(candidate)
-                .arg("--version")
-                .output()
-                .is_ok_and(|output| output.status.success())
-            {
-                return Some(candidate.into());
-            }
-        }
-        None
     }
 }
