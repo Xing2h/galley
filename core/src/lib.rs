@@ -7,6 +7,7 @@ mod commands;
 pub mod conversation_image;
 pub mod credential_store;
 pub mod db;
+mod desktop_goal;
 pub mod discovery;
 pub mod error;
 pub mod im_supervisor;
@@ -22,18 +23,16 @@ pub mod runner_commands;
 pub mod runner_manager;
 pub mod socket_listener;
 pub mod sop_install;
+mod tray;
 
-use api::{
-    CreateGoalProposalInput, GalleyApi, GoalBrief, GoalLocale, GoalStatus, GoalWriteMode,
-    MessageBrief, Origin, ProjectId, RuntimeKind, SessionId,
-};
+use api::GalleyApi;
 use commands::*;
 use db::SqliteGalley;
-use serde::{Deserialize, Serialize};
-use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::Ordering;
 use tauri_plugin_sql::{Migration, MigrationKind};
+use tray::*;
+
+pub use desktop_goal::{ensure_goal_master_duty_sop, goal_master_duty_sop_path};
 
 /// SQLite filename. Resolved by tauri-plugin-sql relative to the
 /// platform's app-data directory:
@@ -43,435 +42,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 /// Schema lives in core/migrations/001_init.sql; tauri-plugin-sql
 /// runs Up migrations in version order on first connect.
 const DB_URL: &str = "sqlite:workbench.db";
-const MAIN_WINDOW_LABEL: &str = "main";
-
-/// Galley's own copy of the Hive master SOP, embedded at compile time.
-/// Managed GA reads its (self-evolvable) seeded memory copy; attach GA
-/// can't read that and Galley must not seed the user's GA checkout
-/// (Rule 1), so its master reads this Galley-owned materialized copy.
-const GOAL_HIVE_MASTER_DUTY_SOP: &str =
-    include_str!("../../managed-ga/state-seed/memory/goal_hive_master_duty.md");
-
-/// Absolute path to Galley's materialized Hive master SOP copy. Pure
-/// path computation (no filesystem touch) so prompt builders can embed
-/// the read path without side effects.
-pub fn goal_master_duty_sop_path() -> Option<std::path::PathBuf> {
-    app_paths::goal_runtime_dir().map(|dir| dir.join("master_duty.md"))
-}
-
-/// Materialize Galley's embedded Hive master SOP to its data-dir copy
-/// (idempotent overwrite, keeping it in sync with the binary). Returns
-/// the path on success. Called by the Goal controller before attach-mode
-/// master planning so the attach master has a Galley-owned file to read.
-pub fn ensure_goal_master_duty_sop() -> Option<std::path::PathBuf> {
-    let path = goal_master_duty_sop_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).ok()?;
-    }
-    std::fs::write(&path, GOAL_HIVE_MASTER_DUTY_SOP).ok()?;
-    Some(path)
-}
-const TRAY_SHOW_GALLEY_LABEL: &str = "Open Galley";
-const TRAY_HIDE_GALLEY_LABEL: &str = "Hide Galley";
-
-static QUIT_REQUEST_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-static ALLOW_APP_EXIT: AtomicBool = AtomicBool::new(false);
-
-/// Pref key recording whether the one-time "Galley keeps running in the
-/// background after you close the window" hint has been shown on this
-/// device. Written by the close handler the first time the window is
-/// hidden to background (see `CloseRequested`). Mirrors the
-/// `yolo_intro_seen` disclosure-once pattern.
-const CLOSE_HINT_SEEN_PREF: &str = "close_to_background_hint_seen";
-
-/// Process-local guard so the background hint fires at most once per
-/// launch even under rapid repeated close events. Seeded from the
-/// persisted `CLOSE_HINT_SEEN_PREF` during `setup` (right after the SQL
-/// plugin runs migrations), so a returning user who already dismissed
-/// the hint is protected even if they close the window before the GUI
-/// finishes hydrating. The close handler reads this guard, not the DB,
-/// because it runs synchronously inside the window-event callback.
-static CLOSE_HINT_SHOWN: AtomicBool = AtomicBool::new(false);
-
-struct TrayMenuState {
-    toggle_window_item: tauri::menu::MenuItem<tauri::Wry>,
-}
-
-/// Localized copy for the background-mode close hint dialog. The close
-/// handler is a synchronous window-event callback and can't await a
-/// pref read or reach into GUI i18n, so the localized strings are
-/// pushed from the frontend (hydrate + on language change) via
-/// `set_close_hint_copy` and parked here. Defaults to English so the
-/// dialog is still coherent if the frontend hasn't pushed yet.
-struct CloseHintCopy {
-    title: Mutex<String>,
-    body: Mutex<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct StartDesktopGoalInput {
-    objective: String,
-    #[serde(default)]
-    project_id: Option<ProjectId>,
-    master_session_id: SessionId,
-    #[serde(default)]
-    runtime_kind: Option<RuntimeKind>,
-    #[serde(default)]
-    budget_seconds: Option<u32>,
-    #[serde(default)]
-    worker_limit: Option<u32>,
-    /// Display name of the model the operator picked in the Composer at
-    /// launch (case-insensitive). Best-effort applied to the master
-    /// session's LLM so its bridge — and, via inheritance, the goal's
-    /// worker sessions — run on the chosen model instead of the GA
-    /// default. Resolution failure never blocks the launch.
-    #[serde(default)]
-    llm_name: Option<String>,
-    /// Operator's resolved UI locale (`zh-CN` / `en-US`) at launch.
-    /// Selects the language of the Galley-authored system narration the
-    /// Core launch ack and the CLI controller persist into the master
-    /// session, which Rust can't pull from GUI i18n. Omitted → Chinese
-    /// (the surface's original behavior).
-    #[serde(default)]
-    locale: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct StartDesktopGoalResult {
-    goal: GoalBrief,
-    /// The user's objective, persisted as the master session's first
-    /// user turn (the human's own words — no Galley framing).
-    objective_message: MessageBrief,
-    /// Galley's launch acknowledgement, persisted as a `system`
-    /// narration turn right after the objective.
-    master_message: MessageBrief,
-}
-
-impl Default for CloseHintCopy {
-    fn default() -> Self {
-        Self {
-            title: Mutex::new("Galley is still running".to_string()),
-            body: Mutex::new(
-                "Closing the window only hides Galley. Background tasks and connected channels keep running. To quit completely, choose Quit Galley from the menu bar / tray."
-                    .to_string(),
-            ),
-        }
-    }
-}
-
-fn set_tray_window_visible(app: &tauri::AppHandle<tauri::Wry>, visible: bool) {
-    use tauri::Manager;
-    let Some(tray_menu) = app.try_state::<TrayMenuState>() else {
-        return;
-    };
-    let label = if visible {
-        TRAY_HIDE_GALLEY_LABEL
-    } else {
-        TRAY_SHOW_GALLEY_LABEL
-    };
-    let _ = tray_menu.toggle_window_item.set_text(label);
-}
-
-pub(crate) fn show_main_window(app: &tauri::AppHandle<tauri::Wry>) {
-    use tauri::Manager;
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-        set_tray_window_visible(app, true);
-    }
-}
-
-fn toggle_main_window(app: &tauri::AppHandle<tauri::Wry>) {
-    use tauri::Manager;
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        let visible = window.is_visible().unwrap_or(false);
-        if visible {
-            let _ = window.hide();
-            set_tray_window_visible(app, false);
-        } else {
-            show_main_window(app);
-        }
-    }
-}
-
-/// One-time disclosure that closing the window hides Galley to the
-/// background rather than quitting. Fires the first time the window is
-/// hidden via `CloseRequested` on macOS / Windows. Subsequent closes
-/// (and returning users who already dismissed it) skip silently.
-///
-/// `swap(true)` makes the process-local guard self-arming: the first
-/// caller observes `false` and shows the dialog; everyone after gets
-/// `true` and returns. The guard is also seeded `true` during `setup`
-/// from the persisted `CLOSE_HINT_SEEN_PREF` for users who saw the hint
-/// on a prior launch, so the dialog is genuinely once-per-device, not
-/// once-per-launch — and that seed happens before the window can be
-/// closed, closing the hydrate-timing race.
-///
-/// The seen flag is persisted here — close handling is Rust's authority,
-/// and the GUI only mirrors copy inward. The dialog is shown
-/// non-blocking (single OK button); the window stays hidden underneath,
-/// matching the user's close intent.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn maybe_show_background_hint(app: &tauri::AppHandle<tauri::Wry>) {
-    use tauri::Manager;
-
-    if CLOSE_HINT_SHOWN.swap(true, Ordering::SeqCst) {
-        return;
-    }
-
-    // Persist the seen flag so it survives the next launch. Best-effort:
-    // a write failure only means the hint may show once more, never an
-    // exit-path regression.
-    let galley = app.state::<SqliteGalley>().inner().clone();
-    tauri::async_runtime::spawn(async move {
-        let _ = galley
-            .set_pref_json(CLOSE_HINT_SEEN_PREF, serde_json::json!(true))
-            .await;
-    });
-
-    let (title, body) = match app.try_state::<CloseHintCopy>() {
-        Some(copy) => {
-            let title = copy
-                .title
-                .lock()
-                .map(|g| g.clone())
-                .unwrap_or_else(|_| "Galley is still running".to_string());
-            let body = copy
-                .body
-                .lock()
-                .map(|g| g.clone())
-                .unwrap_or_else(|_| {
-                    "Closing the window only hides Galley. To quit completely, choose Quit Galley from the menu bar / tray.".to_string()
-                });
-            (title, body)
-        }
-        None => (
-            "Galley is still running".to_string(),
-            "Closing the window only hides Galley. To quit completely, choose Quit Galley from the menu bar / tray.".to_string(),
-        ),
-    };
-
-    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-    app.dialog()
-        .message(body)
-        .title(title)
-        .kind(MessageDialogKind::Info)
-        .buttons(MessageDialogButtons::Ok)
-        .show(|_| {});
-}
-
-fn cleanup_and_exit<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
-    tauri::async_runtime::spawn(async move {
-        use std::time::Duration;
-        use tauri::Manager;
-        if let Some(im_manager) =
-            app.try_state::<std::sync::Arc<im_supervisor::ImSupervisorManager>>()
-        {
-            im_manager.stop_all().await;
-        }
-        let manager = app.state::<std::sync::Arc<runner_manager::RunnerManager>>();
-        manager.shutdown_all(Duration::from_secs(5)).await;
-        ALLOW_APP_EXIT.store(true, Ordering::SeqCst);
-        app.exit(0);
-    });
-}
-
-fn request_true_quit<R: tauri::Runtime>(app: tauri::AppHandle<R>, confirm_if_busy: bool) {
-    if QUIT_REQUEST_IN_FLIGHT
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return;
-    }
-
-    tauri::async_runtime::spawn(async move {
-        use tauri::Manager;
-        let manager = app.state::<std::sync::Arc<runner_manager::RunnerManager>>();
-        let busy = confirm_if_busy && manager.any_agent_running().await;
-
-        if busy {
-            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-            let dialog_app = app.clone();
-            let exit_app = app.clone();
-            dialog_app
-                .dialog()
-                .message(
-                    "Galley has a task still running. Quit Galley will stop the app and interrupt any active Agent work.",
-                )
-                .title("Quit Galley?")
-                .kind(MessageDialogKind::Warning)
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Quit Galley".to_string(),
-                    "Cancel".to_string(),
-                ))
-                .show(move |confirmed| {
-                    if confirmed {
-                        cleanup_and_exit(exit_app);
-                    } else {
-                        QUIT_REQUEST_IN_FLIGHT.store(false, Ordering::SeqCst);
-                    }
-                });
-        } else {
-            cleanup_and_exit(app);
-        }
-    });
-}
-
-fn tray_icon_image() -> tauri::Result<tauri::image::Image<'static>> {
-    #[cfg(target_os = "macos")]
-    const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-template.png");
-    #[cfg(target_os = "windows")]
-    const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-windows.png");
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/32x32.png");
-
-    tauri::image::Image::from_bytes(TRAY_ICON_BYTES).map(|image| image.to_owned())
-}
-
-/// Update the localized copy for the background-mode close hint. Called
-/// by the GUI at hydrate and again whenever the UI language changes, so
-/// the native dialog (which runs synchronously inside the close handler
-/// and can't reach GUI i18n) always has the active-language strings
-/// ready.
-///
-/// The seen flag is NOT handled here: it's seeded from the persisted
-/// pref during `setup` (so a returning user is protected even if they
-/// close the window before hydrate runs) and persisted by the close
-/// handler on first show. This command only mirrors copy inward and
-/// never touches SQLite.
-#[tauri::command]
-fn set_close_hint_copy(title: String, body: String, copy: tauri::State<'_, CloseHintCopy>) {
-    if let Ok(mut guard) = copy.title.lock() {
-        *guard = title;
-    }
-    if let Ok(mut guard) = copy.body.lock() {
-        *guard = body;
-    }
-}
-
-#[tauri::command]
-async fn start_desktop_goal(
-    galley: tauri::State<'_, SqliteGalley>,
-    input: StartDesktopGoalInput,
-) -> std::result::Result<StartDesktopGoalResult, String> {
-    let master_session_id = input.master_session_id.clone();
-    let launch_llm_name = input.llm_name.clone();
-    let locale = GoalLocale::parse(input.locale.as_deref());
-    let proposal = galley
-        .create_goal_proposal(
-            CreateGoalProposalInput {
-                objective: input.objective.clone(),
-                project_id: input.project_id,
-                master_session_id: Some(master_session_id.clone()),
-                budget_seconds: input.budget_seconds,
-                worker_limit: input.worker_limit,
-                runtime_kind: input.runtime_kind.or(Some(RuntimeKind::Managed)),
-                write_mode: Some(GoalWriteMode::Autonomous),
-                expires_in_seconds: None,
-            },
-            Origin::gui(),
-        )
-        .await
-        .map_err(stringify_error)?;
-    let goal = galley
-        .start_goal_from_proposal(proposal.id, proposal.internal_confirm_token, Origin::gui())
-        .await
-        .map_err(stringify_error)?;
-    // Best-effort: apply the operator's chosen model to the master
-    // session so its bridge — and, via inheritance, the goal's worker
-    // sessions — run on it rather than the GA default. A resolution miss
-    // (empty LLM cache / unknown name) must never block the launch.
-    if let Some(name) = launch_llm_name
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-    {
-        match crate::socket_listener::resolve_llm_selection_for_runtime(
-            &galley,
-            Some(name.to_string()),
-            goal.runtime_kind,
-        )
-        .await
-        {
-            Ok(sel) => {
-                if let Err(e) = galley
-                    .set_session_llm(
-                        master_session_id.clone(),
-                        sel.index,
-                        sel.key,
-                        sel.display_name,
-                    )
-                    .await
-                {
-                    eprintln!("[goal] set master session llm failed: {e:?}");
-                }
-            }
-            Err(e) => eprintln!("[goal] resolve launch llm '{name}' failed: {e:?}"),
-        }
-    }
-    // The objective is the user's own words → a normal user turn.
-    let objective_message = galley
-        .send_message(
-            master_session_id.clone(),
-            input.objective.trim().to_string(),
-            Origin::gui(),
-        )
-        .await
-        .map_err(stringify_error)?;
-    // Galley's launch acknowledgement → system narration, so it reads
-    // as Galley speaking, not the operator. Gives immediate feedback
-    // before the first controller checkpoint lands and anchors the
-    // "results return here" promise inside the session.
-    let master_message = galley
-        .send_system_message(
-            master_session_id,
-            api::goal_launch_ack(locale).to_string(),
-            Origin::gui(),
-        )
-        .await
-        .map_err(stringify_error)?;
-
-    if let Err(message) = spawn_goal_controller(&goal, locale) {
-        let _ = galley
-            .update_goal_state(goal.id.clone(), GoalStatus::Failed, Some(message.clone()))
-            .await;
-        return Err(message);
-    }
-
-    Ok(StartDesktopGoalResult {
-        goal,
-        objective_message,
-        master_message,
-    })
-}
-
-fn spawn_goal_controller(goal: &GoalBrief, locale: GoalLocale) -> std::result::Result<(), String> {
-    let cli = discovery::locate_cli_binary().ok_or_else(|| {
-        "Galley CLI binary was not found next to the desktop app; cannot start Goal controller."
-            .to_string()
-    })?;
-    let mut cmd = tokio::process::Command::new(cli);
-    cmd.arg("goal")
-        .arg("run")
-        .arg(goal.id.as_str())
-        .arg("--resume")
-        .arg("--locale")
-        .arg(locale.as_tag())
-        .arg("--supervisor")
-        .arg("galley-desktop")
-        .arg("--reason")
-        .arg("desktop Goal Send")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    process_command::configure_background(&mut cmd);
-    cmd.spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Could not start Galley Goal controller: {e}"))
-}
+pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -724,7 +295,7 @@ pub fn run() {
             load_tool_events_by_session,
             get_pref_json,
             set_pref_json,
-            set_close_hint_copy,
+            tray::set_close_hint_copy,
             bulk_archive_sessions,
             bulk_unarchive_sessions,
             bulk_delete_sessions,
@@ -740,7 +311,7 @@ pub fn run() {
             goal_workspace_has_files,
             mark_goal_result_seen,
             request_goal_stop,
-            start_desktop_goal,
+            desktop_goal::start_desktop_goal,
             // B2 runner commands
             runner_commands::spawn_runner,
             runner_commands::send_to_runner,
