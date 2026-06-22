@@ -31,9 +31,18 @@ large files without changing user-visible behavior or public contracts.
 - `cli/src/goal/` is a structural split only. Goal prompt strings, controller
   decisions, runtime-aware memory/SOP policy, and worker socket helper calls
   must remain behavior-equivalent to the pre-split CLI.
-- `gui/src/App.tsx` extraction should target effect/listener noise first.
-  Behavior-heavy composer and Goal orchestration code can remain until a
-  dedicated controller refactor.
+- `gui/src/App.tsx` is settled — do not split it further. It has no effects of
+  its own (flat prop-threading hub); its only extractions were pure helpers
+  into `gui/src/lib/`. Region-container splitting was piloted and rejected
+  (the indirection tax outweighed the gain).
+- `gui/src/components/conversation/Composer.tsx` is the live GUI split target:
+  a tangled `forwardRef` body with interdependent effect/state clusters. Lift
+  each cohesive concern into a `gui/src/hooks/use*.ts` hook, with its pure
+  module-level substrate (constants, decode helpers, error/contract types) in
+  `gui/src/lib/`. The image-intake concern is done — `useImageAttachments`
+  (state, paste/drop/picker intake, drag overlay) over `lib/composer-images.ts`
+  (pure). The move stays behavior-preserving; ship any UX change as a separate
+  commit, never folded into the extraction.
 
 ## Verification
 
