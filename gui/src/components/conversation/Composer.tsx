@@ -15,26 +15,19 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 
-import {
-  ImagePreviewDialog,
-  type ImagePreviewItem,
-} from "@/components/conversation/ImagePreviewDialog";
+import { ImagePreviewDialog } from "@/components/conversation/ImagePreviewDialog";
 import { Button, DialogActionRow } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { TooltipLabel } from "@/components/ui/tooltip";
+import { useImageAttachments } from "@/hooks/useImageAttachments";
 import {
   IMAGE_ACCEPT,
-  ImageError,
   type ImageBlockReason,
-  MAX_PENDING_IMAGES,
-  readImageFile,
-  SUPPORTED_PASTE_IMAGE_TYPES,
 } from "@/lib/composer-images";
 import { useCopy } from "@/lib/i18n";
 import { goalPillLabel } from "@/lib/goals";
@@ -310,15 +303,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [goalSubmitting, setGoalSubmitting] = useState(false);
     const [showByTheWayRequiredHint, setShowByTheWayRequiredHint] =
       useState(false);
-    const [pendingImages, setPendingImages] = useState<PendingImageAttachment[]>(
-      [],
-    );
-    const [previewIndex, setPreviewIndex] = useState<number | null>(null);
     const isControlled = value !== undefined;
     const text = isControlled ? value : internal;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const composerRootRef = useRef<HTMLDivElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Paste fold state (uncontrolled mode only — controlled callers
     // own their own state and we can't intercept paste cleanly there):
@@ -335,11 +323,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const pastesRef = useRef<Map<number, string>>(new Map());
     const pasteCounterRef = useRef(0);
     const pendingCursorRef = useRef<number | null>(null);
-    // Mirror of pendingImages for the unmount cleanup below. Render-time
-    // effects (remove / submit) already revoke their own URLs; this is
-    // the last-resort sweep if the Composer unmounts mid-draft (e.g. the
-    // session view switches away).
-    const pendingImagesRef = useRef<PendingImageAttachment[]>([]);
+
+    // Image attachments (pending tiles, hidden file input, preview dialog,
+    // and the paste / drop / picker intake) live in their own hook so the
+    // object-URL lifetime bookkeeping doesn't tangle with the textarea.
+    const {
+      pendingImages,
+      hasPendingImages,
+      previewImages,
+      previewIndex,
+      setPreviewIndex,
+      fileInputRef,
+      handleDrop,
+      handleFileInputChange,
+      tryAcceptPastedImages,
+      removeImage,
+      clearImages,
+    } = useImageAttachments({
+      imagesEnabled,
+      onImageBlocked,
+      pastedImageAlt: copy.composer.pastedImage,
+    });
 
     useEffect(() => {
       if (autoFocus && textareaRef.current) {
@@ -399,20 +403,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       };
     }, []);
 
-    // Keep the mirror current, then revoke everything on unmount. The
-    // empty dep array on the cleanup means it only fires when the
-    // Composer leaves the tree, not on every pendingImages change.
-    useEffect(() => {
-      pendingImagesRef.current = pendingImages;
-    }, [pendingImages]);
-    useEffect(() => {
-      return () => {
-        for (const image of pendingImagesRef.current) {
-          URL.revokeObjectURL(image.previewUrl);
-        }
-      };
-    }, []);
-
     // Imperative API for callers that need to seed the textarea
     // without rewiring as a controlled component. Adding it via ref
     // keeps the existing paste-fold internal-state refs intact for the
@@ -431,7 +421,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           // the registry doesn't carry stale entries.
           pastesRef.current.clear();
           pasteCounterRef.current = 0;
-          setPendingImages([]);
+          clearImages();
           // Focus + caret at end on the next frame, after React has
           // committed the new textarea value. setSelectionRange before
           // the commit lands at the old text length.
@@ -447,7 +437,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           textareaRef.current?.focus();
         },
       }),
-      [isControlled, onChange],
+      [isControlled, onChange, clearImages],
     );
 
     // Auto-grow: reset height to `auto` (so scrollHeight reflects
@@ -491,14 +481,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       }
       pastesRef.current.clear();
       pasteCounterRef.current = 0;
-      // Revoke every pending previewUrl before clearing — on submit the
-      // blobs are persisted to disk by Rust Core and re-served via
-      // convertFileSrc, so the in-memory object URLs are dead weight.
-      setPendingImages((current) => {
-        for (const image of current) URL.revokeObjectURL(image.previewUrl);
-        return [];
-      });
-      setPreviewIndex(null);
+      clearImages();
     };
 
     /**
@@ -514,84 +497,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         return full !== undefined ? full : match;
       });
 
-    // Shared image intake for paste / drop / file picker. Centralizing
-    // the limit check + error routing here means the three entry points
-    // can't drift apart on behavior. Each file is read concurrently;
-    // results land in `pendingImages` as they resolve, gated by the
-    // max-attachments cap to avoid racing past it when several land in
-    // the same tick. `acceptImageFiles` owns no Promise itself so the
-    // caller (paste / drop / input change) stays free to do its own
-    // preventDefault bookkeeping.
-    const acceptImageFiles = (files: File[]) => {
-      const remaining = MAX_PENDING_IMAGES - pendingImages.length;
-      if (remaining <= 0) return;
-      for (const file of files.slice(0, remaining)) {
-        void readImageFile(file)
-          .then((image) => {
-            setPendingImages((current) =>
-              current.length >= MAX_PENDING_IMAGES
-                ? current
-                : [...current, image],
-            );
-          })
-          .catch((err) => {
-            if (err instanceof ImageError) {
-              onImageBlocked?.(err.reason);
-            } else {
-              console.warn("[Composer] failed to read image", err);
-            }
-          });
-      }
-    };
-
-    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-      // Only react to drops carrying files — text/URI drops should fall
-      // through to the browser default (e.g. dropping a URL onto the
-      // textarea should still insert it as text).
-      const hasFiles = Array.from(e.dataTransfer.types).includes("Files");
-      if (!hasFiles) return;
-      e.preventDefault();
-      if (!imagesEnabled) {
-        onImageBlocked?.("external");
-        return;
-      }
-      const files = Array.from(e.dataTransfer.files).filter((file) =>
-        SUPPORTED_PASTE_IMAGE_TYPES.has(file.type),
-      );
-      if (files.length === 0) {
-        onImageBlocked?.("unsupported");
-        return;
-      }
-      void acceptImageFiles(files);
-    };
-
-    const handleFileInputChange = (
-      e: React.ChangeEvent<HTMLInputElement>,
-    ) => {
-      const files = Array.from(e.target.files ?? []);
-      // Reset so picking the same file twice in a row still fires
-      // onChange (the value is otherwise "already selected").
-      e.target.value = "";
-      if (files.length === 0) return;
-      void acceptImageFiles(files);
-    };
-
     const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const imageItems = Array.from(e.clipboardData.items).filter((item) =>
-        SUPPORTED_PASTE_IMAGE_TYPES.has(item.type),
-      );
-      if (imageItems.length > 0) {
-        e.preventDefault();
-        if (!imagesEnabled) {
-          onImageBlocked?.("external");
-          return;
-        }
-        const files = imageItems
-          .map((item) => item.getAsFile())
-          .filter((file): file is File => file !== null);
-        void acceptImageFiles(files);
-        return;
-      }
+      // Image-bearing pastes belong to useImageAttachments; if it consumed
+      // the paste, stop before the text / paste-fold path below.
+      if (tryAcceptPastedImages(e)) return;
       // Controlled callers manage their own state; can't intercept
       // paste without their cooperation, so fall through to default.
       if (isControlled) return;
@@ -627,17 +536,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       text.trimStart().startsWith("/btw\t");
 
     const hasText = text.trim().length > 0;
-    const hasPendingImages = pendingImages.length > 0;
     const hasSendableContent = hasText || hasPendingImages;
-    const previewImages: ImagePreviewItem[] = useMemo(
-      () =>
-        pendingImages.map((image) => ({
-          id: image.id,
-          src: image.previewUrl,
-          alt: copy.composer.pastedImage,
-        })),
-      [copy.composer.pastedImage, pendingImages],
-    );
     const canShowGoalEntry = Boolean(onGoalSubmit) && !goal;
     const goalModeBlocked = disabled || stopMode;
     const goalEntryDisabled = goalModeBlocked || goalSubmitting;
@@ -824,24 +723,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       aria-label={copy.composer.removeImage}
                       onClick={(event) => {
                         event.stopPropagation();
-                        setPendingImages((current) => {
-                          const next = current.filter(
-                            (item) => item.id !== image.id,
-                          );
-                          if (next.length !== current.length) {
-                            // Release the object URL we minted in
-                            // readImageFile so it doesn't outlive the
-                            // tile. Safe to revoke immediately — the
-                            // <img> is unmounting with this state update.
-                            URL.revokeObjectURL(image.previewUrl);
-                          }
-                          return next;
-                        });
-                        setPreviewIndex((current) => {
-                          if (current == null) return null;
-                          if (current === imageIndex) return null;
-                          return current > imageIndex ? current - 1 : current;
-                        });
+                        removeImage(image, imageIndex);
                       }}
                       className={cn(
                         "absolute right-1 top-1 flex size-5 items-center justify-center rounded-full",
