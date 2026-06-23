@@ -1,7 +1,8 @@
 # Galley DESIGN.md
 
 > Status: **v0.2.0 — current implementation baseline**
-> Last updated: 2026-06-09
+> Last updated: 2026-06-23
+> 2026-06-23：§2.2 字体重构为表格化 typography scale——浮出已有的对话阅读面 3-tier token（`conversation-font-size.ts`），新增 UI chrome `--text-ui-*` / `--leading-*` token（`globals.css`），收拢 eyebrow 配方 / serif kerning / 字重 tier；旧散文注记移入「设计注记」小节保留。
 > 2026-06-09：Conversation metadata 瑞士化打磨（TurnMarker / thinking 态 / ToolCallout），并新增 §2.7 动效分类原则。
 > v0.1（dark-first / Linear 风）已被 v0.2 整体方向替换，Notion 历史稿仅作对照。
 > 本文件以当前两栏 Galley GUI 为准：旧三栏 Inspector、独立 Settings window、Project emoji tree 等历史 spec 已退役。
@@ -139,20 +140,116 @@ OLED，也不走冷灰蓝 IDE / dashboard 感。
 
 ### 2.2 字体（方案 C：三 register）
 
-| Register | 字体（英 / 中） | 用途 |
+#### 三 register（字体族）
+
+`@theme` token：`--font-serif` / `--font-sans` / `--font-mono`。
+
+| Register | Token | 字体（英 / 中） | 用途 |
+|---|---|---|---|
+| **Serif（被读）** | `--font-serif` | Newsreader / 苹方 · 雅黑（CJK 走 sans，见 2026-06-20 注记） | agent 回复、Markdown prose、少量品牌 / origin prose |
+| **Sans（默认 UI）** | `--font-sans` | Inter / 苹方 / 思源黑体 | app chrome、按钮、菜单、metadata、session row、Settings / Dialog / Onboarding 功能标题 |
+| **Mono（技术 ID）** | `--font-mono` | JetBrains Mono | shell 命令、路径、JSON、tool 名 |
+
+#### 字号 scale
+
+Galley 有两套**并行**的字号系统，分属不同表面，二者不互相引用：
+
+**A. 对话阅读面 — 3-tier 运行时可调**
+
+驱动：`gui/src/lib/conversation-font-size.ts`，MainView / EmptyState 根节点注入。
+按 `small / standard / large` 三档整组缩放，让用户调阅读面而不动 chrome。
+
+| CSS var | small | **standard** | large | 用途 |
+|---|---|---|---|---|
+| `--conversation-body-size` / `-leading` | 13.5 / 1.65 | **15 / 1.7** | 16.5 / 1.75 | agent + 用户消息 + goal 委派正文 |
+| `--conversation-thinking-size` / `-leading` | 13 / 1.5 | **14 / 1.55** | 15.5 / 1.6 | italic thinking summary |
+| `--conversation-step-size` | 11.5 | **12** | 12.5 | TurnMarker「第 N 步」 |
+| `--conversation-tool-label-size` | 11.5 | **12** | 12.5 | tool callout head 标签 |
+| `--conversation-tool-mono-size` | 10.5 | **11** | 11.5 | tool callout 次级 mono |
+| `--conversation-heading-1-size` | 20 | **22** | 24 | markdown h1（Newsreader medium） |
+| `--conversation-heading-2-size` | 17.5 | **19** | 21 | markdown h2 |
+| `--conversation-heading-3-size` | 15.5 | **17** | 18.5 | markdown h3（故意接近正文） |
+| `--conversation-heading-4-size` | 14 | **15.5** | 17 | markdown h4 |
+| `--conversation-table-size` | 13 | **14** | 15.5 | markdown 表格 |
+| `--conversation-goal-narration-size` / `-leading` | 12.5 / 1.55 | **13 / 1.6** | 14.5 / 1.65 | 线程内 Goal 旁白（降权） |
+| `--conversation-composer-size` | 13.5 | **14.5** | 16 | Composer textarea |
+
+**B. UI chrome 面 — 固定值 token**
+
+`@theme` token（`--text-ui-*` → `text-ui-*` utility）。覆盖阅读面以外的所有 UI。
+**新 chrome 代码用这些名字**；现存 ~436 处 raw `text-[Npx]` 在组件下次被触碰时迁移。
+字号主题不变（dark mode 只翻颜色，不翻字号）。
+
+| Token（utility） | 值 | 角色 | 代表位置 |
+|---|---|---|---|
+| `text-ui-compact` | 13px | 紧凑正文 / CTA / session row title / tool name | `SidebarSessionRow` title、`ToolCallout` name、`ApprovalDock` body |
+| `text-ui-secondary` | 12.5px | 次要正文 / dialog 描述 / menu item | `Composer` dialog 描述、`SettingsIM` 次级正文 |
+| `text-ui-meta` | 12px | metadata / hint / list item | `TopBar` hint、`PatchView` diff、list item |
+| `text-ui-tertiary` | 11.5px | 三级 hint / tooltip / subline | `SidebarSessionRow` subline、tooltip、approval hint |
+| `text-ui-label` | 11px | **eyebrow / section header**（uppercase，见下方配方） | sidebar 桶 header、`ConfiguredModelsPanel` eyebrow |
+| `text-ui-micro` | 10.5px | uppercase chip / status badge / mono timestamp | code block 控件、`UserQuestionRail` 时间戳 |
+| `text-ui-kbd` | 10px | 键盘提示 / 极小 eyebrow | `CommandPalette` kbd、`SidebarTimeline` header |
+
+> **未来收敛候选**（不在本次范围）：`text-ui-kbd`/`-micro`/`-label`（10/10.5/11px）与
+> `text-ui-meta`/`-tertiary`（12/11.5px）两簇间距 < 0.5px，dogfood 后可考虑各并成
+> 一档；合并 = 改渲染值 = 产品判断，需单独评估，勿随手做。
+
+#### 行高 tier
+
+| Token（utility） | 值 | 用途 |
 |---|---|---|
-| **Serif（被读）** | Newsreader / 苹方 · 雅黑（CJK 走 sans，见 2026-06-20 注记） | agent 回复、Markdown prose、少量品牌 / origin prose |
-| **Sans（默认 UI）** | Inter / 苹方 / 思源黑体 | app chrome、按钮、菜单、metadata、session row、Settings / Dialog / Onboarding 功能标题 |
-| **Mono（技术 ID）** | JetBrains Mono | shell 命令、路径、JSON、tool 名 |
+| `[line-height:var(--conversation-body-leading)]` | 1.7 | 对话正文（阅读面，随 tier 浮动） |
+| `leading-code` | 1.6 | 代码块 |
+| `leading-secondary` | 1.55 | 次要正文 / 二级信息 / Composer textarea |
+| `leading-notice` | 1.5 | 提示 / error 块 / Epigraph |
+| `leading-dense` | 1.45 | 密集 settings 行 / 三级信息 |
 
-字号 / 行高：
+#### 字重
 
-- Body: 15px / line-height 1.7（agent 正文 normal 400，用户消息 medium 500；2026-06-20 字号统一，字重经 dogfood 对比后定为 agent 400 + 用户消息 500 的非对称组合——详见 §2.2 2026-06-20 注记）
-- Subtle: 13px / line-height 1.5
-- Hint: 11px uppercase tracked
-- Prose heading（Newsreader medium）: 20–24px
+全 app 只用三档字重，没有 light/bold：
 
-2026-06-02 typography alignment:
+| 字重 | class | 角色 |
+|---|---|---|
+| **normal 400** | （隐式，omit weight class） | serif prose 正文（agent answer）。`font-normal` 几乎不用 |
+| **medium 500** | `font-medium` | **dominant**。用户消息正文、CTA 标签、`**strong**`、session row title（默认态）、所有 prose heading |
+| **semibold 600** | `font-semibold` | 结构性强调。**eyebrow / uppercase 标签**、session row title（active/unread/running 态）、dialog 标题、onboarding hero |
+
+**agent 400 vs 用户消息 500 非对称**（2026-06-20 决策，勿为「统一」改）：同一 body-size 下，agent 正文 normal 400、用户消息 medium 500；配合 font-smoothing 不对称（agent `auto` / 用户消息 `antialiased`）双向补偿。详见下方 2026-06-20 注记。
+
+#### Eyebrow 配方（唯一允许的 uppercase）
+
+Galley 全 app 唯一高频复用的 uppercase 复合样式，~20 处，是 section-header 标准：
+
+```text
+text-ui-label(11px) + font-semibold(600) + uppercase + tracking-[0.08em]
+```
+
+变体：warning/system eyebrow 用 `tracking-[0.06em]`（`AskUserBubble` / `SystemMessageBubble`）；
+桶 header 旁的计数用 `tracking-normal` 抵消（标签 tracked，数字不 tracked）。
+
+**DESIGN.md §4.3 明令禁止**：headline / TurnMarker 不用 uppercase、不用 italic、不用 serif——
+结构 metadata 冷静直立。
+
+#### Serif kerning 签名
+
+所有 Newsreader 表面带 `tracking-[0.005em]`（agent answer、markdown、wordmark、epigraph、
+onboarding hero）。这是 serif register 的签名，sans / mono 不加。
+
+#### 字号 / 行高（旧速查，已被上方表格取代，保留作对照）
+
+- Body: 15px / line-height 1.7（= `--conversation-body-size` standard tier）
+- Subtle: 13px / line-height 1.5（≈ `text-ui-compact` / `leading-notice`）
+- Hint: 11px uppercase tracked（= `text-ui-label` + eyebrow 配方）
+- Prose heading（Newsreader medium）: 20–24px（= `--conversation-heading-1-size` 三个 tier）
+
+---
+
+#### 设计注记（decision archaeology — 勿回退）
+
+> 以下按时间保留字重 / 字号 / font-smoothing 的演化决策叙事。上方表格是当前
+> 契约，这些注记解释**为什么**这么定、哪些「优化」已被否掉。
+
+**2026-06-02 typography alignment:**
 
 - `serif` 不再作为通用 UI 装饰字体。中文 / macOS 环境下，Newsreader / Inter
   只覆盖 Latin，CJK 会 fallback 到系统宋体 / 黑体；如果 UI chrome 到处切换
@@ -162,7 +259,7 @@ OLED，也不走冷灰蓝 IDE / dashboard 感。
 - 保留 `serif` 的场景必须是被阅读的 prose 或少量品牌语气：agent answer、
   Markdown headings / blockquote、`Galley` wordmark、About origin story。
 
-2026-06-09 字形渲染（font-smoothing）:
+**2026-06-09 字形渲染（font-smoothing）:**
 
 - 全局 `body` 用 `-webkit-font-smoothing: antialiased`（灰度抗锯齿，偏细的"薄字"
   观感，统一 UI chrome）。
@@ -181,7 +278,7 @@ OLED，也不走冷灰蓝 IDE / dashboard 感。
   字面量；`MarkdownView` 的 `remarkCjkAdjacentQuotedStrong` 插件把这种 LLM 高频
   写法还原成 strong。
 
-2026-06-20 CJK 去 serif，全 app 中文统一到 sans:
+**2026-06-20 CJK 去 serif，全 app 中文统一到 sans:**
 
 - 此前 `--font-serif` 的 CJK 落到系统宋体（macOS Songti SC / Windows
   SimSun）。Songti SC 字面偏紧、SimSun 在 Windows 上更差，且中文衬线

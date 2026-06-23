@@ -83,6 +83,36 @@
     BlinkMacSystemFont, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
 
+  /*
+   * Chrome type scale — font-size + line-height for UI surfaces OUTSIDE
+   * the conversation reading area (sidebar, topbar, settings, dialogs,
+   * tool callout chrome, approval forms, etc.). See DESIGN.md §2.2B.
+   *
+   * The conversation reading surface (agent/user prose, markdown, step
+   * markers, headings) is NOT covered here — those sizes are runtime
+   * 3-tier tokens driven by conversation-font-size.ts and injected on
+   * the MainView / EmptyState roots, so the user can scale the reading
+   * face without resizing chrome.
+   *
+   * These chrome tokens are theme-invariant: only color tokens flip in
+   * dark mode, never type sizes. Tailwind v4 generates `text-ui-*` and
+   * `leading-*` utilities from them. New chrome code should reference
+   * these names; the ~436 legacy `text-[Npx]` literals migrate when
+   * their host component is next touched.
+   */
+  --text-ui-compact: 13px; /* 紧凑正文 / CTA / session row title / tool name */
+  --text-ui-secondary: 12.5px; /* 次要正文 / dialog 描述 / menu item */
+  --text-ui-meta: 12px; /* metadata / hint / list item */
+  --text-ui-tertiary: 11.5px; /* 三级 hint / tooltip / subline */
+  --text-ui-label: 11px; /* eyebrow / section header (uppercase) */
+  --text-ui-micro: 10.5px; /* uppercase chip / status badge */
+  --text-ui-kbd: 10px; /* 键盘提示 / 极小 eyebrow */
+
+  --leading-code: 1.6; /* 代码块 */
+  --leading-secondary: 1.55; /* 次要正文 / 二级信息 */
+  --leading-notice: 1.5; /* 提示 / error 块 */
+  --leading-dense: 1.45; /* 密集 settings 行 / 三级信息 */
+
   /* --- radii (overrides Tailwind defaults; semantic, limited set) --- */
   --radius-sm: 6px;
   --radius-callout: 8px;
