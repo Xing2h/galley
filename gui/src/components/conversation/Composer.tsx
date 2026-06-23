@@ -25,6 +25,7 @@ import { Button, DialogActionRow } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { TooltipLabel } from "@/components/ui/tooltip";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
+import { usePasteFold } from "@/hooks/usePasteFold";
 import {
   IMAGE_ACCEPT,
   type ImageBlockReason,
@@ -76,30 +77,6 @@ const DEFAULT_GOAL_AGENT_COUNT = 3;
 type GoalBudgetPreset = "15" | "30" | "60" | "custom";
 type GoalAgentCountPreset = "2" | "3" | "4" | "5";
 
-/**
- * Line-count threshold above which a single paste is folded into a
- * placeholder ([Pasted text #N +M lines]). 10 is the natural boundary
- * because that's exactly where the textarea hits COMPOSER_MAX_HEIGHT_PX
- * and starts internal scrolling — folding kicks in the instant the
- * paste would otherwise stop being fully visible. Pastes <= 10 lines
- * stay inline so short snippets remain editable.
- *
- * GA TUI uses > 2 lines but its terminal-tight context is more
- * sensitive to vertical bleed; desktop has the breathing room to be
- * more permissive. No character-count fallback (a 1-line minified
- * paste of 5K chars is rare; users can clear manually if needed).
- */
-const PASTE_FOLD_THRESHOLD_LINES = 10;
-
-/**
- * Pattern matching the placeholder text exactly. Anchored loosely
- * because users can keyboard-navigate around it; we only need to find
- * intact placeholders for expansion. Strict-match shape: counter
- * digits, "+", line digits, " lines]". Anything else (e.g. user typed
- * into the middle) won't match — and that's the right behavior, since
- * manual edits should trump the silent re-expansion.
- */
-const PASTE_PLACEHOLDER_RE = /\[Pasted text #(\d+) \+\d+ lines\]/g;
 const COMPOSER_HINT_KBD = new Set(["Shift+Enter", "Enter", "/btw"]);
 
 // Re-exported so callers wiring `onImageBlocked` keep importing the
@@ -308,22 +285,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const composerRootRef = useRef<HTMLDivElement>(null);
 
-    // Paste fold state (uncontrolled mode only — controlled callers
-    // own their own state and we can't intercept paste cleanly there):
-    // - `pastesRef`: id → full pasted text. Refs not state, because
-    //   we never re-render based on the map itself; the placeholder
-    //   text in `internal` is what drives the visual.
-    // - `pasteCounterRef`: monotonic id source. Resets on submit so
-    //   counter doesn't grow unbounded across long sessions.
-    // - `pendingCursorRef`: where to put the caret AFTER React commits
-    //   the next textarea value. setSelectionRange directly in the
-    //   onPaste handler would race the value commit (cursor lands at
-    //   the wrong column for one frame); a post-commit effect is the
-    //   reliable path.
-    const pastesRef = useRef<Map<number, string>>(new Map());
-    const pasteCounterRef = useRef(0);
-    const pendingCursorRef = useRef<number | null>(null);
-
     // Image attachments (pending tiles, hidden file input, preview dialog,
     // and the paste / drop / picker intake) live in their own hook so the
     // object-URL lifetime bookkeeping doesn't tangle with the textarea.
@@ -348,6 +309,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       onImageBlocked,
       pastedImageAlt: copy.composer.pastedImage,
     });
+
+    // Long-paste folding ([Pasted text #N +M lines]) + its registry and
+    // caret restoration. `applyValue` is the uncontrolled commit path —
+    // the hook only reaches it after clearing its own isControlled gate.
+    const { handleTextPaste, expandPastePlaceholders, resetPasteRegistry } =
+      usePasteFold({
+        text,
+        isControlled,
+        textareaRef,
+        applyValue: (next) => {
+          setInternal(next);
+          onChange?.(next);
+        },
+      });
 
     useEffect(() => {
       if (autoFocus && textareaRef.current) {
@@ -423,8 +398,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           // Programmatic prefill is not a user paste — drop any folded
           // placeholders so the next paste counter starts at #1 and
           // the registry doesn't carry stale entries.
-          pastesRef.current.clear();
-          pasteCounterRef.current = 0;
+          resetPasteRegistry();
           clearImages();
           // Focus + caret at end on the next frame, after React has
           // committed the new textarea value. setSelectionRange before
@@ -441,7 +415,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           textareaRef.current?.focus();
         },
       }),
-      [isControlled, onChange, clearImages],
+      [isControlled, onChange, clearImages, resetPasteRegistry],
     );
 
     // Auto-grow: reset height to `auto` (so scrollHeight reflects
@@ -458,18 +432,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       el.style.height = `${next}px`;
     }, [text]);
 
-    // Restore caret after a programmatic value change (paste-fold sets
-    // `pendingCursorRef` before bumping `text`). Runs after auto-grow's
-    // effect since both depend on [text]; ordering doesn't matter
-    // because they touch disjoint properties (height vs selection).
-    useEffect(() => {
-      if (pendingCursorRef.current !== null && textareaRef.current) {
-        const pos = pendingCursorRef.current;
-        textareaRef.current.setSelectionRange(pos, pos);
-        pendingCursorRef.current = null;
-      }
-    }, [text]);
-
     const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const next = e.target.value;
       if (!isControlled) setInternal(next);
@@ -483,50 +445,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       } else {
         setInternal("");
       }
-      pastesRef.current.clear();
-      pasteCounterRef.current = 0;
+      resetPasteRegistry();
       clearImages();
     };
-
-    /**
-     * Replace every intact `[Pasted text #N +M lines]` placeholder in
-     * `s` with its original full text. Unknown ids (mapping cleared by
-     * a prior submit) and mangled placeholders (user typed inside the
-     * brackets) are left as-is — manual edits trump silent re-expansion.
-     */
-    const expandPastePlaceholders = (s: string): string =>
-      s.replace(PASTE_PLACEHOLDER_RE, (match, idStr: string) => {
-        const id = parseInt(idStr, 10);
-        const full = pastesRef.current.get(id);
-        return full !== undefined ? full : match;
-      });
 
     const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       // Image-bearing pastes belong to useImageAttachments; if it consumed
       // the paste, stop before the text / paste-fold path below.
       if (tryAcceptPastedImages(e)) return;
-      // Controlled callers manage their own state; can't intercept
-      // paste without their cooperation, so fall through to default.
-      if (isControlled) return;
-      const el = textareaRef.current;
-      if (!el) return;
-      // Normalize CRLF / CR to LF before counting — Windows clipboards
-      // emit \r\n, classic Mac \r; both should count as one line break.
-      const pasted = e.clipboardData.getData("text").replace(/\r\n?/g, "\n");
-      const lineCount = pasted.split("\n").length;
-      if (lineCount <= PASTE_FOLD_THRESHOLD_LINES) return; // default paste
-
-      e.preventDefault();
-      const id = ++pasteCounterRef.current;
-      pastesRef.current.set(id, pasted);
-      const placeholder = `[Pasted text #${id} +${lineCount} lines]`;
-
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      const next = text.slice(0, start) + placeholder + text.slice(end);
-      pendingCursorRef.current = start + placeholder.length;
-      setInternal(next);
-      onChange?.(next);
+      handleTextPaste(e);
     };
 
     // `/btw` side questions deliberately bypass the stopMode gate
