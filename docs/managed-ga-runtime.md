@@ -1,14 +1,23 @@
 # Managed GenericAgent Runtime
 
-> Design target for Galley's bundled / managed GenericAgent runtime.
-> Attach-mode GenericAgent remains user-owned and non-invasive.
+> Design and runtime reference for Galley's bundled / managed GenericAgent
+> runtime. Attach-mode GenericAgent remains user-owned and non-invasive.
 
 ## Status
 
-This document defines the target architecture for the built-in Galley runtime.
-The current released path still supports attaching an existing user-owned
-GenericAgent. Managed runtime work must preserve attach-mode behavior unless a
-task explicitly changes this document.
+The managed runtime **shipped in v0.2.0** and is now the default main path for
+ordinary users. Attach mode (an existing user-owned GenericAgent) is an advanced
+compatibility entry. Fresh installs derive `managed`; installs with an existing
+`ga_config.gaPath` derive `external`. See
+[project status](./project-status.md) for the current release, GA baseline, and
+update-channel state.
+
+The M0–M9 milestones below were the implementation plan. They are shipped
+(per-project-status, every milestone through M9 is complete); each milestone's
+"Current implementation slice" records what landed. Treat this document as a
+settled runtime reference plus invariants, not an open roadmap. The "Do not
+build" items remain the forward guardrails. Managed runtime work must preserve
+attach-mode behavior unless a task explicitly changes this document.
 
 ## Product Model
 
@@ -738,14 +747,24 @@ App Resources/
 Application Support/app.galley/
   galley.db
   managed-ga-state/
-    memory/
-    sop/
-    skills/
+    memory/                   # the ONLY dir GA reads SOPs from
+    sop/                      # vestigial: created but GA never reads it
+    skills/                   # vestigial: created but GA never reads it
     temp/
     model_responses/
   managed-model-config/
     generated-mykey.py          # or model-config.json
 ```
+
+> **SOP home is `memory/`, not `sop/` or `skills/`.** GenericAgent discovers and
+> reads SOPs via `file_read ../memory/*.md` and the L1 index
+> `global_mem_insight.txt`; there is no loader for a sibling `sop/` or `skills/`
+> directory. A separate Galley-owned SOP directory was considered and rejected
+> (see devlog 2026-06-03) because it changes upstream GenericAgent semantics and
+> creates a second source of truth. New tooling that installs SOPs must write
+> into `managed-ga-state/memory/`. The empty `sop/` and `skills/` entries above
+> are vestigial layout shells and may be removed; do not treat them as a target
+> for SOP content.
 
 Initial setup may seed default state only when the target file or directory is
 missing. Existing state must not be overwritten:
@@ -767,11 +786,12 @@ Managed GA can be patched, but Galley must not become a divergent GA fork.
 Recommended source strategy:
 
 ```text
-managed-ga/manifest.json        # pinned upstream baseline
+managed-ga/manifest.json        # pinned upstream baseline + patch stack id
 managed-ga/code/                # generated code-only payload
 managed-ga/patches/
-  0001-galley-prompt-composition.patch
-  0002-galley-managed-state-dir.patch
+  0001-managed-state-root.patch
+  0006-managed-browser-control-recovery.patch
+  ...                          # see patches/manifest.md for the full stack
 managed-ga/patches/manifest.md
 scripts/build-managed-ga.sh
 ```
@@ -838,6 +858,15 @@ Do not build:
 - Persona settings.
 - Memory / SOP management UI.
 
+Current implementation slice:
+
+- This document, `AGENTS.md`, and the project constitution are aligned on the
+  managed / attach boundary.
+- The document states that managed code is replaceable and managed state is not
+  (see "Code And State").
+- The document states that the Galley Runtime Prompt applies only in managed
+  mode (see "Prompt Composition", and M6 below).
+
 ### M1 · Runtime Identity And Session Separation
 
 Goal: make runtime identity a first-class Galley concept before starting a
@@ -869,6 +898,20 @@ Do not build:
 - Automatic migration from external sessions to managed sessions.
 - "Copy to Galley runtime" yet.
 
+Current implementation slice:
+
+- Migration `008_runtime_identity.sql` adds `prefs.active_runtime_kind`, the
+  session columns `ga_runtime_kind` / `ga_runtime_id` / `prompt_profile`, and
+  seeds the initial runtime by the documented derivation (`gaPath` → `external`,
+  else `managed`).
+- `prefs.active_runtime_kind` is read/written in `core/src/db/helpers.rs` and
+  surfaced via `core/src/db/managed_model.rs`.
+- Runtime kind is captured at session creation, carried on every session row,
+  and used to filter the GUI session list and to dispatch existing-session CLI
+  commands by the session's own runtime.
+- Settings -> Runtime exposes the mode switch ("Galley" / "Attached GA"); the
+  sidebar shows a runtime indicator.
+
 ### M2 · Managed Runtime Layout
 
 Goal: package Galley-owned GA code without mixing it with user-owned state.
@@ -897,6 +940,20 @@ Do not build:
 - A general plugin/runtime marketplace.
 - Automatic upstream GA update outside Galley releases.
 - State migration unless an upstream GA format change requires it.
+
+Current implementation slice:
+
+- `managed-ga/manifest.json` pins the audited upstream baseline (commit
+  `70792af`) plus a replayable `galley-managed-ga-patches-v1` patch stack
+  (`0001`–`0009`), each documented in `managed-ga/patches/manifest.md`.
+- `managed-ga/code/` is the generated code-only payload (no `mykey.py`,
+  `memory/`, `skills/`, `temp/`, or `model_responses/`).
+- `managed-ga/state-seed/memory/` holds the upstream-tracked GA memory/SOP
+  defaults, copied missing-only into the live `managed-ga-state/memory/`.
+- `scripts/build-managed-ga.sh` regenerates the payload by copying the baseline
+  and reapplying `patches/*.patch`.
+- Advanced diagnostics surface code version, patch stack, prompt readiness, and
+  state paths without exposing secrets.
 
 ### M3 · Managed Model Config
 
@@ -981,6 +1038,17 @@ Do not build:
 - A multi-page setup wizard unless a provider truly needs it.
 - Runtime education content.
 - Advanced diagnostics inside onboarding.
+
+Current implementation slice:
+
+- First run opens one compact "为 Galley 配置模型" screen; the user picks a
+  Provider preset, enters the model key, Base URL, and model, and the primary
+  action is "测试并开始使用 Galley".
+- Onboarding starts with no Provider selected and requires all four fields
+  before enabling the primary action.
+- A successful connection test routes to the empty composer with focus; the
+  first managed session is created lazily on first send.
+- "我已有 GenericAgent" remains the visually secondary entry into attach mode.
 
 ### M5 · Managed Conversation Path
 
@@ -1127,6 +1195,16 @@ Current implementation slice:
   the existing `gaRuntimeKind` / `gaRuntimeId` fields.
 - Explicit cross-runtime `session new` returns a structured
   `non_current_runtime` warning in the success envelope.
+
+Open item:
+
+- The socket layer resolves and attaches `runtimeLabel` ("Galley" / "Attached
+  GenericAgent") to every session brief, and the GUI renders it. The Rust CLI,
+  however, currently emits `runtimeKind` in its session output but does not emit
+  `runtimeLabel` in its own JSON wrapper (`cli/src/session.rs`). Surfacing the
+  label in CLI session output is the remaining M7 detail against the
+  "All session-facing CLI responses must include runtimeKind and runtimeLabel"
+  contract above.
 
 ### M8 · Backup, Upgrade, Diagnostics, And Release Gates
 
