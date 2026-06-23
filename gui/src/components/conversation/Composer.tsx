@@ -24,6 +24,7 @@ import { ImagePreviewDialog } from "@/components/conversation/ImagePreviewDialog
 import { Button, DialogActionRow } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { TooltipLabel } from "@/components/ui/tooltip";
+import { useBlurOnOutsidePointer } from "@/hooks/useBlurOnOutsidePointer";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { usePasteFold } from "@/hooks/usePasteFold";
 import {
@@ -330,57 +331,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       }
     }, [autoFocus]);
 
-    useEffect(() => {
-      const blurBeforeOutsidePointerTarget = (event: PointerEvent) => {
-        if (document.activeElement !== textareaRef.current) return;
-        if (event.button !== 0 || event.ctrlKey) return;
-        const target = event.target;
-        if (!(target instanceof Element)) return;
-        if (composerRootRef.current?.contains(target)) return;
-        const clickTarget = target.closest<HTMLElement>(
-          'button, a[href], [role="button"], [role="menuitem"], [role="radio"]',
-        );
-        let nativeClickSeen = false;
-
-        const markNativeClick = (clickEvent: MouseEvent) => {
-          if (!clickTarget) return;
-          const nativeTarget = clickEvent.target;
-          if (!(nativeTarget instanceof Node)) return;
-          if (
-            nativeTarget === clickTarget ||
-            clickTarget.contains(nativeTarget)
-          ) {
-            nativeClickSeen = true;
-          }
-        };
-
-        // Some desktop WebView focus paths can turn the first outside
-        // click into "blur only". Blur during capture instead, then
-        // let the same pointer event continue to the intended target.
-        textareaRef.current?.blur();
-        if (!clickTarget) return;
-
-        document.addEventListener("click", markNativeClick, true);
-        window.setTimeout(() => {
-          document.removeEventListener("click", markNativeClick, true);
-          if (nativeClickSeen || !clickTarget.isConnected) return;
-          clickTarget.click();
-        }, 80);
-      };
-
-      document.addEventListener(
-        "pointerdown",
-        blurBeforeOutsidePointerTarget,
-        true,
-      );
-      return () => {
-        document.removeEventListener(
-          "pointerdown",
-          blurBeforeOutsidePointerTarget,
-          true,
-        );
-      };
-    }, []);
+    // Blur-on-outside-pointer WebView focus workaround (see the hook).
+    useBlurOnOutsidePointer(textareaRef, composerRootRef);
 
     // Imperative API for callers that need to seed the textarea
     // without rewiring as a controlled component. Adding it via ref
