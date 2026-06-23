@@ -9,7 +9,7 @@
  * is produced separately by EmptyState's own placeholder copy and is
  * intentionally not modeled here.
  *
- * See `docs/specs/philosophical-voice/` (Requirement 3).
+ * See `docs/devlog/2026-06-03-philosophical-voice-and-austerity-copy.md`.
  */
 
 /** The register an in-session Composer can be in. `commissioning`
@@ -31,7 +31,7 @@ export interface ComposerRegisterState {
  * Pure, total, deterministic. Maps in-session Composer state to a
  * register. Running takes priority: while the agent runs, the only
  * input that passes the stop gate is `/btw`, so the by-the-way register
- * is correct regardless of other flags (design Property 5).
+ * is correct regardless of other flags.
  */
 export function resolveComposerRegister(
   s: ComposerRegisterState,

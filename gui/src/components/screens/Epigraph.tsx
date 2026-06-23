@@ -30,7 +30,7 @@ export interface EpigraphProps {
  * The region is non-interactive and labeled for screen readers without
  * stealing focus.
  *
- * See `docs/specs/philosophical-voice/` (Requirements 1, 2, 5).
+ * See `docs/devlog/2026-06-03-philosophical-voice-and-austerity-copy.md`.
  */
 export function Epigraph({ condition = "fresh", className }: EpigraphProps) {
   const language = useLanguage();

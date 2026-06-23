@@ -27,7 +27,7 @@ import type { ResolvedLanguage } from "@/lib/language";
  * state-bound Wittgenstein line shown above the empty-state Composer:
  * a translated line in the user's software language, with the German
  * original on an always-on secondary line. See
- * `docs/specs/philosophical-voice/`.
+ * `docs/devlog/2026-06-03-philosophical-voice-and-austerity-copy.md`.
  */
 export type EpigraphCondition = "silent" | "quiet" | "working" | "fresh";
 
@@ -54,9 +54,9 @@ export interface ResolvedEpigraph {
 }
 
 /**
- * Curated set — deliberately small (Req 2.4). Each entry holds the
- * German original plus every software-language translation together so
- * the curation stays editable in one place (Req 6.2 / 6.4).
+ * Curated set — deliberately small. Each entry holds the German
+ * original plus every software-language translation together so the
+ * curation stays editable in one place.
  *
  * Later Wittgenstein is the body (PI §43 meaning-is-use, PI §19 form-
  * of-life — the two lines most load-bearing for an LLM workspace);
@@ -85,8 +85,8 @@ export const EPIGRAPHS: readonly Epigraph[] = [
   },
   {
     // silent: the screen is literally silent (no sessions), so *sagen*
-    // and *zeigen* coincide (Req 2.1) — the Tractatus accent, in its
-    // one honest home.
+    // and *zeigen* coincide — the Tractatus accent, in its one honest
+    // home.
     id: "tractatus-7",
     source: "Tractatus 7",
     de: "Wovon man nicht sprechen kann, darüber muss man schweigen.",
@@ -106,7 +106,7 @@ export const EPIGRAPH_BINDINGS: Readonly<Record<EpigraphCondition, string>> = {
 
 /**
  * Safe default used when a condition has no binding or referenced data
- * is missing (Req 2.2 / 6.3). Must reference an existing entry id.
+ * is missing. Must reference an existing entry id.
  * The thesis line is the most representative fallback for a populated
  * workspace (showing "silence" on a non-empty workspace would misread
  * the state).
@@ -137,7 +137,7 @@ function findById(id: string): Epigraph | undefined {
  * Resolve a condition + language to a displayable epigraph. Pure and
  * total: unknown/unbound condition -> default entry; missing default
  * -> first entry; empty field -> cross-field fallback. Never returns an
- * empty `primary` or `de` (Req 2.2 / 6.3, design Property 1).
+ * empty `primary` or `de`.
  */
 export function resolveEpigraph(
   condition: EpigraphCondition,
@@ -149,16 +149,16 @@ export function resolveEpigraph(
 
   const primary = pickPrimary(entry, language);
   // `de` falls back to the primary line only if the original is somehow
-  // empty — keeps the secondary line non-empty (Property 1).
+  // empty — keeps the secondary line non-empty.
   const de = entry.de.trim().length > 0 ? entry.de : primary;
 
   return { primary, de, source: entry.source, id: entry.id };
 }
 
 /**
- * Dev-only integrity guard (design Property 3). Runs once at module load
- * under Vite's DEV flag so curation mistakes surface immediately in
- * development without shipping a runtime cost or throw to users.
+ * Dev-only integrity guard. Runs once at module load under Vite's DEV
+ * flag so curation mistakes surface immediately in development without
+ * shipping a runtime cost or throw to users.
  */
 function assertEpigraphIntegrity(): void {
   const ids = new Set<string>();
