@@ -182,6 +182,9 @@ a clean change into a conflict-prone merge.
 - Keep edits scoped to the user's request.
 - Preserve unrelated dirty work.
 - For code changes, run the smallest verification set that covers the risk.
+- Node tooling is pnpm — the `packageManager` field pins it and CI runs it.
+  `npm` / `yarn` ignore `pnpm-lock.yaml` and can resolve a different tree, so
+  use `pnpm --dir gui …` (not `npm`) for every gui command below.
 - For release or contract changes, broaden verification.
 
 Common verification:
