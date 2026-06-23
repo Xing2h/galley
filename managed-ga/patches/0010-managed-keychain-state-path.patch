@@ -1,0 +1,19 @@
+diff --git a/assets/code_run_header.py b/assets/code_run_header.py
+--- a/assets/code_run_header.py
++++ b/assets/code_run_header.py
+@@ -2,0 +3,15 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'memory'))
++# Galley managed runtime: redirect keychain storage under GALLEY_GA_STATE_ROOT
++# so secrets stay inside Galley's managed-ga-state/ instead of leaking to the
++# user's real home ~/ga_keychain.enc (which would also collide with an external
++# GA checkout). Runs here, as a code_run preamble, before the agent's own
++# `import keychain`, so the module is rebound before first use. Attach mode has
++# no GALLEY_GA_STATE_ROOT in env, so this block is a no-op there.
++try:
++    import keychain as _gk
++    _gsr = os.environ.get('GALLEY_GA_STATE_ROOT')
++    if _gsr:
++        import pathlib as _gpl
++        _gk._PATH = _gpl.Path(_gsr) / 'ga_keychain.enc'
++        _gk.keys = _gk._Keys()
++except Exception:
++    pass
