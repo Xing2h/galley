@@ -106,21 +106,30 @@ jobs:
             git -C "$worktree_dir" push origin "HEAD:$CHANNEL_BRANCH"
           fi
 
+          # Export the update-channel HEAD we just (or already) published, so the
+          # verify step can match it against the file's latest commit via the
+          # GitHub API instead of racing the raw-CDN cache.
+          echo "PROMOTE_SHA=$(git -C "$worktree_dir" rev-parse HEAD)" >> "$GITHUB_ENV"
+
       - name: Verify live update channel
+        env:
+          PROMOTE_SHA: ${{ env.PROMOTE_SHA }}
         run: |
           node scripts/check-update-channel.mjs \
             --repo "${{ github.repository }}" \
             --tag "${{ inputs.tag }}" \
             --channel "${{ inputs.channel }}" \
-            --cache-bust \
-            --retries 6 \
-            --retry-delay-ms 10000
+            --require-commit-sha "$PROMOTE_SHA" \
+            --token "${{ github.token }}" \
+            --retries 3 \
+            --retry-delay-ms 2000
           if [[ "${{ inputs.channel }}" == "stable" ]]; then
             node scripts/check-update-channel.mjs \
               --repo "${{ github.repository }}" \
               --tag "${{ inputs.tag }}" \
               --channel beta \
-              --cache-bust \
-              --retries 6 \
-              --retry-delay-ms 10000
+              --require-commit-sha "$PROMOTE_SHA" \
+              --token "${{ github.token }}" \
+              --retries 3 \
+              --retry-delay-ms 2000
           fi

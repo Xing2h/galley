@@ -41,11 +41,13 @@ Post-release follow-up:
    `v0.2.12`.
 2. Watch the managed GA upgrade (`53b48aea` -> `70792af`) for loop-limit,
    reasoning-field, and credential-storage regressions in real sessions.
-3. The `promote-update-channel.yml` verify step failed on CDN cache timing:
-   raw.githubusercontent served `0.2.11` through the full 6 x 10s retry window
-   and only flipped to `0.2.12` afterward. The channel was manually re-verified
-   green. Widen `check-update-channel.mjs` retry budget, or validate by commit
-   SHA instead of CDN content, before the next release.
+3. The `promote-update-channel.yml` verify step failed on CDN cache timing
+   during the v0.2.12 promote: raw.githubusercontent served `0.2.11` through
+   the full 6 x 10s retry window and only flipped to `0.2.12` afterward. The
+   channel was manually re-verified green. Fixed post-release: verify now reads
+   the manifest via the GitHub contents API and matches the file's latest
+   commit SHA (`--require-commit-sha`), both immediate and bypassing the
+   raw-CDN cache. Locally validated; the next promote run confirms it in CI.
 4. On Windows, continue smoke coverage for duplicate startup / named-pipe
    behavior and manual overwrite install over a backgrounded Galley process.
 5. Keep Windows ARM out of the stable supported matrix. Add it later only after

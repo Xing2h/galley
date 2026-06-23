@@ -19,6 +19,13 @@ const repo = args.repo ?? "wangjc683/galley";
 const channel = args.channel ?? "stable";
 const tag = args.tag;
 const expectedVersion = args.version ?? (tag ? tag.replace(/^v/, "") : undefined);
+const expectedCommitSha = args["require-commit-sha"];
+const token = args.token;
+// Default to the GitHub contents API for the manifest: it reflects git state
+// immediately, unlike the raw CDN which can serve a stale version for minutes
+// after a promote push and falsely fail verification. Pass --url to fall back
+// to the raw URL (e.g. for local testing against a checked-out branch).
+const useApiManifest = !args.url;
 const manifestUrl =
   args.url ??
   `https://raw.githubusercontent.com/${repo}/galley-update-channel/updates/${channel}/latest.json`;
@@ -33,15 +40,39 @@ main().catch((error) => {
 });
 
 async function main() {
-  const manifest = await retry(
-    async () => {
-      const candidate = await fetchJson(manifestUrl, { cacheBust });
-      validateManifest(candidate);
-      return candidate;
-    },
-    retries,
-    retryDelayMs,
-  );
+  // Hard gate: confirm the promote push actually landed on the update-channel
+  // branch by matching the file's latest commit SHA. Sourced from the GitHub
+  // commits API, which is immediate and bypasses raw-CDN cache latency.
+  if (expectedCommitSha) {
+    await retry(
+      () => verifyCommitSha(repo, channel, expectedCommitSha, { token }),
+      retries,
+      retryDelayMs,
+    );
+  }
+
+  // Manifest content: prefer the contents API (immediate) over the raw CDN
+  // (cache-delayed). validateManifest still checks version / platforms /
+  // signature integrity on whichever source we read.
+  const manifest = useApiManifest
+    ? await retry(
+        async () => {
+          const candidate = await fetchManifestViaApi(repo, channel, { token });
+          validateManifest(candidate);
+          return candidate;
+        },
+        retries,
+        retryDelayMs,
+      )
+    : await retry(
+        async () => {
+          const candidate = await fetchJson(manifestUrl, { cacheBust });
+          validateManifest(candidate);
+          return candidate;
+        },
+        retries,
+        retryDelayMs,
+      );
 
   if (checkAssets) {
     for (const platform of REQUIRED_PLATFORMS) {
@@ -49,7 +80,7 @@ async function main() {
     }
   }
 
-  console.log(`Update channel OK: ${manifestUrl}`);
+  console.log(`Update channel OK (${useApiManifest ? "api" : "raw"}: ${channel})`);
   console.log(`version: ${manifest.version}`);
   console.log(`platforms: ${REQUIRED_PLATFORMS.join(", ")}`);
 }
@@ -156,6 +187,57 @@ async function assertUrlOk(url, label) {
   }
 }
 
+async function githubApiFetch(url, { token } = {}) {
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "galley-check-update-channel",
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    throw new Error(`GitHub API ${url} returned HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+async function fetchManifestViaApi(repo, channel, { token }) {
+  const url = `https://api.github.com/repos/${repo}/contents/updates/${channel}/latest.json?ref=galley-update-channel`;
+  const data = await githubApiFetch(url, { token });
+  if (!data || typeof data.content !== "string" || data.encoding !== "base64") {
+    throw new Error(
+      `contents API did not return base64 content for updates/${channel}/latest.json`,
+    );
+  }
+  const decoded = Buffer.from(data.content, "base64").toString("utf8");
+  try {
+    return JSON.parse(decoded);
+  } catch (error) {
+    throw new Error(`contents API content is not valid JSON: ${error.message}`);
+  }
+}
+
+async function verifyCommitSha(repo, channel, expectedSha, { token }) {
+  const url = `https://api.github.com/repos/${repo}/commits?path=updates/${channel}/latest.json&sha=galley-update-channel&per_page=1`;
+  const commits = await githubApiFetch(url, { token });
+  if (!Array.isArray(commits) || commits.length === 0) {
+    throw new Error(
+      `no commits found for updates/${channel}/latest.json on galley-update-channel`,
+    );
+  }
+  const actualSha = commits[0].sha;
+  if (!actualSha.startsWith(expectedSha)) {
+    throw new Error(
+      `updates/${channel}/latest.json last commit is ${actualSha}, expected ${expectedSha}`,
+    );
+  }
+  console.log(
+    `[check-update-channel] commit ${actualSha.slice(0, 12)} matches promote push (${channel})`,
+  );
+}
+
 async function retry(task, attempts, delayMs) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -228,8 +310,11 @@ function printUsage() {
     --channel stable
 
 Options:
-  --url <url>                Override the manifest URL.
+  --url <url>                Override the manifest URL (forces raw-CDN mode).
   --version <version>        Defaults to tag without leading "v".
+  --require-commit-sha <sha> Match the file's latest commit on galley-update-channel
+                             (GitHub commits API; immediate, bypasses raw CDN).
+  --token <token>            GitHub token for API auth (optional on public repos).
   --no-asset-check           Skip HEAD/GET checks for platform asset URLs.
   --cache-bust               Add a per-attempt query param to avoid stale raw CDN reads.
   --retries <count>          Defaults to 1.
