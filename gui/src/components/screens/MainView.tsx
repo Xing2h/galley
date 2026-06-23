@@ -1,5 +1,5 @@
 import { ArrowDown } from "@phosphor-icons/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 
 import { ApprovalDock } from "@/components/conversation/ApprovalDock";
 import { AskUserBubble } from "@/components/conversation/AskUserBubble";
@@ -18,6 +18,7 @@ import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { SelectionCopyToolbar } from "@/components/conversation/SelectionCopyToolbar";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
 import { UserQuestionRail } from "@/components/conversation/UserQuestionRail";
+import { useStickyScroll } from "@/hooks/useStickyScroll";
 import { useTypewriter } from "@/hooks/useTypewriter";
 import { useMarkdownStream } from "@/hooks/useMarkdownStream";
 import {
@@ -189,8 +190,6 @@ export function MainView({
   );
   const goalRunningTailVisible =
     !!runningGoal && !isRunning && !stillWaiting && !pendingAskUser;
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const pendingApprovalRefs = useRef(new Map<string, HTMLDivElement>());
 
   // Streaming state, subscribed locally so token churn stays inside
   // this subtree instead of re-rendering the whole app. These were
@@ -250,305 +249,26 @@ export function MainView({
   // by roughly 3×. Final + boundary values still flush promptly.
   const markdownPartial = useMarkdownStream(typedPartial);
 
-  // Sticky-bottom mode for streaming: when the user is "near the
-  // bottom" we follow newly-arrived chunks; if they've scrolled up
-  // to read older content we don't yank them down.
-  //
-  // `atBottom` is the currently-tracked position; updated on scroll
-  // events with a 24px tolerance so flicker around the boundary
-  // doesn't toggle the mode.
-  const [atBottom, setAtBottom] = useState(true);
-  const [isScrollingToBottom, setIsScrollingToBottom] = useState(false);
-  const scrollToBottomRafRef = useRef<number | null>(null);
-  useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      setAtBottom(distFromBottom < 24);
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
-  // Follow-the-bottom: while atBottom, pin scroll position to the
-  // bottom whenever the conversation grows. useLayoutEffect runs
-  // synchronously after the new content renders, before the browser
-  // paints — so the user never sees a glimpse of the
-  // bottom-having-moved-up before we snap it back.
-  //
-  // Deps cover every source of bottom-anchored growth:
-  //   - typedPartial:           streaming chunks (typewriter-revealed)
-  //   - turns.length:           each turn_end commits a new AgentTurn
-  //   - pendingApprovals.length: approval card lands
-  //   - pendingAskUser:         AskUserBubble appears
-  //
-  // Originally this only watched typedPartial — fine for the
-  // single-turn / streaming-heavy case, but in multi-step runs where
-  // the partial stays empty for stretches (tool-heavy turns,
-  // dispatch markers stripped) each new step would commit invisibly
-  // below the fold. User would only see progress when the final
-  // turn's streaming naturally triggered a snap. Widening the deps
-  // makes follow-mode catch every step's structural commit too.
-  //
-  // scrollTop assignment is O(1) so re-firing per render is fine.
-  useLayoutEffect(() => {
-    if (!atBottom) return;
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [
-    markdownPartial,
+  // Conversation scroll behavior — sticky-bottom follow, the
+  // scroll-to-bottom button, session-switch snap, stick-to-user-message,
+  // ⌥↑/↓ jump, and advance-to-approval — lives in its own hook so this
+  // component stays a flat render tree. See useStickyScroll.
+  const {
+    scrollContainerRef,
     atBottom,
-    turns.length,
-    pendingApprovals.length,
+    setAtBottom,
+    isScrollingToBottom,
+    onClickScrollToBottom,
+    onClickAdvanceApproval,
+    registerPendingApprovalRef,
+  } = useStickyScroll({
+    activeSessionId,
+    userSubmitTick,
+    streamingContent: markdownPartial,
+    turnsLength: turns.length,
+    pendingApprovalsLength: pendingApprovals.length,
     pendingAskUser,
-  ]);
-
-  const stopMonitoringScrollToBottom = () => {
-    setIsScrollingToBottom(false);
-    if (scrollToBottomRafRef.current !== null) {
-      cancelAnimationFrame(scrollToBottomRafRef.current);
-      scrollToBottomRafRef.current = null;
-    }
-  };
-
-  const onClickScrollToBottom = () => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-
-    stopMonitoringScrollToBottom();
-    setIsScrollingToBottom(true);
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-
-    const startedAt = performance.now();
-    let lastScrollTop = el.scrollTop;
-    const monitorScroll = () => {
-      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (distFromBottom < 24) {
-        stopMonitoringScrollToBottom();
-        setAtBottom(true);
-        return;
-      }
-
-      const userPulledAway = el.scrollTop < lastScrollTop - 2;
-      const timedOut = performance.now() - startedAt > 1600;
-      if (userPulledAway || timedOut) {
-        stopMonitoringScrollToBottom();
-        setAtBottom(false);
-        return;
-      }
-
-      lastScrollTop = el.scrollTop;
-      scrollToBottomRafRef.current = requestAnimationFrame(monitorScroll);
-    };
-    scrollToBottomRafRef.current = requestAnimationFrame(monitorScroll);
-  };
-
-  useEffect(
-    () => () => {
-      if (scrollToBottomRafRef.current !== null) {
-        cancelAnimationFrame(scrollToBottomRafRef.current);
-        scrollToBottomRafRef.current = null;
-      }
-    },
-    [],
-  );
-
-  const onClickAdvanceApproval = (next: PendingApproval) => {
-    const container = scrollContainerRef.current;
-    const target = pendingApprovalRefs.current.get(next.approvalId);
-    if (!container || !target) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const targetTop = target.getBoundingClientRect().top;
-    const TOP_PADDING = 32;
-    const delta = targetTop - containerRect.top - TOP_PADDING;
-    container.scrollBy({ top: delta, behavior: "smooth" });
-    setAtBottom(false);
-
-    window.setTimeout(() => {
-      const focusTarget =
-        target.querySelector<HTMLElement>("button:not([disabled])") ?? target;
-      focusTarget.focus({ preventScroll: true });
-    }, 180);
-  };
-
-  // atBottom mirror for use inside async callbacks (ResizeObserver
-  // below) where the captured closure would otherwise see a stale
-  // boolean. The effect-based sync (rather than a render-phase
-  // assignment) keeps the react-hooks lint rule happy.
-  const atBottomRef = useRef(atBottom);
-  useEffect(() => {
-    atBottomRef.current = atBottom;
-  }, [atBottom]);
-
-  // Scroll-to-bottom on session switch. Three compounding races make
-  // a single scrollTop assignment unreliable:
-  //
-  //   1. activateSession async-restores turns from SQLite — the
-  //      restored turns commit in a *later* render than the one
-  //      our useEffect runs after. Our first scrollHeight read
-  //      sees the pre-restore (empty / smaller) layout.
-  //   2. MarkdownView's CodeBlock uses Shiki for syntax highlighting
-  //      asynchronously (WASM + dynamic grammar import). Highlighted
-  //      <pre><code> blocks settle to their final height ~50–500ms
-  //      after first render; line wrapping in the highlighted
-  //      version often differs from the plain fallback.
-  //   3. WKWebView (Tauri on macOS) sometimes skips repainting after
-  //      a rapid DOM swap until an input event nudges it — which is
-  //      exactly the "blank window → scroll a bit → content appears"
-  //      symptom users hit. Assigning scrollTop to the same pixel
-  //      it already was at gets optimized away and doesn't trigger
-  //      paint either.
-  //
-  // Strategy: snap to bottom now (post-commit RAF), then watch the
-  // inner content for height changes via ResizeObserver for a 500ms
-  // window. Every height change inside the window re-snaps — that
-  // catches both the SQLite restore commit and Shiki's
-  // highlight-completion reflow. Each scrollTop write also serves
-  // as a paint trigger for WKWebView.
-  //
-  // Bail out of the observer if the user scrolls away from bottom
-  // during the window — they're reading older content and shouldn't
-  // be yanked back. The existing scroll listener (above) keeps
-  // `atBottom` in sync, mirrored here via atBottomRef.
-  useEffect(() => {
-    if (activeSessionId === undefined) return;
-    const el = scrollContainerRef.current;
-    if (!el) return;
-
-    const rafId = requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-      setAtBottom(true);
-    });
-
-    let observer: ResizeObserver | null = null;
-    let timeoutId: number | null = null;
-    const inner = el.firstElementChild;
-    if (inner instanceof HTMLElement) {
-      observer = new ResizeObserver(() => {
-        if (!atBottomRef.current) {
-          observer?.disconnect();
-          observer = null;
-          return;
-        }
-        el.scrollTop = el.scrollHeight;
-      });
-      observer.observe(inner);
-      timeoutId = window.setTimeout(() => {
-        observer?.disconnect();
-        observer = null;
-      }, 500);
-    }
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      observer?.disconnect();
-      if (timeoutId !== null) window.clearTimeout(timeoutId);
-    };
-  }, [activeSessionId]);
-
-  // Stick-to-user-message-top scroll behaviour (DESIGN.md §4.3).
-  // Effect fires only when the user submits a new message — keying
-  // on `turns.length` would also fire on every turn_end (pushing
-  // the user away mid-read of the agent's reply). The store's
-  // `userSubmitTick` is a counter that only the submit path bumps.
-  //
-  // Why we don't use scrollIntoView({block: "start"}): it doesn't
-  // accept a top-padding argument. We compute the offset manually
-  // so the user message lands ~32px below the scroll container's
-  // top edge (gives the thinking placeholder + first reply lines
-  // visible breathing room without burying the prompt off-screen).
-  useEffect(() => {
-    if (userSubmitTick === 0) return; // initial render — nothing to scroll
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    // RAF defers to after the new <MessageUser data-role="user-msg">
-    // has actually mounted from the appendUserTurn state update.
-    const handle = requestAnimationFrame(() => {
-      const userMsgs = container.querySelectorAll<HTMLElement>(
-        '[data-role="user-msg"]',
-      );
-      const last = userMsgs[userMsgs.length - 1];
-      if (!last) return;
-      const containerRect = container.getBoundingClientRect();
-      const targetTop = last.getBoundingClientRect().top;
-      const TOP_PADDING = 32;
-      const delta = targetTop - containerRect.top - TOP_PADDING;
-      if (Math.abs(delta) < 1) return;
-      container.scrollBy({ top: delta, behavior: "smooth" });
-    });
-    return () => cancelAnimationFrame(handle);
-  }, [userSubmitTick]);
-
-  // ⌥↑ / ⌥↓ jump to previous / next user message. The user-msg
-  // block is now a strong visual anchor (apricot fill, see 2026-05-14
-  // commit) — power users in long conversations want a fast keyboard
-  // path between their own questions without trackpad-scrolling
-  // through dozens of agent steps.
-  //
-  // Bound to document, not the container — the conversation column
-  // doesn't take focus naturally (it isn't tabbable). We bail out
-  // when an editable element is focused so we don't steal Option+Up
-  // from text-cursor-by-paragraph navigation inside Composer.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || e.metaKey || e.ctrlKey) return;
-      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-
-      const active = document.activeElement as HTMLElement | null;
-      if (active) {
-        const tag = active.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || active.isContentEditable) {
-          return;
-        }
-      }
-
-      const container = scrollContainerRef.current;
-      if (!container) return;
-
-      const userMsgs = Array.from(
-        container.querySelectorAll<HTMLElement>('[data-role="user-msg"]'),
-      );
-      if (userMsgs.length === 0) return;
-
-      const containerRect = container.getBoundingClientRect();
-      const TOP_PADDING = 32;
-      // ±8px tolerance so the message currently parked at ~32px
-      // below container top doesn't count as both "above" and
-      // "below" the cursor when rounding error nudges it.
-      const TOLERANCE = 8;
-
-      const tops = userMsgs.map(
-        (el) => el.getBoundingClientRect().top - containerRect.top,
-      );
-
-      let target: HTMLElement | undefined;
-      if (e.key === "ArrowDown") {
-        // Next user-msg whose top is below the current anchor line.
-        target = userMsgs.find((_, i) => tops[i] > TOP_PADDING + TOLERANCE);
-      } else {
-        // Previous user-msg whose top is above the current anchor line.
-        for (let i = userMsgs.length - 1; i >= 0; i--) {
-          if (tops[i] < TOP_PADDING - TOLERANCE) {
-            target = userMsgs[i];
-            break;
-          }
-        }
-      }
-      if (!target) return;
-
-      e.preventDefault();
-      const delta =
-        target.getBoundingClientRect().top - containerRect.top - TOP_PADDING;
-      container.scrollBy({ top: delta, behavior: "smooth" });
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  });
 
   return (
     <div
@@ -604,13 +324,7 @@ export function MainView({
                 {pendingApprovals.map((p) => (
                   <div
                     key={p.approvalId}
-                    ref={(node) => {
-                      if (node) {
-                        pendingApprovalRefs.current.set(p.approvalId, node);
-                      } else {
-                        pendingApprovalRefs.current.delete(p.approvalId);
-                      }
-                    }}
+                    ref={registerPendingApprovalRef(p.approvalId)}
                     data-pending-approval-id={p.approvalId}
                     tabIndex={-1}
                     className="focus:outline-none"
