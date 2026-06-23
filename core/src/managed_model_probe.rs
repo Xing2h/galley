@@ -4,6 +4,12 @@
 //! to verify that the endpoint and credential can talk to the provider, and
 //! optionally offer model ids. A real first conversation still exercises the
 //! runtime path in M5.
+//!
+//! The test payload deliberately carries one minimal tool definition in the
+//! protocol's native shape (Anthropic `input_schema` vs OpenAI `function`).
+//! Galley always runs as an agent, so every real request includes tools; a
+//! gateway that accepts plain chat but mistranslates tool schemas would
+//! otherwise pass a tool-free probe and only fail on the first real message.
 
 use std::time::Duration;
 
@@ -287,7 +293,17 @@ fn probe_payload(protocol: ManagedModelProtocol, model: &str) -> Value {
                 }
             ],
             "max_tokens": 1,
-            "stream": false
+            "stream": false,
+            "tools": [
+                {
+                    "name": "ping",
+                    "description": "Connectivity probe tool. Never invoked.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                }
+            ]
         }),
         ManagedModelProtocol::Openai => {
             let lower_model = model.to_ascii_lowercase();
@@ -307,7 +323,20 @@ fn probe_payload(protocol: ManagedModelProtocol, model: &str) -> Value {
                         "content": "ping"
                     }
                 ],
-                "stream": false
+                "stream": false,
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "ping",
+                            "description": "Connectivity probe tool. Never invoked.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                ]
             });
             payload[token_key] = serde_json::json!(1);
             payload
@@ -409,6 +438,26 @@ mod tests {
                 .unwrap(),
             "https://openrouter.ai/api/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn probe_payload_carries_protocol_native_tool_schema() {
+        // Anthropic tools must be {name, description, input_schema} — never the
+        // OpenAI {type:function, function:{...}} shape, or an Anthropic-compatible
+        // gateway fronting an OpenAI upstream rejects the request (issue #10).
+        let anthropic = probe_payload(ManagedModelProtocol::Anthropic, "claude-x");
+        let tool = &anthropic["tools"][0];
+        assert!(tool.get("name").is_some());
+        assert!(tool.get("input_schema").is_some());
+        assert!(tool.get("function").is_none());
+
+        // OpenAI tools must be {type:function, function:{name, parameters}}.
+        let openai = probe_payload(ManagedModelProtocol::Openai, "gpt-4o");
+        let tool = &openai["tools"][0];
+        assert_eq!(tool["type"], "function");
+        assert!(tool["function"].get("name").is_some());
+        assert!(tool["function"].get("parameters").is_some());
+        assert!(tool.get("input_schema").is_none());
     }
 
     #[test]
