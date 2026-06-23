@@ -35,14 +35,21 @@ large files without changing user-visible behavior or public contracts.
   its own (flat prop-threading hub); its only extractions were pure helpers
   into `gui/src/lib/`. Region-container splitting was piloted and rejected
   (the indirection tax outweighed the gain).
-- `gui/src/components/conversation/Composer.tsx` is the live GUI split target:
-  a tangled `forwardRef` body with interdependent effect/state clusters. Lift
-  each cohesive concern into a `gui/src/hooks/use*.ts` hook, with its pure
-  module-level substrate (constants, decode helpers, error/contract types) in
-  `gui/src/lib/`. The image-intake concern is done — `useImageAttachments`
-  (state, paste/drop/picker intake, drag overlay) over `lib/composer-images.ts`
-  (pure). The move stays behavior-preserving; ship any UX change as a separate
-  commit, never folded into the extraction.
+- `gui/src/components/conversation/Composer.tsx` is settled — the hook-split is
+  complete. Three cohesive concerns were lifted into `gui/src/hooks/use*.ts`
+  over pure `gui/src/lib/` substrate, each behavior-preserving (UX changes
+  shipped as separate commits): `useImageAttachments` (state, paste/drop/picker
+  intake, drag overlay) over `composer-images.ts`; `usePasteFold` (long-paste
+  fold registry + caret restoration) over `composer-paste.ts`; and
+  `useBlurOnOutsidePointer` (the WebView blur/click-forward focus workaround,
+  DOM-only). What remains is deliberately NOT extracted: the textarea auto-grow
+  effect (5 lines, single-point, disjoint — extraction buys pure indirection,
+  the anti-pattern that also sank the App.tsx region containers), and the
+  goal-launch state machine (genuinely tangled but co-spawned with the submit
+  path, so a hook would thread ~10 values in and ~10 back out — moving the
+  tangle to a boundary rather than removing it). The extraction signal is
+  *tangle*, never file size; small + clean + single-point is a reason to leave
+  code in place, not a reason to lift it.
 
 ## Verification
 
