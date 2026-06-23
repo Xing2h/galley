@@ -204,6 +204,12 @@ pub fn run() {
             sql: include_str!("../migrations/026_project_workspace.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 27,
+            description: "backfill managed model context_win default",
+            sql: include_str!("../migrations/027_managed_model_context_win.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —

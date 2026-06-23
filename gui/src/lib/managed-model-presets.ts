@@ -6,6 +6,15 @@ import type {
 
 const DEFAULT_MODEL_PLACEHOLDER = "model-name";
 
+// GA trims conversation history to `context_win × 3` chars before each LLM
+// call (GA llmcore.py trim_messages_history). GA's own default is only 30000,
+// so older turns get dropped after a few heavy rounds and the model "forgets"
+// recent context. Raise it to a value that stays safe for the 128K+ windows
+// all named presets target, while leaving headroom for system prompt + tools
+// schema + response. Surfaced as an advanced option, so users on a smaller
+// custom-endpoint model can lower it in Settings.
+const DEFAULT_CONTEXT_WIN = 90000;
+
 export type ManagedModelProviderPresetId =
   | "chatgpt-codex"
   | "deepseek"
@@ -46,6 +55,7 @@ export function managedModelProtocolAdvancedDefaults(
 ): Record<string, unknown> {
   if (protocol === "openai") {
     return {
+      context_win: DEFAULT_CONTEXT_WIN,
       api_mode: "chat_completions",
       temperature: 1,
       max_retries: 3,
@@ -55,6 +65,7 @@ export function managedModelProtocolAdvancedDefaults(
     };
   }
   return {
+    context_win: DEFAULT_CONTEXT_WIN,
     thinking_type: "adaptive",
     temperature: 1,
     max_retries: 3,
@@ -75,6 +86,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     displayName: "ChatGPT / Codex",
     modelPlaceholder: "gpt-5.5",
     advancedOptions: {
+      context_win: DEFAULT_CONTEXT_WIN,
       api_mode: "responses",
       reasoning_effort: "medium",
       temperature: 1,
@@ -112,6 +124,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     displayName: "DeepSeek",
     modelPlaceholder: "deepseek-v4-pro",
     advancedOptions: {
+      context_win: DEFAULT_CONTEXT_WIN,
       thinking_type: "adaptive",
       max_retries: 3,
       read_timeout: 180,
@@ -127,6 +140,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     displayName: "Kimi",
     modelPlaceholder: "kimi-for-coding",
     advancedOptions: {
+      context_win: DEFAULT_CONTEXT_WIN,
       fake_cc_system_prompt: true,
       thinking_type: "adaptive",
       max_retries: 3,
@@ -143,6 +157,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     displayName: "MiniMax",
     modelPlaceholder: "MiniMax-M2.7",
     advancedOptions: {
+      context_win: DEFAULT_CONTEXT_WIN,
       max_retries: 3,
       read_timeout: 180,
       stream: true,
@@ -157,6 +172,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     displayName: "OpenRouter",
     modelPlaceholder: "anthropic/claude-sonnet-4.5",
     advancedOptions: {
+      context_win: DEFAULT_CONTEXT_WIN,
       api_mode: "chat_completions",
       max_retries: 3,
       read_timeout: 180,
@@ -171,6 +187,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     model: "",
     displayName: "SiliconFlow",
     advancedOptions: {
+      context_win: DEFAULT_CONTEXT_WIN,
       api_mode: "chat_completions",
       max_retries: 3,
       read_timeout: 180,
@@ -187,6 +204,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     apiKeyPlaceholder: "tp-xxxxx",
     modelPlaceholder: "mimo-v2.5-pro",
     advancedOptions: {
+      context_win: DEFAULT_CONTEXT_WIN,
       max_retries: 3,
       read_timeout: 180,
       stream: true,
@@ -201,6 +219,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     displayName: "ZAI",
     modelPlaceholder: "glm-5.1",
     advancedOptions: {
+      context_win: DEFAULT_CONTEXT_WIN,
       max_retries: 3,
       read_timeout: 180,
       stream: true,
