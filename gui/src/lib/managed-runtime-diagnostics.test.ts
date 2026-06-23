@@ -13,8 +13,8 @@ describe("applyManagedRuntimeDiagnostics", () => {
       manifestSchemaVersion: 1,
       upstreamSource: "lsdefine/GenericAgent",
       upstreamBranch: "main",
-      upstreamCommit: "53b48aea07ad78ef577444ca6efa83693399f168",
-      upstreamAuditedAt: "2026-06-18",
+      upstreamCommit: "70792af967a7826fad8e19d800d44977183f046b",
+      upstreamAuditedAt: "2026-06-23",
       patchStackId: "galley-managed-ga-patches-v1",
       patchCount: 9,
       stateSchemaVersion: 1,
@@ -58,7 +58,7 @@ describe("applyManagedRuntimeDiagnostics", () => {
     applyManagedRuntimeDiagnostics(diagnostics);
 
     expect(useRuntimeStore.getState().runtimeInfo).toMatchObject({
-      gaBaseline: "53b48aea07ad78ef577444ca6efa83693399f168",
+      gaBaseline: "70792af967a7826fad8e19d800d44977183f046b",
       managedRuntime: diagnostics,
     });
   });

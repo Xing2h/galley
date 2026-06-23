@@ -215,9 +215,9 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     label: "Zhipu GLM",
     protocol: "anthropic",
     apiBase: "https://open.bigmodel.cn/api/anthropic",
-    model: "glm-5.1",
+    model: "glm-5.2",
     displayName: "ZAI",
-    modelPlaceholder: "glm-5.1",
+    modelPlaceholder: "glm-5.2",
     advancedOptions: {
       context_win: DEFAULT_CONTEXT_WIN,
       max_retries: 3,

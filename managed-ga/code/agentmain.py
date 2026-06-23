@@ -89,6 +89,7 @@ class GenericAgent:
         logid = f'{(time.time_ns() + random.randrange(1_000_000)) % 1_000_000:06d}'
         self.log_path = state_path('temp', 'model_responses', f'model_responses_{logid}.txt')
         self.load_llm_sessions()
+        self.extra_sys_prompts = []
 
     def load_llm_sessions(self):
         mykeys, changed = reload_mykeys()
@@ -164,8 +165,8 @@ class GenericAgent:
         while True:
             task = self.task_queue.get()
             if isinstance(task, str): break
-            raw_query, source, display_queue = task["query"], task["source"], task["output"]
             images = task.get("images") or []
+            raw_query, source, display_queue = task["query"], task["source"], task["output"]
             raw_query = self._handle_slash_cmd(raw_query, display_queue)
             if raw_query is None:
                 self.task_queue.task_done(); continue
@@ -176,8 +177,7 @@ class GenericAgent:
                 raw_query = f'Long user prompt saved to {task_file}. Read and execute.'
             rquery = smart_format(raw_query.replace('\n', ' '), max_str_len=200)
             self.history.append(f"[USER]: {rquery}")
-
-            sys_prompt = get_system_prompt() + getattr(self.llmclient.backend, 'extra_sys_prompt', '')
+            sys_prompt = get_system_prompt() + '\n'.join(self.extra_sys_prompts) + getattr(self.llmclient.backend, 'extra_sys_prompt', '')
             if self.peer_hint: sys_prompt += f"\n[Peer] 用户提及其他会话/后台任务状态时: temp/model_responses/ (只找近期修改的文件尾部)\n"
             handler = GenericAgentHandler(self, self.history, state_path('temp'))
             if getattr(self, 'no_print', False): handler.print = lambda *a, **k: None
@@ -193,7 +193,7 @@ class GenericAgent:
                 self.llmclient.backend.read_timeout = max(self.llmclient.backend.read_timeout, 1200)
             initial_user_content = image_content_blocks(raw_query, images) if images else None
             gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query, handler, TOOLS_SCHEMA,
-                                    max_turns=80, verbose=self.verbose, initial_user_content=initial_user_content, yield_info=True)
+                                    max_turns=180, verbose=self.verbose, initial_user_content=initial_user_content, yield_info=True)
             try:
                 full_resp = ""; last_pos = 0; curr_turn = 0; turn_resps = []
                 for chunk in gen:

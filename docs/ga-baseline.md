@@ -15,19 +15,43 @@ audited against.
 
 ## Current Baseline
 
-Locked commit: `53b48aea07ad78ef577444ca6efa83693399f168`
+Locked commit: `70792af967a7826fad8e19d800d44977183f046b`
 
 - Source: `lsdefine/GenericAgent` upstream `main`
-- Date audited: 2026-06-18
-- Previous baseline: `12655687aa964ea541bb0606c0051700e76991ca`
-- Delta: 1 commit
+- Date audited: 2026-06-23
+- Previous baseline: `53b48aea07ad78ef577444ca6efa83693399f168`
+- Delta: 9 commits
 - Result: no external bridge protocol or dependency break; `pyproject.toml`
-  did not change. Managed runtime picked up upstream `llmcore.py` response-log
-  model metadata while preserving Galley's managed state-root routing.
-- Devlog: [GA upstream upgrade 12655687 -> 53b48aea](./devlog/2026-06-18-ga-upstream-upgrade-12655687-to-53b48aea.md)
+  did not change. Managed runtime picked up upstream desktop bridge/frontend,
+  loop-mode, conductor, reasoning-field, and prompt-limit changes while
+  preserving Galley's managed state-root routing and managed image attachment
+  path.
+- Devlog: [GA upstream upgrade 53b48aea -> 70792af](./devlog/2026-06-23-ga-upstream-upgrade-53b48aea-to-70792af.md)
 
 Relevant compatibility notes:
 
+- `agent_loop.py`: `BaseHandler.dispatch`, `turn_end_callback`, hook calls,
+  and `initial_user_content` support remain compatible with
+  `WorkbenchHandler`.
+- `agentmain.py`: upstream added `extra_sys_prompts` and raised the task loop
+  to 180 turns. Galley kept the upstream turn limit and replayed managed image
+  attachment injection into the initial user content block.
+- `ga.py`: upstream adjusted summary / checkpoint prompts and turn-warning
+  thresholds. Dispatch signature, tool callback protocol, and turn-end hook
+  execution remain compatible.
+- `llmcore.py`: upstream accepts `reasoning` as an OpenAI-compatible reasoning
+  field and exposes `MixinSession.current_name`. Galley's ChatGPT / Codex
+  managed backend patch still replays cleanly.
+- `frontends/desktop_bridge.py` and `frontends/desktop/`: upstream imported a
+  larger GA-owned desktop frontend. Galley does not use that bridge as its
+  authoritative GUI/Core path; the managed payload keeps it as upstream code
+  and the bundled-runtime import smoke covers dependency readiness.
+- `frontends/conductor.py`, `frontends/stapp.py`, `frontends/plan_state.py`,
+  and `launch.pyw`: upstream loop-mode, service-panel, and idle-action polish
+  are bundled, but Galley continues to own its public desktop and CLI surfaces.
+- `memory/`: upstream refreshed `ljqCtrl`, `ui_detect`, and
+  `memory_cleanup_sop`. The managed state seed follows upstream memory files
+  while excluding generated long-term memory artifacts.
 - `frontends/workspace_cmd.py`, `plugins/project_mode.py`,
   `frontends/tuiapp_v2.py`, and `frontends/tui_v3.py`: upstream now supports
   `/workspace`, shared Workspace link/registry logic, and per-agent Project
@@ -36,17 +60,6 @@ Relevant compatibility notes:
 - `frontends/continue_cmd.py`: upstream added in-place restore, session locks,
   and workspace restore metadata. Managed mode routes continue logs/cache
   through the managed state root.
-- `agentmain.py`: upstream task/reflect loop moved nearby contexts only; Galley
-  keeps image attachment initial content and managed state-root routing.
-- `ga.py`: upstream browser wake-up behavior remains compatible. Managed mode
-  preserves Galley's non-interactive `code_run` stdin close and Browser Control
-  recovery diagnostics.
-- `llmcore.py`: upstream added Responses Codex metadata and now includes the
-  active model in response logs. Galley's ChatGPT / Codex managed backend
-  remains a managed patch because it is a Galley credential IPC contract.
-- `memory/`: upstream removed `skill_search`, added macOS AX control support,
-  and refreshed SOP content. The managed state seed follows upstream memory
-  files while excluding generated long-term memory artifacts.
 - `pyproject.toml`: no dependency diff in this range; bundled Python
   dependencies did not need changes.
 

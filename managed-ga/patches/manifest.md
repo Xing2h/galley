@@ -2,10 +2,10 @@
 
 Patch stack id: `galley-managed-ga-patches-v1`
 
-Last replay verified: `2026-06-18` against upstream
-`53b48aea07ad78ef577444ca6efa83693399f168`.
-(patch 0009 replayed against `37a58c0` and confirmed byte-identical to
-`managed-ga/code/frontends/fsapp.py`.)
+Last replay verified: `2026-06-23` against upstream
+`70792af967a7826fad8e19d800d44977183f046b`.
+(patch 0008 was refreshed to preserve upstream's 180-turn loop limit while
+injecting managed image attachment content.)
 
 Current patches:
 

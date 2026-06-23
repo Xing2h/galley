@@ -35,8 +35,8 @@ index 43c86a1..e7aa86e 100644
 @@ -168,0 +194 @@ class GenericAgent:
 +            initial_user_content = image_content_blocks(raw_query, images) if images else None
 @@ -170 +196 @@ class GenericAgent:
--                                    max_turns=80, verbose=self.verbose, yield_info=True)
-+                                    max_turns=80, verbose=self.verbose, initial_user_content=initial_user_content, yield_info=True)
+-                                    max_turns=180, verbose=self.verbose, yield_info=True)
++                                    max_turns=180, verbose=self.verbose, initial_user_content=initial_user_content, yield_info=True)
 diff --git a/llmcore.py b/llmcore.py
 index f279671..93f9948 100644
 --- a/llmcore.py
