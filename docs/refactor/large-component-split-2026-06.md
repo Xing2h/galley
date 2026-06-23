@@ -50,6 +50,18 @@ large files without changing user-visible behavior or public contracts.
   tangle to a boundary rather than removing it). The extraction signal is
   *tangle*, never file size; small + clean + single-point is a reason to leave
   code in place, not a reason to lift it.
+- `gui/src/components/screens/MainView.tsx` is settled — its conversation
+  scroll machine (sticky-bottom follow, scroll-to-bottom button + monitor,
+  session-switch snap with ResizeObserver race-hardening, stick-to-user-message,
+  ⌥↑/↓ jump, advance-to-approval: 2 state / 4 ref / 7 effect / 3 handler) was
+  lifted verbatim into `gui/src/hooks/useStickyScroll.ts`, leaving MainView a
+  flat render tree. DOM-only hook (no `lib/` substrate; RAF/ResizeObserver/scroll
+  aren't node-testable — verify by typecheck/lint + dogfood). This was the last
+  genuine effect cluster in the GUI; a 2026-06-23 codebase survey confirmed the
+  rest of the large GUI files (TopBar, MarkdownView, SidebarSessionRow, the
+  stores, the i18n tables) are large-but-flat/cohesive and must not be split on
+  size. The one non-component candidate still open is `gui/src/lib/ipc-handlers.ts`
+  (an IPC router bundling a pure GA-text stripper + a history-replay machine).
 
 ## Verification
 
