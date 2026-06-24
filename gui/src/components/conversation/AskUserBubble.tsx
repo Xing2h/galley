@@ -96,7 +96,7 @@ function CandidateChip({
       disabled={disabled}
       className={cn(
         "bg-surface px-2.5 py-1 text-[12.5px] text-ink-soft",
-        "hover:border-warning hover:bg-warning/10 hover:text-ink",
+        "hover:border-warning hover:bg-warning/[var(--opacity-soft)] hover:text-ink",
         disabled &&
           "cursor-not-allowed opacity-50 hover:bg-surface hover:text-ink-soft",
       )}

@@ -109,7 +109,7 @@ const COMPOSER_STOP_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
   "border-warning/70 bg-warning text-elevated focus-visible:ring-warning/50",
   "shadow-[var(--shadow-composer-stop)]",
-  "hover:bg-warning/90 hover:shadow-[var(--shadow-composer-stop-pulse)]",
+  "hover:bg-warning-hover hover:shadow-[var(--shadow-composer-stop-pulse)]",
   "active:shadow-[var(--shadow-control-press)]",
 );
 

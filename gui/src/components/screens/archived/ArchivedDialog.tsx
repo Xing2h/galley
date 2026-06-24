@@ -336,7 +336,7 @@ function Header({
                 size="sm"
                 onClick={onEmptyAll}
                 title={copy.projects.deleteAllArchived}
-                className="px-1.5 font-normal text-ink-muted hover:bg-error/10 hover:text-error active:bg-error/15"
+                className="px-1.5 font-normal text-ink-muted hover:bg-error/[var(--opacity-soft)] hover:text-error active:bg-error/[var(--opacity-medium)]"
               >
                 {copy.projects.emptyArchive(total)}
               </Button>

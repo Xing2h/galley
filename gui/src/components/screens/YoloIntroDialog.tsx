@@ -56,7 +56,7 @@ export function YoloIntroDialog({ open, onAcknowledge }: YoloIntroDialogProps) {
           )}
         >
           <div className="flex items-center gap-2.5">
-            <span className="inline-flex size-8 items-center justify-center rounded-full border border-warning/30 bg-warning/10 text-warning">
+            <span className="inline-flex size-8 items-center justify-center rounded-full border border-warning/30 bg-warning/[var(--opacity-subtle)] text-warning">
               <Lightning size={16} weight="thin" />
             </span>
             <Dialog.Title className="text-[17px] font-semibold text-ink">

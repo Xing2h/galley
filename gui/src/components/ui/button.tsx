@@ -145,7 +145,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: cn(
     "border border-ink bg-ink font-medium text-elevated",
     "shadow-[var(--shadow-button-primary)]",
-    "hover:-translate-y-px hover:bg-ink/95 hover:shadow-[var(--shadow-button-primary-hover)]",
+    "hover:-translate-y-px hover:bg-ink-hover hover:shadow-[var(--shadow-button-primary-hover)]",
     "active:translate-y-[2px] active:scale-[0.97] active:bg-ink active:shadow-[var(--shadow-control-press)]",
     "disabled:translate-y-0 disabled:scale-100 disabled:shadow-none",
   ),
@@ -172,12 +172,12 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   ),
   warning: cn(
     "border border-warning bg-warning font-medium text-elevated",
-    "hover:bg-warning/90",
+    "hover:bg-warning-hover",
     RAISED_BUTTON_SURFACE,
   ),
   destructive: cn(
     "border border-error bg-error font-medium text-elevated",
-    "hover:bg-error/90",
+    "hover:bg-error-hover",
     RAISED_BUTTON_SURFACE,
   ),
   "destructive-soft": cn(

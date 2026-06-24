@@ -84,6 +84,19 @@
   --color-error: #b14545;
   --color-info: #7a7a8e;
 
+  /* Filled-button hover fills. A solid filled button (primary ink /
+     warning / destructive) lifts on hover, and "lift toward the light"
+     reverses between themes: light fills are dark (charcoal/amber/red),
+     so hover darkens a notch (pressed-down tactile read); dark fills
+     are light, so hover brightens instead. This mirrors how
+     --color-brand-strong already flips direction vs --color-brand. Each
+     is a dedicated token so only filled-button hovers take it — the
+     alpha-tint callouts (bg-warning/[opacity-*]) keep using the plain
+     base colour and stay untouched. */
+  --color-ink-hover: #15130f;
+  --color-warning-hover: #a6691a;
+  --color-error-hover: #983a3a;
+
   /* --- type registers (3 families per DESIGN.md "方案 C") --- */
   /* Serif register: Latin stays on Newsreader (self-hosted, for the
      "read prose" register — agent answers, headings, wordmark). CJK
@@ -200,6 +213,12 @@ html[data-theme="dark"] {
   --color-app: #171411;
   --color-surface: #1d1915;
   --color-elevated: #24201b;
+  /* Dark counterpart of the light chrome: still *darker* than --color-app
+     (not lighter) so the sidebar keeps sinking below the conversation
+     canvas and the stage "rises" — the same inverted-lightness chrome
+     rule as light mode. Without this override the light value (#f4f3f1)
+     leaks through and the sidebar renders as a bright panel in dark. */
+  --color-chrome: #13100d;
   /* Dark code fill: a touch lighter than the near-black page (mirrors
      inline code's --color-hover relationship in dark) so the block
      separates as a distinct code medium without a harsh outline. */
@@ -226,6 +245,26 @@ html[data-theme="dark"] {
   --color-warning: #d6a250;
   --color-error: #d97a76;
   --color-info: #a8a7c3;
+
+  /* Filled-button hover fills flip direction in dark: the fills are
+     light here, so hover brightens (lift toward the light), not
+     darkens. See the light-mode block for the full rationale. */
+  --color-ink-hover: #f7f1e8;
+  --color-warning-hover: #e0b468;
+  --color-error-hover: #e2908c;
+
+  /* Opacity tint ramps higher in dark than light: a 4% semantic fill
+     that reads clearly on near-white is nearly invisible on near-black
+     (dark backgrounds swallow low-alpha overlays), so status fills /
+     risk pills / attention bands lose their scannability — the core of
+     Galley's at-a-glance triage. Lift the weaker tiers the most (they
+     vanish the hardest) and keep the ramp strictly monotonic. Same
+     single-source pattern as the color tokens: light values live in
+     @theme above, only the dark deltas live here. */
+  --opacity-subtle: 0.10;
+  --opacity-soft: 0.20;
+  --opacity-medium: 0.28;
+  --opacity-strong: 0.46;
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.18);
   --shadow-elevated:

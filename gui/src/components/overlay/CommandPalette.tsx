@@ -473,7 +473,7 @@ function HighlightedSnippet({ raw }: { raw: string }) {
         i % 2 === 1 ? (
           <mark
             key={i}
-            className="box-decoration-clone rounded-sm bg-brand/20 px-0.5 text-ink"
+            className="box-decoration-clone rounded-sm bg-brand/[var(--opacity-soft)] px-0.5 text-ink"
           >
             {p}
           </mark>

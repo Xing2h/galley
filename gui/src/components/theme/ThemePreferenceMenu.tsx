@@ -104,7 +104,7 @@ export function ThemePreferenceMenu({
                 "hover:border-line hover:bg-hover hover:text-ink active:translate-y-[0.5px]",
                 "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
                 preference !== "system" &&
-                  "border-brand/30 bg-brand/10 text-brand-strong hover:bg-brand/20 hover:text-brand-strong",
+                  "border-brand/30 bg-brand/[var(--opacity-subtle)] text-brand-strong hover:bg-brand/[var(--opacity-soft)] hover:text-brand-strong",
               )}
             >
               <ActualIcon size={16} weight="thin" />

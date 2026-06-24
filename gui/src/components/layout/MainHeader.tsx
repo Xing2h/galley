@@ -1471,7 +1471,7 @@ function WidthToggleButton({
           "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
           "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
           isWide
-            ? "border border-brand/30 bg-brand/10 text-brand-strong hover:bg-brand/20"
+            ? "border border-brand/30 bg-brand/[var(--opacity-subtle)] text-brand-strong hover:bg-brand/[var(--opacity-soft)]"
             : "border border-transparent text-ink-soft hover:bg-hover hover:text-ink",
         )}
       >
