@@ -1,7 +1,8 @@
-import { PauseCircle } from "@phosphor-icons/react";
+import { ChatCircleDots, PauseCircle } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
 import { TooltipLabel } from "@/components/ui/tooltip";
+import { stripGATags } from "@/lib/ipc-handlers";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { PendingAskUser } from "@/types/conversation";
@@ -36,10 +37,10 @@ export interface AskUserBubbleProps {
  * the same `ask_user_response` IPC command).
  *
  * Persistence: NOT in turns[]; lives in transient runtime state. On
- * app restart the chips disappear but the question itself remains
- * visible in the assistant's preceding turn content (the LLM usually
- * narrates the question before calling ask_user), so the user can
- * still answer via the Composer.
+ * restart the live chips disappear, but the question stays visible as
+ * a static `AnsweredAskUser` echo rendered from the assistant turn's
+ * persisted `ask_user` tool args, so the user can still see what they
+ * were asked (and answer via the Composer if they never did).
  */
 export function AskUserBubble({
   pending,
@@ -115,5 +116,59 @@ function CandidateChip({
     >
       {button}
     </TooltipLabel>
+  );
+}
+
+/**
+ * Settled, already-answered ask_user question — the static echo of an
+ * `AskUserBubble` that stays in the conversation after the user has
+ * replied (or after an app restart restores the turn).
+ *
+ * Why this exists: an `ask_user` turn's question lives only in the
+ * tool's args JSON, and `Conversation.tsx` filters the ask_user tool
+ * callout out of the visible tool list (it was rendered live as the
+ * tail AskUserBubble). Once the user answers, the live bubble is
+ * cleared (`appendUserTurn` sets `pendingAskUser: null`) — and because
+ * these turns usually carry no `finalAnswer` (the LLM emitted a pure
+ * tool_use block), the question text would vanish entirely, leaving
+ * the user unable to see what they were asked. This component surfaces
+ * the question from the persisted tool args, in the same yellow
+ * register as the live bubble but without the action affordances.
+ *
+ * Visually distinct from the live `AskUserBubble`:
+ *   - `ChatCircleDots` glyph + "曾向你提问" label (vs PauseCircle +
+ *     "等你回复") — signals the settled, non-actionable state.
+ *   - No candidate chips — the interaction is over; showing them again
+ *     would imply re-answering is possible.
+ *   - Quieter than the live bubble on purpose: an answered question is
+ *     archive material ("agent once asked this"), not an attention
+ *     surface. So it drops the action-card register the live bubble
+ *     uses — no warning tint fill, no 3px solid bar, no body-size ink.
+ *     Instead it reads like a receded quote: a thin (2px, 30%-alpha)
+ *     warning rule as the only colour cue, transparent background, and
+ *     secondary-register type. Sits between TurnMarker (structure) and
+ *     body prose (reading) in visual weight.
+ *
+ * The question text is stripped of GA internal tags defensively: the
+ * live IPC path already strips via `stripGATags`, but this component
+ * also runs on the restore path (`rowsToTurns`), which rebuilds turns
+ * straight from the DB tool_calls JSON without that cleanup.
+ */
+export function AnsweredAskUser({ question }: { question: string }) {
+  const copy = useCopy();
+  const cleaned = stripGATags(question);
+  return (
+    <div
+      data-role="answered-ask-user"
+      className="my-4 border-l-2 border-warning/30 pl-3.5"
+    >
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] tracking-[0.04em] text-ink-muted">
+        <ChatCircleDots size={10} weight="regular" />
+        {copy.conversation.askedYou}
+      </div>
+      <div className="whitespace-pre-wrap text-[13px] leading-[1.55] text-ink-soft">
+        {cleaned}
+      </div>
+    </div>
   );
 }

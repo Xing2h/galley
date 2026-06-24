@@ -115,4 +115,63 @@ describe("rowsToTurns", () => {
       },
     ]);
   });
+
+  it("preserves ask_user question in tool args so it stays visible after answering", () => {
+    // An ask_user turn typically carries no final_answer (the LLM
+    // emitted a pure tool_use block). The question text lives only in
+    // the ask_user tool's args JSON; Conversation renders a static
+    // AnsweredAskUser echo from it once the live bubble clears. This
+    // test pins the data contract: restore must keep the question in
+    // tools[].args even though the ask_user callout is filtered at
+    // render time.
+    const turns = rowsToTurns([
+      makeMessageRow({
+        role: "assistant",
+        turn_index: 1,
+        content: "",
+        tool_calls: JSON.stringify([
+          {
+            toolName: "ask_user",
+            toolUseId: "call-1",
+            args: {
+              question:
+                "<summary>internal recap</summary>\nPick a skill to master:",
+              candidates: ["coding", "music"],
+            },
+          },
+        ]),
+        tool_results: JSON.stringify([
+          { toolUseId: "result-1", content: "answered" },
+        ]),
+        final_answer: "",
+        summary: "ask_user, args: {...}",
+      }),
+    ]);
+
+    expect(turns).toEqual([
+      {
+        role: "agent",
+        thinking: undefined,
+        preamble: undefined,
+        tools: [
+          {
+            id: "result-1",
+            name: "ask_user",
+            status: "success-historical",
+            args: {
+              question:
+                "<summary>internal recap</summary>\nPick a skill to master:",
+              candidates: ["coding", "music"],
+            },
+            resultPreview: "answered",
+          },
+        ],
+        finalAnswer: null,
+        turnIndex: 1,
+        summary: "ask_user, args: {...}",
+      },
+    ]);
+    // The raw args (incl. GA tags) survive intact here; AnsweredAskUser
+    // strips the tags at render time so the displayed text is clean.
+  });
 });

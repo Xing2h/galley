@@ -218,10 +218,13 @@ export type OnApprove = (decision: ApprovalDecision) => void;
 /**
  * GA-initiated question awaiting a user reply (V0.2). Set on the
  * session runtime by the `ask_user` IPC event; cleared when the user
- * submits a response (or switches sessions / app restarts — pending
- * questions are NOT persisted across launches, the conversation
- * history still shows the question so the user can answer via the
- * Composer naturally).
+ * submits a response (or switches sessions / app restarts).
+ *
+ * The transient bubble itself is not persisted, but the question text
+ * is NOT lost: it lives in the assistant turn's `tool_calls` JSON, and
+ * `AgentTurnView` renders a static `AnsweredAskUser` echo from those
+ * args once the live bubble clears (and on restore from history). So
+ * the user can always see what they were asked.
  *
  * Rendered as an inline bubble at the bottom of the conversation
  * (AskUserBubble) plus a yellow "⏸ 等你回复" indicator on the sidebar

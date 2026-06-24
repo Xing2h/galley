@@ -1135,6 +1135,7 @@ export const enCopy: AppCopy = {
       `Questions ${first} to ${last}, ${count} total`,
     scrollLatest: "Scroll to latest",
     waitingForYou: "Waiting for your reply",
+    askedYou: "Asked you",
     codeNoCommand: "(no command)",
     emptyContent: "(empty content)",
     fileWriteDeferred:

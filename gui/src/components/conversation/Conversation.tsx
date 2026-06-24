@@ -2,6 +2,7 @@ import { CaretDown } from "@phosphor-icons/react";
 import { Fragment, useEffect, useState } from "react";
 
 import { LiveDots } from "@/components/conversation/LiveIndicators";
+import { AnsweredAskUser } from "@/components/conversation/AskUserBubble";
 import {
   GoalCommissionMarker,
   GoalTerminalMarker,
@@ -145,6 +146,14 @@ function AgentTurnView({
   // We keep it in the underlying turn.tools (SQLite audit trail) and
   // only drop it at render time.
   const visibleTools = turn.tools.filter((t) => t.name !== "ask_user");
+  // The ask_user question otherwise has no visible home once the live
+  // bubble clears: these turns usually carry no `finalAnswer` (the LLM
+  // emitted a pure tool_use block), so without surfacing the question
+  // text from the filtered tool's args the user couldn't see what they
+  // were asked after answering (or after restart). Rendered as a static
+  // AnsweredAskUser echo below, in the same yellow register.
+  const askUserQuestion = turn.tools.find((t) => t.name === "ask_user")
+    ?.args?.question;
   const isFinalTurn = visibleTools.every((t) => t.name === "no_tool");
   const answerText =
     turn.finalAnswer !== null && turn.finalAnswer.trim() !== ""
@@ -182,6 +191,10 @@ function AgentTurnView({
           projectName={projectName}
         />
       ))}
+
+      {typeof askUserQuestion === "string" && (
+        <AnsweredAskUser question={askUserQuestion} />
+      )}
 
       {answerText &&
         (isFinalTurn ? (

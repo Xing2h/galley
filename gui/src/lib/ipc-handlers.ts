@@ -584,7 +584,7 @@ const FILE_REF_PATTERN = /\[FILE:[^\]]+\]/g;
  * payloads, never partial). Returns "" when nothing user-facing
  * remains — callers keep that as a valid empty question/candidate.
  */
-function stripGATags(text: string): string {
+export function stripGATags(text: string): string {
   if (!text) return "";
   let out = text;
   for (const p of GA_TAG_PATTERNS) out = out.replace(p, "");

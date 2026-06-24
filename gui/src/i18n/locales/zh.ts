@@ -1094,6 +1094,7 @@ export const zhCopy = {
       `第 ${first} 到 ${last} 条提问，共 ${count} 条`,
     scrollLatest: "Scroll to latest",
     waitingForYou: "等你回复",
+    askedYou: "曾向你提问",
     codeNoCommand: "(no command)",
     emptyContent: "(empty content)",
     fileWriteDeferred:
