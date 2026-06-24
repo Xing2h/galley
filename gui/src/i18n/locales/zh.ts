@@ -18,7 +18,7 @@ export const zhCopy = {
     aria: "选择界面语言",
     system: "跟随系统",
     systemHelper: "自动",
-    zh: "中文",
+    zh: "简体中文",
     en: "English",
     current: (name: string) => `当前${name}`,
   },

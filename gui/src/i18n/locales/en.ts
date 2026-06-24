@@ -20,7 +20,7 @@ export const enCopy: AppCopy = {
     aria: "Choose interface language",
     system: "System",
     systemHelper: "Follow system",
-    zh: "Chinese",
+    zh: "Simplified Chinese",
     en: "English",
     current: (name) => `Current ${name}`,
   },
