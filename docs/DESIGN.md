@@ -60,9 +60,9 @@ Galley 的视觉与交互气质 = **Notion + Claude**。
 
 > **规范**:任何"浮起"容器(dialog / menu / card)的**主体区 elevation 必须 ≥ 它自己的 chrome**,绝不更低。**不要把 dialog 主体刷成 `bg-app`**——那是画布(最低档),会让白色 header/footer 浮在一块更深的米板上,读成"头浅身深"的失衡。想表达"内容区下沉",只用**小块 inset**(勾选框、code/args `<pre>`、输入框),不要整片主体下沉。
 
-落地:浮起 dialog 通体 `bg-elevated`,band 之间靠 `border-line` hairline + 行 `divide-y` 区分(结构靠线,不靠色块)。2026-06 据此把 `ArchivedDialog` / `EarlierDialog` 的列表主体(及 Earlier 的 sticky 分组头)从 `bg-app` 收归 `bg-elevated`;输入框等 inset 控件保留 `bg-app`。
+落地:浮起 dialog 通体 `bg-elevated`,band 之间靠 `border-line` hairline + 行 `divide-y` 区分(结构靠线,不靠色块)。
 
-例外:Settings 这类**满幅工作台式 modal** 通体 `bg-app`(画布)是有意为之——它不制造"白 chrome 浮在更深 body"的失衡(没有更浅的 header band 浮在上面),读作"设置即一块工作画布",卡片用 `bg-surface` 微微抬起。此例外只给满幅工作台 modal,不适用于普通列表 / 确认 / 设置项 dialog(那些仍按上面规范走 `bg-elevated`)。
+例外:Settings 这类**满幅工作台式 modal** 通体 `bg-app`(画布)是有意为之——它不制造"白 chrome 浮在更深 body"的失衡(没有更浅的 header band 浮在上面),读作"设置即一块工作画布",卡片用 `bg-surface` 微微抬起。此例外也覆盖 `EarlierDialog` / `ArchivedDialog`(2026-06 调整):这两个列表浏览 dialog 与 Settings 同属"用户进入工作的工作台"语义,为与 Settings 形成统一配色,主体/header/footer/列表/搜索栏底/操作栏通体 `bg-app`,搜索输入框作为抬起的 `bg-surface` 字段配 `border-line`(与 Settings 的 model-filter 输入框一致);唯独其内的 per-row 确认小弹窗(delete-one / delete-many / empty-all)保留 `bg-elevated`,因为它们是 alert-grade 确认、不是工作台面,要与其余 app 的确认弹窗对齐。普通确认 / 设置项 dialog 仍按上面规范走 `bg-elevated`。
 
 #### 边框 / 分隔（line 命名空间）
 

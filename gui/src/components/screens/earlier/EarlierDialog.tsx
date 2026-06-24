@@ -169,7 +169,7 @@ export function EarlierDialog({
           aria-describedby={undefined}
           className={cn(
             "fixed left-1/2 top-1/2 z-50 flex h-[520px] w-[640px] -translate-x-1/2 -translate-y-1/2 flex-col",
-            "overflow-hidden rounded-lg border border-line bg-elevated shadow-elevated",
+            "overflow-hidden rounded-lg border border-line bg-app shadow-elevated",
             "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)]",
           )}
         >
@@ -186,7 +186,7 @@ export function EarlierDialog({
 
           <SearchBar query={query} onChange={setQuery} />
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-elevated">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-app">
             {filtered.length === 0 ? (
               <EmptyState filtered={!showGroups} />
             ) : showGroups ? (
@@ -270,7 +270,7 @@ function Header({
         : copy.projects.noEarlier;
 
   return (
-    <div className="flex items-center gap-3 border-b border-line bg-elevated px-5 py-3.5">
+    <div className="flex items-center gap-3 border-b border-line bg-app px-5 py-3.5">
       <Dialog.Title className="text-[16px] font-semibold text-ink">
         {copy.projects.earlierTitle}
       </Dialog.Title>
@@ -309,7 +309,7 @@ function SearchBar({
 }) {
   const copy = useCopy();
   return (
-    <div className="relative shrink-0 border-b border-line bg-elevated px-4 py-2.5">
+    <div className="relative shrink-0 border-b border-line bg-app px-4 py-2.5">
       <MagnifyingGlass
         size={14}
         weight="thin"
@@ -321,8 +321,12 @@ function SearchBar({
         onChange={(e) => onChange(e.target.value)}
         placeholder={copy.projects.filterArchive}
         autoFocus
+        // Body is the app canvas (matching Settings' workbench treatment),
+        // so the input is a *raised* field: bg-surface + a crisp border-line,
+        // same as the Settings model-filter inputs. Focus swaps in the brand
+        // border + ring.
         className={cn(
-          "h-7 w-full rounded-sm border border-line bg-app pl-7 pr-3 text-[12.5px] text-ink",
+          "h-7 w-full rounded-sm border border-line bg-surface pl-7 pr-3 text-[12.5px] text-ink",
           "placeholder:text-ink-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30",
         )}
       />
@@ -351,7 +355,7 @@ function GroupedList({
     <div>
       {groups.map((g) => (
         <section key={g.label}>
-          <div className="sticky top-0 z-10 border-b border-line bg-elevated px-5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+          <div className="sticky top-0 z-10 border-b border-line bg-app px-5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
             {g.label}
             <span className="ml-1.5 tabular-nums text-ink-soft normal-case tracking-normal">
               · {g.sessions.length}
@@ -589,7 +593,7 @@ function SelectActionBar({
   const copy = useCopy();
   const disabled = selectedCount === 0;
   return (
-    <div className="flex shrink-0 items-center gap-2 border-t border-line bg-elevated px-4 py-2.5">
+    <div className="flex shrink-0 items-center gap-2 border-t border-line bg-app px-4 py-2.5">
       <Button
         variant="ghost"
         size="sm"
