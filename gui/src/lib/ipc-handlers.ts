@@ -349,9 +349,14 @@ export function dispatchIPCEvent(event: IPCEvent): void {
         sessionId: event.sessionId,
         candidateCount: event.candidates.length,
       });
+      // The LLM occasionally wraps its internal turn recap in
+      // `<summary>...</summary>` inside the tool args. That recap is
+      // already surfaced via TurnMarker's step subline; stripping it
+      // here keeps the AskUserBubble to the real question and avoids
+      // showing literal `<summary>` tags to the user.
       messages.setPendingAskUser(event.sessionId, {
-        question: event.question,
-        candidates: event.candidates,
+        question: stripGATags(event.question),
+        candidates: event.candidates.map(stripGATags),
       });
       return;
     }
@@ -567,6 +572,26 @@ const GA_TAG_PATTERNS: RegExp[] = [
 ];
 
 const FILE_REF_PATTERN = /\[FILE:[^\]]+\]/g;
+
+/**
+ * Strip GA's internal structured tags + file refs from a free-text
+ * field the LLM wrote. Used for ask_user's `question` / `candidates`:
+ * those arrive raw from the tool args, and the LLM occasionally wraps
+ * its turn recap in `<summary>...</summary>` (GA's internal one-liner
+ * already surfaced separately via TurnMarker). Same tag set + file-ref
+ * cleanup as `cleanPartialContent` / `extractPreamble`, minus the
+ * streaming-partial / unclosed-tag handling (tool args are complete
+ * payloads, never partial). Returns "" when nothing user-facing
+ * remains — callers keep that as a valid empty question/candidate.
+ */
+function stripGATags(text: string): string {
+  if (!text) return "";
+  let out = text;
+  for (const p of GA_TAG_PATTERNS) out = out.replace(p, "");
+  out = out.replace(FILE_REF_PATTERN, "");
+  out = out.replace(/\n{3,}/g, "\n\n");
+  return out.trim();
+}
 
 /**
  * GA's `agent_loop.py` prints `LLM Running (Turn N) ...` (sometimes

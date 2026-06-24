@@ -242,6 +242,29 @@ describe("dispatchIPCEvent", () => {
     });
   });
 
+  it("ask_user strips GA internal tags from question and candidates", () => {
+    seedSession();
+    dispatchIPCEvent({
+      kind: "ask_user",
+      sessionId: "s-test",
+      question:
+        "<summary>用户要求用 AskUser 提问；我将提出一个我感兴趣的问题。</summary>\n如果可以把一个现实任务完全交给 AI 代理自动完成，你最想交给它做什么？",
+      candidates: [
+        "<thinking>内部独白</thinking>写代码",
+        "做调研",
+      ],
+      timestamp: "2026-06-18T08:05:00.000Z",
+    });
+
+    expect(
+      useMessagesStore.getState().byId["s-test"].pendingAskUser,
+    ).toEqual({
+      question:
+        "如果可以把一个现实任务完全交给 AI 代理自动完成，你最想交给它做什么？",
+      candidates: ["写代码", "做调研"],
+    });
+  });
+
   it("error clears running state and pushes a toast", () => {
     const store = useMessagesStore.getState();
     store.setAgentRunning("s-test", true);
