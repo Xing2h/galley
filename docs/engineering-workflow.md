@@ -12,7 +12,7 @@ every agent startup context.
 ```text
 galley/
 ├── README.md
-├── README_en.md
+├── README.zh-CN.md
 ├── AGENTS.md
 ├── runner/                  # Python bridge into GenericAgent
 ├── core/                    # Rust Galley Core + Tauri backend
