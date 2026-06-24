@@ -9,10 +9,10 @@ live in [refactor](./refactor/README.md).
 
 ## Current Target
 
-- Package version: `0.2.13`.
-- Git tag / GitHub Release: `v0.2.13` is the current published stable release.
+- Package version: `0.2.14`.
+- Git tag / GitHub Release: `v0.2.14` is the current published stable release.
 - Agent API schema: `schemaVersion: 1`
-- Release tier: stable patch; default update channel points at `v0.2.13`.
+- Release tier: stable patch; default update channel points at `v0.2.14`.
   `beta` is kept as a legacy alias for older builds.
 - Product shape: dual-native local agent team orchestrator
 
@@ -20,33 +20,29 @@ Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
 GUI is for the human operator at the desk; the CLI is for trusted Agent /
 Supervisor automation on the same machine.
 
-`v0.2.13` is a visual / layout release. It splits the full-width top bar into
-per-column headers (SidebarHeader + MainHeader), converges the light-theme
-neutral axis to a true-neutral + whisper-warm palette with a new `--color-chrome`
-layer for sidebar/header chrome, and unifies the Earlier / Archived list dialogs
-onto the settings-page palette. It also ships the update-channel verifier fix
-(GitHub contents API + commit-SHA match). Product shape, Agent API schema,
-database schema, and update-channel policy stay unchanged; the managed GA
-baseline stays at `70792af`.
+`v0.2.14` is a conversation, settings, and theme polish release. It keeps
+answered `ask_user` prompts visible as quiet transcript echoes, strips GA
+internal tags from `ask_user` questions and choices, renames the Chinese
+language option to `简体中文 / Simplified Chinese`, and fills dark-mode token
+gaps across sidebar surfaces, status fills, and buttons. Product shape, Agent
+API schema, database schema, and update-channel policy stay unchanged; the
+managed GA baseline stays at `70792af`.
 
 ## Current Release State
 
-`v0.2.13` is published and promoted as the live stable patch. The default
-`updates/stable/latest.json` channel points at `v0.2.13`, with the legacy
+`v0.2.14` is published and promoted as the live stable patch. The default
+`updates/stable/latest.json` channel points at `v0.2.14`, with the legacy
 `updates/beta/latest.json` alias pointing at the same version for older
 installed builds.
 
 Post-release follow-up:
 
 1. Dogfood the app-update path from an installed older Galley build to
-   `v0.2.13`.
-2. The `promote-update-channel.yml` verify step — fixed after the v0.2.12 CDN
-   false-failure — passed green on the v0.2.13 promote: it now reads the
-   manifest via the GitHub contents API and matches the file's latest commit
-   SHA (`--require-commit-sha`), immediate and bypassing the raw-CDN cache.
-3. Visually verify the per-column header layout on real hardware: macOS
-   traffic-light clearance vs the `Galley` wordmark, Windows window controls
-   at the MainHeader right edge, and the new light palette's overall feel.
+   `v0.2.14`.
+2. Visually verify the `ask_user` transcript echo and internal-tag stripping
+   with a real GA session.
+3. Check the `简体中文 / Simplified Chinese` label and dark-mode sidebar /
+   status / button surfaces on real hardware.
 4. On Windows, continue smoke coverage for duplicate startup / named-pipe
    behavior and manual overwrite install over a backgrounded Galley process.
 5. Keep Windows ARM out of the stable supported matrix. Add it later only after
@@ -63,7 +59,7 @@ Post-release follow-up:
 | Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; current baseline is audited upstream `70792af`; GUI / CLI split, Provider / Model config, local encrypted SQLite credentials, and Project Workspace are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
 | Data migration | v0.2.10 adds a safe pre-plugin migration guard through 023 and best-effort child-row recovery from local backups for the v0.2.9 table-rebuild cascade hazard | [B4 M8](./refactor/B4-M8-sub-plan.md) |
 | Process lifecycle | v0.2.11 ships bridge parent watchdogs and duplicate-startup suppression to prevent background process pile-up | [release / update SOP](./release-update-sop.md) |
-| Release path | v0.2.13 stable patch is published and promoted on the stable update channel | [release / update SOP](./release-update-sop.md) |
+| Release path | v0.2.14 stable patch is published and promoted on the stable update channel | [release / update SOP](./release-update-sop.md) |
 | Windows | Windows x64 remains the supported release target; Windows ARM is deferred until the release workflow and smoke path are added | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream `70792af` | [GA baseline](./ga-baseline.md) |
 
