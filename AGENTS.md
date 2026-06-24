@@ -168,14 +168,6 @@ docs/        Product, architecture, workflow, and history
 | Historical decisions | [devlog](./docs/devlog/README.md) |
 | All docs | [docs index](./docs/README.md) |
 
-## Session Start
-
-Sync before you touch anything. `main` ships releases often, so a local
-checkout can fall several commits — and a whole release — behind within a day.
-Run `git fetch` and confirm the branch is not behind `origin/main` before you
-branch or edit; rebase onto the latest if it is. Starting on a stale base turns
-a clean change into a conflict-prone merge.
-
 ## Working Defaults
 
 - Prefer the existing architecture and local patterns over new abstractions.
