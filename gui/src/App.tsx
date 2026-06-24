@@ -2,9 +2,9 @@ import { useCallback, useMemo, useState } from "react";
 
 import { ToastHost } from "@/components/error-card/ToastHost";
 import { AppShell } from "@/components/layout/AppShell";
+import { MainHeader } from "@/components/layout/MainHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { resolveSidebarRuntimeIndicator } from "@/components/layout/sidebar/runtime-indicator";
-import { TopBar } from "@/components/layout/TopBar";
 import { CommandPalette } from "@/components/overlay/CommandPalette";
 import { ThemeProvider } from "@/components/theme/ThemeContext";
 import { BrowserControlAttentionSurface } from "@/components/screens/BrowserControlAttentionBanner";
@@ -880,111 +880,6 @@ function App() {
   return (
     <CopyProvider language={resolvedLanguage}>
       <AppShell
-        topBar={
-          <TopBar
-            sessionTitle={activeSession?.title}
-            yoloMode={yoloMode}
-            onDisableYolo={() => {
-              void setYoloMode(false);
-            }}
-            browserControlStatus={
-              activeRuntimeKind === "managed" ? browserControlStatus : null
-            }
-            onOpenBrowserControl={() => openSettings("browser")}
-            channelsState={
-              activeRuntimeKind === "managed"
-                ? aggregateChannelsState([
-                    wechatChannelsStatus.status?.state,
-                    feishuChannelsStatus.status?.state,
-                  ])
-                : null
-            }
-            channelsLoadError={
-              activeRuntimeKind === "managed"
-                ? (wechatChannelsStatus.loadError ?? feishuChannelsStatus.loadError)
-                : null
-            }
-            onOpenChannelsSettings={
-              activeRuntimeKind === "managed"
-                ? () => openSettings("im")
-                : undefined
-            }
-            activeGoals={activeGoals}
-            onOpenGoalProject={openGoalProject}
-            onOpenGoal={(goalId) => {
-              void openGoal(goalId);
-            }}
-            onStopGoal={(goalId) => {
-              void stopGoalFromTopbar(goalId);
-            }}
-            conversationWidth={conversationWidth}
-            onToggleConversationWidth={() => {
-              void setConversationWidth(
-                conversationWidth === "wide" ? "compact" : "wide",
-              );
-            }}
-            conversationFontSize={conversationFontSize}
-            onChangeConversationFontSize={(size) => {
-              void setConversationFontSize(size);
-            }}
-            themePreference={themePreference}
-            resolvedTheme={resolvedTheme}
-            onChangeThemePreference={(preference) => {
-              void setThemePreference(preference);
-            }}
-            onReinjectTools={() => {
-              // Reinject targets the currently active session — that's
-              // the conversation the user is reading when they notice
-              // tool drift. No-op if no active session (button is
-              // available but does nothing rather than throwing).
-              if (!activeSessionId) return;
-              if (bridgeStatus !== "connected") return;
-              void sendIPCCommand(activeSessionId, {
-                kind: "reinject_tools",
-              });
-            }}
-            onTogglePet={() => {
-              // Three cases (see devlog 2026-05-14 pet UX overhaul):
-              //   1. Active session HOLDS the pet → detach (close).
-              //   2. Pet on another session → implicit migrate:
-              //      detach old + stash target; the pet_detached IPC
-              //      handler fires the follow-up attach once the
-              //      port is released.
-              //   3. No pet anywhere → attach to active.
-              // The sidebar Cat badge tells the user where the pet
-              // currently lives, so the menu's "桌面宠物" always
-              // reads as "I want it here" without surprise.
-              if (!activeSessionId) return;
-              if (petAttachedSessionId === activeSessionId) {
-                void sendIPCCommand(activeSessionId, {
-                  kind: "detach_pet",
-                });
-                return;
-              }
-              if (bridgeStatus !== "connected") return;
-              if (petAttachedSessionId) {
-                setPendingPetMigration(activeSessionId);
-                void sendIPCCommand(petAttachedSessionId, {
-                  kind: "detach_pet",
-                });
-                return;
-              }
-              void sendIPCCommand(activeSessionId, {
-                kind: "attach_pet",
-                port: 41983,
-              });
-            }}
-            currentSessionHasPet={
-              !!activeSessionId && petAttachedSessionId === activeSessionId
-            }
-            onRenameSession={(newTitle) => {
-              if (!activeSessionId) return;
-              renameSession(activeSessionId, newTitle);
-            }}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onOpenApprovalSettings={() => openSettings("approval")}
-          />
-        }
         sidebar={
           <Sidebar
             runtimeIndicator={sidebarRuntimeIndicator}
@@ -1056,6 +951,110 @@ function App() {
         }
         main={
           <ThemeProvider theme={resolvedTheme}>
+            <MainHeader
+              sessionTitle={activeSession?.title}
+              yoloMode={yoloMode}
+              onDisableYolo={() => {
+                void setYoloMode(false);
+              }}
+              browserControlStatus={
+                activeRuntimeKind === "managed" ? browserControlStatus : null
+              }
+              onOpenBrowserControl={() => openSettings("browser")}
+              channelsState={
+                activeRuntimeKind === "managed"
+                  ? aggregateChannelsState([
+                      wechatChannelsStatus.status?.state,
+                      feishuChannelsStatus.status?.state,
+                    ])
+                  : null
+              }
+              channelsLoadError={
+                activeRuntimeKind === "managed"
+                  ? (wechatChannelsStatus.loadError ??
+                    feishuChannelsStatus.loadError)
+                  : null
+              }
+              onOpenChannelsSettings={
+                activeRuntimeKind === "managed"
+                  ? () => openSettings("im")
+                  : undefined
+              }
+              activeGoals={activeGoals}
+              onOpenGoalProject={openGoalProject}
+              onOpenGoal={(goalId) => {
+                void openGoal(goalId);
+              }}
+              onStopGoal={(goalId) => {
+                void stopGoalFromTopbar(goalId);
+              }}
+              conversationWidth={conversationWidth}
+              onToggleConversationWidth={() => {
+                void setConversationWidth(
+                  conversationWidth === "wide" ? "compact" : "wide",
+                );
+              }}
+              conversationFontSize={conversationFontSize}
+              onChangeConversationFontSize={(size) => {
+                void setConversationFontSize(size);
+              }}
+              themePreference={themePreference}
+              resolvedTheme={resolvedTheme}
+              onChangeThemePreference={(preference) => {
+                void setThemePreference(preference);
+              }}
+              onReinjectTools={() => {
+                // Reinject targets the currently active session — that's
+                // the conversation the user is reading when they notice
+                // tool drift. No-op if no active session (button is
+                // available but does nothing rather than throwing).
+                if (!activeSessionId) return;
+                if (bridgeStatus !== "connected") return;
+                void sendIPCCommand(activeSessionId, {
+                  kind: "reinject_tools",
+                });
+              }}
+              onTogglePet={() => {
+                // Three cases (see devlog 2026-05-14 pet UX overhaul):
+                //   1. Active session HOLDS the pet → detach (close).
+                //   2. Pet on another session → implicit migrate:
+                //      detach old + stash target; the pet_detached IPC
+                //      handler fires the follow-up attach once the
+                //      port is released.
+                //   3. No pet anywhere → attach to active.
+                // The sidebar Cat badge tells the user where the pet
+                // currently lives, so the menu's "桌面宠物" always
+                // reads as "I want it here" without surprise.
+                if (!activeSessionId) return;
+                if (petAttachedSessionId === activeSessionId) {
+                  void sendIPCCommand(activeSessionId, {
+                    kind: "detach_pet",
+                  });
+                  return;
+                }
+                if (bridgeStatus !== "connected") return;
+                if (petAttachedSessionId) {
+                  setPendingPetMigration(activeSessionId);
+                  void sendIPCCommand(petAttachedSessionId, {
+                    kind: "detach_pet",
+                  });
+                  return;
+                }
+                void sendIPCCommand(activeSessionId, {
+                  kind: "attach_pet",
+                  port: 41983,
+                });
+              }}
+              currentSessionHasPet={
+                !!activeSessionId && petAttachedSessionId === activeSessionId
+              }
+              onRenameSession={(newTitle) => {
+                if (!activeSessionId) return;
+                renameSession(activeSessionId, newTitle);
+              }}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenApprovalSettings={() => openSettings("approval")}
+            />
             <BrowserControlAttentionSurface
               show={showBrowserControlAttention}
               onOpen={() => openSettings("browser")}
@@ -1187,9 +1186,7 @@ function App() {
                           | "sent",
                       ) => {
                         if (showPhase) {
-                          useMessagesStore
-                            .getState()
-                            .setSendPhase(sid, phase);
+                          useMessagesStore.getState().setSendPhase(sid, phase);
                         }
                       };
                       const runtime = useRuntimeStore.getState();
@@ -1216,8 +1213,7 @@ function App() {
                           setSendPhase("starting");
                           await activateSession(sid);
                           setSendPhase("restoring");
-                          historyReady =
-                            await ensureHistoryReplayComplete(sid);
+                          historyReady = await ensureHistoryReplayComplete(sid);
                           if (!historyReady) {
                             throw new Error(copy.app.restoreTimeout);
                           }

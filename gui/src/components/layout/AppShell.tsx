@@ -9,12 +9,19 @@ import {
 /**
  * Full app shell:
  *
- *   ┌─────────────────────────────────────────────────────────────┐
- *   │ Top Bar (44px, full width, draggable via tauri-drag-region) │
- *   ├──────────┬─┬────────────────────────────────────────────────┤
- *   │ Sidebar  │ │ Main                                           │
- *   │ (~20%)   │↕│ (~80%)                                         │
+ *   ┌──────────┬─┬────────────────────────────────────────────────┐
+ *   │ SbHeader │ │ MainHeader     ← each column has its own 44px   │
+ *   │──────────│ │────────────────  header (draggable); no longer  │
+ *   │ Sidebar  │↕│ Main             one full-width top bar         │
+ *   │ (~20%)   │ │ (~80%)                                          │
  *   └──────────┴─┴────────────────────────────────────────────────┘
+ *
+ * There is no full-width top bar. Each column grows its own header
+ * inside its panel (SidebarHeader / MainHeader), so the headers inherit
+ * the resizable panel widths and the resize separator runs full-height
+ * between them. The two headers are the same height; their bottom
+ * borders align into one continuous top strip across the two-tone
+ * columns (Sidebar bg-chrome, Main bg-app).
  *
  * Resizable two-column layout via react-resizable-panels v4 (`Group`
  * + `Panel` + `Separator`). Widths are persisted to localStorage via
@@ -37,10 +44,10 @@ import {
  * gets a fresh design, not a reuse of this slot.
  *
  * macOS traffic light is positioned at {16, 16} via tauri.conf.json
- * `titleBarStyle: "Overlay"`; it floats above the Top Bar. The Top Bar
- * reserves ~70px left padding and the Sidebar starts at y=44px (below
- * the Top Bar's bottom border), so the traffic light never collides
- * with sidebar content.
+ * `titleBarStyle: "Overlay"`; it floats above the window's top-left,
+ * which is now the Sidebar column's header (SidebarHeader). That header
+ * reserves ~78px left padding to clear the lights. The Windows custom
+ * window controls live at the right of MainHeader (= window top-right).
  *
  * `overflow-hidden` on `<aside>` and `<main>` Panel children locks
  * scrolling to each section's own internal container (Sidebar bucket
@@ -56,11 +63,9 @@ import {
  * value prop. See devlog for the full reasoning.
  */
 export function AppShell({
-  topBar,
   sidebar,
   main,
 }: {
-  topBar: ReactNode;
   sidebar: ReactNode;
   main: ReactNode;
 }) {
@@ -70,7 +75,6 @@ export function AppShell({
   });
   return (
     <div className="flex h-screen min-h-[600px] w-screen min-w-[960px] flex-col bg-app text-ink">
-      {topBar}
       <Group
         id="ga-workbench-layout-2col-v2"
         orientation="horizontal"
@@ -79,7 +83,7 @@ export function AppShell({
         className="flex min-h-0 flex-1"
       >
         <Panel id="sidebar" defaultSize="20%" minSize="14%" maxSize="30%">
-          <aside className="flex h-full flex-col overflow-hidden border-r border-line/70 bg-app">
+          <aside className="flex h-full flex-col overflow-hidden border-r border-line/70 bg-chrome">
             {sidebar}
           </aside>
         </Panel>

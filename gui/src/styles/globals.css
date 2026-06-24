@@ -26,28 +26,47 @@
  * Tailwind's `text-text-primary` / `border-border-default` ugliness.
  */
 @theme {
-  /* --- surface layers --- */
-  --color-app: #fbfaf7;
-  --color-surface: #fdfcf9;
+  /* --- surface layers (true-neutral + whisper-warm, 2026-06-24) --- */
+  /* History: warm-yellow (hue ~45°, "cream") → warm-neutral (hue ~30°,
+     still read yellow) → cool-neutral (hue ~215°, read cold/grey) →
+     true-neutral (pure grey, read "almost there, needs a hair of warm").
+     Final landing: true neutral with a whisper-warm lean — R exceeds B
+     by ~2 counts (sat ~0.5%, hue unresolvable). Not enough to read as
+     a hue, just enough to take the icy edge off pure grey. Warmth still
+     primarily comes from the warm inks + apricot brand on top. */
+  --color-app: #faf9f8;
+  --color-surface: #fcfbfa;
   --color-elevated: #ffffff;
-  /* Recessed warm-grey fill for block code (DESIGN.md §4.3). Distinct
+  /* Chrome layer — intentionally *darker* than --color-app, not lighter.
+     Sidebar sits beside the mainview as navigation chrome: sinking it a
+     few lightness steps below the app canvas makes the conversation
+     stage "rise" and grabs focus. Same whisper-warm hue axis as app (no
+     yellow shift — differentiation is by lightness only, per the
+     DESIGN.md "明度即抬升" rule, here inverted for chrome). Distinct
+     from --color-surface, which means a *raised* card and must stay
+     lighter than app. Do NOT reuse this for cards/insets. */
+  --color-chrome: #f4f3f1;
+  /* Recessed neutral-grey fill for block code (DESIGN.md §4.3). Distinct
      from the paper the prose floats on (darker than --color-app), and
      in the same family as inline code (--color-hover) so code reads as
      one embedded medium rather than a lighter-than-paper card. */
-  --color-code-surface: #f3f0e9;
+  --color-code-surface: #f2f1f0;
 
   /* --- borders / dividers (named "line" to avoid border-border) --- */
-  --color-line: #eae6de;
-  --color-line-strong: #d6cfc0;
-  --color-line-subtle: rgba(31, 27, 23, 0.06);
+  --color-line: #e8e7e5;
+  --color-line-strong: #d4d2cf;
+  --color-line-subtle: rgba(33, 31, 28, 0.06);
 
   /* --- text (named "ink" to avoid text-text) --- */
-  --color-ink: #1f1b17;
-  --color-ink-soft: #5c544a;
-  --color-ink-muted: #8e867a;
+  /* Inks stay on a warm axis (charcoal-warm) — they supply the warmth
+     the now-neutral base no longer does. Warm ink on neutral paper is
+     the intended contrast. */
+  --color-ink: #211f1c;
+  --color-ink-soft: #57534c;
+  --color-ink-muted: #87827a;
 
   /* --- interaction states --- */
-  --color-hover: #f0eee9;
+  --color-hover: #f0f0f0;
   --color-selected: #f8edda;
 
   /* --- brand (apricot sand) --- */

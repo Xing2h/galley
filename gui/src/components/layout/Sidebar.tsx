@@ -264,7 +264,7 @@ export function Sidebar({
   }, [projectViewOpen]);
 
   return (
-    <div className="flex h-full flex-col bg-app text-[13px] text-ink">
+    <div className="flex h-full flex-col bg-chrome text-[13px] text-ink">
       <SidebarHeader
         runtimeIndicator={runtimeIndicator}
         onOpenRuntimeSettings={onOpenRuntimeSettings}

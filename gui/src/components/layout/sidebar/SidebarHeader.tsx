@@ -1,14 +1,12 @@
 import { PlugsConnected } from "@phosphor-icons/react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useCopy, type AppCopy } from "@/lib/i18n";
+import { isMac, isWindowActionTarget } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
-import type {
-  RuntimeIndicatorView,
-  SidebarRuntimeIndicator,
-} from "./types";
-
+import type { RuntimeIndicatorView, SidebarRuntimeIndicator } from "./types";
 
 // ---------- subcomponents ----------
 
@@ -25,15 +23,23 @@ export function SidebarHeader({
 }) {
   const copy = useCopy();
   // Single-line header (refactored 2026-05-13): the "Galley" wordmark
-  // is short (~50px at 16px serif), which left ~200px of dead space
-  // to the right at the typical 20% sidebar width. Status indicator
-  // moved up here right-aligned to use that space and reclaim one
-  // line of vertical room for the session list below.
+  // is short (~50px at 16px serif), leaving room to right-align the
+  // runtime status indicator on the same row and reclaim one line of
+  // vertical space for the session list below.
   //
-  // No top padding for traffic light: the full-width TopBar above
-  // the shell already covers it. The sidebar starts at y=44px (below
-  // the TopBar's bottom border).
+  // This is now the TOP-MOST chrome of the Sidebar column (the old
+  // full-width TopBar is gone — each column grows its own header; see
+  // MainHeader.tsx). On macOS the traffic lights float at {16,16} over
+  // this row, so the left padding reserves ~78px to clear them (cluster
+  // right edge ~68px + ~10px gap). The header is h-11 (44px) to match
+  // MainHeader so both column headers' bottom borders align into one
+  // continuous top strip. Carries `data-tauri-drag-region` + the
+  // Windows double-click-maximize handler so this header is a window
+  // drag handle just like MainHeader.
   //
+  // Narrow widths (min window 960px × 14% sidebar ≈ 134px): the 78px
+  // reserve eats most of the row; the wordmark stays visible and the
+  // runtime indicator truncates via its existing max-w / truncate.
   const runtimeIndicatorView = renderRuntimeIndicator(
     runtimeIndicator,
     copy.sidebar,
@@ -48,10 +54,32 @@ export function SidebarHeader({
     (runtimeIndicator === "hidden" || runtimeIndicator === "external-ready") &&
     Boolean(onOpenAgentSettings);
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-line/70 px-4 py-3">
+    <div
+      data-tauri-drag-region
+      // Windows custom chrome: double-click anywhere draggable on this
+      // header toggles maximize, mirroring native title-bar behavior.
+      // Mac's Overlay style hands this to the OS, so we early-exit.
+      onDoubleClick={(e) => {
+        if (isMac) return;
+        if (!isWindowActionTarget(e.target)) return;
+        try {
+          void getCurrentWindow().toggleMaximize();
+        } catch {
+          // No Tauri host (plain Vite browser dev) — ignore.
+        }
+      }}
+      className={cn(
+        "flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line/60 pr-4",
+        // macOS: clear the traffic-light cluster (right edge ~68px).
+        // ~78px = ~70px reserve + ~10px gap so the wordmark never merges
+        // into the lights — do NOT drop toward a flush 70px. Non-mac has
+        // no native left chrome, so a normal 16px gutter.
+        isMac ? "pl-[78px]" : "pl-4",
+      )}
+    >
       {/* Product mark: sentence-case Galley keeps the name legible as
           a product rather than an acronym. */}
-      <div className="flex min-w-0 items-center gap-2">
+      <div data-tauri-drag-region className="flex min-w-0 items-center gap-2">
         <div className="shrink-0 font-serif text-[17px] font-medium italic tracking-[0.005em] text-ink">
           Galley
         </div>
@@ -116,7 +144,6 @@ export function SidebarHeader({
   );
 }
 
-
 function renderRuntimeIndicator(
   indicator: SidebarRuntimeIndicator,
   copy: AppCopy["sidebar"],
@@ -149,7 +176,6 @@ function renderRuntimeIndicator(
       return null;
   }
 }
-
 
 function RuntimeDot({ tone }: { tone: RuntimeIndicatorView["tone"] }) {
   const map: Record<RuntimeIndicatorView["tone"], string> = {

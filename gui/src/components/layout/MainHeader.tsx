@@ -25,7 +25,11 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Button, IconButton } from "@/components/ui/button";
 import { ThemePreferenceMenu } from "@/components/theme/ThemePreferenceMenu";
 import { TooltipLabel } from "@/components/ui/tooltip";
-import { goalPillLabel, goalStageLabel, goalWorkspaceHasFiles } from "@/lib/goals";
+import {
+  goalPillLabel,
+  goalStageLabel,
+  goalWorkspaceHasFiles,
+} from "@/lib/goals";
 import { useCopy } from "@/lib/i18n";
 import { isMac, isWindowActionTarget } from "@/lib/platform";
 import { formatShortcutReadable } from "@/lib/shortcuts";
@@ -38,7 +42,7 @@ import type { GoalBrief } from "@/types/goal";
 
 import { WindowControls } from "./WindowControls";
 
-export interface TopBarProps {
+export interface MainHeaderProps {
   /**
    * Current session title to display in the center-left.
    * Empty / undefined = no session active (Empty State); we render an
@@ -109,19 +113,6 @@ export interface TopBarProps {
    * equally-discoverable rename paths.
    */
   onRenameSession?: (newTitle: string) => void;
-  /**
-   * Left chrome padding.
-   *
-   *   - macOS: 70px to clear the traffic light cluster (positioned at
-   *     {16, 16} via tauri.conf.json titleBarStyle "Overlay";
-   *     three buttons × 12px + gaps + safety).
-   *   - Windows: 12px breathing room — no native chrome on the left
-   *     under our custom-chrome plan (Y), so the title floats nearly
-   *     flush with the window edge.
-   *
-   * Default resolves from `isMac`; consumers rarely override.
-   */
-  trafficLightPadding?: number;
 }
 
 type TopBarStatusTone = "brand" | "error" | "neutral" | "success" | "warning";
@@ -149,7 +140,8 @@ const TOPBAR_STATUS_BADGE_TONE: Record<TopBarStatusTone, string> = {
     "border-brand/30 bg-brand-soft text-brand-strong hover:bg-brand-soft/80",
   error:
     "border-error/30 bg-error/[var(--opacity-soft)] text-error hover:bg-error/[var(--opacity-medium)]",
-  neutral: "border-line bg-elevated text-ink-muted hover:bg-hover hover:text-ink",
+  neutral:
+    "border-line bg-elevated text-ink-muted hover:bg-hover hover:text-ink",
   success:
     "border-success/30 bg-success/[var(--opacity-soft)] text-success hover:bg-success/[var(--opacity-medium)]",
   warning:
@@ -163,11 +155,12 @@ const TOPBAR_STATUS_ICON_TONE: Record<"neutral" | "success", string> = {
     "border-transparent text-ink-muted hover:border-line hover:bg-hover hover:text-ink",
 };
 
-function topBarStatusBadgeClass(
-  tone: TopBarStatusTone,
-  className?: string,
-) {
-  return cn(TOPBAR_STATUS_BADGE_BASE, TOPBAR_STATUS_BADGE_TONE[tone], className);
+function topBarStatusBadgeClass(tone: TopBarStatusTone, className?: string) {
+  return cn(
+    TOPBAR_STATUS_BADGE_BASE,
+    TOPBAR_STATUS_BADGE_TONE[tone],
+    className,
+  );
 }
 
 function topBarStatusIconClass(
@@ -178,27 +171,32 @@ function topBarStatusIconClass(
 }
 
 /**
- * Top bar — full-window-width, 44px tall. Per DESIGN.md §4.1.
+ * Main header — the header bar of the *main column* (not a full-window
+ * top bar). 44px tall. Per DESIGN.md §4.1.
  *
- *   [ traffic light reserved │  ─── title (centered) ───  │ ⌘K  ... ]
+ *   [ title ▾  ········ drag ········  status │ utility │ (win ctrls) ]
  *
- * Layout — three flex sections; the title sits centered in the
- * remaining space between the traffic-light reserve (left) and the
- * action cluster (right). This is the standard macOS pattern (Safari,
- * Notion, Mail.app, Pages, Finder): the document title floats centered
- * in the chrome, not glued to the traffic-light cluster.
+ * Sits at the top of the main panel (above the conversation / empty
+ * state), as a sibling of the resizable Sidebar column — which grows
+ * its own header (SidebarHeader). The two column headers are the same
+ * height so their bottom borders align into one continuous top strip,
+ * split by the full-height resize separator between the columns.
  *
- * Why not just left-align with extra padding: with paddingLeft = 70px
- * the title sat 2px from the traffic light's right edge — visually it
- * read as a single cramped cluster. Adding more padding helps the
- * spacing but the asymmetry (title left, actions right) still feels
- * off. Centering produces the symmetric chrome the OS conditions us to
- * expect.
+ * Layout — title left-aligned against the column's left gutter, the
+ * action cluster pinned right, and draggable empty space between them.
  *
- * Sidebar toggle lives inside Sidebar.tsx header (next to the logo).
- * Co-locating an affordance with its target avoids visual collision
- * with the traffic-light cluster (16-68px) and matches Notion / Linear
- * / Arc / Cursor convention.
+ * Why title-left (not centered): Galley is a multi-session workspace
+ * (Linear / Slack / Arc class), not a single-document app (Safari /
+ * Pages / Finder) where a centered document title is the idiom. The
+ * session title belongs to *this conversation*, so it lives above the
+ * conversation column where the eye lands first — together with its
+ * rename / session-menu affordance.
+ *
+ * No traffic-light reserve here: on macOS the traffic lights sit at the
+ * window's top-LEFT, which is the *Sidebar* column — SidebarHeader owns
+ * that clearance. This header only reserves the right edge for the
+ * Windows custom WindowControls (min / max / close); macOS hands window
+ * control to the overlay traffic light on the sidebar side.
  *
  * Window dragging:
  *   - Tauri v2 only honours `data-tauri-drag-region` when the
@@ -208,13 +206,14 @@ function topBarStatusIconClass(
  *   - The attribute is non-bubbling (the element receiving mousedown
  *     must carry it). We mark the root, the title slot, and the title
  *     span / placeholder. Buttons are auto-excluded by Tauri.
+ *   - SidebarHeader carries the same drag region, so both column
+ *     headers act as one window-drag handle.
  *
- * V0.1 #2: title is read-only display; inline edit lands in #3 when
- * conversation state has a place to live. The editing <input> will
- * need to opt out of drag region (otherwise mousedown gets captured by
+ * The inline-rename <input> opts out of the drag region via
+ * data-tauri-drag-region="false" (otherwise mousedown gets captured by
  * the OS for window drag instead of focusing the input).
  */
-export function TopBar({
+export function MainHeader({
   sessionTitle,
   yoloMode = false,
   onDisableYolo,
@@ -240,8 +239,7 @@ export function TopBar({
   onTogglePet,
   currentSessionHasPet = false,
   onRenameSession,
-  trafficLightPadding = isMac ? 70 : 12,
-}: TopBarProps) {
+}: MainHeaderProps) {
   const copy = useCopy();
   const hasTopBarStatusItems =
     yoloMode ||
@@ -252,8 +250,9 @@ export function TopBar({
     <div
       data-tauri-drag-region
       // Windows custom chrome: double-click anywhere draggable on the
-      // TopBar toggles maximize, mirroring native title-bar behavior.
-      // Mac's Overlay style hands this to the OS, so we early-exit.
+      // main header toggles maximize, mirroring native title-bar
+      // behavior. Mac's Overlay style hands this to the OS, so we
+      // early-exit.
       onDoubleClick={(e) => {
         if (isMac) return;
         if (!isWindowActionTarget(e.target)) return;
@@ -264,21 +263,19 @@ export function TopBar({
         }
       }}
       className={cn(
-        "flex h-11 shrink-0 items-stretch border-b border-line/70 bg-app text-[13px]",
-        // Windows reserves no right padding here — WindowControls
-        // (Step 3) will own the right edge and hug the corner per
-        // Win 11 convention. Mac keeps its 12px breathing room.
+        // bg-app: the main column tone (lighter). The Sidebar column +
+        // its header are bg-chrome (darker); the two read as a two-tone
+        // workbench split by the full-height resize separator, not one
+        // uniform top bar. Bottom border matches SidebarHeader so the
+        // two column headers line up into one continuous top strip.
+        "flex h-11 shrink-0 items-stretch border-b border-line/60 bg-app text-[13px]",
+        // Windows: no right padding — WindowControls owns the right edge
+        // and hugs the window corner (= window top-right). Mac keeps its
+        // 12px breathing room since the right cluster ends the header.
         isMac && "pr-3",
       )}
     >
-      {/* Left: traffic-light reserve. Pure spacer, draggable. */}
-      <div
-        data-tauri-drag-region
-        className="shrink-0"
-        style={{ width: trafficLightPadding }}
-      />
-
-      {/* Center: title-as-dropdown trigger. The title text + caret
+      {/* Title-as-dropdown trigger. The title text + caret
           form a single button that opens session-scoped actions
           (Reinject Tools / Desktop Pet, plus Rename when V0.1 #3
           lands). Notion / Linear / Arc convention — clicking the
@@ -295,13 +292,13 @@ export function TopBar({
           span. Same "affordance only when usable" rule applied
           elsewhere (ApprovalDock / Composer Stop / AskUserBubble).
 
-          Drag region: the wrapping div is draggable so the empty
-          spaces left/right of the title still drag the window. The
-          button itself is auto-excluded by Tauri (buttons don't
+          Drag region: the wrapping div is draggable so the empty space
+          to the right of the left-aligned title still drags the window.
+          The button itself is auto-excluded by Tauri (buttons don't
           trigger drag), so clicks open the menu instead of dragging. */}
       <div
         data-tauri-drag-region
-        className="flex min-w-0 flex-1 items-center justify-center px-3"
+        className="flex min-w-0 flex-1 items-center justify-start pl-4 pr-3"
       >
         {sessionTitle ? (
           <SessionTitleMenu
@@ -635,9 +632,7 @@ function GoalIndicator({
                             size="sm"
                             variant="ghost"
                             className="h-7 px-2 text-[12px]"
-                            leadingIcon={
-                              <FolderOpen size={13} weight="thin" />
-                            }
+                            leadingIcon={<FolderOpen size={13} weight="thin" />}
                             onClick={() => {
                               const path = goal.workspacePath;
                               if (path) {
