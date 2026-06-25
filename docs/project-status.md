@@ -9,10 +9,10 @@ live in [refactor](./refactor/README.md).
 
 ## Current Target
 
-- Package version: `0.2.14`.
-- Git tag / GitHub Release: `v0.2.14` is the current published stable release.
+- Package version: `0.2.15`.
+- Git tag / GitHub Release: `v0.2.15` is the current published stable release.
 - Agent API schema: `schemaVersion: 1`
-- Release tier: stable patch; default update channel points at `v0.2.14`.
+- Release tier: stable patch; default update channel points at `v0.2.15`.
   `beta` is kept as a legacy alias for older builds.
 - Product shape: dual-native local agent team orchestrator
 
@@ -20,29 +20,30 @@ Galley GUI and Galley CLI are peer frontends over Rust-side Galley Core. The
 GUI is for the human operator at the desk; the CLI is for trusted Agent /
 Supervisor automation on the same machine.
 
-`v0.2.14` is a conversation, settings, and theme polish release. It keeps
-answered `ask_user` prompts visible as quiet transcript echoes, strips GA
-internal tags from `ask_user` questions and choices, renames the Chinese
-language option to `简体中文 / Simplified Chinese`, and fills dark-mode token
-gaps across sidebar surfaces, status fills, and buttons. Product shape, Agent
-API schema, database schema, and update-channel policy stay unchanged; the
+`v0.2.15` is a conversation telemetry and running-status release. Final
+assistant replies now carry a compact footer with turn duration, input / output
+token counts, and current session context usage; active work shows a
+bottom-right "Working..." / "工作中..." turn timer HUD while preserving the
+existing per-step timers. Message telemetry is persisted for restored sessions,
+and large GUI / CLI helper modules were split for easier follow-up work.
+Product shape, Agent API schema, and update-channel policy stay unchanged; the
 managed GA baseline stays at `70792af`.
 
 ## Current Release State
 
-`v0.2.14` is published and promoted as the live stable patch. The default
-`updates/stable/latest.json` channel points at `v0.2.14`, with the legacy
+`v0.2.15` is published and promoted as the live stable patch. The default
+`updates/stable/latest.json` channel points at `v0.2.15`, with the legacy
 `updates/beta/latest.json` alias pointing at the same version for older
 installed builds.
 
 Post-release follow-up:
 
 1. Dogfood the app-update path from an installed older Galley build to
-   `v0.2.14`.
-2. Visually verify the `ask_user` transcript echo and internal-tag stripping
-   with a real GA session.
-3. Check the `简体中文 / Simplified Chinese` label and dark-mode sidebar /
-   status / button surfaces on real hardware.
+   `v0.2.15`.
+2. Visually verify the final-answer telemetry footer with a real managed GA
+   session, including input / output tokens and context percentage.
+3. Check the running "Working..." / "工作中..." HUD alignment in wide and
+   compact layouts, while confirming per-step timers still remain visible.
 4. On Windows, continue smoke coverage for duplicate startup / named-pipe
    behavior and manual overwrite install over a backgrounded Galley process.
 5. Keep Windows ARM out of the stable supported matrix. Add it later only after
@@ -57,9 +58,9 @@ Post-release follow-up:
 | CLI / Agent API | Feature-complete for v0.2; schema frozen | [agent-api](./agent-api.md) |
 | Agent surface | Settings -> Agent, copy-first SOP, Claude Skill | [Supervisor SOP](./integrations/galley-supervisor-sop.md) |
 | Managed GA runtime | Shipped in v0.2.0; Memory/SOP seed repair shipped in v0.2.6; current baseline is audited upstream `70792af`; GUI / CLI split, Provider / Model config, local encrypted SQLite credentials, and Project Workspace are the current baseline | [managed GA runtime](./managed-ga-runtime.md) |
-| Data migration | v0.2.10 adds a safe pre-plugin migration guard through 023 and best-effort child-row recovery from local backups for the v0.2.9 table-rebuild cascade hazard | [B4 M8](./refactor/B4-M8-sub-plan.md) |
+| Data migration | v0.2.15 adds message telemetry persistence for final-answer footer metadata; v0.2.10 added a safe pre-plugin migration guard through 023 and best-effort child-row recovery from local backups for the v0.2.9 table-rebuild cascade hazard | [B4 M8](./refactor/B4-M8-sub-plan.md) |
 | Process lifecycle | v0.2.11 ships bridge parent watchdogs and duplicate-startup suppression to prevent background process pile-up | [release / update SOP](./release-update-sop.md) |
-| Release path | v0.2.14 stable patch is published and promoted on the stable update channel | [release / update SOP](./release-update-sop.md) |
+| Release path | v0.2.15 stable patch is published and promoted on the stable update channel | [release / update SOP](./release-update-sop.md) |
 | Windows | Windows x64 remains the supported release target; Windows ARM is deferred until the release workflow and smoke path are added | [Windows checklist](./windows-build-checklist.md) |
 | GA baseline | Locked to audited upstream `70792af` | [GA baseline](./ga-baseline.md) |
 
@@ -84,7 +85,7 @@ Detailed phase narratives are intentionally not duplicated here. Use:
 
 ## Release Version Rules
 
-- Current package metadata uses `0.2.13`. For the next release, update:
+- Current package metadata uses `0.2.15`. For the next release, update:
   - `package.json`
   - `core/tauri.conf.json`
   - `core/Cargo.toml`
