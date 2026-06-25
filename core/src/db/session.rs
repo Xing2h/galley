@@ -11,7 +11,8 @@ impl SqliteGalley {
             sqlx::query_as::<_, PersistedMessageRowRecord>(
                 "SELECT id, session_id, turn_index, sequence, role, content, \
                     tool_calls, tool_results, thinking, final_answer, summary, \
-                    preamble, created_via, supervisor, origin_note, visibility, created_at \
+                    preamble, created_via, supervisor, origin_note, visibility, \
+                    telemetry_json, created_at \
              FROM messages \
              WHERE session_id = ? AND visibility = 'visible' \
              ORDER BY turn_index ASC, sequence ASC",
@@ -133,14 +134,18 @@ impl SqliteGalley {
     pub async fn persist_gui_assistant_message(&self, p: PersistAssistantMessage) -> Result<()> {
         let id = format!("msg_{}_{}_assistant", p.session_id.as_str(), p.turn_index);
         let created_at = chrono_now_iso();
+        let telemetry_json = p
+            .telemetry
+            .as_ref()
+            .and_then(|telemetry| serde_json::to_string(telemetry).ok());
         sqlx::query(
             "INSERT INTO messages (
                id, session_id, turn_index, sequence, role, content,
                tool_calls, tool_results, thinking, final_answer, summary,
-               preamble, created_at, visibility
+               preamble, telemetry_json, created_at, visibility
              ) VALUES (?, ?, ?, 1, 'assistant', ?,
                        ?, ?, ?, ?, ?,
-                       ?, ?, ?)
+                       ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                content       = excluded.content,
                tool_calls    = excluded.tool_calls,
@@ -149,6 +154,7 @@ impl SqliteGalley {
                final_answer  = excluded.final_answer,
                summary       = excluded.summary,
                preamble      = excluded.preamble,
+               telemetry_json = excluded.telemetry_json,
                visibility    = excluded.visibility",
         )
         .bind(&id)
@@ -161,6 +167,7 @@ impl SqliteGalley {
         .bind(&p.final_answer)
         .bind(&p.summary)
         .bind(&p.preamble)
+        .bind(&telemetry_json)
         .bind(&created_at)
         .bind(message_visibility_sql(p.visibility))
         .execute(&self.pool)

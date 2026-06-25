@@ -46,6 +46,17 @@ export interface ExitReason {
   data: unknown;
 }
 
+export interface TurnTelemetry {
+  elapsedMs?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cacheCreateTokens?: number | null;
+  cacheReadTokens?: number | null;
+  requestCount?: number | null;
+  contextUsedChars?: number | null;
+  contextLimitChars?: number | null;
+}
+
 export interface ConversationMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | ConversationContentBlock[];
@@ -144,6 +155,7 @@ export interface TurnEndEvent {
   toolResults: ToolResult[];
   responseContent: string;
   exitReason: ExitReason | null;
+  telemetry?: TurnTelemetry | null;
   visibility?: MessageVisibility;
   absoluteTurnIndex?: number | null;
   timestamp: string;

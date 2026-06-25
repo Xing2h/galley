@@ -43,6 +43,29 @@ pub struct MessageAttachmentBrief {
     pub created_at: String,
 }
 
+/// Optional per-final-answer usage metadata. Token fields are present only
+/// when the runner can collect them without mutating user-owned GA runtime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageTelemetry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_create_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_used_chars: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_limit_chars: Option<i64>,
+}
+
 /// Summary of one persisted message. Full conversation rendering needs
 /// more fields (tool calls, approvals, etc.); B1's read APIs surface
 /// just enough for sidebar peek + agent CLI display.

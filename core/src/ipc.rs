@@ -193,10 +193,33 @@ pub struct TurnEndEvent {
     #[serde(default)]
     pub exit_reason: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<TurnTelemetry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<String>,
     #[serde(default)]
     pub absolute_turn_index: Option<i64>,
     pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnTelemetry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_create_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_used_chars: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_limit_chars: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -473,6 +496,22 @@ mod tests {
             assert_eq!(e.severity, "error");
             assert!(!e.retryable);
             assert!(e.hint.is_none());
+        } else {
+            panic!("wrong variant");
+        }
+    }
+
+    #[test]
+    fn parse_turn_end_with_telemetry() {
+        let line = r#"{"kind":"turn_end","sessionId":"s1","turnIndex":2,"summary":"done","toolCalls":[],"toolResults":[],"responseContent":"ok","exitReason":{"result":"CURRENT_TASK_DONE","data":null},"telemetry":{"elapsedMs":135000,"inputTokens":18400,"outputTokens":1200,"cacheCreateTokens":0,"cacheReadTokens":0,"requestCount":3,"contextUsedChars":126000,"contextLimitChars":300000},"timestamp":"2026-05-19T10:00:00+08:00"}"#;
+        let event: IpcEvent = serde_json::from_str(line).expect("parse turn_end");
+        if let IpcEvent::TurnEnd(t) = event {
+            let telemetry = t.telemetry.expect("telemetry");
+            assert_eq!(telemetry.elapsed_ms, Some(135000));
+            assert_eq!(telemetry.input_tokens, Some(18400));
+            assert_eq!(telemetry.output_tokens, Some(1200));
+            assert_eq!(telemetry.context_used_chars, Some(126000));
+            assert_eq!(telemetry.context_limit_chars, Some(300000));
         } else {
             panic!("wrong variant");
         }

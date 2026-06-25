@@ -104,6 +104,7 @@ export function rowsToTurns(rows: MessageRow[]): Turn[] {
         // for those rows since the data never existed on disk.
         summary: row.summary ?? undefined,
       };
+      if (row.telemetry) turn.telemetry = row.telemetry;
       turns.push(turn);
     } else if (row.role === "system") {
       // The only `system` rows persisted to `messages` are Galley Goal

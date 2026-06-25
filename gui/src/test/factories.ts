@@ -41,6 +41,7 @@ export function makeMessageRow(overrides: Partial<MessageRow>): MessageRow {
     supervisor: null,
     origin_note: null,
     visibility: "visible",
+    telemetry: null,
     attachments: [],
     created_at: "2026-06-18T08:00:00.000Z",
     ...overrides,

@@ -342,6 +342,7 @@ pub(crate) struct PersistAssistantMessageInput {
     summary: Option<String>,
     preamble: Option<String>,
     visibility: Option<MessageVisibility>,
+    telemetry: Option<MessageTelemetry>,
 }
 
 #[tauri::command]
@@ -361,6 +362,7 @@ pub(crate) async fn persist_assistant_message(
             summary: input.summary,
             preamble: input.preamble,
             visibility: input.visibility.unwrap_or(MessageVisibility::Visible),
+            telemetry: input.telemetry,
         })
         .await
         .map_err(stringify_error)

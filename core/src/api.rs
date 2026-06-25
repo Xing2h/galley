@@ -33,7 +33,8 @@ pub use goal::{
 };
 pub use health::{HealthCheck, HealthReport, HealthStatus};
 pub use message::{
-    MessageAttachmentBrief, MessageBrief, MessageId, MessageRole, MessageVisibility,
+    MessageAttachmentBrief, MessageBrief, MessageId, MessageRole, MessageTelemetry,
+    MessageVisibility,
 };
 pub use model::{
     ManagedModelAuthKind, ManagedModelConnectionResult, ManagedModelCredentialStatus,

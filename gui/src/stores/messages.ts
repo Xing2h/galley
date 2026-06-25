@@ -110,6 +110,7 @@ export interface PerSessionMessages {
   turns: Turn[];
   pendingApprovals: PendingApproval[];
   agentRunning: boolean;
+  currentRunStartedAtMs: number | null;
   currentTurnIndex: number | null;
   inFlightContent: string;
   approvalDecisions: Record<string, ApprovalDecision>;
@@ -131,6 +132,7 @@ export const EMPTY_MESSAGES: PerSessionMessages = Object.freeze({
   turns: EMPTY_TURNS,
   pendingApprovals: EMPTY_APPROVALS,
   agentRunning: false,
+  currentRunStartedAtMs: null,
   currentTurnIndex: null,
   inFlightContent: "",
   approvalDecisions: EMPTY_DECISIONS,
@@ -148,6 +150,7 @@ function emptyMessages(): PerSessionMessages {
     turns: [],
     pendingApprovals: [],
     agentRunning: false,
+    currentRunStartedAtMs: null,
     currentTurnIndex: null,
     inFlightContent: "",
     approvalDecisions: {},
@@ -354,6 +357,12 @@ function replaceLastPendingUserAttachments(
   return turns;
 }
 
+function createdAtToMs(createdAt?: string): number | null {
+  if (!createdAt) return null;
+  const parsed = Date.parse(createdAt);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 // ============================================================
 // Store
 // ============================================================
@@ -386,6 +395,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
       agentRunning: false,
+      currentRunStartedAtMs: null,
       currentTurnIndex: null,
       inFlightContent: "",
       sendPhase: null,
@@ -476,6 +486,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       // the round-trip would re-introduce the latency we're
       // masking with the thinking placeholder.
       agentRunning: true,
+      currentRunStartedAtMs: Date.now(),
       inFlightContent: "",
       // Reset currentTurnIndex so the Sidebar's "正在工作 · 第 N 步"
       // doesn't briefly show the last turn's step number before
@@ -573,11 +584,15 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     const userTurn: UserTurn = { role: "user", content: text };
     if (origin) userTurn.origin = origin;
     if (createdAt) userTurn.createdAt = createdAt;
+    const runStartedAtMs = dispatched
+      ? (createdAtToMs(createdAt) ?? Date.now())
+      : null;
     const state = get();
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
       turns: [...m.turns, userTurn],
       agentRunning: dispatched,
+      currentRunStartedAtMs: runStartedAtMs,
       inFlightContent: "",
       currentTurnIndex: null,
       pendingAskUser: null,
@@ -653,6 +668,9 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
     const { byId, next } = patchMessages(state, sid, (m) => ({
       ...m,
       agentRunning: running,
+      currentRunStartedAtMs: running
+        ? (m.currentRunStartedAtMs ?? Date.now())
+        : null,
       sendPhase: running ? m.sendPhase : null,
       // run_complete / error / bridge-close all land here as the run's
       // terminal signal — clear isStopping in lockstep so a finished
@@ -739,6 +757,7 @@ export const useMessagesStore = create<MessagesStore>((set, get) => ({
       pendingApprovals: [],
       approvalDecisions: {},
       agentRunning: false,
+      currentRunStartedAtMs: null,
       currentTurnIndex: null,
       inFlightContent: "",
       sendPhase: null,

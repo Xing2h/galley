@@ -29,11 +29,11 @@ use crate::api::{
     GoalStatusSnapshot, GoalTaskBrief, GoalTaskId, GoalTaskStatus, GoalWriteMode, HealthCheck,
     HealthReport, HealthStatus, ManagedModelAuthKind, ManagedModelCredentialStatus,
     ManagedModelProtocol, ManagedModelProviderRecord, ManagedModelRecord, MessageAttachmentBrief,
-    MessageBrief, MessageId, MessageRole, MessageVisibility, Origin, OriginVia, ProjectBrief,
-    ProjectId, ProjectPatch, RuntimeKind, SearchHit, SearchScope, SessionBrief, SessionFilter,
-    SessionId, SessionStatus, StatusSummary, UpdateGoalTaskInput, DEFAULT_GOAL_BUDGET_SECONDS,
-    DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE, MAX_GOAL_WORKER_LIMIT,
-    MIN_GOAL_WORKER_LIMIT,
+    MessageBrief, MessageId, MessageRole, MessageTelemetry, MessageVisibility, Origin, OriginVia,
+    ProjectBrief, ProjectId, ProjectPatch, RuntimeKind, SearchHit, SearchScope, SessionBrief,
+    SessionFilter, SessionId, SessionStatus, StatusSummary, UpdateGoalTaskInput,
+    DEFAULT_GOAL_BUDGET_SECONDS, DEFAULT_GOAL_WORKER_LIMIT, GOAL_CONFIRMATION_PHRASE,
+    MAX_GOAL_WORKER_LIMIT, MIN_GOAL_WORKER_LIMIT,
 };
 use crate::app_paths;
 use crate::error::{GalleyError, Result};

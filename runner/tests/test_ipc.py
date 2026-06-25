@@ -193,6 +193,40 @@ def test_turn_end_round_trip_with_exit_reason() -> None:
     assert decoded.exitReason == {"result": "CURRENT_TASK_DONE", "data": None}
 
 
+def test_turn_end_round_trip_with_telemetry() -> None:
+    ev = TurnEndEvent(
+        sessionId="s1",
+        turnIndex=5,
+        summary="done",
+        toolCalls=[],
+        toolResults=[],
+        responseContent="...",
+        exitReason={"result": "CURRENT_TASK_DONE", "data": None},
+        telemetry={
+            "elapsedMs": 135000,
+            "inputTokens": 18400,
+            "outputTokens": 1200,
+            "cacheCreateTokens": 0,
+            "cacheReadTokens": 0,
+            "requestCount": 3,
+            "contextUsedChars": 126000,
+            "contextLimitChars": 300000,
+        },
+    )
+    decoded = decode_event(encode(ev))
+    assert decoded == ev
+    assert decoded.telemetry == {
+        "elapsedMs": 135000,
+        "inputTokens": 18400,
+        "outputTokens": 1200,
+        "cacheCreateTokens": 0,
+        "cacheReadTokens": 0,
+        "requestCount": 3,
+        "contextUsedChars": 126000,
+        "contextLimitChars": 300000,
+    }
+
+
 def test_run_complete_round_trip() -> None:
     ev = RunCompleteEvent(
         sessionId="s1",

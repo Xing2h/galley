@@ -15,6 +15,7 @@ import {
 import { GoalRunningTail } from "@/components/conversation/GoalRunMarkers";
 import { StreamingCursor } from "@/components/conversation/LiveIndicators";
 import { MarkdownView } from "@/components/conversation/MarkdownView";
+import { RunElapsedHud } from "@/components/conversation/RunElapsedHud";
 import { SelectionCopyToolbar } from "@/components/conversation/SelectionCopyToolbar";
 import { ToolCallout } from "@/components/conversation/ToolCallout";
 import { UserQuestionRail } from "@/components/conversation/UserQuestionRail";
@@ -205,6 +206,11 @@ export function MainView({
   );
   const currentTurnIndex = useMessagesStore((s) =>
     activeSessionId ? (s.byId[activeSessionId]?.currentTurnIndex ?? null) : null,
+  );
+  const currentRunStartedAtMs = useMessagesStore((s) =>
+    activeSessionId
+      ? (s.byId[activeSessionId]?.currentRunStartedAtMs ?? null)
+      : null,
   );
   const userSubmitTick = useMessagesStore((s) => s.userSubmitTick);
 
@@ -450,6 +456,20 @@ export function MainView({
           onJump={() => setAtBottom(false)}
         />
         <SelectionCopyToolbar scrollContainerRef={scrollContainerRef} />
+        {isRunning && currentRunStartedAtMs != null && (
+          <div className="pointer-events-none absolute inset-x-8 bottom-4 z-10">
+            <div
+              className={cn(
+                "mx-auto flex justify-end",
+                conversationWidth === "wide"
+                  ? "max-w-[1200px]"
+                  : "max-w-[760px]",
+              )}
+            >
+              <RunElapsedHud startedAtMs={currentRunStartedAtMs} />
+            </div>
+          </div>
+        )}
 
         {/* Scroll-to-bottom floating button (DESIGN.md §4.3 streaming
             generation). Visible only when the user has scrolled away

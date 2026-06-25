@@ -7,6 +7,8 @@
  * a new migration file + a field on the Row + the mapper.
  */
 
+import type { MessageTelemetry } from "@/types/conversation";
+
 export interface SessionRow {
   id: string;
   project_id: string | null;
@@ -77,6 +79,8 @@ export interface MessageRow {
   /** visible by default; internal rows are retained for audit but hidden
    * from normal conversation rendering/search. Added in migration 017. */
   visibility: "visible" | "internal";
+  /** Optional per-final-answer telemetry. Added in migration 028. */
+  telemetry: MessageTelemetry | null;
   attachments: MessageAttachmentRow[];
   created_at: string;
 }

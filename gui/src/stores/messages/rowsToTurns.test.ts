@@ -116,6 +116,35 @@ describe("rowsToTurns", () => {
     ]);
   });
 
+  it("restores assistant telemetry when present", () => {
+    const turns = rowsToTurns([
+      makeMessageRow({
+        role: "assistant",
+        turn_index: 3,
+        content: "Recovered answer",
+        final_answer: "Recovered answer",
+        telemetry: {
+          elapsedMs: 135_000,
+          inputTokens: 18_000,
+          outputTokens: 1_200,
+          contextUsedChars: 126_000,
+          contextLimitChars: 300_000,
+        },
+      }),
+    ]);
+
+    expect(turns[0]).toMatchObject({
+      role: "agent",
+      telemetry: {
+        elapsedMs: 135_000,
+        inputTokens: 18_000,
+        outputTokens: 1_200,
+        contextUsedChars: 126_000,
+        contextLimitChars: 300_000,
+      },
+    });
+  });
+
   it("preserves ask_user question in tool args so it stays visible after answering", () => {
     // An ask_user turn typically carries no final_answer (the LLM
     // emitted a pure tool_use block). The question text lives only in

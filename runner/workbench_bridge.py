@@ -135,6 +135,7 @@ _SUPPORTED_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp"}
 GALLEY_CORE_PID_ENV = "GALLEY_CORE_PID"
 PARENT_WATCH_INTERVAL_SEC = 2.0
 _EXIT_FOR_PARENT_LOSS = os._exit
+_USAGE_FIELDS = ("requests", "input", "output", "cache_create", "cache_read")
 
 
 def _exit_parentless(reason: str) -> None:
@@ -549,6 +550,11 @@ class Bridge:
         self.current_turn: int = 0
         self._current_message_visibility: str = "visible"
         self._current_message_turn_base: int | None = None
+        self._agent_thread_name = f"galley-agent-{self.session_id}"
+        self._current_run_started_at: float | None = None
+        self._current_run_started_wall_at: float | None = None
+        self._current_usage_baseline: dict[str, int] | None = None
+        self._cost_tracker: Any = None
         # turn_start dedupe state. Two emitters share this:
         #   1. WorkbenchHandler dispatch wrapper (real-time, fires when
         #      GA enters tool dispatch for the current turn).
@@ -584,7 +590,11 @@ class Bridge:
         self._setup_ga()
         self._install_handler_subclass()
         self._register_turn_end_hook()
-        threading.Thread(target=self.agent.run, daemon=True).start()
+        threading.Thread(
+            target=self.agent.run,
+            name=self._agent_thread_name,
+            daemon=True,
+        ).start()
         self._emit_ready()
 
     def _setup_ga(self) -> None:
@@ -609,6 +619,7 @@ class Bridge:
             if not managed_state_root:
                 raise RuntimeError("managed runtime missing GALLEY_GA_STATE_ROOT")
             self._install_managed_mykey_loader()
+            self._install_managed_usage_tracker()
             for rel in ("memory", "sop", "skills", "temp", "temp/model_responses"):
                 os.makedirs(os.path.join(managed_state_root, rel), exist_ok=True)
         if self.cwd:
@@ -692,8 +703,117 @@ class Bridge:
     def _install_managed_mykey_loader(self) -> None:
         managed_runtime.install_managed_mykey_loader()
 
+    def _install_managed_usage_tracker(self) -> None:
+        """Install GA's official token tracker for Galley-owned runtime only."""
+        try:
+            import cost_tracker  # type: ignore[import-not-found]
+
+            cost_tracker.install()
+            self._cost_tracker = cost_tracker
+        except Exception as e:
+            self._cost_tracker = None
+            print(
+                f"Managed token tracker unavailable: {e}",
+                file=sys.stderr,
+            )
+
     def _install_managed_prompt_profile(self) -> None:
         managed_runtime.install_managed_prompt_profile(self.agent)
+
+    def _begin_run_tracking(self) -> None:
+        self._current_run_started_at = time.perf_counter()
+        self._current_run_started_wall_at = time.time()
+        self._current_usage_baseline = self._usage_snapshot()
+
+    def _end_run_tracking(self) -> None:
+        self._current_run_started_at = None
+        self._current_run_started_wall_at = None
+        self._current_usage_baseline = None
+
+    def _usage_snapshot(self) -> dict[str, int] | None:
+        tracker = self._cost_tracker
+        if tracker is None:
+            return None
+        try:
+            stats = tracker.get(self._agent_thread_name)
+            return {
+                field: max(0, int(getattr(stats, field, 0) or 0))
+                for field in _USAGE_FIELDS
+            }
+        except Exception:
+            return None
+
+    def _usage_delta(self) -> dict[str, int] | None:
+        current = self._usage_snapshot()
+        if current is None:
+            return None
+        baseline = self._current_usage_baseline or {}
+        return {
+            field: max(0, current[field] - int(baseline.get(field, 0) or 0))
+            for field in _USAGE_FIELDS
+        }
+
+    def _subagent_usage_delta(self) -> dict[str, int] | None:
+        tracker = self._cost_tracker
+        since = self._current_run_started_wall_at
+        if tracker is None or since is None:
+            return None
+        scan = getattr(tracker, "scan_subagent_logs", None)
+        if not callable(scan):
+            return None
+        try:
+            stats = scan(since=since, root=managed_runtime.managed_state_root())
+            return {
+                field: max(0, int(getattr(stats, field, 0) or 0))
+                for field in _USAGE_FIELDS
+            }
+        except Exception:
+            return None
+
+    def _context_snapshot(self) -> dict[str, int]:
+        """Read GA backend context usage without mutating runtime state."""
+        try:
+            backend = getattr(getattr(self.agent, "llmclient", None), "backend", None)
+            if backend is None:
+                return {}
+            history = getattr(backend, "history", None) or []
+            used = sum(
+                len(json.dumps(message, ensure_ascii=False)) for message in history
+            )
+            limit = int(getattr(backend, "context_win", 0) or 0) * 3
+        except Exception:
+            return {}
+        out: dict[str, int] = {}
+        if used >= 0:
+            out["contextUsedChars"] = used
+        if limit > 0:
+            out["contextLimitChars"] = limit
+        return out
+
+    def _final_turn_telemetry(self) -> dict[str, int] | None:
+        telemetry: dict[str, int] = {}
+        if self._current_run_started_at is not None:
+            telemetry["elapsedMs"] = max(
+                0,
+                int((time.perf_counter() - self._current_run_started_at) * 1000),
+            )
+        usage = self._usage_delta()
+        subagent_usage = self._subagent_usage_delta()
+        if usage is not None and subagent_usage is not None:
+            usage = {
+                field: usage.get(field, 0) + subagent_usage.get(field, 0)
+                for field in _USAGE_FIELDS
+            }
+        elif usage is None:
+            usage = subagent_usage
+        if usage is not None and any(usage.get(field, 0) > 0 for field in _USAGE_FIELDS):
+            telemetry["inputTokens"] = usage["input"]
+            telemetry["outputTokens"] = usage["output"]
+            telemetry["cacheCreateTokens"] = usage["cache_create"]
+            telemetry["cacheReadTokens"] = usage["cache_read"]
+            telemetry["requestCount"] = usage["requests"]
+        telemetry.update(self._context_snapshot())
+        return telemetry or None
 
     def _external_workspace_allowed(self) -> bool:
         state_root = managed_runtime.managed_state_root()
@@ -1048,6 +1168,7 @@ class Bridge:
             # GA may stash its internal response/outcome objects inside
             # exit_reason.data. Coerce to JSON-safe shape before emit.
             safe_exit = _to_json_safe(exit_reason) if exit_reason else None
+            telemetry = self._final_turn_telemetry() if exit_reason else None
 
             self._emit(
                 TurnEndEvent(
@@ -1064,6 +1185,7 @@ class Bridge:
                     ],
                     responseContent=response_content,
                     exitReason=safe_exit,
+                    telemetry=telemetry,
                     visibility=self._current_message_visibility,
                     absoluteTurnIndex=self._current_absolute_turn_index(turn),
                 )
@@ -1095,6 +1217,7 @@ class Bridge:
                 self.run_in_progress.clear()
                 self._current_message_visibility = "visible"
                 self._current_message_turn_base = None
+                self._end_run_tracking()
             else:
                 # Predict-emit turn_start(turn+1): GA is going to keep
                 # looping, but the real dispatch-wrapper signal for the
@@ -1189,6 +1312,7 @@ class Bridge:
             self._last_emitted_turn = 0
             self._current_message_visibility = cmd.visibility or "visible"
             self._current_message_turn_base = cmd.absoluteTurnIndex
+            self._begin_run_tracking()
             self.run_in_progress.set()
             display_queue = self.agent.put_task(
                 cmd.text, source="workbench", images=cmd.images
@@ -1208,6 +1332,7 @@ class Bridge:
             self._last_emitted_turn = 0
             self._current_message_visibility = "visible"
             self._current_message_turn_base = cmd.absoluteTurnIndex
+            self._begin_run_tracking()
             self.run_in_progress.set()
             display_queue = self.agent.put_task(cmd.text, source="workbench")
             self._start_progress_drain(display_queue)
@@ -1229,6 +1354,7 @@ class Bridge:
                 self.run_in_progress.clear()
                 self._current_message_visibility = "visible"
                 self._current_message_turn_base = None
+                self._end_run_tracking()
         elif isinstance(cmd, LoadHistoryCommand):
             try:
                 self._load_history(cmd.messages)

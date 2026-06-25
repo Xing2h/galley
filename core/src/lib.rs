@@ -210,6 +210,12 @@ pub fn run() {
             sql: include_str!("../migrations/027_managed_model_context_win.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 28,
+            description: "add message telemetry",
+            sql: include_str!("../migrations/028_message_telemetry.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —

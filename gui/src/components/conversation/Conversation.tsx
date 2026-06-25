@@ -200,7 +200,7 @@ function AgentTurnView({
         (isFinalTurn ? (
           <>
             <StrongHr />
-            <MessageAgent>{answerText}</MessageAgent>
+            <MessageAgent telemetry={turn.telemetry}>{answerText}</MessageAgent>
           </>
         ) : (
           <MessageAgentNarration>{answerText}</MessageAgentNarration>

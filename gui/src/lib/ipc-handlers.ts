@@ -25,6 +25,7 @@ import type {
   MessageVisibility,
   ToolCall as IPCToolCall,
   ToolResult as IPCToolResult,
+  TurnTelemetry,
 } from "@/types/ipc";
 
 import { useMessagesStore } from "@/stores/messages";
@@ -487,6 +488,7 @@ function turnFromTurnEnd(event: {
   toolCalls: IPCToolCall[];
   toolResults: IPCToolResult[];
   responseContent: string;
+  telemetry?: TurnTelemetry | null;
 }): AgentTurn {
   const tools = event.toolCalls.map((tc, i) =>
     toolEventFromIPC(tc, event.toolResults[i], i),
@@ -509,7 +511,7 @@ function turnFromTurnEnd(event: {
   // TurnMarker. Intermediate turns keep the preamble extraction.
   const isFinalTurn =
     tools.length === 0 || tools.every((t) => t.name === "no_tool");
-  return {
+  const turn: AgentTurn = {
     role: "agent",
     thinking: extractThinking(event.responseContent),
     preamble: isFinalTurn ? undefined : extractPreamble(event.responseContent),
@@ -518,6 +520,8 @@ function turnFromTurnEnd(event: {
     turnIndex: event.turnIndex,
     summary: trimmedSummary ? trimmedSummary : undefined,
   };
+  if (event.telemetry) turn.telemetry = event.telemetry;
+  return turn;
 }
 
 function toolEventFromIPC(
@@ -610,6 +614,7 @@ async function persistTurnEndToMessages(event: {
   toolResults: IPCToolResult[];
   responseContent: string;
   summary: string;
+  telemetry?: TurnTelemetry | null;
   visibility?: MessageVisibility;
 }): Promise<void> {
   try {
@@ -641,6 +646,7 @@ async function persistTurnEndToMessages(event: {
         // LLM pre-tool reasoning prose for DetailPanel restore. See
         // isFinalTurn gate above — final answers don't persist here.
         preamble: persistedPreamble,
+        telemetry: event.telemetry ?? null,
         visibility: event.visibility ?? "visible",
       },
     });

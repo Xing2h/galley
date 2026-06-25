@@ -108,6 +108,7 @@ class TurnEndEvent:
     toolResults: list[dict[str, Any]]
     responseContent: str
     exitReason: dict[str, Any] | None = None
+    telemetry: dict[str, int | None] | None = None
     visibility: str = "visible"
     absoluteTurnIndex: int | None = None
     timestamp: str = field(default_factory=_now_iso)

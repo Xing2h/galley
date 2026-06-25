@@ -95,6 +95,17 @@ export interface MessageAttachment {
   createdAt: string;
 }
 
+export interface MessageTelemetry {
+  elapsedMs?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cacheCreateTokens?: number | null;
+  cacheReadTokens?: number | null;
+  requestCount?: number | null;
+  contextUsedChars?: number | null;
+  contextLimitChars?: number | null;
+}
+
 export interface PendingImageAttachment {
   id: string;
   /** Base64 data URL of the (downsampled) image — crosses the IPC
@@ -188,8 +199,10 @@ export interface AgentTurn {
    *     turn completes, suitable for sidebar previews + the
    *     conversation's TurnMarker sub-line.
    * Same string the Sidebar uses for its two-line preview.
-   */
+  */
   summary?: string;
+  /** Optional metadata shown in the final-answer footer. */
+  telemetry?: MessageTelemetry;
 }
 
 export type Turn = UserTurn | AgentTurn | SystemTurn;

@@ -2,6 +2,7 @@ import { isValidElement, memo, type ReactNode } from "react";
 
 import { MarkdownView } from "@/components/conversation/MarkdownView";
 import { MessageActions } from "@/components/conversation/MessageActions";
+import type { MessageTelemetry } from "@/types/conversation";
 
 /**
  * Final agent answer — uses the conversation body typography vars,
@@ -28,15 +29,17 @@ import { MessageActions } from "@/components/conversation/MessageActions";
 export const MessageAgent = memo(function MessageAgent({
   children,
   showActions = true,
+  telemetry,
 }: {
   children: ReactNode;
   showActions?: boolean;
+  telemetry?: MessageTelemetry;
 }) {
   if (typeof children === "string") {
     return (
       <div>
         <MarkdownView source={children} variant="agent" selectionCopyScope />
-        {showActions && <MessageActions source={children} />}
+        {showActions && <MessageActions source={children} telemetry={telemetry} />}
       </div>
     );
   }

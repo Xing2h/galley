@@ -131,6 +131,7 @@ pub(super) struct PersistedMessageRowRecord {
     pub supervisor: Option<String>,
     pub origin_note: Option<String>,
     pub visibility: String,
+    pub telemetry_json: Option<String>,
     pub created_at: String,
 }
 
@@ -152,6 +153,7 @@ pub struct PersistedMessageRow {
     pub supervisor: Option<String>,
     pub origin_note: Option<String>,
     pub visibility: String,
+    pub telemetry: Option<MessageTelemetry>,
     pub created_at: String,
     pub attachments: Vec<MessageAttachmentBrief>,
 }
@@ -175,6 +177,9 @@ impl PersistedMessageRowRecord {
             supervisor: self.supervisor,
             origin_note: self.origin_note,
             visibility: self.visibility,
+            telemetry: self
+                .telemetry_json
+                .and_then(|raw| serde_json::from_str::<MessageTelemetry>(&raw).ok()),
             created_at: self.created_at,
             attachments: Vec::new(),
         }
@@ -235,6 +240,7 @@ pub struct PersistAssistantMessage {
     pub summary: Option<String>,
     pub preamble: Option<String>,
     pub visibility: MessageVisibility,
+    pub telemetry: Option<MessageTelemetry>,
 }
 
 pub struct PersistToolEventPending {
