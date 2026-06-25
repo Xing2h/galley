@@ -1,6 +1,7 @@
-import { Clock } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
+import { LiveDots } from "@/components/conversation/LiveIndicators";
+import { useCopy } from "@/lib/i18n";
 import { formatElapsedCompact } from "@/lib/telemetry";
 
 export function RunElapsedHud({
@@ -8,11 +9,11 @@ export function RunElapsedHud({
 }: {
   startedAtMs: number | null;
 }) {
+  const copy = useCopy();
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (startedAtMs == null) return;
-    setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [startedAtMs]);
@@ -23,21 +24,21 @@ export function RunElapsedHud({
 
   return (
     <div
-      aria-label={`elapsed ${elapsed}`}
+      aria-label={`${copy.conversation.runWorking} ${elapsed}`}
       className={[
-        "inline-flex h-6 items-center gap-1 rounded-sm border border-line",
-        "bg-elevated/88 px-1.5 text-[11.5px] leading-none",
+        "inline-flex h-6 items-center gap-1.5 rounded-sm border border-line",
+        "bg-elevated/88 px-2 text-[11.5px] leading-[14px]",
         "text-ink-muted shadow-[var(--shadow-float)] backdrop-blur-md",
         "[font-variant-numeric:tabular-nums]",
       ].join(" ")}
     >
-      <span
-        className="inline-flex size-3 items-center justify-center"
-        aria-hidden="true"
-      >
-        <Clock size={12} weight="thin" />
+      <span className="inline-flex h-3.5 items-center">
+        {copy.conversation.runWorking}
       </span>
-      <span>{elapsed}</span>
+      <LiveDots className="-ml-1 text-brand-strong/65" />
+      <span className="inline-flex h-3.5 items-center tabular-nums">
+        {elapsed}
+      </span>
     </div>
   );
 }

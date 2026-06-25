@@ -1094,6 +1094,7 @@ export const enCopy: AppCopy = {
     step: (index) => `Step ${index}`,
     thinking: "Thinking...",
     answering: "Answering...",
+    runWorking: "Working",
     sendReceived: "Received",
     sendGettingReady: "Getting ready",
     sendWorking: "Working on it",

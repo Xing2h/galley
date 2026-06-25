@@ -1052,6 +1052,7 @@ export const zhCopy = {
     step: (index: number) => `第 ${index} 步`,
     thinking: "思考中...",
     answering: "正在回答...",
+    runWorking: "工作中",
     sendReceived: "已收到",
     sendGettingReady: "正在准备",
     sendWorking: "正在处理",
