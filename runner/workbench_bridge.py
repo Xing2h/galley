@@ -790,8 +790,8 @@ class Bridge:
             out["contextLimitChars"] = limit
         return out
 
-    def _final_turn_telemetry(self) -> dict[str, int] | None:
-        telemetry: dict[str, int] = {}
+    def _final_turn_telemetry(self) -> dict[str, int | None] | None:
+        telemetry: dict[str, int | None] = {}
         if self._current_run_started_at is not None:
             telemetry["elapsedMs"] = max(
                 0,
