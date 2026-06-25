@@ -198,19 +198,26 @@ alpha template below.
 
 Writing rules:
 
-- Chinese first, English second. Both sections should be complete; do not use a
+- English first, Chinese second. Both sections should be complete; do not use a
   thin machine translation. Keep the two halves in sync — a bullet in one must
   appear in the other.
-- Keep the headings stable: `## What's New`, `## 安装指南`, `---`,
-  `## What's New`, `## Installation Guide`.
-- Write bullets as `功能区域：用户看得见的变化` in Chinese and
-  `Area: user-visible change` in English.
-- Tone: concise and professional. One bullet per user-visible change, one
-  sentence each. Lead with the change, not the symptom — "新增字号切换"
-  (adds a font-size switcher), not "修复了用户反馈的字号问题". Drop
-  hedge / filler like "修复了一个 case", "保持不变", or describing the
-  pre-release state for its own sake. If a sentence does not tell the user
-  something they can see or act on, cut it.
+- Keep the headings stable: `## What's New`, optional `## Under the Hood`,
+  `## Installation Guide`, `---`, `## What's New`, optional
+  `## Under the Hood`, `## 安装指南`.
+- Write `What's New` bullets as outcome-first user changes: start with the
+  user result, then state the concrete product change. Prefer
+  `<User outcome>: <what changed>, so <why it matters>` over
+  `<implementation area>: <internal detail>`.
+- Tone: concise and professional. One bullet per user-visible change, usually
+  one sentence each. Lead with the result, not the symptom or implementation —
+  "Track long-running sessions", not "Conversation telemetry"; "新增字号切换"
+  (adds a font-size switcher), not "修复了用户反馈的字号问题". Drop hedge /
+  filler like "修复了一个 case", "保持不变", or describing the pre-release
+  state for its own sake. If a sentence does not tell the user something they
+  can see or act on, cut it or move it to `Under the Hood`.
+- Use `Under the Hood` only for meaningful engineering maintenance that helps a
+  technical reader trust the release but is not itself a user feature. Omit the
+  section when there is no such work.
 - Scope to what changed this tag, not the whole product. Before drafting, run
   `git log <PREVIOUS_TAG>..HEAD --oneline` and walk every commit; map each
   user-facing commit to a bullet. A release that ships a new feature plus a
@@ -237,36 +244,13 @@ the package version (for example `0.2.5`).
 ````markdown
 ## What's New
 
-- <功能区域>：<一句话说明用户看得见的新增、修复或体验变化>。
-- <功能区域>：<一句话说明用户看得见的新增、修复或体验变化>。
-- <功能区域>：<一句话说明用户看得见的新增、修复或体验变化>。
+- <User outcome>: <what changed in the product, and why it matters>.
+- <User outcome>: <what changed in the product, and why it matters>.
+- <Fix / reliability outcome>: <what is now more reliable or easier to recover from>.
 
-## 安装指南
+## Under the Hood
 
-### macOS
-
-- [下载 Apple Silicon 版](https://github.com/wangjc683/galley/releases/download/<TAG>/Galley_<VERSION>_macOS_aarch64.dmg)
-- [下载 Intel 版](https://github.com/wangjc683/galley/releases/download/<TAG>/Galley_<VERSION>_macOS_x64.dmg)
-
-如果 macOS 提示无法打开 Galley，可以在终端执行：
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Galley.app
-```
-
-### Windows
-
-- [下载 Windows 版](https://github.com/wangjc683/galley/releases/download/<TAG>/Galley_<VERSION>_Windows_x64-setup.exe)
-
-如果 Windows SmartScreen 提示风险，点击「更多信息」->「仍要运行」。
-
----
-
-## What's New
-
-- <Area>: <one sentence describing the user-visible addition, fix, or experience change>.
-- <Area>: <one sentence describing the user-visible addition, fix, or experience change>.
-- <Area>: <one sentence describing the user-visible addition, fix, or experience change>.
+- <Technical maintenance that matters to engineering readers, if any>.
 
 ## Installation Guide
 
@@ -288,6 +272,37 @@ xattr -dr com.apple.quarantine /Applications/Galley.app
 If Windows SmartScreen shows a warning, click "More info" -> "Run anyway".
 
 **Full Changelog**: https://github.com/wangjc683/galley/compare/<PREVIOUS_TAG>...<TAG>
+
+---
+
+## What's New
+
+- <用户结果>：<产品里发生了什么变化，以及为什么重要>。
+- <用户结果>：<产品里发生了什么变化，以及为什么重要>。
+- <修复 / 可靠性结果>：<现在什么更稳定，或更容易恢复>。
+
+## Under the Hood
+
+- <如果有值得工程读者知道的技术维护，写在这里>。
+
+## 安装指南
+
+### macOS
+
+- [下载 Apple Silicon 版](https://github.com/wangjc683/galley/releases/download/<TAG>/Galley_<VERSION>_macOS_aarch64.dmg)
+- [下载 Intel 版](https://github.com/wangjc683/galley/releases/download/<TAG>/Galley_<VERSION>_macOS_x64.dmg)
+
+如果 macOS 提示无法打开 Galley，可以在终端执行：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Galley.app
+```
+
+### Windows
+
+- [下载 Windows 版](https://github.com/wangjc683/galley/releases/download/<TAG>/Galley_<VERSION>_Windows_x64-setup.exe)
+
+如果 Windows SmartScreen 提示风险，点击「更多信息」->「仍要运行」。
 ````
 
 #### Alpha Release Notes Template
@@ -297,24 +312,7 @@ checks out of the default test list unless the alpha is explicitly promoted to
 an update channel.
 
 ````markdown
-适合内测用户和愿意尝鲜的用户体验。alpha 版本仍在快速迭代，可能存在稳定性问题，不建议普通用户安装。
 For testers and early adopters. This alpha build is still evolving quickly and may be unstable, so it is not recommended for general users.
-
-## 请重点测试
-
-- 全新安装后完成 Onboarding，配置模型并进入主界面。
-- 新建对话，确认 Galley 能正常回复。
-- Settings -> IM 接入微信，扫码后从微信给 Galley 发消息。
-- 浏览器控制扩展安装、连接测试和简单浏览器任务。
-- 退出并重启 Galley，确认模型配置、历史对话和微信接入状态符合预期。
-
-## macOS 安装提示
-
-如果 macOS 提示无法打开，可以在终端执行：
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Galley.app
-```
 
 ## Please Test
 
@@ -327,6 +325,26 @@ xattr -dr com.apple.quarantine /Applications/Galley.app
 ## macOS Install Note
 
 If macOS says Galley cannot be opened, run this in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Galley.app
+```
+
+---
+
+适合内测用户和愿意尝鲜的用户体验。alpha 版本仍在快速迭代，可能存在稳定性问题，不建议普通用户安装。
+
+## 请重点测试
+
+- 全新安装后完成 Onboarding，配置模型并进入主界面。
+- 新建对话，确认 Galley 能正常回复。
+- Settings -> IM 接入微信，扫码后从微信给 Galley 发消息。
+- 浏览器控制扩展安装、连接测试和简单浏览器任务。
+- 退出并重启 Galley，确认模型配置、历史对话和微信接入状态符合预期。
+
+## macOS 安装提示
+
+如果 macOS 提示无法打开，可以在终端执行：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Galley.app
