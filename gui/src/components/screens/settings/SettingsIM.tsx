@@ -143,26 +143,6 @@ export function SettingsIM({
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center">
-            <Button
-              type="button"
-              variant={hasStaleEnabledChannel ? "secondary" : "ghost"}
-              size="sm"
-              disabled={busyAction === "restart" || !hasEnabledChannel}
-              leadingIcon={
-                busyAction === "restart" ? (
-                  <CircleNotch size={13} className="animate-spin" />
-                ) : hasStaleEnabledChannel ? (
-                  <WarningCircle size={13} weight="bold" />
-                ) : (
-                  <ArrowsClockwise size={13} />
-                )
-              }
-              onClick={() => setConfirmRestartOpen(true)}
-            >
-              {copy.toasts.restartChannels}
-            </Button>
-          </div>
           <WeChatCard
             status={wechatStatus}
             busyAction={busyAction}
@@ -183,6 +163,26 @@ export function SettingsIM({
             statusLoadError={feishuStatusLoadError}
             onStatusChange={setFeishuStatus}
           />
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant={hasStaleEnabledChannel ? "secondary" : "ghost"}
+              size="sm"
+              disabled={busyAction === "restart" || !hasEnabledChannel}
+              leadingIcon={
+                busyAction === "restart" ? (
+                  <CircleNotch size={13} className="animate-spin" />
+                ) : hasStaleEnabledChannel ? (
+                  <WarningCircle size={13} weight="bold" />
+                ) : (
+                  <ArrowsClockwise size={13} />
+                )
+              }
+              onClick={() => setConfirmRestartOpen(true)}
+            >
+              {copy.toasts.restartChannels}
+            </Button>
+          </div>
           <RestartChannelsDialog
             open={confirmRestartOpen}
             busy={busyAction === "restart"}
