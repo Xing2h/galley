@@ -1,7 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  CaretRight,
   CircleNotch,
   Power,
   QrCode,
@@ -18,6 +17,7 @@ import type {
 import { cn } from "@/lib/utils";
 
 import { ChannelActionsMenu } from "./ChannelActionsMenu";
+import { ChannelCard } from "./ChannelCard";
 import { WeChatCommandReference } from "./CommandReference";
 import { ConnectionSteps } from "./ConnectionSteps";
 import { WeChatGlyph } from "./Glyphs";
@@ -65,54 +65,16 @@ export function WeChatCard({
     state === "stopped";
 
   return (
-    <section
-      className={cn(
-        "group/im overflow-hidden rounded-sm border border-line bg-surface transition-colors",
-        expanded && "border-line-strong",
-      )}
-    >
-      <div
-        className={cn(
-          "flex min-w-0 items-center gap-3 px-2 py-1.5 transition-colors",
-          expanded && "bg-hover/40",
-        )}
-      >
-        <button
-          type="button"
-          aria-expanded={expanded}
-          className={cn(
-            "group/toggle flex min-w-0 flex-1 items-center gap-3 rounded-sm px-1.5 py-0.5 text-left transition-colors",
-            "hover:bg-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
-          )}
-          onClick={() => setExpandedOverride(!expanded)}
-        >
-          <span
-            className={cn(
-              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-soft transition-[color,transform] duration-150 ease-[cubic-bezier(0.2,0,0,1)]",
-              expanded ? "rotate-90 text-ink" : "rotate-0",
-            )}
-          >
-            <CaretRight size={12} weight="bold" />
-          </span>
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <WeChatGlyph active={expanded} />
-            <span
-              className="min-w-0 truncate text-[13px] font-medium text-ink"
-              title={imCopy.wechatTitle}
-            >
-              {imCopy.wechatTitle}
-            </span>
-            <StatusBadge state={state} />
-          </span>
-        </button>
-        <div
-          className={cn(
-            "ml-auto flex shrink-0 items-center gap-1.5 opacity-80 transition-opacity",
-            "group-hover/im:opacity-100 group-focus-within/im:opacity-100",
-            busyAction && "opacity-100",
-          )}
-        >
-          {canPause || canDisconnect ? (
+    <>
+      <ChannelCard
+        expanded={expanded}
+        onToggle={() => setExpandedOverride(!expanded)}
+        glyph={<WeChatGlyph active={expanded} />}
+        title={imCopy.wechatTitle}
+        badge={<StatusBadge state={state} />}
+        busy={busyAction !== null}
+        actions={
+          canPause || canDisconnect ? (
             <ChannelActionsMenu
               disabled={busyAction !== null}
               canStop={canPause}
@@ -120,89 +82,78 @@ export function WeChatCard({
               onStop={onStop}
               onDisconnect={() => setConfirmDisconnectOpen(true)}
             />
+          ) : null
+        }
+      >
+        <div className="space-y-3 pl-8 pr-1">
+          <ConnectionSteps
+            steps={stepsForState(state, imCopy)}
+            status={statusHintForState(state, imCopy)}
+          />
+
+          {state === "running" ? (
+            <WeChatCommandReference imCopy={imCopy} />
+          ) : null}
+
+          <WeChatSetupAction
+            imCopy={imCopy}
+            state={state}
+            busyAction={busyAction}
+            onConnect={onConnect}
+            onRescan={onRescan}
+          />
+
+          {showQr ? (
+            <div className="flex flex-wrap items-center gap-5">
+              <div className="flex h-[168px] w-[168px] shrink-0 items-center justify-center rounded-sm border border-line bg-elevated">
+                {qrSrc ? (
+                  <img
+                    src={qrSrc}
+                    alt={imCopy.qrAlt}
+                    className="h-[148px] w-[148px] object-contain"
+                  />
+                ) : (
+                  <span className="text-[12px] text-ink-muted">
+                    {imCopy.noQrYet}
+                  </span>
+                )}
+              </div>
+              <div className="min-w-0 space-y-3 text-[13px] leading-[1.55] text-ink-soft">
+                <p>{imCopy.scanHint}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={busyAction !== null}
+                  leadingIcon={
+                    busyAction === "rescan" ? (
+                      <CircleNotch size={13} className="animate-spin" />
+                    ) : (
+                      <QrCode size={13} />
+                    )
+                  }
+                  onClick={onRescan}
+                >
+                  {busyAction === "rescan"
+                    ? imCopy.working
+                    : imCopy.regenerateQr}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {invokeError || status?.lastError ? (
+            <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-error/80">
+                {imCopy.lastError}
+              </div>
+              <div className="select-text break-words font-mono text-[11.5px] leading-[1.45] text-error">
+                {invokeError ?? status?.lastError}
+              </div>
+            </div>
           ) : null}
         </div>
-      </div>
-
-      <div
-        className={cn(
-          "grid transition-[grid-template-rows] duration-200 ease-[cubic-bezier(0.2,0,0,1)]",
-          expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-        )}
-      >
-        <div className="overflow-hidden" inert={!expanded || undefined}>
-          <div className="border-t border-line/70 bg-hover/25 px-2.5 py-3">
-            <div className="space-y-3 pl-8 pr-1">
-              <ConnectionSteps
-                steps={stepsForState(state, imCopy)}
-                status={statusHintForState(state, imCopy)}
-              />
-
-              {state === "running" ? (
-                <WeChatCommandReference imCopy={imCopy} />
-              ) : null}
-
-              <WeChatSetupAction
-                imCopy={imCopy}
-                state={state}
-                busyAction={busyAction}
-                onConnect={onConnect}
-                onRescan={onRescan}
-              />
-
-              {showQr ? (
-                <div className="flex flex-wrap items-center gap-5">
-                  <div className="flex h-[168px] w-[168px] shrink-0 items-center justify-center rounded-sm border border-line bg-elevated">
-                    {qrSrc ? (
-                      <img
-                        src={qrSrc}
-                        alt={imCopy.qrAlt}
-                        className="h-[148px] w-[148px] object-contain"
-                      />
-                    ) : (
-                      <span className="text-[12px] text-ink-muted">
-                        {imCopy.noQrYet}
-                      </span>
-                    )}
-                  </div>
-                  <div className="min-w-0 space-y-3 text-[13px] leading-[1.55] text-ink-soft">
-                    <p>{imCopy.scanHint}</p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={busyAction !== null}
-                      leadingIcon={
-                        busyAction === "rescan" ? (
-                          <CircleNotch size={13} className="animate-spin" />
-                        ) : (
-                          <QrCode size={13} />
-                        )
-                      }
-                      onClick={onRescan}
-                    >
-                      {busyAction === "rescan"
-                        ? imCopy.working
-                        : imCopy.regenerateQr}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-
-              {invokeError || status?.lastError ? (
-                <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-error/80">
-                    {imCopy.lastError}
-                  </div>
-                  <div className="select-text break-words font-mono text-[11.5px] leading-[1.45] text-error">
-                    {invokeError ?? status?.lastError}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
+      </ChannelCard>
 
       <Dialog.Root
         open={confirmDisconnectOpen}
@@ -253,7 +204,7 @@ export function WeChatCard({
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-    </section>
+    </>
   );
 }
 
