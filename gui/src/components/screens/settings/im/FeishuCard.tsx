@@ -1,7 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  CaretDown,
   CaretRight,
   Check,
   CircleNotch,
@@ -181,15 +180,11 @@ export function FeishuCard({
         >
           <span
             className={cn(
-              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-soft transition-colors",
-              expanded && "text-ink",
+              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-soft transition-[color,transform] duration-150 ease-[cubic-bezier(0.2,0,0,1)]",
+              expanded ? "rotate-90 text-ink" : "rotate-0",
             )}
           >
-            {expanded ? (
-              <CaretDown size={12} weight="bold" />
-            ) : (
-              <CaretRight size={12} weight="bold" />
-            )}
+            <CaretRight size={12} weight="bold" />
           </span>
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <FeishuGlyph active={expanded} />
@@ -233,123 +228,130 @@ export function FeishuCard({
         </div>
       </div>
 
-      {expanded && (
-        <div className="border-t border-line/70 bg-hover/25 px-2.5 py-3">
-          <div className="space-y-4 pl-8 pr-1">
-            {derivedState === "running" ? (
-              <FeishuSetupGuide
-                imCopy={imCopy}
-                status={feishuStatusHintForState(derivedState, imCopy)}
-                onOpenConsole={openFeishuConsole}
-                openDisabled={busy}
-                statusPlacement="top"
-                afterStatus={<FeishuCommandReference imCopy={imCopy} />}
-                collapsible
-              />
-            ) : (
-              <FeishuSetupGuide
-                imCopy={imCopy}
-                status={feishuStatusHintForState(derivedState, imCopy)}
-                onOpenConsole={openFeishuConsole}
-                openDisabled={busy}
-                credentialsForm={
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-                        {imCopy.feishuAppIdLabel}
-                      </span>
-                      <input
-                        value={appId}
-                        onChange={(e) => setAppId(e.target.value)}
-                        placeholder={imCopy.feishuAppIdPlaceholder}
-                        spellCheck={false}
-                        className="w-full rounded-sm border border-line bg-surface px-3 py-2 font-mono text-[12.5px] text-ink outline-none transition-colors placeholder:text-ink-muted/70 focus:border-brand focus:ring-[3px] focus:ring-brand/20"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-                        {imCopy.feishuAppSecretLabel}
-                      </span>
-                      <input
-                        type="password"
-                        value={appSecret}
-                        onChange={(e) => setAppSecret(e.target.value)}
-                        placeholder={
-                          hasSavedSecretForApp
-                            ? imCopy.feishuSecretSavedPlaceholder
-                            : imCopy.feishuAppSecretPlaceholder
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-[cubic-bezier(0.2,0,0,1)]",
+          expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+      >
+        <div className="overflow-hidden" inert={!expanded || undefined}>
+          <div className="border-t border-line/70 bg-hover/25 px-2.5 py-3">
+            <div className="space-y-4 pl-8 pr-1">
+              {derivedState === "running" ? (
+                <FeishuSetupGuide
+                  imCopy={imCopy}
+                  status={feishuStatusHintForState(derivedState, imCopy)}
+                  onOpenConsole={openFeishuConsole}
+                  openDisabled={busy}
+                  statusPlacement="top"
+                  afterStatus={<FeishuCommandReference imCopy={imCopy} />}
+                  collapsible
+                />
+              ) : (
+                <FeishuSetupGuide
+                  imCopy={imCopy}
+                  status={feishuStatusHintForState(derivedState, imCopy)}
+                  onOpenConsole={openFeishuConsole}
+                  openDisabled={busy}
+                  credentialsForm={
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                          {imCopy.feishuAppIdLabel}
+                        </span>
+                        <input
+                          value={appId}
+                          onChange={(e) => setAppId(e.target.value)}
+                          placeholder={imCopy.feishuAppIdPlaceholder}
+                          spellCheck={false}
+                          className="w-full rounded-sm border border-line bg-surface px-3 py-2 font-mono text-[12.5px] text-ink outline-none transition-colors placeholder:text-ink-muted/70 focus:border-brand focus:ring-[3px] focus:ring-brand/20"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                          {imCopy.feishuAppSecretLabel}
+                        </span>
+                        <input
+                          type="password"
+                          value={appSecret}
+                          onChange={(e) => setAppSecret(e.target.value)}
+                          placeholder={
+                            hasSavedSecretForApp
+                              ? imCopy.feishuSecretSavedPlaceholder
+                              : imCopy.feishuAppSecretPlaceholder
+                          }
+                          spellCheck={false}
+                          className="w-full rounded-sm border border-line bg-surface px-3 py-2 font-mono text-[12.5px] text-ink outline-none transition-colors placeholder:text-ink-muted/70 focus:border-brand focus:ring-[3px] focus:ring-brand/20"
+                        />
+                      </label>
+                    </div>
+                  }
+                  saveAction={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        disabled={busy || !canSaveCredentials}
+                        leadingIcon={
+                          localBusy === "save" ? (
+                            <CircleNotch size={13} className="animate-spin" />
+                          ) : (
+                            <Check size={13} />
+                          )
                         }
-                        spellCheck={false}
-                        className="w-full rounded-sm border border-line bg-surface px-3 py-2 font-mono text-[12.5px] text-ink outline-none transition-colors placeholder:text-ink-muted/70 focus:border-brand focus:ring-[3px] focus:ring-brand/20"
-                      />
-                    </label>
-                  </div>
-                }
-                saveAction={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      disabled={busy || !canSaveCredentials}
-                      leadingIcon={
-                        localBusy === "save" ? (
-                          <CircleNotch size={13} className="animate-spin" />
-                        ) : (
-                          <Check size={13} />
-                        )
-                      }
-                      onClick={saveCredentials}
-                    >
-                      {localBusy === "save"
-                        ? imCopy.working
-                        : imCopy.feishuSaveCredentials}
-                    </Button>
-                    {localBusy === "load" ? (
-                      <span className="text-[12px] text-ink-muted">
-                        {imCopy.feishuConfigLoading}
-                      </span>
-                    ) : null}
-                  </div>
-                }
-                startAction={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      disabled={busy || !canStartService}
-                      leadingIcon={
-                        localBusy === "connect" ? (
-                          <CircleNotch size={13} className="animate-spin" />
-                        ) : (
-                          <Power size={13} />
-                        )
-                      }
-                      onClick={connect}
-                    >
-                      {localBusy === "connect"
-                        ? imCopy.working
-                        : imCopy.feishuStartService}
-                    </Button>
-                  </div>
-                }
-              />
-            )}
+                        onClick={saveCredentials}
+                      >
+                        {localBusy === "save"
+                          ? imCopy.working
+                          : imCopy.feishuSaveCredentials}
+                      </Button>
+                      {localBusy === "load" ? (
+                        <span className="text-[12px] text-ink-muted">
+                          {imCopy.feishuConfigLoading}
+                        </span>
+                      ) : null}
+                    </div>
+                  }
+                  startAction={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        disabled={busy || !canStartService}
+                        leadingIcon={
+                          localBusy === "connect" ? (
+                            <CircleNotch size={13} className="animate-spin" />
+                          ) : (
+                            <Power size={13} />
+                          )
+                        }
+                        onClick={connect}
+                      >
+                        {localBusy === "connect"
+                          ? imCopy.working
+                          : imCopy.feishuStartService}
+                      </Button>
+                    </div>
+                  }
+                />
+              )}
 
-            {localError || statusLoadError || status?.lastError ? (
-              <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-error/80">
-                  {imCopy.lastError}
+              {localError || statusLoadError || status?.lastError ? (
+                <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-error/80">
+                    {imCopy.lastError}
+                  </div>
+                  <div className="select-text break-words font-mono text-[11.5px] leading-[1.45] text-error">
+                    {localError ?? statusLoadError ?? status?.lastError}
+                  </div>
                 </div>
-                <div className="select-text break-words font-mono text-[11.5px] leading-[1.45] text-error">
-                  {localError ?? statusLoadError ?? status?.lastError}
-                </div>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </div>
-      )}
+      </div>
 
       <Dialog.Root
         open={confirmDisconnectOpen}

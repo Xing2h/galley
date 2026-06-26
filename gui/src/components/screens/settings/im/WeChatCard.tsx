@@ -1,7 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  CaretDown,
   CaretRight,
   CircleNotch,
   Power,
@@ -89,15 +88,11 @@ export function WeChatCard({
         >
           <span
             className={cn(
-              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-soft transition-colors",
-              expanded && "text-ink",
+              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-soft transition-[color,transform] duration-150 ease-[cubic-bezier(0.2,0,0,1)]",
+              expanded ? "rotate-90 text-ink" : "rotate-0",
             )}
           >
-            {expanded ? (
-              <CaretDown size={12} weight="bold" />
-            ) : (
-              <CaretRight size={12} weight="bold" />
-            )}
+            <CaretRight size={12} weight="bold" />
           </span>
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <WeChatGlyph active={expanded} />
@@ -129,78 +124,85 @@ export function WeChatCard({
         </div>
       </div>
 
-      {expanded && (
-        <div className="border-t border-line/70 bg-hover/25 px-2.5 py-3">
-          <div className="space-y-3 pl-8 pr-1">
-            <ConnectionSteps
-              steps={stepsForState(state, imCopy)}
-              status={statusHintForState(state, imCopy)}
-            />
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-[cubic-bezier(0.2,0,0,1)]",
+          expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+      >
+        <div className="overflow-hidden" inert={!expanded || undefined}>
+          <div className="border-t border-line/70 bg-hover/25 px-2.5 py-3">
+            <div className="space-y-3 pl-8 pr-1">
+              <ConnectionSteps
+                steps={stepsForState(state, imCopy)}
+                status={statusHintForState(state, imCopy)}
+              />
 
-            {state === "running" ? (
-              <WeChatCommandReference imCopy={imCopy} />
-            ) : null}
+              {state === "running" ? (
+                <WeChatCommandReference imCopy={imCopy} />
+              ) : null}
 
-            <WeChatSetupAction
-              imCopy={imCopy}
-              state={state}
-              busyAction={busyAction}
-              onConnect={onConnect}
-              onRescan={onRescan}
-            />
+              <WeChatSetupAction
+                imCopy={imCopy}
+                state={state}
+                busyAction={busyAction}
+                onConnect={onConnect}
+                onRescan={onRescan}
+              />
 
-            {showQr ? (
-              <div className="flex flex-wrap items-center gap-5">
-                <div className="flex h-[168px] w-[168px] shrink-0 items-center justify-center rounded-sm border border-line bg-elevated">
-                  {qrSrc ? (
-                    <img
-                      src={qrSrc}
-                      alt={imCopy.qrAlt}
-                      className="h-[148px] w-[148px] object-contain"
-                    />
-                  ) : (
-                    <span className="text-[12px] text-ink-muted">
-                      {imCopy.noQrYet}
-                    </span>
-                  )}
+              {showQr ? (
+                <div className="flex flex-wrap items-center gap-5">
+                  <div className="flex h-[168px] w-[168px] shrink-0 items-center justify-center rounded-sm border border-line bg-elevated">
+                    {qrSrc ? (
+                      <img
+                        src={qrSrc}
+                        alt={imCopy.qrAlt}
+                        className="h-[148px] w-[148px] object-contain"
+                      />
+                    ) : (
+                      <span className="text-[12px] text-ink-muted">
+                        {imCopy.noQrYet}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 space-y-3 text-[13px] leading-[1.55] text-ink-soft">
+                    <p>{imCopy.scanHint}</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={busyAction !== null}
+                      leadingIcon={
+                        busyAction === "rescan" ? (
+                          <CircleNotch size={13} className="animate-spin" />
+                        ) : (
+                          <QrCode size={13} />
+                        )
+                      }
+                      onClick={onRescan}
+                    >
+                      {busyAction === "rescan"
+                        ? imCopy.working
+                        : imCopy.regenerateQr}
+                    </Button>
+                  </div>
                 </div>
-                <div className="min-w-0 space-y-3 text-[13px] leading-[1.55] text-ink-soft">
-                  <p>{imCopy.scanHint}</p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    disabled={busyAction !== null}
-                    leadingIcon={
-                      busyAction === "rescan" ? (
-                        <CircleNotch size={13} className="animate-spin" />
-                      ) : (
-                        <QrCode size={13} />
-                      )
-                    }
-                    onClick={onRescan}
-                  >
-                    {busyAction === "rescan"
-                      ? imCopy.working
-                      : imCopy.regenerateQr}
-                  </Button>
-                </div>
-              </div>
-            ) : null}
+              ) : null}
 
-            {invokeError || status?.lastError ? (
-              <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-error/80">
-                  {imCopy.lastError}
+              {invokeError || status?.lastError ? (
+                <div className="rounded-sm border border-error/20 bg-error/[var(--opacity-subtle)] px-3 py-2">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-error/80">
+                    {imCopy.lastError}
+                  </div>
+                  <div className="select-text break-words font-mono text-[11.5px] leading-[1.45] text-error">
+                    {invokeError ?? status?.lastError}
+                  </div>
                 </div>
-                <div className="select-text break-words font-mono text-[11.5px] leading-[1.45] text-error">
-                  {invokeError ?? status?.lastError}
-                </div>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </div>
-      )}
+      </div>
 
       <Dialog.Root
         open={confirmDisconnectOpen}
