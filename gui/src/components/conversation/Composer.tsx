@@ -663,10 +663,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     disabled={disabled || stopMode}
                     aria-label={copy.composer.attachImage}
                     className={cn(
-                      "flex size-8 items-center justify-center rounded-full text-ink-muted transition-colors",
+                      "flex size-8 items-center justify-center rounded-full text-ink-muted",
+                      // Share the action row's "key travel" motion (rise 1px /
+                      // sink 2px) so hovering across 📎 / 🎯 / send feels cohesive —
+                      // but keep the paperclip's intentional border-/shadow-less
+                      // tertiary weight.
+                      "transition-[background-color,color,transform] duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
+                      "hover:-translate-y-px active:translate-y-[2px] active:scale-[0.97]",
                       "hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35",
                       (disabled || stopMode) &&
-                        "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-ink-muted",
+                        "cursor-not-allowed opacity-50 hover:translate-y-0 active:translate-y-0 active:scale-100 hover:bg-transparent hover:text-ink-muted",
                     )}
                   >
                     <Paperclip size={16} weight="thin" />
@@ -788,7 +794,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                           !hasSendableContent ||
                           goalSubmitting ||
                           (requiresModelConfig && !onConfigureModels)) &&
-                          "cursor-not-allowed opacity-50 hover:translate-y-0 hover:shadow-none",
+                          // Empty/disabled = a quiet neutral "unlit" circle, not a
+                          // faded brand fill (50% of pale apricot still read as a
+                          // soft button). The brand fill then *blooms* in via the
+                          // base button's color/shadow transition the moment the
+                          // first character lands.
+                          "cursor-not-allowed border-line bg-chrome text-ink-muted shadow-none hover:translate-y-0 hover:border-line hover:bg-chrome hover:text-ink-muted hover:shadow-none",
                       )}
                     >
                       {requiresModelConfig ? (
