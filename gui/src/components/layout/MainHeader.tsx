@@ -123,6 +123,14 @@ const TOPBAR_CONTROL_MOTION = cn(
   "active:translate-y-[0.5px] active:duration-[45ms]",
 );
 
+const TOPBAR_POPOVER_OPEN_STATE =
+  "data-[state=open]:translate-y-px data-[state=open]:shadow-[var(--shadow-control-press)]";
+
+const TOPBAR_ICON_POPOVER_OPEN_STATE = cn(
+  TOPBAR_POPOVER_OPEN_STATE,
+  "data-[state=open]:border-line data-[state=open]:bg-hover data-[state=open]:text-ink",
+);
+
 const TOPBAR_STATUS_BADGE_BASE = cn(
   "inline-flex h-7 items-center whitespace-nowrap rounded-md border px-2.5 text-[12px] font-medium",
   "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
@@ -544,7 +552,10 @@ function GoalIndicator({
           <button
             type="button"
             aria-label={copy.goalTooltip}
-            className={topBarStatusBadgeClass(style.tone, "gap-1.5")}
+            className={topBarStatusBadgeClass(
+              style.tone,
+              cn("gap-1.5", TOPBAR_POPOVER_OPEN_STATE),
+            )}
           >
             <Icon size={14} weight="thin" />
             <span>{label}</span>
@@ -885,7 +896,8 @@ function BrowserControlIndicator({
  *   - Secondary link to Settings → Approval tab
  *
  * Visual: warning-tinted text badge using the shared TopBar status
- * style. No animation — users tune out blinking; static colour reads
+ * style. Hover/open use the shared TopBar control rhythm, but there is
+ * no looping animation — users tune out blinking; static colour reads
  * "this is a state, be aware" without becoming background noise.
  */
 function YoloIndicator({
@@ -905,7 +917,11 @@ function YoloIndicator({
             aria-label={copy.topbar.yoloView}
             className={topBarStatusBadgeClass(
               "warning",
-              "uppercase tracking-[0.04em]",
+              cn(
+                "uppercase tracking-[0.04em] hover:-translate-y-px hover:border-warning hover:bg-warning hover:text-elevated hover:shadow-[var(--shadow-button-raised-hover)]",
+                TOPBAR_POPOVER_OPEN_STATE,
+                "data-[state=open]:border-warning data-[state=open]:bg-warning data-[state=open]:text-elevated",
+              ),
             )}
           >
             YOLO
@@ -1317,6 +1333,7 @@ function ConversationFontSizeMenu({
               "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
               "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
               "border-transparent text-ink-soft hover:bg-hover hover:text-ink",
+              TOPBAR_ICON_POPOVER_OPEN_STATE,
             )}
           >
             <FontSizeTriggerGlyph size={selectedOption.triggerSizePx} />

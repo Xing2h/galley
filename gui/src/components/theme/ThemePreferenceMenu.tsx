@@ -99,12 +99,13 @@ export function ThemePreferenceMenu({
               type="button"
               aria-label={triggerLabel}
               className={cn(
-                "relative flex size-7 items-center justify-center rounded-sm border border-transparent text-ink-muted",
+                "relative flex size-7 items-center justify-center rounded-md border border-transparent text-ink-muted",
                 "transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
-                "hover:border-line hover:bg-hover hover:text-ink active:translate-y-[0.5px]",
+                "hover:border-line hover:bg-hover hover:text-ink active:translate-y-[0.5px] active:duration-[45ms]",
+                "data-[state=open]:translate-y-px data-[state=open]:border-line data-[state=open]:bg-hover data-[state=open]:text-ink data-[state=open]:shadow-[var(--shadow-control-press)]",
                 "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
                 preference !== "system" &&
-                  "border-brand/30 bg-brand/[var(--opacity-subtle)] text-brand-strong hover:bg-brand/[var(--opacity-soft)] hover:text-brand-strong",
+                  "border-brand/30 bg-brand/[var(--opacity-subtle)] text-brand-strong hover:bg-brand/[var(--opacity-soft)] hover:text-brand-strong data-[state=open]:border-brand/40 data-[state=open]:bg-brand/[var(--opacity-soft)] data-[state=open]:text-brand-strong",
               )}
             >
               <ActualIcon size={16} weight="thin" />
