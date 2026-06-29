@@ -5,6 +5,7 @@ import {
   addCustomPrompt as addCustomPromptToPrefs,
   deleteCustomPrompt as deleteCustomPromptFromPrefs,
   defaultSavedPromptsPrefs,
+  moveCustomPrompt as moveCustomPromptInPrefs,
   movePinnedPrompt as movePinnedPromptInPrefs,
   normalizeSavedPromptsPrefs,
   SAVED_PROMPTS_PREF_KEY,
@@ -17,7 +18,10 @@ interface SavedPromptsState {
   prefs: SavedPromptsPrefs;
   hydrated: boolean;
   hydrate: () => Promise<void>;
-  addCustomPrompt: (input: { title: string; body: string }) => Promise<string | null>;
+  addCustomPrompt: (input: {
+    title: string;
+    body: string;
+  }) => Promise<string | null>;
   updateCustomPrompt: (
     id: string,
     input: { title: string; body: string },
@@ -25,6 +29,7 @@ interface SavedPromptsState {
   deleteCustomPrompt: (id: string) => Promise<void>;
   setPromptPinned: (id: string, pinned: boolean) => Promise<void>;
   movePinnedPrompt: (id: string, direction: "up" | "down") => Promise<void>;
+  moveCustomPrompt: (id: string, direction: "up" | "down") => Promise<void>;
 }
 
 export const useSavedPromptsStore = create<SavedPromptsState>((set, get) => ({
@@ -78,6 +83,13 @@ export const useSavedPromptsStore = create<SavedPromptsState>((set, get) => ({
 
   movePinnedPrompt: async (id, direction) => {
     const next = movePinnedPromptInPrefs(get().prefs, id, direction);
+    if (next === get().prefs) return;
+    await persist(next);
+    set({ prefs: next });
+  },
+
+  moveCustomPrompt: async (id, direction) => {
+    const next = moveCustomPromptInPrefs(get().prefs, id, direction);
     if (next === get().prefs) return;
     await persist(next);
     set({ prefs: next });

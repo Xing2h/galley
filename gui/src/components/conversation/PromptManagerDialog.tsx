@@ -1,19 +1,17 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   Copy,
+  Eye,
   PencilSimple,
   Plus,
   PushPinSimple,
   Trash,
   X,
 } from "@phosphor-icons/react";
-import {
-  useState,
-  type MouseEvent,
-  type ReactNode,
-} from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
 import {
@@ -28,7 +26,7 @@ import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useSavedPromptsStore } from "@/stores/saved-prompts";
 
-type ManagerMode = "library" | "new" | "edit";
+type ManagerMode = "library" | "new" | "edit" | "preview";
 
 export function PromptManagerDialog({
   open,
@@ -59,6 +57,9 @@ export function PromptManagerDialog({
   const movePinnedPrompt = useSavedPromptsStore(
     (state) => state.movePinnedPrompt,
   );
+  const moveCustomPrompt = useSavedPromptsStore(
+    (state) => state.moveCustomPrompt,
+  );
   const allPrompts = resolveSavedPrompts(presets, prefs);
   const pinnedPrompts = resolvePinnedPrompts(presets, prefs).slice(
     0,
@@ -66,24 +67,51 @@ export function PromptManagerDialog({
   );
   const pinnedIds = new Set(pinnedPrompts.map((prompt) => prompt.id));
   const otherPrompts = allPrompts.filter((prompt) => !pinnedIds.has(prompt.id));
+  const customOrderIds = prefs.customPrompts.map((prompt) => prompt.id);
   const [mode, setMode] = useState<ManagerMode>("library");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [pinLimitNotice, setPinLimitNotice] = useState<string | null>(null);
   const editingPrompt =
     mode === "edit"
       ? allPrompts.find(
           (prompt) => prompt.kind === "custom" && prompt.id === editingId,
         )
       : null;
+  const previewPrompt =
+    mode === "preview"
+      ? allPrompts.find((prompt) => prompt.id === previewId)
+      : null;
 
   const returnToLibrary = () => {
     setMode("library");
     setEditingId(null);
+    setPreviewId(null);
+    setPinLimitNotice(null);
   };
 
   const editCustomPrompt = (prompt: ResolvedSavedPrompt) => {
     if (prompt.kind !== "custom") return;
     setEditingId(prompt.id);
+    setPreviewId(null);
+    setPinLimitNotice(null);
     setMode("edit");
+  };
+
+  const previewSavedPrompt = (prompt: ResolvedSavedPrompt) => {
+    setPreviewId(prompt.id);
+    setEditingId(null);
+    setPinLimitNotice(null);
+    setMode("preview");
+  };
+
+  const togglePinnedWithFeedback = (prompt: ResolvedSavedPrompt) => {
+    if (!prompt.pinned && !canPinPrompt(prefs, prompt.id)) {
+      setPinLimitNotice(promptCopy.pinnedLimit(MAX_PINNED_PROMPTS));
+      return;
+    }
+    setPinLimitNotice(null);
+    void setPromptPinned(prompt.id, !prompt.pinned);
   };
 
   return (
@@ -98,11 +126,11 @@ export function PromptManagerDialog({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-overlay" />
         <Dialog.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 flex h-[560px] w-[760px] -translate-x-1/2 -translate-y-1/2 flex-col",
+            "fixed left-1/2 top-1/2 z-50 flex h-[680px] w-[920px] -translate-x-1/2 -translate-y-1/2 flex-col",
             "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] overflow-hidden rounded-lg border border-line bg-app shadow-elevated",
           )}
         >
-          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-app px-5 py-3.5">
+          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-app px-6 py-3.5">
             <div className="min-w-0">
               <Dialog.Title className="truncate text-[16px] font-semibold text-ink">
                 {promptCopy.managerTitle}
@@ -127,19 +155,23 @@ export function PromptManagerDialog({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-app px-5 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-app px-6 py-5">
             {mode === "library" ? (
               <PromptLibrary
                 pinnedPrompts={pinnedPrompts}
                 otherPrompts={otherPrompts}
                 pinnedIds={prefs.pinnedIds}
+                customOrderIds={customOrderIds}
+                pinLimitNotice={pinLimitNotice}
                 onUsePrompt={onUsePrompt}
+                onPreviewPrompt={previewSavedPrompt}
                 canPinPromptById={(id) => canPinPrompt(prefs, id)}
-                onTogglePinned={(prompt) => {
-                  void setPromptPinned(prompt.id, !prompt.pinned);
-                }}
+                onTogglePinned={togglePinnedWithFeedback}
                 onMovePinned={(prompt, direction) => {
                   void movePinnedPrompt(prompt.id, direction);
+                }}
+                onMoveCustom={(prompt, direction) => {
+                  void moveCustomPrompt(prompt.id, direction);
                 }}
                 onCopyAsCustom={(prompt) => {
                   void addCustomPrompt({
@@ -151,6 +183,23 @@ export function PromptManagerDialog({
                 onDeleteCustom={(prompt) => {
                   void deleteCustomPrompt(prompt.id);
                 }}
+              />
+            ) : mode === "preview" && previewPrompt ? (
+              <PromptPreview
+                prompt={previewPrompt}
+                canPin={canPinPrompt(prefs, previewPrompt.id)}
+                pinLimitNotice={pinLimitNotice}
+                onBack={returnToLibrary}
+                onUse={() => onUsePrompt(previewPrompt)}
+                onTogglePinned={() => togglePinnedWithFeedback(previewPrompt)}
+                onCopyAsCustom={() => {
+                  void addCustomPrompt({
+                    title: previewPrompt.title,
+                    body: previewPrompt.body,
+                  });
+                  returnToLibrary();
+                }}
+                onEditCustom={() => editCustomPrompt(previewPrompt)}
               />
             ) : mode === "new" ? (
               <CustomPromptEditor
@@ -196,10 +245,14 @@ function PromptLibrary({
   pinnedPrompts,
   otherPrompts,
   pinnedIds,
+  customOrderIds,
+  pinLimitNotice,
   canPinPromptById,
   onUsePrompt,
+  onPreviewPrompt,
   onTogglePinned,
   onMovePinned,
+  onMoveCustom,
   onCopyAsCustom,
   onEditCustom,
   onDeleteCustom,
@@ -207,13 +260,14 @@ function PromptLibrary({
   pinnedPrompts: ResolvedSavedPrompt[];
   otherPrompts: ResolvedSavedPrompt[];
   pinnedIds: string[];
+  customOrderIds: string[];
+  pinLimitNotice: string | null;
   canPinPromptById: (id: string) => boolean;
   onUsePrompt: (prompt: ResolvedSavedPrompt) => void;
+  onPreviewPrompt: (prompt: ResolvedSavedPrompt) => void;
   onTogglePinned: (prompt: ResolvedSavedPrompt) => void;
-  onMovePinned: (
-    prompt: ResolvedSavedPrompt,
-    direction: "up" | "down",
-  ) => void;
+  onMovePinned: (prompt: ResolvedSavedPrompt, direction: "up" | "down") => void;
+  onMoveCustom: (prompt: ResolvedSavedPrompt, direction: "up" | "down") => void;
   onCopyAsCustom: (prompt: ResolvedSavedPrompt) => void;
   onEditCustom: (prompt: ResolvedSavedPrompt) => void;
   onDeleteCustom: (prompt: ResolvedSavedPrompt) => void;
@@ -222,15 +276,19 @@ function PromptLibrary({
   const promptCopy = copy.composer.savedPrompts;
   return (
     <div className="space-y-5">
+      <PromptLimitNotice message={pinLimitNotice} />
       <PromptCardSection
         label={promptCopy.sectionPinned}
         prompts={pinnedPrompts}
         emptyLabel={promptCopy.noPinned}
         pinnedIds={pinnedIds}
+        customOrderIds={customOrderIds}
         canPinPromptById={canPinPromptById}
         onUsePrompt={onUsePrompt}
+        onPreviewPrompt={onPreviewPrompt}
         onTogglePinned={onTogglePinned}
         onMovePinned={onMovePinned}
+        onMoveCustom={onMoveCustom}
         onCopyAsCustom={onCopyAsCustom}
         onEditCustom={onEditCustom}
         onDeleteCustom={onDeleteCustom}
@@ -240,10 +298,13 @@ function PromptLibrary({
           label={promptCopy.sectionOther}
           prompts={otherPrompts}
           pinnedIds={pinnedIds}
+          customOrderIds={customOrderIds}
           canPinPromptById={canPinPromptById}
           onUsePrompt={onUsePrompt}
+          onPreviewPrompt={onPreviewPrompt}
           onTogglePinned={onTogglePinned}
           onMovePinned={onMovePinned}
+          onMoveCustom={onMoveCustom}
           onCopyAsCustom={onCopyAsCustom}
           onEditCustom={onEditCustom}
           onDeleteCustom={onDeleteCustom}
@@ -258,10 +319,13 @@ function PromptCardSection({
   prompts,
   emptyLabel,
   pinnedIds,
+  customOrderIds,
   canPinPromptById,
   onUsePrompt,
+  onPreviewPrompt,
   onTogglePinned,
   onMovePinned,
+  onMoveCustom,
   onCopyAsCustom,
   onEditCustom,
   onDeleteCustom,
@@ -270,13 +334,13 @@ function PromptCardSection({
   prompts: ResolvedSavedPrompt[];
   emptyLabel?: string;
   pinnedIds: string[];
+  customOrderIds: string[];
   canPinPromptById: (id: string) => boolean;
   onUsePrompt: (prompt: ResolvedSavedPrompt) => void;
+  onPreviewPrompt: (prompt: ResolvedSavedPrompt) => void;
   onTogglePinned: (prompt: ResolvedSavedPrompt) => void;
-  onMovePinned: (
-    prompt: ResolvedSavedPrompt,
-    direction: "up" | "down",
-  ) => void;
+  onMovePinned: (prompt: ResolvedSavedPrompt, direction: "up" | "down") => void;
+  onMoveCustom: (prompt: ResolvedSavedPrompt, direction: "up" | "down") => void;
   onCopyAsCustom: (prompt: ResolvedSavedPrompt) => void;
   onEditCustom: (prompt: ResolvedSavedPrompt) => void;
   onDeleteCustom: (prompt: ResolvedSavedPrompt) => void;
@@ -290,7 +354,7 @@ function PromptCardSection({
         <div className="h-px flex-1 bg-line/70" />
       </div>
       {prompts.length > 0 ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
           {prompts.map((prompt) => (
             <PromptCard
               key={prompt.id}
@@ -298,9 +362,17 @@ function PromptCardSection({
               canPin={canPinPromptById(prompt.id)}
               pinnedIndex={pinnedIds.indexOf(prompt.id)}
               pinnedCount={pinnedIds.length}
+              customIndex={
+                prompt.kind === "custom"
+                  ? customOrderIds.indexOf(prompt.id)
+                  : -1
+              }
+              customCount={customOrderIds.length}
               onUse={() => onUsePrompt(prompt)}
+              onPreview={() => onPreviewPrompt(prompt)}
               onTogglePinned={() => onTogglePinned(prompt)}
               onMovePinned={(direction) => onMovePinned(prompt, direction)}
+              onMoveCustom={(direction) => onMoveCustom(prompt, direction)}
               onCopyAsCustom={() => onCopyAsCustom(prompt)}
               onEditCustom={() => onEditCustom(prompt)}
               onDeleteCustom={() => onDeleteCustom(prompt)}
@@ -321,9 +393,13 @@ function PromptCard({
   canPin,
   pinnedIndex,
   pinnedCount,
+  customIndex,
+  customCount,
   onUse,
+  onPreview,
   onTogglePinned,
   onMovePinned,
+  onMoveCustom,
   onCopyAsCustom,
   onEditCustom,
   onDeleteCustom,
@@ -332,9 +408,13 @@ function PromptCard({
   canPin: boolean;
   pinnedIndex: number;
   pinnedCount: number;
+  customIndex: number;
+  customCount: number;
   onUse: () => void;
+  onPreview: () => void;
   onTogglePinned: () => void;
   onMovePinned: (direction: "up" | "down") => void;
+  onMoveCustom: (direction: "up" | "down") => void;
   onCopyAsCustom: () => void;
   onEditCustom: () => void;
   onDeleteCustom: () => void;
@@ -345,7 +425,7 @@ function PromptCard({
     prompt.kind === "preset"
       ? promptCopy.presetPrompt
       : promptCopy.customPrompt;
-  const pinDisabled = !prompt.pinned && !canPin;
+  const pinAtLimit = !prompt.pinned && !canPin;
 
   const handleAction = (
     event: MouseEvent<HTMLButtonElement>,
@@ -359,7 +439,7 @@ function PromptCard({
     <div
       onClick={onUse}
       className={cn(
-        "group/card relative flex min-h-[122px] cursor-pointer flex-col rounded-md border border-line bg-surface p-3 pb-9 text-left",
+        "group/card relative flex min-h-[146px] cursor-pointer flex-col rounded-md border border-line bg-surface p-3 pb-9 text-left",
         "transition-[background-color,border-color,box-shadow,transform] duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)]",
         "hover:-translate-y-px hover:border-brand/35 hover:bg-elevated hover:shadow-[var(--shadow-neutral-control-hover)]",
         "active:translate-y-[1px] active:scale-[0.995]",
@@ -388,7 +468,7 @@ function PromptCard({
           </div>
         </div>
       </div>
-      <p className="mt-2 line-clamp-3 text-[12px] leading-[1.45] text-ink-soft">
+      <p className="mt-2 line-clamp-4 text-[12px] leading-[1.45] text-ink-soft">
         {prompt.body}
       </p>
       <div
@@ -398,21 +478,23 @@ function PromptCard({
         )}
       >
         <PromptCardIconButton
+          ariaLabel={promptCopy.previewPrompt}
+          onClick={(event) => handleAction(event, onPreview)}
+        >
+          <Eye size={12} weight="thin" />
+        </PromptCardIconButton>
+        <PromptCardIconButton
           ariaLabel={
-            pinDisabled
+            pinAtLimit
               ? promptCopy.pinnedLimit(MAX_PINNED_PROMPTS)
               : prompt.pinned
                 ? promptCopy.unpin
                 : promptCopy.pin
           }
           active={prompt.pinned}
-          disabled={pinDisabled}
           onClick={(event) => handleAction(event, onTogglePinned)}
         >
-          <PushPinSimple
-            size={12}
-            weight={prompt.pinned ? "fill" : "thin"}
-          />
+          <PushPinSimple size={12} weight={prompt.pinned ? "fill" : "thin"} />
         </PromptCardIconButton>
         {prompt.pinned && (
           <>
@@ -428,6 +510,26 @@ function PromptCard({
               disabled={pinnedIndex < 0 || pinnedIndex >= pinnedCount - 1}
               onClick={(event) =>
                 handleAction(event, () => onMovePinned("down"))
+              }
+            >
+              <ArrowDown size={12} weight="thin" />
+            </PromptCardIconButton>
+          </>
+        )}
+        {prompt.kind === "custom" && !prompt.pinned && (
+          <>
+            <PromptCardIconButton
+              ariaLabel={promptCopy.moveCustomUp}
+              disabled={customIndex <= 0}
+              onClick={(event) => handleAction(event, () => onMoveCustom("up"))}
+            >
+              <ArrowUp size={12} weight="thin" />
+            </PromptCardIconButton>
+            <PromptCardIconButton
+              ariaLabel={promptCopy.moveCustomDown}
+              disabled={customIndex < 0 || customIndex >= customCount - 1}
+              onClick={(event) =>
+                handleAction(event, () => onMoveCustom("down"))
               }
             >
               <ArrowDown size={12} weight="thin" />
@@ -459,6 +561,112 @@ function PromptCard({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function PromptPreview({
+  prompt,
+  canPin,
+  pinLimitNotice,
+  onBack,
+  onUse,
+  onTogglePinned,
+  onCopyAsCustom,
+  onEditCustom,
+}: {
+  prompt: ResolvedSavedPrompt;
+  canPin: boolean;
+  pinLimitNotice: string | null;
+  onBack: () => void;
+  onUse: () => void;
+  onTogglePinned: () => void;
+  onCopyAsCustom: () => void;
+  onEditCustom: () => void;
+}) {
+  const copy = useCopy();
+  const promptCopy = copy.composer.savedPrompts;
+  const kindLabel =
+    prompt.kind === "preset"
+      ? promptCopy.presetPrompt
+      : promptCopy.customPrompt;
+  const pinAtLimit = !prompt.pinned && !canPin;
+
+  return (
+    <div className="mx-auto flex min-h-full max-w-[760px] flex-col">
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          leadingIcon={<ArrowLeft size={12} weight="thin" />}
+          onClick={onBack}
+        >
+          {promptCopy.backToLibrary}
+        </Button>
+      </div>
+
+      <div className="mt-4 flex min-w-0 items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="text-[17px] font-semibold text-ink">{prompt.title}</h3>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <PromptMetaChip>{kindLabel}</PromptMetaChip>
+            {prompt.pinned && (
+              <PromptMetaChip>{promptCopy.sectionPinned}</PromptMetaChip>
+            )}
+          </div>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          leadingIcon={
+            <PushPinSimple size={12} weight={prompt.pinned ? "fill" : "thin"} />
+          }
+          onClick={onTogglePinned}
+          title={
+            pinAtLimit ? promptCopy.pinnedLimit(MAX_PINNED_PROMPTS) : undefined
+          }
+        >
+          {prompt.pinned ? promptCopy.unpin : promptCopy.pin}
+        </Button>
+      </div>
+
+      <PromptLimitNotice message={pinLimitNotice} className="mt-3" />
+
+      <div className="mt-4 rounded-md border border-line bg-surface p-4">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+          {promptCopy.fullPrompt}
+        </div>
+        <div className="mt-3 whitespace-pre-wrap text-[13px] leading-[1.65] text-ink">
+          {prompt.body}
+        </div>
+      </div>
+
+      <DialogActionRow align="between" className="mt-auto pt-5">
+        <div>
+          {prompt.kind === "preset" ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon={<Copy size={12} weight="thin" />}
+              onClick={onCopyAsCustom}
+            >
+              {promptCopy.copyAsCustom}
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon={<PencilSimple size={12} weight="thin" />}
+              onClick={onEditCustom}
+            >
+              {promptCopy.editPrompt}
+            </Button>
+          )}
+        </div>
+        <Button variant="primary" size="sm" onClick={onUse}>
+          {promptCopy.usePrompt}
+        </Button>
+      </DialogActionRow>
     </div>
   );
 }
@@ -503,6 +711,27 @@ function PromptMetaChip({ children }: { children: ReactNode }) {
   );
 }
 
+function PromptLimitNotice({
+  message,
+  className,
+}: {
+  message: string | null;
+  className?: string;
+}) {
+  if (!message) return null;
+  return (
+    <div
+      className={cn(
+        "rounded-md border border-warning/30 bg-warning/[var(--opacity-subtle)] px-3 py-2",
+        "text-[12.5px] leading-[1.45] text-warning",
+        className,
+      )}
+    >
+      {message}
+    </div>
+  );
+}
+
 function CustomPromptEditor({
   mode,
   prompt,
@@ -538,7 +767,7 @@ function CustomPromptEditor({
   };
 
   return (
-    <div className="mx-auto max-w-[560px]">
+    <div className="mx-auto max-w-[640px]">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
@@ -570,7 +799,7 @@ function CustomPromptEditor({
             onChange={(e) => setBody(e.target.value)}
             placeholder={promptCopy.bodyPlaceholder}
             className={cn(
-              "h-60 w-full resize-none rounded-sm border border-line bg-surface px-3 py-2 text-[13px] leading-[1.55] text-ink",
+              "h-72 w-full resize-none rounded-sm border border-line bg-surface px-3 py-2 text-[13px] leading-[1.55] text-ink",
               "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
             )}
           />

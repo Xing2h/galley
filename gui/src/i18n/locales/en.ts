@@ -268,7 +268,8 @@ export const enCopy: AppCopy = {
     askAnything: "Ask anything...",
     continueConversation: "Continue this conversation...",
     replyToContinue: "Reply to continue, or choose an option above",
-    byTheWay: "Use /btw to ask alongside without interrupting the current task...",
+    byTheWay:
+      "Use /btw to ask alongside without interrupting the current task...",
     send: "Send",
     sendWithEnter: "Send · Enter",
     stop: "Stop",
@@ -315,12 +316,15 @@ export const enCopy: AppCopy = {
       noPinned: "No pinned prompts yet.",
       replaceDraftTitle: "Replace the current draft?",
       replaceDraftBody: (title) =>
-        `The Composer already has text. Replace it with "${title}"?`,
+        `The input already has text. Replace it with "${title}"?`,
       replaceDraftAction: "Replace",
       managerTitle: "Saved prompts",
       managerDescription:
-        "Choose a saved prompt to prefill Composer, or manage pinned and custom prompts.",
-      usePrompt: "Use prompt",
+        "Choose a saved prompt to prefill the input, or manage pinned and custom prompts.",
+      usePrompt: "Fill input",
+      previewPrompt: "Preview",
+      backToLibrary: "Back",
+      fullPrompt: "Full prompt",
       sectionPresets: "Presets",
       sectionCustom: "Custom",
       sectionPinned: "Pinned",
@@ -333,38 +337,52 @@ export const enCopy: AppCopy = {
       titleLabel: "Title",
       bodyLabel: "Content",
       titlePlaceholder: "Short title",
-      bodyPlaceholder: "Write the prompt to prefill into Composer",
+      bodyPlaceholder: "Write the prompt to prefill into the input",
       pin: "Pin",
       unpin: "Unpin",
       copyAsCustom: "Copy as custom",
       moveUp: "Move up",
       moveDown: "Move down",
+      moveCustomUp: "Move custom up",
+      moveCustomDown: "Move custom down",
       deleteCustom: "Delete",
       emptyCustom: "No custom prompts yet.",
       savePrompt: "Save",
       createPrompt: "Create",
       readOnlyPreset: "Presets are read-only. Copy one to edit it.",
-      pinnedLimit: (count) => `Pin up to ${count}.`,
+      pinnedLimit: (count) => `Pin up to ${count}. Unpin one first.`,
       presets: {
-        webResearch: {
-          title: "Web check",
-          body: "Find and cross-check the latest information for this question. Prefer primary sources. End with the conclusion, evidence, and what remains uncertain:\n\n[Write the question]",
+        informationCheck: {
+          title: "Check information",
+          body: "Verify the question below. Prefer primary sources and reliable references; cross-check multiple sources when needed. End with: conclusion, evidence, disagreements or uncertainty, and sources:\n\n[Write the question to verify]",
         },
-        localFiles: {
-          title: "Organize files",
-          body: "Inspect this folder and identify what is most worth organizing. Give me the plan first; wait for confirmation before changing files:\n\n[Paste a path or note]",
+        summarizeMaterial: {
+          title: "Summarize material",
+          body: "Turn the material below into a structured summary. Preserve key facts, conclusions, follow-ups, and questions to ask next; do not over-rewrite the original meaning:\n\n[Paste material or a file path]",
+        },
+        translatePolish: {
+          title: "Translate or polish",
+          body: "Translate or polish the content below while preserving the meaning, tone, and structure. Give the revised version first, then list the key adjustments you made:\n\n[Paste content, and specify target language or style]",
         },
         reviewDraft: {
           title: "Review draft",
-          body: "Review the content below. Call out issues, risks, and changes that can be made directly. Lead with high-priority findings, then suggestions:\n\n[Paste content or file path]",
+          body: "Review the draft below. Prioritize factual errors, logic gaps, unclear wording, risks, and direct improvements. Lead with high-priority issues, then suggested changes:\n\n[Paste content or a file path]",
         },
-        meetingNotes: {
-          title: "Summarize material",
-          body: "Turn the material below into a structured summary. List key conclusions, follow-ups, and questions to ask next:\n\n[Paste material]",
+        webExtraction: {
+          title: "Extract web content",
+          body: "Use browser control to inspect the current page or a page I provide, then extract the information I need into a structured result. If you need to paginate, open detail pages, or read logged-in content, state the plan first; do not submit, publish, purchase, or delete anything:\n\n[Write the page, page area, or information to extract]",
         },
-        goalPlan: {
-          title: "Plan a Goal",
-          body: "Break this goal into an executable plan. List parallelizable tasks, risks, and acceptance criteria:\n\n[Write the goal]",
+        tableCleanup: {
+          title: "Organize table",
+          body: "Organize the table, CSV, list, or file below. Identify field meanings, anomalies, duplicates, and useful grouping dimensions. End with a cleaned structure and recommended next steps:\n\n[Paste data or a file path]",
+        },
+        localFiles: {
+          title: "Organize files",
+          body: "Inspect the folder or files below and identify what is most worth organizing. Give the plan first, including which files would be affected; wait for confirmation before changing anything:\n\n[Paste a path or note]",
+        },
+        preflightChecklist: {
+          title: "Preflight checklist",
+          body: "Before I do the task below, run a check. List risks, omissions, prerequisites, irreversible actions, and questions I should confirm. Do not execute it for me; only give the checklist:\n\n[Write what you are about to do]",
         },
       },
     },
@@ -688,15 +706,15 @@ export const enCopy: AppCopy = {
       openCommandPalette: "Open command palette",
       newConversation: "New conversation",
       openSettings: "Open Settings",
-      composer: "Composer",
+      composer: "Input",
       sendMessage: "Send message",
       newline: "New line without sending",
       conversation: "Conversation",
       jumpQuestion: "Jump to previous / next question",
       nativeEditingMac:
-        "Does not apply while Composer is focused; native text editing shortcuts are preserved.",
+        "Does not apply while the input is focused; native text editing shortcuts are preserved.",
       nativeEditing:
-        "Does not apply while Composer is focused; native text editing shortcuts are preserved.",
+        "Does not apply while the input is focused; native text editing shortcuts are preserved.",
       overlays: "Overlays",
       closeOverlay: "Close the current overlay or leave edit mode",
       moveList: "Move through command palette and list items",
@@ -867,7 +885,9 @@ export const enCopy: AppCopy = {
               parts: [
                 { text: "After " },
                 { text: "Service running", emphasis: true },
-                { text: " appears, return to Feishu Open Platform to configure long connection and events." },
+                {
+                  text: " appears, return to Feishu Open Platform to configure long connection and events.",
+                },
               ],
             },
           ],
@@ -887,7 +907,10 @@ export const enCopy: AppCopy = {
                 { text: "Open " },
                 { text: "Callback configuration", emphasis: true },
                 { text: ", set the subscription mode to " },
-                { text: "Use long connection to receive events", emphasis: true },
+                {
+                  text: "Use long connection to receive events",
+                  emphasis: true,
+                },
                 { text: ", then save." },
               ],
             },
@@ -951,7 +974,9 @@ export const enCopy: AppCopy = {
             },
             {
               parts: [
-                { text: "If there is no reply, check long connection, events, permissions, and publishing." },
+                {
+                  text: "If there is no reply, check long connection, events, permissions, and publishing.",
+                },
               ],
             },
           ],

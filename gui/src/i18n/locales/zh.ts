@@ -303,8 +303,12 @@ export const zhCopy = {
         `当前输入框已有内容。用「${title}」替换它？`,
       replaceDraftAction: "替换",
       managerTitle: "常用提示词",
-      managerDescription: "选择一个提示词填入输入框，也可以管理置顶和自定义内容。",
-      usePrompt: "填入 Composer",
+      managerDescription:
+        "选择一个提示词填入输入框，也可以管理置顶和自定义内容。",
+      usePrompt: "填入输入框",
+      previewPrompt: "查看",
+      backToLibrary: "返回",
+      fullPrompt: "完整提示词",
       sectionPresets: "预设",
       sectionCustom: "自定义",
       sectionPinned: "置顶",
@@ -323,32 +327,47 @@ export const zhCopy = {
       copyAsCustom: "复制为自定义",
       moveUp: "上移",
       moveDown: "下移",
+      moveCustomUp: "自定义上移",
+      moveCustomDown: "自定义下移",
       deleteCustom: "删除",
       emptyCustom: "还没有自定义提示词。",
       savePrompt: "保存",
       createPrompt: "创建",
       readOnlyPreset: "预设不可编辑。复制为自定义后可以修改。",
-      pinnedLimit: (count: number) => `最多置顶 ${count} 条。`,
+      pinnedLimit: (count: number) =>
+        `最多置顶 ${count} 条。请先取消一个置顶。`,
       presets: {
-        webResearch: {
-          title: "网页查证",
-          body: "请查找并交叉验证这个问题的最新资料，优先引用原始来源。最后给出结论、依据和仍不确定的地方：\n\n[写下问题]",
+        informationCheck: {
+          title: "信息查证",
+          body: "请查证下面的问题。优先使用原始来源和可靠资料，必要时交叉验证多个来源。最后按「结论 / 依据 / 分歧或不确定处 / 来源」整理：\n\n[写下要查证的问题]",
         },
-        localFiles: {
-          title: "本地文件整理",
-          body: "请检查这个文件夹，找出最值得整理的内容。先列计划，等我确认后再修改文件：\n\n[粘贴路径或说明]",
+        summarizeMaterial: {
+          title: "整理长文",
+          body: "请把下面的材料整理成结构化摘要。保留关键事实、结论、待办和需要追问的问题；不要过度改写原意：\n\n[粘贴材料或文件路径]",
+        },
+        translatePolish: {
+          title: "翻译润色",
+          body: "请翻译或润色下面的内容，保留原意、语气和结构。先给改写后的版本，再列出关键调整：\n\n[粘贴内容，并说明目标语言或风格]",
         },
         reviewDraft: {
           title: "审阅草稿",
-          body: "请审阅下面的内容，指出问题、风险和可以直接修改的地方。先给高优先级发现，再给建议：\n\n[粘贴内容或文件路径]",
+          body: "请审阅下面的草稿，优先指出事实错误、逻辑漏洞、表达含混、风险和可以直接改进的地方。先给高优先级问题，再给修改建议：\n\n[粘贴内容或文件路径]",
         },
-        meetingNotes: {
-          title: "整理长文",
-          body: "请把下面的材料整理成结构化摘要，列出关键结论、待办和需要追问的问题：\n\n[粘贴材料]",
+        webExtraction: {
+          title: "网页内容提取",
+          body: "请使用浏览器控制查看当前页面或我给出的网页，提取我需要的信息并整理成结构化结果。若需要翻页、打开详情页或读取登录态内容，请先说明计划；不要提交、发布、购买或删除任何内容：\n\n[写下网页、页面位置或要提取的信息]",
         },
-        goalPlan: {
-          title: "规划 Goal",
-          body: "请把这个目标拆成可执行计划，列出适合并行推进的子任务、风险和验收标准：\n\n[写下目标]",
+        tableCleanup: {
+          title: "整理表格",
+          body: "请整理下面的表格、CSV、列表或文件。识别字段含义、异常值、重复项和可汇总的维度，最后给出清理后的结构和下一步建议：\n\n[粘贴数据或文件路径]",
+        },
+        localFiles: {
+          title: "本地文件整理",
+          body: "请检查下面的文件夹或文件，找出最值得整理的内容。先给出整理计划和会影响哪些文件，等我确认后再实际修改：\n\n[粘贴路径或说明]",
+        },
+        preflightChecklist: {
+          title: "执行前检查清单",
+          body: "请在我执行下面这件事前做一次检查。列出风险、遗漏、前置条件、不可逆动作和建议确认的问题；不要替我执行，只给检查清单：\n\n[写下准备执行的事情]",
         },
       },
     },
@@ -509,8 +528,7 @@ export const zhCopy = {
       modelTestCostHint: "模型测试最多 1 个输出 token",
       connectionLatency: (message: string, latencyMs: number) =>
         `${message} · ${latencyMs} ms`,
-      errorUnauthorized:
-        "401 未授权：API Key 不正确，或无权访问此模型。",
+      errorUnauthorized: "401 未授权：API Key 不正确，或无权访问此模型。",
       errorForbidden: "403 权限不足：此 Key 无权访问该服务或模型。",
       errorRateLimited: "429 请求过多：稍后重试，或检查额度和限流设置。",
       errorNotFound: "404 未找到：API 地址或模型名可能不匹配。",
@@ -637,8 +655,7 @@ export const zhCopy = {
       notFor: "不适合",
       goodForText: "完全信任 Agent + 在沙盒环境工作（个人 repo / 临时虚拟机）",
       notForText: "生产代码 / 共享系统 / 不熟悉的 Agent / 敏感数据",
-      yoloIndicatorNote:
-        "顶部栏会显示 YOLO 标识，随时可一键关闭。",
+      yoloIndicatorNote: "顶部栏会显示 YOLO 标识，随时可一键关闭。",
       understandRisk: "是的，我知道在做什么",
       filePatch: "file_patch（修改文件）",
       fileWrite: "file_write（写入文件）",
@@ -657,14 +674,13 @@ export const zhCopy = {
       openCommandPalette: "打开命令面板",
       newConversation: "新建对话",
       openSettings: "打开设置",
-      composer: "Composer",
+      composer: "输入框",
       sendMessage: "发送消息",
       newline: "换行（不发送）",
       conversation: "Conversation",
       jumpQuestion: "跳到上 / 下一条提问",
-      nativeEditingMac:
-        "焦点在 Composer 时不生效（macOS 文本编辑原生快捷键保留）",
-      nativeEditing: "焦点在 Composer 时不生效（保留原生文本编辑快捷键）",
+      nativeEditingMac: "焦点在输入框时不生效（macOS 文本编辑原生快捷键保留）",
+      nativeEditing: "焦点在输入框时不生效（保留原生文本编辑快捷键）",
       overlays: "Overlays",
       closeOverlay: "关闭当前浮层或退出编辑状态",
       moveList: "在命令面板 / 列表中上下选择",
@@ -690,8 +706,7 @@ export const zhCopy = {
       discoveryDescription:
         "Galley 启动时把 CLI 的绝对路径写进这个文件。Galley Supervisor SOP 第一步读它来定位 galley。",
       agentSop: "Galley Supervisor SOP",
-      sopDescription:
-        "复制给你的 Agent，让它学会用 Galley 调度 sessions。",
+      sopDescription: "复制给你的 Agent，让它学会用 Galley 调度 sessions。",
       sopCapabilities: [
         "继续现有 session",
         "新开单个 session",
@@ -1247,8 +1262,7 @@ export const zhCopy = {
     savedPath: "已保存路径配置",
     restartForExisting: "重启 Galley 才能让现有对话生效",
     modelConfigSaved: "模型配置已保存",
-    modelConfigSavedMessage:
-      "新对话立即生效；已启动的对话重启 Galley 后生效。",
+    modelConfigSavedMessage: "新对话立即生效；已启动的对话重启 Galley 后生效。",
     modelConfigSavedChannelsMessage: "已启用 Channels 重启后使用新模型配置。",
     modelConfigSavedChannelsSuffix: "已启用 Channels 重启后使用新模型配置。",
     restartChannels: "重启 Channels",
@@ -1278,13 +1292,13 @@ export const zhCopy = {
     imageOpenFailed: "打开失败",
     imageOpenFailedMessage: "Galley 没能打开这张图片。",
     imageBlocked: "图片发送受限",
-    imageBlockedGoal: "Goal、/btw 和回复 Agent 提问暂不支持图片。请先发送普通消息。",
+    imageBlockedGoal:
+      "Goal、/btw 和回复 Agent 提问暂不支持图片。请先发送普通消息。",
     imageBlockedExternal:
       "当前外部 GA 尚不支持图片输入，请移除图片后发送，或改用内置 GA 新建会话。",
     imageTooLarge: "图片过大，单张上限 10 MB。",
     imageTooMany: "最多添加 4 张图片，移除一张再继续。",
-    imageUnsupported:
-      "不支持的图片格式，请粘贴或选择 PNG / JPEG / WebP。",
+    imageUnsupported: "不支持的图片格式，请粘贴或选择 PNG / JPEG / WebP。",
     toolsReinjected: "工具已重新注入",
     toolsReinjectedMessage: (count: number) =>
       `已为本对话注入 ${count} 条工具定义。`,
@@ -1348,8 +1362,7 @@ export const zhCopy = {
     emptyAllAction: (count: number) => `永久删除 ${count} 个对话`,
     acknowledgeCannotUndo: "我了解此操作无法撤销",
     restoreSelectedAction: (count: number) => `恢复已选的 ${count} 个对话`,
-    deleteSelectedAction: (count: number) =>
-      `永久删除已选的 ${count} 个对话`,
+    deleteSelectedAction: (count: number) => `永久删除已选的 ${count} 个对话`,
     archiveSelected: "归档",
     pinned: "已置顶",
   },

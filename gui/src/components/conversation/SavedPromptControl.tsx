@@ -421,14 +421,19 @@ function usePromptPresets(): PromptPreset[] {
   return useMemo(
     () => [
       {
-        id: PROMPT_PRESET_IDS.webResearch,
-        title: presets.webResearch.title,
-        body: presets.webResearch.body,
+        id: PROMPT_PRESET_IDS.informationCheck,
+        title: presets.informationCheck.title,
+        body: presets.informationCheck.body,
       },
       {
-        id: PROMPT_PRESET_IDS.localFiles,
-        title: presets.localFiles.title,
-        body: presets.localFiles.body,
+        id: PROMPT_PRESET_IDS.summarizeMaterial,
+        title: presets.summarizeMaterial.title,
+        body: presets.summarizeMaterial.body,
+      },
+      {
+        id: PROMPT_PRESET_IDS.translatePolish,
+        title: presets.translatePolish.title,
+        body: presets.translatePolish.body,
       },
       {
         id: PROMPT_PRESET_IDS.reviewDraft,
@@ -436,14 +441,24 @@ function usePromptPresets(): PromptPreset[] {
         body: presets.reviewDraft.body,
       },
       {
-        id: PROMPT_PRESET_IDS.meetingNotes,
-        title: presets.meetingNotes.title,
-        body: presets.meetingNotes.body,
+        id: PROMPT_PRESET_IDS.webExtraction,
+        title: presets.webExtraction.title,
+        body: presets.webExtraction.body,
       },
       {
-        id: PROMPT_PRESET_IDS.goalPlan,
-        title: presets.goalPlan.title,
-        body: presets.goalPlan.body,
+        id: PROMPT_PRESET_IDS.tableCleanup,
+        title: presets.tableCleanup.title,
+        body: presets.tableCleanup.body,
+      },
+      {
+        id: PROMPT_PRESET_IDS.localFiles,
+        title: presets.localFiles.title,
+        body: presets.localFiles.body,
+      },
+      {
+        id: PROMPT_PRESET_IDS.preflightChecklist,
+        title: presets.preflightChecklist.title,
+        body: presets.preflightChecklist.body,
       },
     ],
     [presets],

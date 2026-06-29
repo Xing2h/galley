@@ -3,17 +3,20 @@ export const SAVED_PROMPTS_SCHEMA_VERSION = 1;
 export const MAX_PINNED_PROMPTS = 5;
 
 export const PROMPT_PRESET_IDS = {
-  webResearch: "preset:web-research",
-  localFiles: "preset:local-files",
+  informationCheck: "preset:web-research",
+  summarizeMaterial: "preset:meeting-notes",
+  translatePolish: "preset:translate-polish",
   reviewDraft: "preset:review-draft",
-  meetingNotes: "preset:meeting-notes",
-  goalPlan: "preset:goal-plan",
+  webExtraction: "preset:web-extraction",
+  tableCleanup: "preset:table-cleanup",
+  localFiles: "preset:local-files",
+  preflightChecklist: "preset:preflight-checklist",
 } as const;
 
 export const DEFAULT_PINNED_PROMPT_IDS = [
-  PROMPT_PRESET_IDS.webResearch,
-  PROMPT_PRESET_IDS.localFiles,
-  PROMPT_PRESET_IDS.reviewDraft,
+  PROMPT_PRESET_IDS.informationCheck,
+  PROMPT_PRESET_IDS.summarizeMaterial,
+  PROMPT_PRESET_IDS.translatePolish,
 ] as const;
 
 const PRESET_ID_SET = new Set<string>(Object.values(PROMPT_PRESET_IDS));
@@ -178,8 +181,25 @@ export function addCustomPrompt(
   if (!prompt) return prefs;
   return {
     ...prefs,
-    customPrompts: [...prefs.customPrompts, prompt],
+    customPrompts: [prompt, ...prefs.customPrompts],
   };
+}
+
+export function moveCustomPrompt(
+  prefs: SavedPromptsPrefs,
+  promptId: string,
+  direction: "up" | "down",
+): SavedPromptsPrefs {
+  const index = prefs.customPrompts.findIndex((prompt) => prompt.id === promptId);
+  if (index < 0) return prefs;
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= prefs.customPrompts.length) return prefs;
+  const customPrompts = [...prefs.customPrompts];
+  [customPrompts[index], customPrompts[target]] = [
+    customPrompts[target],
+    customPrompts[index],
+  ];
+  return { ...prefs, customPrompts };
 }
 
 export function updateCustomPrompt(

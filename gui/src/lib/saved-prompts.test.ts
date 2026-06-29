@@ -6,6 +6,7 @@ import {
   defaultSavedPromptsPrefs,
   DEFAULT_PINNED_PROMPT_IDS,
   MAX_PINNED_PROMPTS,
+  moveCustomPrompt,
   normalizeSavedPromptsPrefs,
   PROMPT_PRESET_IDS,
   setPromptPinned,
@@ -14,12 +15,17 @@ import {
 
 describe("saved prompt helpers", () => {
   it("falls back to default pinned presets for corrupt or missing prefs", () => {
+    expect(DEFAULT_PINNED_PROMPT_IDS).toEqual([
+      PROMPT_PRESET_IDS.informationCheck,
+      PROMPT_PRESET_IDS.summarizeMaterial,
+      PROMPT_PRESET_IDS.translatePolish,
+    ]);
     expect(normalizeSavedPromptsPrefs(undefined).pinnedIds).toEqual([
       ...DEFAULT_PINNED_PROMPT_IDS,
     ]);
-    expect(normalizeSavedPromptsPrefs({ schemaVersion: 99 }).pinnedIds).toEqual([
-      ...DEFAULT_PINNED_PROMPT_IDS,
-    ]);
+    expect(normalizeSavedPromptsPrefs({ schemaVersion: 99 }).pinnedIds).toEqual(
+      [...DEFAULT_PINNED_PROMPT_IDS],
+    );
   });
 
   it("keeps preset and custom pinned ids in stable order", () => {
@@ -37,7 +43,7 @@ describe("saved prompt helpers", () => {
       pinnedIds: [
         PROMPT_PRESET_IDS.reviewDraft,
         "custom:a",
-        PROMPT_PRESET_IDS.webResearch,
+        PROMPT_PRESET_IDS.informationCheck,
         "custom:a",
         "missing",
       ],
@@ -46,7 +52,7 @@ describe("saved prompt helpers", () => {
     expect(normalizeSavedPromptsPrefs(raw).pinnedIds).toEqual([
       PROMPT_PRESET_IDS.reviewDraft,
       "custom:a",
-      PROMPT_PRESET_IDS.webResearch,
+      PROMPT_PRESET_IDS.informationCheck,
     ]);
   });
 
@@ -54,11 +60,11 @@ describe("saved prompt helpers", () => {
     const prefs = {
       ...defaultSavedPromptsPrefs(),
       pinnedIds: [
-        PROMPT_PRESET_IDS.webResearch,
-        PROMPT_PRESET_IDS.localFiles,
+        PROMPT_PRESET_IDS.informationCheck,
+        PROMPT_PRESET_IDS.summarizeMaterial,
+        PROMPT_PRESET_IDS.translatePolish,
         PROMPT_PRESET_IDS.reviewDraft,
-        PROMPT_PRESET_IDS.meetingNotes,
-        PROMPT_PRESET_IDS.goalPlan,
+        PROMPT_PRESET_IDS.webExtraction,
       ],
     };
 
@@ -101,7 +107,12 @@ describe("saved prompt helpers", () => {
       updatedAt: "2026-01-02T00:00:00.000Z",
     });
     expect(
-      updateCustomPrompt(added, "custom:review", { title: "No body", body: "" }, now),
+      updateCustomPrompt(
+        added,
+        "custom:review",
+        { title: "No body", body: "" },
+        now,
+      ),
     ).toBe(added);
   });
 
@@ -117,5 +128,34 @@ describe("saved prompt helpers", () => {
     expect(deleteCustomPrompt(pinned, "custom:a").pinnedIds).not.toContain(
       "custom:a",
     );
+  });
+
+  it("adds custom prompts first and moves them in manual order", () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const first = addCustomPrompt(
+      defaultSavedPromptsPrefs(),
+      { title: "First", body: "Body" },
+      "custom:first",
+      now,
+    );
+    const second = addCustomPrompt(
+      first,
+      { title: "Second", body: "Body" },
+      "custom:second",
+      now,
+    );
+
+    expect(second.customPrompts.map((prompt) => prompt.id)).toEqual([
+      "custom:second",
+      "custom:first",
+    ]);
+
+    const movedUp = moveCustomPrompt(second, "custom:first", "up");
+    expect(movedUp.customPrompts.map((prompt) => prompt.id)).toEqual([
+      "custom:first",
+      "custom:second",
+    ]);
+    expect(moveCustomPrompt(movedUp, "custom:first", "up")).toBe(movedUp);
+    expect(moveCustomPrompt(movedUp, "custom:missing", "down")).toBe(movedUp);
   });
 });
