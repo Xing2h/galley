@@ -523,6 +523,7 @@ Recommended first-version defaults:
 
 ```text
 Anthropic-compatible
+- context_win: 90000
 - thinking_type: adaptive
 - temperature: 1
 - max_retries: 3
@@ -531,6 +532,7 @@ Anthropic-compatible
 - stream: true
 
 OpenAI-compatible
+- context_win: 90000
 - api_mode: chat_completions
 - temperature: 1
 - max_retries: 3
@@ -615,6 +617,43 @@ Provider key.
 The generated config path is an implementation detail. Users should not edit or
 rely on it. Advanced diagnostics may show that a generated config exists, but
 must not display API key values.
+
+### ChatGPT / Codex OAuth
+
+ChatGPT / Codex is a managed OpenAI-compatible provider with a different auth
+contract from normal API-key providers:
+
+- Core owns the OAuth access token, refresh token, expiry, and ChatGPT account
+  id in the encrypted local credential store.
+- Generated managed model config contains only `apiKeyRef`, Codex backend
+  metadata, and credential IPC connection metadata; it never contains the
+  refresh token.
+- Managed GA asks Core for a short-lived access token over local credential IPC
+  before Codex requests. The IPC response may include access token, account id,
+  and expiry, but must never return the refresh token.
+- Core refreshes access tokens behind a per-`apiKeyRef` async gate. It reads the
+  credential before locking, reads again after locking, and reuses a token that
+  another request already refreshed.
+- Refresh responses may rotate the refresh token. If the response omits a new
+  refresh token, Core preserves the previous refresh token.
+- If JWT expiry is missing, Core may use OAuth `expires_in` as the expiry
+  fallback.
+- After refresh failure, Core may recover from a newer usable DB credential or
+  from Codex CLI `auth.json`, but only when the ChatGPT account id is compatible
+  with the credential that was being refreshed. It must not silently switch a
+  running request to another account's quota or billing context.
+
+The managed GA Codex backend uses Codex-specific request behavior: Responses
+API endpoint under the ChatGPT Codex base URL, `store=false`, Codex user-agent
+and `originator` headers, `ChatGPT-Account-ID` when available, forced streaming,
+and no `max_output_tokens` field. If a configured Codex reasoning effort is
+`minimal`, managed GA normalizes it to `medium`.
+
+When Codex returns HTTP 429, Core connection tests and managed GA request
+failures may query ChatGPT WHAM usage as a best-effort diagnostic. If usage
+windows report a reset, show the latest reset among exhausted windows; if WHAM
+is unavailable or malformed, fall back to the original quota/rate-limit error.
+Never let the WHAM probe block or replace the original Codex failure path.
 
 Do not expose non-native text-protocol sessions, mixin failover, IM bot config,
 Langfuse, or arbitrary GA template fields in first-run onboarding. Those can
@@ -945,7 +984,7 @@ Current implementation slice:
 
 - `managed-ga/manifest.json` pins the audited upstream baseline (commit
   `70792af`) plus a replayable `galley-managed-ga-patches-v1` patch stack
-  (`0001`–`0009`), each documented in `managed-ga/patches/manifest.md`.
+  (`0001`–`0010`), each documented in `managed-ga/patches/manifest.md`.
 - `managed-ga/code/` is the generated code-only payload (no `mykey.py`,
   `memory/`, `skills/`, `temp/`, or `model_responses/`).
 - `managed-ga/state-seed/memory/` holds the upstream-tracked GA memory/SOP
