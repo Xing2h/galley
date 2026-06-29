@@ -59,6 +59,7 @@ def compress_history_tags(messages, keep_recent=10, max_len=800, force=False, in
                 if not isinstance(b, dict): continue
                 t = b.get('type')
                 if t == 'text' and isinstance(b.get('text'), str): b['text'] = _trunc(b['text'])
+                elif t == 'thinking' and isinstance(b.get('thinking'), str): b['thinking'] = _trunc_str(b['thinking'])
                 elif t == 'tool_result':
                     tc = b.get('content')
                     if isinstance(tc, str): b['content'] = _trunc_str(tc)
@@ -399,7 +400,6 @@ def _stream_with_retry(sess, url, headers, payload, parse_fn):
         except Exception as e:
             err = f"\n\n[!!! 流异常中断 {type(e).__name__}: {e} !!!]" if streamed else f"!!!Error: {type(e).__name__}: {e}"
             yield err; return [{"type": "text", "text": err}]
-
 def _codex_account_id_from_jwt(access_token):
     try:
         parts = str(access_token or '').split('.')
@@ -551,6 +551,7 @@ def _galley_codex_access_token(sess):
         return token, data.get("accountId")
     except Exception as e:
         raise RuntimeError(f"Galley Codex credential refresh failed: {e}") from e
+
 
 def _openai_stream(sess, messages):
     model, api_mode = sess.model, sess.api_mode
@@ -713,9 +714,9 @@ class BaseSession:
             v = cfg.get(key); v = None if v is None else str(v).strip().lower()
             return v if not v or v in valid else print(f"[WARN] Invalid {key} {v!r}, ignored.")
         self.reasoning_effort = _enum('reasoning_effort', {'none', 'minimal', 'low', 'medium', 'high', 'xhigh'})
+        self.service_tier = _enum('service_tier', {'auto', 'default', 'priority', 'flex'})
         if self.codex_backend and self.reasoning_effort == 'minimal':
             self.reasoning_effort = 'medium'
-        self.service_tier = _enum('service_tier', {'auto', 'default', 'priority', 'flex'})
         self.thinking_type = _enum('thinking_type', {'adaptive', 'enabled', 'disabled'})
         self.thinking_budget_tokens = cfg.get('thinking_budget_tokens')
         mode = str(cfg.get('api_mode', 'chat_completions')).strip().lower().replace('-', '_')
@@ -1088,6 +1089,7 @@ def _ensure_text_block(blocks):
     return txt
 
 def _write_llm_log(label, content, log_path=None, model=''):
+    if log_path is False: return
     if not log_path:
         state_root = os.path.abspath(os.environ.get('GALLEY_GA_STATE_ROOT') or os.path.dirname(os.path.abspath(__file__)))
         log_path = os.path.join(state_root, f'temp/model_responses/model_responses_{os.getpid()}.txt')

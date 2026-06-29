@@ -15,51 +15,53 @@ audited against.
 
 ## Current Baseline
 
-Locked commit: `70792af967a7826fad8e19d800d44977183f046b`
+Locked commit: `b1e173dcbb3cf1a0c7fdeab4211a12a44461c841`
 
 - Source: `lsdefine/GenericAgent` upstream `main`
-- Date audited: 2026-06-23
-- Previous baseline: `53b48aea07ad78ef577444ca6efa83693399f168`
-- Delta: 9 commits
+- Date audited: 2026-06-29
+- Previous baseline: `70792af967a7826fad8e19d800d44977183f046b`
+- Delta: 11 commits
 - Result: no external bridge protocol or dependency break; `pyproject.toml`
-  did not change. Managed runtime picked up upstream desktop bridge/frontend,
-  loop-mode, conductor, reasoning-field, and prompt-limit changes while
-  preserving Galley's managed state-root routing and managed image attachment
-  path.
-- Devlog: [GA upstream upgrade 53b48aea -> 70792af](./devlog/2026-06-23-ga-upstream-upgrade-53b48aea-to-70792af.md)
+  did not change. Managed runtime picked up upstream `--func` / `--history`
+  task helpers, in-memory intervention fields, `export_history`, UltraPlan,
+  HTTP app assets, summary-fallback fixes, and the upstream TUI worldline
+  removal while preserving Galley's managed state-root routing, Codex backend
+  payload shape, and managed image attachment path.
+- Devlog: [GA upstream upgrade 70792af -> b1e173dc](./devlog/2026-06-29-ga-upstream-upgrade-70792af-to-b1e173dc.md)
 
 Relevant compatibility notes:
 
-- `agent_loop.py`: `BaseHandler.dispatch`, `turn_end_callback`, hook calls,
-  and `initial_user_content` support remain compatible with
+- `agent_loop.py`: unchanged; `BaseHandler.dispatch`, `turn_end_callback`,
+  hook calls, and `initial_user_content` support remain compatible with
   `WorkbenchHandler`.
-- `agentmain.py`: upstream added `extra_sys_prompts` and raised the task loop
-  to 180 turns. Galley kept the upstream turn limit and replayed managed image
-  attachment injection into the initial user content block.
-- `ga.py`: upstream adjusted summary / checkpoint prompts and turn-warning
-  thresholds. Dispatch signature, tool callback protocol, and turn-end hook
-  execution remain compatible.
-- `llmcore.py`: upstream accepts `reasoning` as an OpenAI-compatible reasoning
-  field and exposes `MixinSession.current_name`. Galley's ChatGPT / Codex
-  managed backend patch still replays cleanly.
-- `frontends/desktop_bridge.py` and `frontends/desktop/`: upstream imported a
-  larger GA-owned desktop frontend. Galley does not use that bridge as its
-  authoritative GUI/Core path; the managed payload keeps it as upstream code
-  and the bundled-runtime import smoke covers dependency readiness.
-- `frontends/conductor.py`, `frontends/stapp.py`, `frontends/plan_state.py`,
-  and `launch.pyw`: upstream loop-mode, service-panel, and idle-action polish
-  are bundled, but Galley continues to own its public desktop and CLI surfaces.
-- `memory/`: upstream refreshed `ljqCtrl`, `ui_detect`, and
-  `memory_cleanup_sop`. The managed state seed follows upstream memory files
-  while excluding generated long-term memory artifacts.
-- `frontends/workspace_cmd.py`, `plugins/project_mode.py`,
-  `frontends/tuiapp_v2.py`, and `frontends/tui_v3.py`: upstream now supports
-  `/workspace`, shared Workspace link/registry logic, and per-agent Project
-  Mode activation. Galley uses this for managed Project Workspace and routes
-  Workspace temp/registry/anchor state through `GALLEY_GA_STATE_ROOT`.
-- `frontends/continue_cmd.py`: upstream added in-place restore, session locks,
-  and workspace restore metadata. Managed mode routes continue logs/cache
-  through the managed state root.
+- `agentmain.py`: upstream added `--func`, `--history`, `--nolog`, background
+  task stdout handling, and in-memory `intervene` / `extrakeyinfo` fields.
+  Galley kept managed image attachment injection before `agent_runner_loop`
+  and routes all task / reflect temp paths through the managed state root.
+- `ga.py`: upstream added `export_history`, changed summary fallback to prefer
+  cleaned response text, and consumes in-memory intervention fields before
+  `_intervene` / `_keyinfo` files. Dispatch signature, tool callback protocol,
+  and turn-end hook execution remain compatible.
+- `llmcore.py`: upstream now compresses thinking blocks, accepts
+  `log_path=False`, and keeps Responses `include:
+  reasoning.encrypted_content`. Galley's Codex patch was refreshed so
+  credential IPC, `ChatGPT-Account-ID`, `store=false`, WHAM quota hints, and
+  the upstream `include` field coexist.
+- `frontends/continue_cmd.py`: upstream removed the old worldline
+  `rewind_root` / `allow_empty` paths. Galley's runner does not call those
+  GA-owned TUI parameters; managed `/continue` logs, locks, and cache still
+  route through `GALLEY_GA_STATE_ROOT`.
+- `frontends/tuiapp_v2.py` and `frontends/worldline.py`: upstream removed the
+  large worldline implementation from the bundled TUI. Galley does not use
+  upstream TUI as its authoritative GUI/Core path.
+- `assets/ga_ultraplan.py` and `memory/ultraplan_sop.md`: upstream added
+  UltraPlan orchestration. Managed mode keeps the code asset bundled, seeds the
+  SOP, and patches UltraPlan run artifacts into `GALLEY_GA_STATE_ROOT/temp`.
+- `assets/ga_httpapp.py`: upstream added an optional FastAPI HTTP app asset.
+  Galley Core still does not expose TCP / HTTP and does not invoke this asset
+  as a product surface.
+- `frontends/stapp.py`, `hub.pyw`, `.gitignore`, and image/SOP refreshes:
+  bundled as upstream code or state seed with no Galley contract change.
 - `pyproject.toml`: no dependency diff in this range; bundled Python
   dependencies did not need changes.
 

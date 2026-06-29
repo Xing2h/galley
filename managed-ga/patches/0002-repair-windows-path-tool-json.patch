@@ -2,7 +2,7 @@ diff --git a/llmcore.py b/llmcore.py
 index aebd6a4..de6b178 100644
 --- a/llmcore.py
 +++ b/llmcore.py
-@@ -928,0 +929,47 @@ def _write_llm_log(label, content, log_path=None):
+@@ -930,0 +931,47 @@ def _write_llm_log(label, content, log_path=None, model=''):
 +_WINDOWS_PATH_KEYS = {'path', 'file_path', 'filepath'}
 +_WINDOWS_PATH_FIELD_RE = re.compile(
 +    r'("(?P<key>path|file_path|filepath)"\s*:\s*)"{1,2}'

@@ -983,7 +983,7 @@ Do not build:
 Current implementation slice:
 
 - `managed-ga/manifest.json` pins the audited upstream baseline (commit
-  `70792af`) plus a replayable `galley-managed-ga-patches-v1` patch stack
+  `b1e173dc`) plus a replayable `galley-managed-ga-patches-v1` patch stack
   (`0001`–`0010`), each documented in `managed-ga/patches/manifest.md`.
 - `managed-ga/code/` is the generated code-only payload (no `mykey.py`,
   `memory/`, `skills/`, `temp/`, or `model_responses/`).

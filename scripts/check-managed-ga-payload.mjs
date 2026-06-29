@@ -24,6 +24,7 @@ const criticalMemorySeedFiles = [
   "verify_sop.md",
   "supervisor_sop.md",
   "project_mode_sop.md",
+  "ultraplan_sop.md",
   "L4_raw_sessions/salient_mining_sop.md",
   "L4_raw_sessions/compress_session.py",
 ];

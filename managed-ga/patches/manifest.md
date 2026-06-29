@@ -2,16 +2,16 @@
 
 Patch stack id: `galley-managed-ga-patches-v1`
 
-Last replay verified: `2026-06-23` against upstream
-`70792af967a7826fad8e19d800d44977183f046b`.
-(patch 0008 was refreshed to preserve upstream's 180-turn loop limit while
-injecting managed image attachment content.)
+Last replay verified: `2026-06-29` against upstream
+`b1e173dcbb3cf1a0c7fdeab4211a12a44461c841`.
+(patches 0001, 0007, and 0008 were refreshed for upstream UltraPlan state
+routing, Responses/Codex payload context, and managed image attachment content.)
 
 Current patches:
 
 | Patch | Upstream files | Reason | Rebase risk | Removal condition |
 |---|---|---|---|---|
-| `0001-managed-state-root.patch` | `agentmain.py`, `ga.py`, `llmcore.py`, `frontends/continue_cmd.py`, `frontends/workspace_cmd.py`, `plugins/project_mode.py` | Keep Galley-managed user state under `Application Support/app.galley/managed-ga-state` instead of the shipped code payload, including model response logs, long prompt temp files, `/continue` cache, Workspace registry/session maps, and Project Mode anchors / memory files. | Medium: upstream may rename state paths, model response logging, continue-session cache paths, workspace storage, or project-mode storage paths. | Remove when GenericAgent supports an explicit state root / profile path upstream. |
+| `0001-managed-state-root.patch` | `agentmain.py`, `ga.py`, `llmcore.py`, `frontends/continue_cmd.py`, `assets/ga_ultraplan.py`, `frontends/workspace_cmd.py`, `plugins/project_mode.py` | Keep Galley-managed user state under `Application Support/app.galley/managed-ga-state` instead of the shipped code payload, including model response logs, long prompt temp files, `/continue` cache, UltraPlan run artifacts, Workspace registry/session maps, and Project Mode anchors / memory files. | Medium: upstream may rename state paths, model response logging, continue-session cache paths, UltraPlan run directories, workspace storage, or project-mode storage paths. | Remove when GenericAgent supports an explicit state root / profile path upstream. |
 | `0002-repair-windows-path-tool-json.patch` | `llmcore.py` | Keep managed GA tolerant when models copy Windows paths into `path` / `file_path` / `filepath` tool JSON fields with raw backslashes or doubled quotes. | Low: touches only fallback text-tool JSON parsing for path fields. | Remove when GenericAgent upstream normalizes Windows path values or handles these malformed tool JSON cases. |
 | `0003-normalize-asset-path-joins.patch` | `agentmain.py`, `ga.py` | Join managed GA bundled asset paths with platform path segments so Windows verbatim paths never mix `\\?\` with `/`. | Low: only wraps existing `assets` reads behind an `asset_path` helper. | Remove when upstream stops using slash-containing asset path strings under `script_dir`. |
 | `0004-managed-wechat-state-paths.patch` | `frontends/wechatapp.py` | Let Galley's managed IM launcher keep WeChat token and temp files under Galley managed state instead of `~/.wxbot` / bundled code paths. | Low: two path constants near module startup. | Remove when upstream WeChat frontend supports explicit token/temp paths. |
