@@ -320,9 +320,13 @@ export function dispatchIPCEvent(event: IPCEvent): void {
         return;
       }
       messages.setCurrentTurnIndex(event.sessionId, event.turnIndex);
-      // New turn starts → drop whatever streaming buffer the previous
-      // turn left, so the in-flight render doesn't bleed across turns.
-      messages.clearInFlightContent(event.sessionId);
+      // Do not clear inFlightContent here. `turn_start` is a structural
+      // clock signal, and on older/racing runners it can arrive after a
+      // few `turn_progress` chunks from the same turn. Clearing here
+      // makes those early words flash as answer prose and then vanish
+      // into the step marker. User submit / turn_end / run_complete /
+      // error / bridge-close remain the lifecycle boundaries that reset
+      // the streaming buffer.
       return;
     }
 

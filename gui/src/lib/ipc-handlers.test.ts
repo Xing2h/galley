@@ -159,6 +159,28 @@ describe("dispatchIPCEvent", () => {
     );
   });
 
+  it("keeps same-turn streaming content when turn_start arrives late", () => {
+    dispatchIPCEvent({
+      kind: "turn_progress",
+      sessionId: "s-test",
+      delta: "Early streamed prose",
+      source: "workbench",
+      timestamp: "2026-06-18T08:01:00.000Z",
+    });
+
+    dispatchIPCEvent({
+      kind: "turn_start",
+      sessionId: "s-test",
+      turnIndex: 1,
+      timestamp: "2026-06-18T08:01:01.000Z",
+    });
+
+    expect(useMessagesStore.getState().byId["s-test"]).toMatchObject({
+      currentTurnIndex: 1,
+      inFlightContent: "Early streamed prose",
+    });
+  });
+
   it("routes tool_call_pending and persists the absolute turn index", async () => {
     useMessagesStore
       .getState()

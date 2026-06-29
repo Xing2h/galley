@@ -953,21 +953,25 @@ class Bridge:
     def _emit_turn_start(self, turn_index: int) -> None:
         """Fire when GA enters a new agent_runner_loop iteration.
 
-        Two emitters call this (both deduped via _last_emitted_turn):
+        Three emitters call this (all deduped via _last_emitted_turn):
 
-          1. WorkbenchHandler dispatch wrapper: real-time emission when
+          1. dispatch_command proactive start: immediately after a new
+             visible user task is accepted, before display_queue draining
+             can forward the first LLM tokens. This keeps the main view
+             anchored on "Step 1" instead of briefly rendering early
+             pre-tool prose as answer body.
+          2. WorkbenchHandler dispatch wrapper: real-time emission when
              GA actually reaches tool dispatch for the current turn. This
-             is the authoritative "we are on step N" signal, but it lands
-             several seconds *after* the turn started (LLM call has to
-             complete first).
-          2. _on_turn_end predict-emit: right after the just-finished
+             is GA's observed "we are on step N" signal, but it lands
+             after the LLM call has completed.
+          3. _on_turn_end predict-emit: right after the just-finished
              turn's TurnEndEvent, if GA is going to keep looping
              (exit_reason empty), we pre-announce turn N+1. The sidebar
              updates immediately, matching what the user sees in the
              main view (turn_progress is already streaming N+1's
              content by then).
 
-        Dedupe keeps the two emitters from double-firing turn_start
+        Dedupe keeps these emitters from double-firing turn_start
         for the same N. Reset to 0 on each put_task in dispatch_command
         so a new agent_runner_loop's turn 1 isn't accidentally
         suppressed when the previous run also ended at turn 1.
@@ -1314,6 +1318,7 @@ class Bridge:
             self._current_message_turn_base = cmd.absoluteTurnIndex
             self._begin_run_tracking()
             self.run_in_progress.set()
+            self._emit_turn_start(1)
             display_queue = self.agent.put_task(
                 cmd.text, source="workbench", images=cmd.images
             )
@@ -1334,6 +1339,7 @@ class Bridge:
             self._current_message_turn_base = cmd.absoluteTurnIndex
             self._begin_run_tracking()
             self.run_in_progress.set()
+            self._emit_turn_start(1)
             display_queue = self.agent.put_task(cmd.text, source="workbench")
             self._start_progress_drain(display_queue)
         elif isinstance(cmd, AbortCommand):

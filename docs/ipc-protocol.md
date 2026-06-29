@@ -165,7 +165,10 @@ desktop 必须验证 `protocolVersion` 与自身一致；不一致应主动 `shu
 
 ### 4.2 `turn_start`
 
-agent 开始一轮 LLM 调用。
+agent 进入一轮步骤。Bridge 会在普通 `user_message` / `ask_user_response`
+被接受后主动发送 `turn_start(1)`，再开始转发 display_queue 的
+`turn_progress`，避免首批 LLM token 先于步骤标记到达 GUI。后续步骤仍由
+`turn_end` 预测发送 N+1，并由 GA dispatch hook 的同编号事件去重确认。
 
 ```json
 {
@@ -306,7 +309,7 @@ LLM 流式 partial output。Bridge 启动时设 `agent.inc_out = True`，订阅 
 注意：
 
 - `delta` 是 **GA-raw**——含 `<thinking>` / `<summary>` / `<tool_use>` / `<file_content>` 等 GA 内部 tag。Desktop 在渲染时 strip（且要 robust 处理 partial 状态下的不完整 tag）
-- `turn_progress` 跨多个 GA turn（一个 task 一个 LLM stream），不带 `turnIndex`——turnIndex 通过 `turn_end` 在每 turn 完成时给出
+- `turn_progress` 跨多个 GA turn（一个 task 一个 LLM stream），不带 `turnIndex`——GUI 通过最近的 `turn_start` 关联当前步骤；第一步的 `turn_start(1)` 应先于普通 user task 的首个可见 `turn_progress`
 - 一个 task 完成后 GA push `{'done': full_text}` 到 display_queue，bridge **不**转此为 IPC（`turn_end` 已经覆盖 finalized state，`done` 转 IPC 会产生重复信号）
 - 拉队列 thread 是 daemon，每 task 一次。`shutdown_event` 触发时退出
 

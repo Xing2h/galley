@@ -12,12 +12,12 @@ import time
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 import runner.managed_runtime as managed_runtime
-from runner.ipc import AskUserResponseCommand, UserMessageCommand
+from runner.ipc import AskUserResponseCommand, TurnProgressEvent, UserMessageCommand
 from runner.workbench_bridge import (
     Bridge,
     _classify_error,
@@ -29,6 +29,22 @@ from runner.workbench_bridge import (
 )
 
 # ---------------- _classify_error ----------------
+
+
+def _new_test_bridge() -> Bridge:
+    return Bridge(
+        ga_path="/tmp/ga",
+        session_id="s1",
+        cwd=None,
+        llm_no=0,
+        llm_name=None,
+        stdout=StringIO(),
+        stdin=StringIO(),
+    )
+
+
+def _next_bridge_event(bridge: Bridge) -> dict[str, Any]:
+    return cast("dict[str, Any]", json.loads(bridge.event_queue.get_nowait()))
 
 
 @pytest.mark.parametrize(
@@ -356,15 +372,7 @@ def test_ask_user_response_resets_visibility_to_visible() -> None:
             self.tasks.append((text, source))
             return object()
 
-    bridge = Bridge(
-        ga_path="/tmp/ga",
-        session_id="s1",
-        cwd=None,
-        llm_no=0,
-        llm_name=None,
-        stdout=StringIO(),
-        stdin=StringIO(),
-    )
+    bridge = _new_test_bridge()
     bridge.agent = FakeAgent()
     bridge._btw_handler = None
     bridge._start_progress_drain = lambda _queue: None  # type: ignore[assignment]
@@ -374,8 +382,85 @@ def test_ask_user_response_resets_visibility_to_visible() -> None:
 
     assert bridge._current_message_visibility == "visible"
     assert bridge._current_message_turn_base == 4
-    assert bridge._last_emitted_turn == 0
+    assert bridge._last_emitted_turn == 1
     assert bridge.agent.tasks == [("yes", "workbench")]
+    event = _next_bridge_event(bridge)
+    assert event["kind"] == "turn_start"
+    assert event["turnIndex"] == 1
+    assert event["visibility"] == "visible"
+
+
+def test_user_message_emits_turn_start_before_progress_drain() -> None:
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.tasks: list[dict[str, Any]] = []
+
+        def put_task(
+            self,
+            text: str,
+            source: str,
+            images: list[str],
+            **_kwargs: Any,
+        ) -> object:
+            self.tasks.append({"text": text, "source": source, "images": images})
+            return object()
+
+    bridge = _new_test_bridge()
+    bridge.agent = FakeAgent()
+    bridge._btw_handler = None
+
+    def fake_drain(_queue: object) -> None:
+        bridge._emit(
+            TurnProgressEvent(
+                sessionId="s1",
+                delta="early prose",
+                source="workbench",
+                visibility=bridge._current_message_visibility,
+            )
+        )
+
+    bridge._start_progress_drain = fake_drain  # type: ignore[assignment]
+
+    bridge.dispatch_command(
+        UserMessageCommand(
+            text="describe",
+            images=["/tmp/galley/image.png"],
+            absoluteTurnIndex=7,
+        )
+    )
+
+    first = _next_bridge_event(bridge)
+    second = _next_bridge_event(bridge)
+    assert first["kind"] == "turn_start"
+    assert first["turnIndex"] == 1
+    assert first["visibility"] == "visible"
+    assert second["kind"] == "turn_progress"
+    assert second["delta"] == "early prose"
+    assert bridge.agent.tasks == [
+        {"text": "describe", "source": "workbench", "images": ["/tmp/galley/image.png"]}
+    ]
+    assert bridge._current_message_turn_base == 7
+
+    bridge._emit_turn_start(1)
+    assert bridge.event_queue.empty()
+
+
+def test_btw_user_message_does_not_emit_main_turn_start() -> None:
+    bridge = _new_test_bridge()
+    bridge.agent = object()
+    bridge._btw_handler = lambda _agent, _text: "ok"
+    calls: list[str] = []
+
+    def record_btw(text: str) -> None:
+        calls.append(text)
+
+    bridge._handle_btw_command = record_btw  # type: ignore[assignment]
+
+    bridge.dispatch_command(UserMessageCommand(text="/btw side question"))
+
+    assert calls == ["/btw side question"]
+    assert bridge.event_queue.empty()
+    assert bridge._last_emitted_turn == 0
 
 
 def test_user_message_command_passes_images_to_agent() -> None:
@@ -393,15 +478,7 @@ def test_user_message_command_passes_images_to_agent() -> None:
             self.tasks.append({"text": text, "source": source, "images": images})
             return object()
 
-    bridge = Bridge(
-        ga_path="/tmp/ga",
-        session_id="s1",
-        cwd=None,
-        llm_no=0,
-        llm_name=None,
-        stdout=StringIO(),
-        stdin=StringIO(),
-    )
+    bridge = _new_test_bridge()
     bridge.agent = FakeAgent()
     bridge._start_progress_drain = lambda _queue: None  # type: ignore[assignment]
 
@@ -417,6 +494,9 @@ def test_user_message_command_passes_images_to_agent() -> None:
         {"text": "describe", "source": "workbench", "images": ["/tmp/galley/image.png"]}
     ]
     assert bridge._current_message_turn_base == 7
+    event = _next_bridge_event(bridge)
+    assert event["kind"] == "turn_start"
+    assert event["turnIndex"] == 1
 
 
 def test_project_workspace_managed_runtime_sets_project_mode_attrs(

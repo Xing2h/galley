@@ -44,6 +44,13 @@ class ReadyEvent:
 
 @dataclass
 class TurnStartEvent:
+    """Structural step marker for the active agent loop.
+
+    The bridge emits turn 1 proactively when a user task starts, then
+    dedupes any later GA-observed signal for the same turn. Later turns
+    are predicted from turn_end until GA's dispatch hook confirms them.
+    """
+
     sessionId: str
     turnIndex: int
     visibility: str = "visible"
