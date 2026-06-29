@@ -82,6 +82,121 @@ def test_tryparse_does_not_normalize_non_path_string_fields() -> None:
     assert parsed["arguments"]["script"] == r'print("D:\new\test.md")'
 
 
+def test_codex_wham_usage_message_uses_later_exhausted_window() -> None:
+    message = llmcore._codex_usage_limit_message_from_wham(
+        {
+            "rate_limit": {
+                "limit_reached": True,
+                "primary_window": {
+                    "used_percent": 100,
+                    "reset_after_seconds": 600,
+                },
+                "secondary_window": {
+                    "used_percent": 100,
+                    "reset_after_seconds": 7200,
+                },
+            }
+        },
+        now=1_700_000_000,
+    )
+
+    assert message is not None
+    assert "next reset in 2 hours" in message
+
+
+def test_codex_wham_usage_message_handles_temporary_limit() -> None:
+    message = llmcore._codex_usage_limit_message_from_wham(
+        {"rate_limit": {"limit_reached": False}},
+        now=1_700_000_000,
+    )
+
+    assert message == "Codex request was rate limited temporarily; retry shortly"
+
+
+def test_codex_stream_final_429_appends_quota_reset_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakePostResponse:
+        status_code = 429
+        headers: dict[str, str] = {}
+        text = "quota exhausted"
+
+        def __enter__(self) -> "FakePostResponse":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    class FakeGetResponse:
+        status_code = 200
+
+        def json(self) -> dict[str, Any]:
+            return {
+                "rate_limit": {
+                    "limit_reached": True,
+                    "primary_window": {
+                        "used_percent": 100,
+                        "reset_after_seconds": 3600,
+                    },
+                }
+            }
+
+    monkeypatch.setattr(llmcore.requests, "post", lambda *_args, **_kwargs: FakePostResponse(), raising=False)
+    monkeypatch.setattr(llmcore.requests, "get", lambda *_args, **_kwargs: FakeGetResponse(), raising=False)
+    monkeypatch.setattr(llmcore.time, "time", lambda: 1_700_000_000)
+    sess = types.SimpleNamespace(
+        max_retries=0,
+        stream=True,
+        connect_timeout=1,
+        read_timeout=10,
+        proxies=None,
+        verify=True,
+        codex_backend=True,
+    )
+
+    chunks = list(llmcore._stream_with_retry(sess, "https://example.test", {}, {}, lambda _r: iter(())))
+
+    assert chunks
+    assert "quota exhausted" in chunks[0]
+    assert "next reset in 1 hour" in chunks[0]
+
+
+def test_non_codex_stream_final_429_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakePostResponse:
+        status_code = 429
+        headers: dict[str, str] = {}
+        text = "plain rate limit"
+
+        def __enter__(self) -> "FakePostResponse":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(llmcore.requests, "post", lambda *_args, **_kwargs: FakePostResponse(), raising=False)
+    monkeypatch.setattr(
+        llmcore.requests,
+        "get",
+        lambda *_args, **_kwargs: pytest.fail("WHAM should not be called for non-Codex"),
+        raising=False,
+    )
+    sess = types.SimpleNamespace(
+        max_retries=0,
+        stream=True,
+        connect_timeout=1,
+        read_timeout=10,
+        proxies=None,
+        verify=True,
+        codex_backend=False,
+    )
+
+    chunks = list(llmcore._stream_with_retry(sess, "https://example.test", {}, {}, lambda _r: iter(())))
+
+    assert chunks == ["!!!Error: HTTP 429: plain rate limit"]
+
+
 def _exhaust(gen: Any) -> Any:
     try:
         while True:

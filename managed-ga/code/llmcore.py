@@ -1,5 +1,5 @@
 import os, json, re, time, requests, sys, threading, urllib3, base64, importlib, uuid, pathlib, socket
-from datetime import datetime
+from datetime import datetime, timezone
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 _RESP_CACHE_KEY = str(uuid.uuid4()); _RESP_CODEX_KEY = str(uuid.uuid4())
 _ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -378,6 +378,8 @@ def _stream_with_retry(sess, url, headers, payload, parse_fn):
                         time.sleep(d); continue
                     try: body = r.text.strip()[:500]
                     except: body = ""
+                    if r.status_code == 429 and getattr(sess, 'codex_backend', False):
+                        body = _codex_enrich_quota_error(sess, headers, body)
                     err = f"!!!Error: HTTP {r.status_code}" + (f": {body}" if body else "")
                     yield err; return [{"type": "text", "text": err}]
                 gen = parse_fn(r)
@@ -408,6 +410,117 @@ def _codex_account_id_from_jwt(access_token):
         return account_id if isinstance(account_id, str) and account_id else None
     except Exception:
         return None
+
+_CODEX_WHAM_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
+
+def _codex_enrich_quota_error(sess, headers, body):
+    hint = _codex_fetch_usage_limit_message(sess, headers)
+    if not hint: return body
+    if body and hint not in body: return f"{body}\n{hint}"
+    return hint
+
+def _codex_fetch_usage_limit_message(sess, headers):
+    try:
+        wham_headers = dict(headers or {})
+        wham_headers["Accept"] = "application/json"
+        wham_headers.pop("Content-Type", None)
+        timeout = (getattr(sess, 'connect_timeout', 10), min(5, getattr(sess, 'read_timeout', 180)))
+        resp = requests.get(_CODEX_WHAM_USAGE_URL, headers=wham_headers, timeout=timeout,
+                            proxies=getattr(sess, 'proxies', None), verify=getattr(sess, 'verify', True))
+        if getattr(resp, 'status_code', 0) < 200 or getattr(resp, 'status_code', 0) >= 300: return None
+        return _codex_usage_limit_message_from_wham(resp.json())
+    except Exception:
+        return None
+
+def _codex_usage_limit_message_from_wham(data, now=None):
+    if not isinstance(data, dict): return None
+    now = int(now if now is not None else time.time())
+    rate_limit = data.get("rate_limit") or data.get("rateLimit") or data
+    if not isinstance(rate_limit, dict): return None
+    limit_reached = _codex_bool_field(rate_limit, "limit_reached")
+    if limit_reached is None: limit_reached = _codex_bool_field(rate_limit, "limitReached")
+    if limit_reached is None: limit_reached = _codex_bool_field(data, "limit_reached")
+    if limit_reached is None: limit_reached = _codex_bool_field(data, "limitReached")
+    windows = []
+    for key in ("primary_window", "secondary_window", "primaryWindow", "secondaryWindow", "primary", "secondary"):
+        window = rate_limit.get(key)
+        parsed = _codex_parse_usage_window(window, now)
+        if parsed: windows.append(parsed)
+    if limit_reached is False:
+        return "Codex request was rate limited temporarily; retry shortly"
+    exhausted_resets = [w["reset_at"] for w in windows if w["exhausted"] and w.get("reset_at")]
+    fallback_resets = [w["reset_at"] for w in windows if w.get("reset_at")] if limit_reached is True else []
+    reset_at = max(exhausted_resets or fallback_resets) if (exhausted_resets or fallback_resets) else None
+    if not reset_at: return None
+    return f"Codex usage limit reached; next reset in {_codex_format_reset_duration(reset_at, now)} ({_codex_format_reset_timestamp(reset_at)})"
+
+def _codex_parse_usage_window(window, now):
+    if not isinstance(window, dict): return None
+    used_percent = (_codex_number_field(window, "used_percent") or
+                    _codex_number_field(window, "usedPercent") or
+                    _codex_number_field(window, "usage_percent") or
+                    _codex_number_field(window, "usagePercent"))
+    reset_at = _codex_parse_reset_at(window, now)
+    if used_percent is None and reset_at is None: return None
+    exhausted = used_percent is not None and (used_percent >= 100 or abs(used_percent - 1.0) < 1e-9)
+    return {"exhausted": exhausted, "reset_at": reset_at}
+
+def _codex_parse_reset_at(window, now):
+    for key in ("reset_at", "resetAt"):
+        reset_at = _codex_parse_timestamp(window.get(key))
+        if reset_at is not None: return reset_at
+    seconds = _codex_number_field(window, "reset_after_seconds")
+    if seconds is None: seconds = _codex_number_field(window, "resetAfterSeconds")
+    return int(now + max(0, seconds)) if seconds is not None else None
+
+def _codex_parse_timestamp(value):
+    if value is None: return None
+    if isinstance(value, (int, float)):
+        return int(value / 1000 if value > 10_000_000_000 else value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text: return None
+        try:
+            numeric = float(text)
+            return int(numeric / 1000 if numeric > 10_000_000_000 else numeric)
+        except Exception:
+            pass
+        try:
+            return int(datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp())
+        except Exception:
+            return None
+    return None
+
+def _codex_number_field(data, key):
+    value = data.get(key) if isinstance(data, dict) else None
+    if isinstance(value, (int, float)): return float(value)
+    if isinstance(value, str):
+        try: return float(value.strip())
+        except Exception: return None
+    return None
+
+def _codex_bool_field(data, key):
+    value = data.get(key) if isinstance(data, dict) else None
+    if isinstance(value, bool): return value
+    if isinstance(value, str):
+        lower = value.strip().lower()
+        if lower == "true": return True
+        if lower == "false": return False
+    return None
+
+def _codex_format_reset_duration(reset_at, now):
+    seconds = max(0, int(reset_at - now))
+    if seconds < 60: return "less than 1 minute"
+    minutes = (seconds + 59) // 60
+    if minutes < 60: return f"{minutes} minute" + ("" if minutes == 1 else "s")
+    hours, remaining_minutes = divmod(minutes, 60)
+    text = f"{hours} hour" + ("" if hours == 1 else "s")
+    if remaining_minutes: text += f" {remaining_minutes} minute" + ("" if remaining_minutes == 1 else "s")
+    return text
+
+def _codex_format_reset_timestamp(reset_at):
+    try: return datetime.fromtimestamp(int(reset_at), timezone.utc).isoformat().replace("+00:00", "Z")
+    except Exception: return f"unix {reset_at}"
 
 def _galley_codex_access_token(sess):
     ipc = getattr(sess, 'galley_credential_ipc', None)

@@ -5,16 +5,19 @@
 //! localhost-only IPC channel.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use chrono::{SecondsFormat, Utc};
+use chrono::{SecondsFormat, TimeZone, Utc};
+use reqwest::StatusCode;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::api::{
     ManagedModelAuthKind, ManagedModelConnectionResult, ManagedModelProtocol,
@@ -36,10 +39,14 @@ const CODEX_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const CODEX_OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const CODEX_AUTH_ISSUER: &str = "https://auth.openai.com";
 const CODEX_DEVICE_URL: &str = "https://auth.openai.com/codex/device";
+const CODEX_WHAM_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 const CODEX_PROBE_INSTRUCTIONS: &str =
     "This is a Galley model health check. Reply with a short acknowledgement.";
 const REFRESH_SKEW_SECONDS: i64 = 120;
 const HTTP_TIMEOUT_SECS: u64 = 20;
+const WHAM_TIMEOUT_SECS: u64 = 5;
+
+static CODEX_REFRESH_GATES: OnceLock<Mutex<HashMap<String, Arc<AsyncMutex<()>>>>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -129,6 +136,7 @@ struct DevicePollResponse {
 struct TokenResponse {
     access_token: Option<String>,
     refresh_token: Option<String>,
+    expires_in: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -252,19 +260,8 @@ pub async fn complete_device_login(
 }
 
 pub async fn import_cli_login() -> Result<CodexAuthSetupResult> {
-    let auth_path = codex_cli_auth_path()?;
-    let body = std::fs::read_to_string(&auth_path).map_err(|e| GalleyError::InvalidArgs {
-        message: format!(
-            "Codex CLI login was not found at {}: {e}",
-            auth_path.display()
-        ),
-    })?;
-    let file: CodexCliAuthFile =
-        serde_json::from_str(&body).map_err(|e| GalleyError::InvalidArgs {
-            message: format!("Codex CLI auth file is invalid JSON: {e}"),
-        })?;
-    let mut secret = CodexOAuthSecret::new(file.tokens.access_token, file.tokens.refresh_token)?;
-    if token_is_expiring(&secret.access_token, REFRESH_SKEW_SECONDS) {
+    let mut secret = read_codex_cli_secret()?;
+    if secret.is_expiring(REFRESH_SKEW_SECONDS) {
         secret = refresh_secret(secret).await?;
     }
     persist_probe_and_return(secret).await
@@ -299,23 +296,52 @@ pub async fn resolve_access_token(
     galley: &SqliteGalley,
     api_key_ref: &str,
 ) -> Result<ResolvedCodexAccessToken> {
-    let raw = credential_store::get_secret(galley, api_key_ref).await?;
-    let mut secret: CodexOAuthSecret =
-        serde_json::from_str(&raw).map_err(|e| GalleyError::InvalidArgs {
-            message: format!("ChatGPT / Codex credential is invalid: {e}"),
-        })?;
-    if token_is_expiring(&secret.access_token, REFRESH_SKEW_SECONDS) {
-        secret = refresh_secret(secret).await?;
-        let serialized = serde_json::to_string(&secret).map_err(|e| GalleyError::Internal {
-            message: format!("serializing refreshed Codex credential failed: {e}"),
-        })?;
-        credential_store::set_secret(galley, api_key_ref, &serialized).await?;
+    resolve_access_token_with_refresh(galley, api_key_ref, &refresh_secret, true).await
+}
+
+async fn resolve_access_token_with_refresh<F, Fut>(
+    galley: &SqliteGalley,
+    api_key_ref: &str,
+    refresh: &F,
+    allow_cli_fallback: bool,
+) -> Result<ResolvedCodexAccessToken>
+where
+    F: Fn(CodexOAuthSecret) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<CodexOAuthSecret>> + Send,
+{
+    let secret = read_codex_oauth_secret(galley, api_key_ref).await?;
+    if !secret.is_expiring(REFRESH_SKEW_SECONDS) {
+        return Ok(secret.into_resolved());
     }
-    Ok(ResolvedCodexAccessToken {
-        access_token: secret.access_token,
-        account_id: secret.account_id,
-        expires_at: secret.expires_at,
-    })
+
+    let gate = refresh_gate(api_key_ref);
+    let _guard = gate.lock().await;
+
+    let secret = read_codex_oauth_secret(galley, api_key_ref).await?;
+    if !secret.is_expiring(REFRESH_SKEW_SECONDS) {
+        return Ok(secret.into_resolved());
+    }
+
+    match refresh(secret.clone()).await {
+        Ok(refreshed) => {
+            save_codex_oauth_secret(galley, api_key_ref, &refreshed).await?;
+            Ok(refreshed.into_resolved())
+        }
+        Err(err) => {
+            if let Some(recovered) =
+                recover_refreshed_codex_secret(galley, api_key_ref, &secret).await?
+            {
+                return Ok(recovered.into_resolved());
+            }
+            if allow_cli_fallback {
+                if let Some(recovered) = recover_codex_cli_secret(&secret, refresh).await {
+                    save_codex_oauth_secret(galley, api_key_ref, &recovered).await?;
+                    return Ok(recovered.into_resolved());
+                }
+            }
+            Err(err)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -482,6 +508,88 @@ async fn refresh_secret(secret: CodexOAuthSecret) -> Result<CodexOAuthSecret> {
     token_response_to_secret(resp, Some(secret.refresh_token)).await
 }
 
+fn refresh_gate(api_key_ref: &str) -> Arc<AsyncMutex<()>> {
+    let gates = CODEX_REFRESH_GATES.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut gates = gates.lock().expect("Codex refresh gate mutex poisoned");
+    gates
+        .entry(api_key_ref.to_string())
+        .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+        .clone()
+}
+
+async fn read_codex_oauth_secret(
+    galley: &SqliteGalley,
+    api_key_ref: &str,
+) -> Result<CodexOAuthSecret> {
+    let raw = credential_store::get_secret(galley, api_key_ref).await?;
+    serde_json::from_str(&raw).map_err(|e| GalleyError::InvalidArgs {
+        message: format!("ChatGPT / Codex credential is invalid: {e}"),
+    })
+}
+
+async fn save_codex_oauth_secret(
+    galley: &SqliteGalley,
+    api_key_ref: &str,
+    secret: &CodexOAuthSecret,
+) -> Result<()> {
+    let serialized = serde_json::to_string(secret).map_err(|e| GalleyError::Internal {
+        message: format!("serializing refreshed Codex credential failed: {e}"),
+    })?;
+    credential_store::set_secret(galley, api_key_ref, &serialized).await
+}
+
+async fn recover_refreshed_codex_secret(
+    galley: &SqliteGalley,
+    api_key_ref: &str,
+    attempted: &CodexOAuthSecret,
+) -> Result<Option<CodexOAuthSecret>> {
+    let latest = read_codex_oauth_secret(galley, api_key_ref).await?;
+    let changed = latest.access_token != attempted.access_token
+        || latest.refresh_token != attempted.refresh_token
+        || latest.expires_at != attempted.expires_at;
+    if changed
+        && !latest.is_expiring(REFRESH_SKEW_SECONDS)
+        && codex_secret_accounts_are_compatible(attempted, &latest)
+    {
+        return Ok(Some(latest));
+    }
+    Ok(None)
+}
+
+async fn recover_codex_cli_secret<F, Fut>(
+    attempted: &CodexOAuthSecret,
+    refresh: &F,
+) -> Option<CodexOAuthSecret>
+where
+    F: Fn(CodexOAuthSecret) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<CodexOAuthSecret>> + Send,
+{
+    let mut candidate = read_codex_cli_secret().ok()?;
+    if !codex_secret_accounts_are_compatible(attempted, &candidate) {
+        return None;
+    }
+    if candidate.is_expiring(REFRESH_SKEW_SECONDS) {
+        candidate = refresh(candidate).await.ok()?;
+        if !codex_secret_accounts_are_compatible(attempted, &candidate) {
+            return None;
+        }
+    }
+    if candidate.is_expiring(REFRESH_SKEW_SECONDS) {
+        return None;
+    }
+    Some(candidate)
+}
+
+fn codex_secret_accounts_are_compatible(
+    current: &CodexOAuthSecret,
+    candidate: &CodexOAuthSecret,
+) -> bool {
+    match current.account_id.as_deref() {
+        Some(current_account_id) => candidate.account_id.as_deref() == Some(current_account_id),
+        None => true,
+    }
+}
+
 async fn token_response_to_secret(
     resp: reqwest::Response,
     previous_refresh_token: Option<String>,
@@ -490,23 +598,22 @@ async fn token_response_to_secret(
     let body = resp.text().await.map_err(|e| GalleyError::RunnerError {
         message: format!("reading ChatGPT / Codex token response failed: {e}"),
     })?;
+    token_body_to_secret(status, &body, previous_refresh_token)
+}
+
+fn token_body_to_secret(
+    status: StatusCode,
+    body: &str,
+    previous_refresh_token: Option<String>,
+) -> Result<CodexOAuthSecret> {
     if status.as_u16() == 429 {
         return Err(GalleyError::InvalidArgs {
             message: "Codex usage limit reached; retry after the limit resets".into(),
         });
     }
     if !status.is_success() {
-        let relogin = status.as_u16() == 401 || status.as_u16() == 403;
         return Err(GalleyError::InvalidArgs {
-            message: if relogin {
-                "ChatGPT / Codex session expired; sign in again".into()
-            } else {
-                format!(
-                    "ChatGPT / Codex token request failed (HTTP {}: {})",
-                    status.as_u16(),
-                    compact_body(&body)
-                )
-            },
+            message: token_error_message(status, body, previous_refresh_token.as_deref()),
         });
     }
     let token: TokenResponse =
@@ -521,7 +628,27 @@ async fn token_response_to_secret(
         .ok_or_else(|| GalleyError::InvalidArgs {
             message: "ChatGPT / Codex token response did not include a refresh token".into(),
         })?;
-    CodexOAuthSecret::new(access_token, refresh_token)
+    CodexOAuthSecret::with_expires_in(access_token, refresh_token, token.expires_in)
+}
+
+fn token_error_message(
+    status: StatusCode,
+    body: &str,
+    previous_refresh_token: Option<&str>,
+) -> String {
+    let lower = body.to_ascii_lowercase();
+    if lower.contains("refresh_token_reused") || lower.contains("refresh token reused") {
+        return "ChatGPT / Codex token was already refreshed elsewhere; sign in again if it persists"
+            .into();
+    }
+    if lower.contains("invalid_grant") || status.as_u16() == 401 || status.as_u16() == 403 {
+        return "ChatGPT / Codex session expired; sign in again".into();
+    }
+    format!(
+        "ChatGPT / Codex token request failed (HTTP {}: {})",
+        status.as_u16(),
+        compact_body_redacted(body, &[previous_refresh_token])
+    )
 }
 
 async fn probe_with_access_token(
@@ -538,7 +665,8 @@ async fn probe_with_access_token(
         .header("User-Agent", "codex_cli_rs/0.0.0 (Galley)")
         .header("originator", "codex_cli_rs")
         .json(&codex_probe_payload(model, reasoning_effort));
-    if let Some(account_id) = account_id_from_jwt(access_token) {
+    let account_id = account_id_from_jwt(access_token);
+    if let Some(account_id) = account_id.as_deref() {
         req = req.header("ChatGPT-Account-ID", account_id);
     }
     let resp = req.send().await.map_err(|e| GalleyError::RunnerError {
@@ -549,9 +677,10 @@ async fn probe_with_access_token(
         message: format!("reading ChatGPT / Codex probe response failed: {e}"),
     })?;
     if status.as_u16() == 429 {
-        return Err(GalleyError::InvalidArgs {
-            message: "Codex usage limit reached; retry after the limit resets".into(),
-        });
+        let message = fetch_codex_usage_limit_message(access_token, account_id.as_deref())
+            .await
+            .unwrap_or_else(|| "Codex usage limit reached; retry after the limit resets".into());
+        return Err(GalleyError::InvalidArgs { message });
     }
     if status.as_u16() == 401 || status.as_u16() == 403 {
         return Err(GalleyError::InvalidArgs {
@@ -593,8 +722,199 @@ fn codex_probe_payload(model: &str, reasoning_effort: &str) -> Value {
     })
 }
 
+async fn fetch_codex_usage_limit_message(
+    access_token: &str,
+    account_id: Option<&str>,
+) -> Option<String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(WHAM_TIMEOUT_SECS))
+        .build()
+        .ok()?;
+    let mut req = client
+        .get(CODEX_WHAM_USAGE_URL)
+        .bearer_auth(access_token)
+        .header("Accept", "application/json")
+        .header("User-Agent", "codex_cli_rs/0.0.0 (Galley)")
+        .header("originator", "codex_cli_rs");
+    if let Some(account_id) = account_id {
+        req = req.header("ChatGPT-Account-ID", account_id);
+    }
+    let resp = req.send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let body: Value = resp.json().await.ok()?;
+    codex_usage_limit_message_from_wham(&body, Utc::now().timestamp())
+}
+
+fn codex_usage_limit_message_from_wham(body: &Value, now_ts: i64) -> Option<String> {
+    let rate_limit = body
+        .get("rate_limit")
+        .or_else(|| body.get("rateLimit"))
+        .unwrap_or(body);
+    let limit_reached = bool_field(rate_limit, "limit_reached")
+        .or_else(|| bool_field(rate_limit, "limitReached"))
+        .or_else(|| bool_field(body, "limit_reached"))
+        .or_else(|| bool_field(body, "limitReached"));
+    let windows: Vec<CodexUsageWindow> = [
+        "primary_window",
+        "secondary_window",
+        "primaryWindow",
+        "secondaryWindow",
+        "primary",
+        "secondary",
+    ]
+    .into_iter()
+    .filter_map(|key| rate_limit.get(key))
+    .filter_map(|window| parse_codex_usage_window(window, now_ts))
+    .collect();
+
+    if limit_reached == Some(false) {
+        return Some("Codex request was rate limited temporarily; retry shortly".into());
+    }
+
+    let exhausted_reset = windows
+        .iter()
+        .filter(|window| window.exhausted)
+        .filter_map(|window| window.reset_at)
+        .max();
+    let fallback_reset = (limit_reached == Some(true))
+        .then(|| windows.iter().filter_map(|window| window.reset_at).max())
+        .flatten();
+    let reset_at = exhausted_reset.or(fallback_reset)?;
+    Some(format!(
+        "Codex usage limit reached; next reset in {} ({})",
+        format_reset_duration(reset_at, now_ts),
+        format_reset_timestamp(reset_at)
+    ))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CodexUsageWindow {
+    exhausted: bool,
+    reset_at: Option<i64>,
+}
+
+fn parse_codex_usage_window(window: &Value, now_ts: i64) -> Option<CodexUsageWindow> {
+    let used_percent = number_field(window, "used_percent")
+        .or_else(|| number_field(window, "usedPercent"))
+        .or_else(|| number_field(window, "usage_percent"))
+        .or_else(|| number_field(window, "usagePercent"));
+    let exhausted = used_percent
+        .map(|percent| percent >= 100.0 || (percent - 1.0).abs() < f64::EPSILON)
+        .unwrap_or(false);
+    let reset_at = parse_reset_at(window, now_ts);
+    if used_percent.is_none() && reset_at.is_none() {
+        return None;
+    }
+    Some(CodexUsageWindow {
+        exhausted,
+        reset_at,
+    })
+}
+
+fn parse_reset_at(window: &Value, now_ts: i64) -> Option<i64> {
+    let reset_at = window
+        .get("reset_at")
+        .or_else(|| window.get("resetAt"))
+        .and_then(parse_timestamp_value);
+    if reset_at.is_some() {
+        return reset_at;
+    }
+    let after_seconds = number_field(window, "reset_after_seconds")
+        .or_else(|| number_field(window, "resetAfterSeconds"))
+        .map(|seconds| seconds.max(0.0).ceil() as i64);
+    after_seconds.map(|seconds| now_ts + seconds)
+}
+
+fn parse_timestamp_value(value: &Value) -> Option<i64> {
+    if let Some(ts) = value.as_i64() {
+        return Some(if ts > 10_000_000_000 { ts / 1000 } else { ts });
+    }
+    if let Some(ts) = value.as_f64() {
+        let ts = if ts > 10_000_000_000.0 {
+            ts / 1000.0
+        } else {
+            ts
+        };
+        return Some(ts.round() as i64);
+    }
+    let text = value.as_str()?.trim();
+    if let Ok(ts) = text.parse::<i64>() {
+        return Some(if ts > 10_000_000_000 { ts / 1000 } else { ts });
+    }
+    chrono::DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|dt| dt.timestamp())
+}
+
+fn number_field(value: &Value, key: &str) -> Option<f64> {
+    match value.get(key)? {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    }
+}
+
+fn bool_field(value: &Value, key: &str) -> Option<bool> {
+    match value.get(key)? {
+        Value::Bool(b) => Some(*b),
+        Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn format_reset_duration(reset_at: i64, now_ts: i64) -> String {
+    let seconds = reset_at.saturating_sub(now_ts);
+    if seconds < 60 {
+        return "less than 1 minute".into();
+    }
+    let minutes = (seconds + 59) / 60;
+    if minutes < 60 {
+        return plural_duration(minutes, "minute");
+    }
+    let hours = minutes / 60;
+    let remaining_minutes = minutes % 60;
+    if remaining_minutes == 0 {
+        plural_duration(hours, "hour")
+    } else {
+        format!(
+            "{} {}",
+            plural_duration(hours, "hour"),
+            plural_duration(remaining_minutes, "minute")
+        )
+    }
+}
+
+fn plural_duration(value: i64, unit: &str) -> String {
+    if value == 1 {
+        format!("{value} {unit}")
+    } else {
+        format!("{value} {unit}s")
+    }
+}
+
+fn format_reset_timestamp(reset_at: i64) -> String {
+    match Utc.timestamp_opt(reset_at, 0).single() {
+        Some(dt) => dt.to_rfc3339_opts(SecondsFormat::Secs, true),
+        None => format!("unix {reset_at}"),
+    }
+}
+
 impl CodexOAuthSecret {
     fn new(access_token: String, refresh_token: String) -> Result<Self> {
+        Self::with_expires_in(access_token, refresh_token, None)
+    }
+
+    fn with_expires_in(
+        access_token: String,
+        refresh_token: String,
+        expires_in: Option<i64>,
+    ) -> Result<Self> {
         let access_token = access_token.trim().to_string();
         let refresh_token = refresh_token.trim().to_string();
         if access_token.is_empty() {
@@ -607,14 +927,30 @@ impl CodexOAuthSecret {
                 message: "ChatGPT / Codex token response did not include a refresh token".into(),
             });
         }
+        let fallback_expires_at = expires_in.map(|ttl| Utc::now().timestamp() + ttl.max(0));
         Ok(Self {
-            expires_at: jwt_exp(&access_token),
+            expires_at: jwt_exp(&access_token).or(fallback_expires_at),
             account_id: account_id_from_jwt(&access_token),
             access_token,
             refresh_token,
             last_refresh_at: Some(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)),
             last_refresh_error: None,
         })
+    }
+
+    fn is_expiring(&self, skew_seconds: i64) -> bool {
+        let Some(exp) = self.expires_at.or_else(|| jwt_exp(&self.access_token)) else {
+            return true;
+        };
+        exp <= Utc::now().timestamp() + skew_seconds
+    }
+
+    fn into_resolved(self) -> ResolvedCodexAccessToken {
+        ResolvedCodexAccessToken {
+            access_token: self.access_token,
+            account_id: self.account_id,
+            expires_at: self.expires_at,
+        }
     }
 }
 
@@ -636,6 +972,21 @@ fn codex_cli_auth_path() -> Result<PathBuf> {
             message: "cannot locate Codex CLI auth directory".into(),
         })?;
     Ok(codex_home.join("auth.json"))
+}
+
+fn read_codex_cli_secret() -> Result<CodexOAuthSecret> {
+    let auth_path = codex_cli_auth_path()?;
+    let body = std::fs::read_to_string(&auth_path).map_err(|e| GalleyError::InvalidArgs {
+        message: format!(
+            "Codex CLI login was not found at {}: {e}",
+            auth_path.display()
+        ),
+    })?;
+    let file: CodexCliAuthFile =
+        serde_json::from_str(&body).map_err(|e| GalleyError::InvalidArgs {
+            message: format!("Codex CLI auth file is invalid JSON: {e}"),
+        })?;
+    CodexOAuthSecret::new(file.tokens.access_token, file.tokens.refresh_token)
 }
 
 fn nonempty(value: Option<String>, field: &str) -> Result<String> {
@@ -663,13 +1014,6 @@ fn normalize_reasoning(value: &str) -> &'static str {
         "xhigh" => "xhigh",
         _ => CODEX_DEFAULT_REASONING,
     }
-}
-
-fn token_is_expiring(token: &str, skew_seconds: i64) -> bool {
-    let Some(exp) = jwt_exp(token) else {
-        return true;
-    };
-    exp <= Utc::now().timestamp() + skew_seconds
 }
 
 fn jwt_exp(token: &str) -> Option<i64> {
@@ -703,6 +1047,17 @@ fn compact_body(body: &str) -> String {
     }
     let prefix: String = trimmed.chars().take(240).collect();
     format!("{prefix}...")
+}
+
+fn compact_body_redacted(body: &str, secrets: &[Option<&str>]) -> String {
+    let mut redacted = body.to_string();
+    for secret in secrets.iter().flatten() {
+        let secret = secret.trim();
+        if !secret.is_empty() {
+            redacted = redacted.replace(secret, "[redacted]");
+        }
+    }
+    compact_body(&redacted)
 }
 
 fn random_hex(bytes_len: usize) -> Result<String> {
@@ -809,10 +1164,10 @@ fn create_secure_credential_pipe(
     use std::mem;
     use std::ptr;
     use tokio::net::windows::named_pipe::ServerOptions;
+    use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Authorization::{
         ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
     };
-    use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
 
     // Owner Rights (OW) resolves to the creating user for this new kernel
@@ -957,6 +1312,8 @@ async fn fulfill_credential_ipc_request(
 mod tests {
     use super::*;
     use sqlx::SqlitePool;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tempfile::TempDir;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     #[test]
@@ -1001,6 +1358,364 @@ mod tests {
         let payload = codex_probe_payload("gpt-5.5", "surprise");
 
         assert_eq!(payload["reasoning"]["effort"], CODEX_DEFAULT_REASONING);
+    }
+
+    #[test]
+    fn token_body_to_secret_preserves_previous_refresh_token_when_missing() {
+        let access_token = fake_codex_access_token_with(3600, Some("acct_test"));
+        let secret = token_body_to_secret(
+            StatusCode::OK,
+            &serde_json::json!({
+                "access_token": access_token,
+                "expires_in": 3600
+            })
+            .to_string(),
+            Some("refresh-previous".into()),
+        )
+        .expect("token body should parse");
+
+        assert_eq!(secret.refresh_token, "refresh-previous");
+        assert_eq!(secret.account_id.as_deref(), Some("acct_test"));
+        assert!(!secret.is_expiring(REFRESH_SKEW_SECONDS));
+    }
+
+    #[test]
+    fn token_body_to_secret_uses_returned_refresh_token() {
+        let access_token = fake_codex_access_token_with(3600, Some("acct_test"));
+        let secret = token_body_to_secret(
+            StatusCode::OK,
+            &serde_json::json!({
+                "access_token": access_token,
+                "refresh_token": "refresh-new",
+                "expires_in": 3600
+            })
+            .to_string(),
+            Some("refresh-previous".into()),
+        )
+        .expect("token body should parse");
+
+        assert_eq!(secret.refresh_token, "refresh-new");
+    }
+
+    #[test]
+    fn token_body_to_secret_uses_expires_in_when_jwt_has_no_exp() {
+        let secret = token_body_to_secret(
+            StatusCode::OK,
+            &serde_json::json!({
+                "access_token": fake_codex_access_token_without_exp(Some("acct_test")),
+                "refresh_token": "refresh-new",
+                "expires_in": 3600
+            })
+            .to_string(),
+            None,
+        )
+        .expect("token body should parse");
+
+        assert!(secret.expires_at.is_some());
+        assert!(!secret.is_expiring(REFRESH_SKEW_SECONDS));
+    }
+
+    #[test]
+    fn token_error_message_classifies_reused_refresh_without_leaking_secret() {
+        let message = token_error_message(
+            StatusCode::BAD_REQUEST,
+            r#"{"error":"refresh_token_reused","refresh_token":"secret-refresh"}"#,
+            Some("secret-refresh"),
+        );
+
+        assert!(message.contains("already refreshed elsewhere"));
+        assert!(!message.contains("secret-refresh"));
+    }
+
+    #[test]
+    fn token_error_message_classifies_invalid_grant() {
+        let message = token_error_message(
+            StatusCode::BAD_REQUEST,
+            r#"{"error":"invalid_grant"}"#,
+            Some("secret-refresh"),
+        );
+
+        assert!(message.contains("session expired"));
+        assert!(!message.contains("secret-refresh"));
+    }
+
+    #[tokio::test]
+    async fn resolve_access_token_does_not_refresh_when_access_token_is_current() {
+        let galley = test_galley().await;
+        let api_key_ref = "managed-provider:codex-current";
+        let access_token = fake_codex_access_token_with(3600, Some("acct_test"));
+        save_test_secret(
+            &galley,
+            api_key_ref,
+            CodexOAuthSecret::new(access_token.clone(), "refresh-current".into()).unwrap(),
+        )
+        .await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let refresh = {
+            let calls = calls.clone();
+            move |_secret: CodexOAuthSecret| {
+                let calls = calls.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Err(GalleyError::Internal {
+                        message: "refresh should not be called".into(),
+                    })
+                }
+            }
+        };
+
+        let resolved = resolve_access_token_with_refresh(&galley, api_key_ref, &refresh, false)
+            .await
+            .expect("current token should resolve");
+
+        assert_eq!(resolved.access_token, access_token);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn concurrent_resolve_access_token_refreshes_once() {
+        let galley = test_galley().await;
+        let api_key_ref = "managed-provider:codex-concurrent";
+        save_test_secret(
+            &galley,
+            api_key_ref,
+            CodexOAuthSecret::new(
+                fake_codex_access_token_with(-60, Some("acct_test")),
+                "refresh-old".into(),
+            )
+            .unwrap(),
+        )
+        .await;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let refresh = {
+            let calls = calls.clone();
+            move |_secret: CodexOAuthSecret| {
+                let calls = calls.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    CodexOAuthSecret::new(
+                        fake_codex_access_token_with(3600, Some("acct_test")),
+                        "refresh-new".into(),
+                    )
+                }
+            }
+        };
+
+        let (left, right) = tokio::join!(
+            resolve_access_token_with_refresh(&galley, api_key_ref, &refresh, false),
+            resolve_access_token_with_refresh(&galley, api_key_ref, &refresh, false),
+        );
+
+        assert!(left.unwrap().access_token.contains('.'));
+        assert!(right.unwrap().access_token.contains('.'));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let saved = read_codex_oauth_secret(&galley, api_key_ref).await.unwrap();
+        assert_eq!(saved.refresh_token, "refresh-new");
+    }
+
+    #[tokio::test]
+    async fn resolve_access_token_recovers_when_db_was_refreshed_after_failure() {
+        let galley = test_galley().await;
+        let api_key_ref = "managed-provider:codex-recover";
+        save_test_secret(
+            &galley,
+            api_key_ref,
+            CodexOAuthSecret::new(
+                fake_codex_access_token_with(-60, Some("acct_test")),
+                "refresh-old".into(),
+            )
+            .unwrap(),
+        )
+        .await;
+        let refresh = {
+            let galley = galley.clone();
+            move |_secret: CodexOAuthSecret| {
+                let galley = galley.clone();
+                async move {
+                    save_test_secret(
+                        &galley,
+                        api_key_ref,
+                        CodexOAuthSecret::new(
+                            fake_codex_access_token_with(3600, Some("acct_test")),
+                            "refresh-new".into(),
+                        )
+                        .unwrap(),
+                    )
+                    .await;
+                    Err(GalleyError::InvalidArgs {
+                        message: "simulated stale refresh failure".into(),
+                    })
+                }
+            }
+        };
+
+        let resolved = resolve_access_token_with_refresh(&galley, api_key_ref, &refresh, false)
+            .await
+            .expect("latest DB token should be reused after failure");
+
+        assert_eq!(resolved.account_id.as_deref(), Some("acct_test"));
+        let saved = read_codex_oauth_secret(&galley, api_key_ref).await.unwrap();
+        assert_eq!(saved.refresh_token, "refresh-new");
+    }
+
+    #[tokio::test]
+    async fn resolve_access_token_does_not_recover_db_refresh_from_different_account() {
+        let galley = test_galley().await;
+        let api_key_ref = "managed-provider:codex-recover-mismatch";
+        save_test_secret(
+            &galley,
+            api_key_ref,
+            CodexOAuthSecret::new(
+                fake_codex_access_token_with(-60, Some("acct_a")),
+                "refresh-old".into(),
+            )
+            .unwrap(),
+        )
+        .await;
+        let refresh = {
+            let galley = galley.clone();
+            move |_secret: CodexOAuthSecret| {
+                let galley = galley.clone();
+                async move {
+                    save_test_secret(
+                        &galley,
+                        api_key_ref,
+                        CodexOAuthSecret::new(
+                            fake_codex_access_token_with(3600, Some("acct_b")),
+                            "refresh-other-account".into(),
+                        )
+                        .unwrap(),
+                    )
+                    .await;
+                    Err(GalleyError::InvalidArgs {
+                        message: "simulated refresh failure".into(),
+                    })
+                }
+            }
+        };
+
+        let err = resolve_access_token_with_refresh(&galley, api_key_ref, &refresh, false)
+            .await
+            .expect_err("different-account DB token must not be adopted");
+
+        assert!(err.to_string().contains("simulated refresh failure"));
+        let saved = read_codex_oauth_secret(&galley, api_key_ref).await.unwrap();
+        assert_eq!(saved.account_id.as_deref(), Some("acct_b"));
+    }
+
+    #[tokio::test]
+    async fn codex_cli_fallback_accepts_same_account_and_rejects_mismatch() {
+        let temp = TempDir::new().unwrap();
+        let previous = std::env::var_os("CODEX_HOME");
+        std::env::set_var("CODEX_HOME", temp.path());
+        let old = CodexOAuthSecret::new(
+            fake_codex_access_token_with(-60, Some("acct_a")),
+            "refresh-old".into(),
+        )
+        .unwrap();
+        let refresh = |_secret: CodexOAuthSecret| async move {
+            Err(GalleyError::Internal {
+                message: "refresh should not be called".into(),
+            })
+        };
+
+        write_cli_auth(
+            temp.path(),
+            fake_codex_access_token_with(3600, Some("acct_a")),
+            "refresh-cli",
+        );
+        let accepted = recover_codex_cli_secret(&old, &refresh).await;
+        assert!(accepted.is_some());
+
+        write_cli_auth(
+            temp.path(),
+            fake_codex_access_token_with(3600, Some("acct_b")),
+            "refresh-cli",
+        );
+        let rejected = recover_codex_cli_secret(&old, &refresh).await;
+        assert!(rejected.is_none());
+
+        if let Some(previous) = previous {
+            std::env::set_var("CODEX_HOME", previous);
+        } else {
+            std::env::remove_var("CODEX_HOME");
+        }
+    }
+
+    #[test]
+    fn wham_usage_message_uses_exhausted_primary_reset() {
+        let message = codex_usage_limit_message_from_wham(
+            &serde_json::json!({
+                "rate_limit": {
+                    "limit_reached": true,
+                    "primary_window": {
+                        "used_percent": 100,
+                        "reset_after_seconds": 3600
+                    }
+                }
+            }),
+            1_700_000_000,
+        )
+        .expect("quota reset should parse");
+
+        assert!(message.contains("next reset in 1 hour"));
+        assert!(message.contains("2023-11-14T23:13:20Z"));
+    }
+
+    #[test]
+    fn wham_usage_message_uses_later_exhausted_window() {
+        let message = codex_usage_limit_message_from_wham(
+            &serde_json::json!({
+                "rate_limit": {
+                    "limit_reached": true,
+                    "primary_window": {
+                        "used_percent": 100,
+                        "reset_after_seconds": 600
+                    },
+                    "secondary_window": {
+                        "used_percent": 100,
+                        "reset_after_seconds": 7200
+                    }
+                }
+            }),
+            1_700_000_000,
+        )
+        .expect("quota reset should parse");
+
+        assert!(message.contains("next reset in 2 hours"));
+    }
+
+    #[test]
+    fn wham_usage_message_handles_temporary_rate_limit() {
+        let message = codex_usage_limit_message_from_wham(
+            &serde_json::json!({
+                "rate_limit": {
+                    "limit_reached": false
+                }
+            }),
+            1_700_000_000,
+        )
+        .expect("temporary limit message should parse");
+
+        assert!(message.contains("temporarily"));
+    }
+
+    #[test]
+    fn wham_usage_message_returns_none_when_reset_is_missing() {
+        let message = codex_usage_limit_message_from_wham(
+            &serde_json::json!({
+                "rate_limit": {
+                    "limit_reached": true,
+                    "primary_window": {
+                        "used_percent": 100
+                    }
+                }
+            }),
+            1_700_000_000,
+        );
+
+        assert!(message.is_none());
     }
 
     #[test]
@@ -1089,14 +1804,7 @@ mod tests {
 
     #[tokio::test]
     async fn credential_ipc_codex_response_never_includes_refresh_token() {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        sqlx::raw_sql(include_str!(
-            "../migrations/012_managed_model_local_secrets.sql"
-        ))
-        .execute(&pool)
-        .await
-        .unwrap();
-        let galley = SqliteGalley::from_pool(pool);
+        let galley = test_galley().await;
         let access_token = fake_codex_access_token();
         let secret = CodexOAuthSecret::new(access_token.clone(), "refresh-long-term".into())
             .expect("build test secret");
@@ -1142,13 +1850,62 @@ mod tests {
     }
 
     fn fake_codex_access_token() -> String {
+        fake_codex_access_token_with(3600, Some("acct_test"))
+    }
+
+    fn fake_codex_access_token_with(exp_delta_seconds: i64, account_id: Option<&str>) -> String {
         let payload = serde_json::json!({
-            "exp": Utc::now().timestamp() + 3600,
+            "exp": Utc::now().timestamp() + exp_delta_seconds,
             "https://api.openai.com/auth": {
-                "chatgpt_account_id": "acct_test"
+                "chatgpt_account_id": account_id.unwrap_or("acct_test")
             }
         });
         let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap());
         format!("header.{encoded}.sig")
+    }
+
+    fn fake_codex_access_token_without_exp(account_id: Option<&str>) -> String {
+        let payload = serde_json::json!({
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": account_id.unwrap_or("acct_test")
+            }
+        });
+        let encoded = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap());
+        format!("header.{encoded}.sig")
+    }
+
+    async fn test_galley() -> SqliteGalley {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../migrations/012_managed_model_local_secrets.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        SqliteGalley::from_pool(pool)
+    }
+
+    async fn save_test_secret(galley: &SqliteGalley, api_key_ref: &str, secret: CodexOAuthSecret) {
+        credential_store::set_secret(
+            galley,
+            api_key_ref,
+            &serde_json::to_string(&secret).unwrap(),
+        )
+        .await
+        .unwrap();
+    }
+
+    fn write_cli_auth(codex_home: &std::path::Path, access_token: String, refresh_token: &str) {
+        std::fs::write(
+            codex_home.join("auth.json"),
+            serde_json::json!({
+                "tokens": {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
     }
 }
