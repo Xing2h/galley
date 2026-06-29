@@ -20,6 +20,7 @@ use crate::api::{
     ManagedModelAuthKind, ManagedModelConnectionResult, ManagedModelProtocol,
     ManagedModelProviderRecord, ManagedModelRecord,
 };
+use crate::commands::MANAGED_MODEL_DEFAULT_CONTEXT_WIN;
 use crate::credential_store;
 use crate::db::{SqliteGalley, UpsertManagedModelMetadata, UpsertManagedModelProviderMetadata};
 use crate::error::{GalleyError, Result};
@@ -373,6 +374,7 @@ async fn persist_probe_and_return(secret: CodexOAuthSecret) -> Result<CodexAuthS
 
 pub fn codex_default_advanced_options() -> serde_json::Value {
     serde_json::json!({
+        "context_win": MANAGED_MODEL_DEFAULT_CONTEXT_WIN,
         "api_mode": "responses",
         "reasoning_effort": CODEX_DEFAULT_REASONING,
         "temperature": 1,
@@ -956,6 +958,20 @@ mod tests {
     use super::*;
     use sqlx::SqlitePool;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    #[test]
+    fn codex_default_advanced_options_includes_context_window() {
+        let options = codex_default_advanced_options();
+
+        assert_eq!(options["context_win"], serde_json::json!(90_000));
+        assert_eq!(options["api_mode"], serde_json::json!("responses"));
+        assert_eq!(
+            options["reasoning_effort"],
+            serde_json::json!(CODEX_DEFAULT_REASONING)
+        );
+        assert_eq!(options["stream"], serde_json::json!(true));
+        assert_eq!(options["codex_backend"], serde_json::json!(true));
+    }
 
     #[test]
     fn codex_probe_payload_includes_required_instructions() {

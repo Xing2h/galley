@@ -54,6 +54,7 @@ const MIG_025: &str = include_str!("../migrations/025_restore_managed_runtime_de
 const MIG_026: &str = include_str!("../migrations/026_project_workspace.sql");
 const MIG_027: &str = include_str!("../migrations/027_managed_model_context_win.sql");
 const MIG_028: &str = include_str!("../migrations/028_message_telemetry.sql");
+const MIG_029: &str = include_str!("../migrations/029_managed_model_custom_context_win.sql");
 
 async fn fresh_pool() -> SqlitePool {
     let pool = SqlitePool::connect("sqlite::memory:")
@@ -93,12 +94,25 @@ async fn run_migrations(pool: &SqlitePool) {
     for sql in [
         MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
         MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019, MIG_020,
-        MIG_021, MIG_022, MIG_023, MIG_024, MIG_025, MIG_026, MIG_027, MIG_028,
+        MIG_021, MIG_022, MIG_023, MIG_024, MIG_025, MIG_026, MIG_027, MIG_028, MIG_029,
     ] {
         sqlx::raw_sql(sql)
             .execute(pool)
             .await
             .expect("run migration");
+    }
+}
+
+async fn run_migrations_through_028(pool: &SqlitePool) {
+    for sql in [
+        MIG_001, MIG_002, MIG_003, MIG_004, MIG_005, MIG_006, MIG_007, MIG_008, MIG_009, MIG_010,
+        MIG_011, MIG_012, MIG_013, MIG_014, MIG_015, MIG_016, MIG_017, MIG_018, MIG_019, MIG_020,
+        MIG_021, MIG_022, MIG_023, MIG_024, MIG_025, MIG_026, MIG_027, MIG_028,
+    ] {
+        sqlx::raw_sql(sql)
+            .execute(pool)
+            .await
+            .expect("run migration through 028");
     }
 }
 
@@ -566,6 +580,82 @@ async fn goal_deliverable_oversized_content_is_truncated_with_note() {
 }
 
 // ---------------- managed model metadata ----------------
+
+#[tokio::test]
+async fn managed_model_context_win_migration_029_backfills_missing_object_key() {
+    let pool = SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("open in-memory sqlite");
+    run_migrations_through_028(&pool).await;
+
+    sqlx::query(
+        "INSERT INTO managed_model_providers (
+           id, display_name, protocol, auth_kind, api_base, api_key_ref, created_at, updated_at
+         ) VALUES (?, ?, 'openai', 'api_key', ?, ?, ?, ?)",
+    )
+    .bind("mp_custom")
+    .bind("Custom OpenAI")
+    .bind("https://example.test/v1")
+    .bind("managed-provider:mp_custom")
+    .bind("2026-06-29T00:00:00Z")
+    .bind("2026-06-29T00:00:00Z")
+    .execute(&pool)
+    .await
+    .expect("seed provider");
+
+    for (sort_order, (id, advanced_options)) in [
+        ("mm_empty", "{}"),
+        ("mm_explicit", r#"{"context_win":16000,"read_timeout":42}"#),
+        ("mm_array", "[]"),
+        ("mm_malformed", "not-json"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        sqlx::query(
+            "INSERT INTO managed_models (
+               id, provider_id, display_name, model, advanced_options, is_default,
+               last_validated_at, sort_order, created_at, updated_at
+             ) VALUES (?, 'mp_custom', ?, ?, ?, 0, NULL, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(id)
+        .bind(id)
+        .bind(advanced_options)
+        .bind(sort_order as i64)
+        .bind("2026-06-29T00:00:00Z")
+        .bind("2026-06-29T00:00:00Z")
+        .execute(&pool)
+        .await
+        .expect("seed model");
+    }
+
+    sqlx::raw_sql(MIG_029)
+        .execute(&pool)
+        .await
+        .expect("run 029 migration");
+
+    let empty = managed_model_advanced_options_raw(&pool, "mm_empty").await;
+    let empty_json = serde_json::from_str::<serde_json::Value>(&empty).expect("parse empty row");
+    assert_eq!(empty_json["context_win"], serde_json::json!(90_000));
+
+    let explicit = managed_model_advanced_options_raw(&pool, "mm_explicit").await;
+    assert_eq!(explicit, r#"{"context_win":16000,"read_timeout":42}"#);
+
+    let array = managed_model_advanced_options_raw(&pool, "mm_array").await;
+    assert_eq!(array, "[]");
+
+    let malformed = managed_model_advanced_options_raw(&pool, "mm_malformed").await;
+    assert_eq!(malformed, "not-json");
+}
+
+async fn managed_model_advanced_options_raw(pool: &SqlitePool, id: &str) -> String {
+    sqlx::query_scalar("SELECT advanced_options FROM managed_models WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .expect("read managed model advanced options")
+}
 
 #[tokio::test]
 async fn managed_model_metadata_never_requires_plaintext_key_in_db() {

@@ -6,10 +6,7 @@ import {
   testManagedModelConnectionWithLatency,
 } from "@/lib/managed-models";
 import { useCopy } from "@/lib/i18n";
-import {
-  advancedOptionsForManagedModelProvider,
-  recommendedAdvancedOptionsForManagedModelProvider,
-} from "@/lib/managed-model-presets";
+import { recommendedAdvancedOptionsForManagedModelProvider } from "@/lib/managed-model-presets";
 import type { ManagedModelsStore } from "@/stores/managed-models";
 import type {
   ManagedModelProviderRecord,
@@ -300,7 +297,8 @@ export function useProviderModelController({
         providerId: provider.id,
         model: modelName,
         displayName: "",
-        advancedOptions: advancedOptionsForManagedModelProvider(provider),
+        advancedOptions:
+          recommendedAdvancedOptionsForManagedModelProvider(provider),
         makeDefault: models.length === 0,
       });
       showModelConfigSavedToast();

@@ -141,9 +141,10 @@ pub(crate) async fn save_managed_model(
             provider_id: input.provider_id,
             display_name,
             model: input.model,
-            advanced_options: input
-                .advanced_options
-                .unwrap_or_else(|| managed_model_advanced_defaults(provider.protocol)),
+            advanced_options: normalize_managed_model_advanced_options(
+                provider.protocol,
+                input.advanced_options,
+            ),
             make_default: input.make_default.unwrap_or(false),
         })
         .await
@@ -289,9 +290,30 @@ fn new_managed_provider_id() -> String {
     format!("mp_{}", chrono::Utc::now().timestamp_millis())
 }
 
+pub(crate) const MANAGED_MODEL_DEFAULT_CONTEXT_WIN: i64 = 90_000;
+
+fn normalize_managed_model_advanced_options(
+    protocol: api::ManagedModelProtocol,
+    advanced_options: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let defaults = managed_model_advanced_defaults(protocol);
+    match advanced_options {
+        None => defaults,
+        Some(serde_json::Value::Object(provided)) => {
+            let mut merged = defaults.as_object().cloned().unwrap_or_default();
+            for (key, value) in provided {
+                merged.insert(key, value);
+            }
+            serde_json::Value::Object(merged)
+        }
+        Some(provided) => provided,
+    }
+}
+
 fn managed_model_advanced_defaults(protocol: api::ManagedModelProtocol) -> serde_json::Value {
     match protocol {
         api::ManagedModelProtocol::Anthropic => serde_json::json!({
+            "context_win": MANAGED_MODEL_DEFAULT_CONTEXT_WIN,
             "thinking_type": "adaptive",
             "temperature": 1,
             "max_retries": 3,
@@ -300,6 +322,7 @@ fn managed_model_advanced_defaults(protocol: api::ManagedModelProtocol) -> serde
             "stream": true
         }),
         api::ManagedModelProtocol::Openai => serde_json::json!({
+            "context_win": MANAGED_MODEL_DEFAULT_CONTEXT_WIN,
             "api_mode": "chat_completions",
             "temperature": 1,
             "max_retries": 3,
@@ -307,5 +330,45 @@ fn managed_model_advanced_defaults(protocol: api::ManagedModelProtocol) -> serde
             "read_timeout": 180,
             "stream": true
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_managed_model_advanced_options_adds_openai_defaults_when_absent() {
+        let options =
+            normalize_managed_model_advanced_options(api::ManagedModelProtocol::Openai, None);
+
+        assert_eq!(options["context_win"], serde_json::json!(90_000));
+        assert_eq!(options["api_mode"], serde_json::json!("chat_completions"));
+    }
+
+    #[test]
+    fn normalize_managed_model_advanced_options_adds_defaults_for_empty_object() {
+        let options = normalize_managed_model_advanced_options(
+            api::ManagedModelProtocol::Anthropic,
+            Some(serde_json::json!({})),
+        );
+
+        assert_eq!(options["context_win"], serde_json::json!(90_000));
+        assert_eq!(options["thinking_type"], serde_json::json!("adaptive"));
+    }
+
+    #[test]
+    fn normalize_managed_model_advanced_options_preserves_explicit_context_win() {
+        let options = normalize_managed_model_advanced_options(
+            api::ManagedModelProtocol::Openai,
+            Some(serde_json::json!({
+                "context_win": 16_000,
+                "api_mode": "responses",
+            })),
+        );
+
+        assert_eq!(options["context_win"], serde_json::json!(16_000));
+        assert_eq!(options["api_mode"], serde_json::json!("responses"));
+        assert_eq!(options["stream"], serde_json::json!(true));
     }
 }

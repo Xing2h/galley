@@ -105,6 +105,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     model: "",
     displayName: "OpenAI",
     modelPlaceholder: "gpt-5.5",
+    advancedOptions: managedModelProtocolAdvancedDefaults("openai"),
   },
   {
     id: "custom-anthropic",
@@ -114,6 +115,7 @@ export const MANAGED_MODEL_PROVIDER_PRESETS: ManagedModelProviderPreset[] = [
     model: "",
     displayName: "Anthropic",
     modelPlaceholder: "claude-sonnet-4-6",
+    advancedOptions: managedModelProtocolAdvancedDefaults("anthropic"),
   },
   {
     id: "deepseek",
@@ -248,9 +250,9 @@ export function managedModelProviderPresetDraft(
     apiBase: preset.apiBase,
     model: preset.model,
     displayName: preset.displayName,
-    ...(preset.advancedOptions
-      ? { advancedOptions: preset.advancedOptions }
-      : {}),
+    advancedOptions:
+      preset.advancedOptions ??
+      managedModelProtocolAdvancedDefaults(preset.protocol),
   };
 }
 

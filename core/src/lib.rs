@@ -216,6 +216,12 @@ pub fn run() {
             sql: include_str!("../migrations/028_message_telemetry.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 29,
+            description: "backfill managed custom model context_win default",
+            sql: include_str!("../migrations/029_managed_model_custom_context_win.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     // Pre-migration backup hook (B4 M8). Derived — not hard-coded —
