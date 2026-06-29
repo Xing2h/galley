@@ -10,16 +10,17 @@
  *   2. prefsStore.hydratePrefs (runtime mode, yolo / conversationWidth /
  *      gaConfig). Runtime mode must be known before sessions hydrate so
  *      the sidebar can show the current runtime's sessions only.
- *   3. Managed runtime layout ensure (creates state dirs if missing and
+ *   3. Saved prompts hydrate (Composer convenience state).
+ *   4. Managed runtime layout ensure (creates state dirs if missing and
  *      records diagnostics for Settings).
- *   4. Managed model records hydrate (needed for managed-mode routing).
- *   5. sessionsStore.hydrate (sessions + projects via Rust Core).
- *   6. SQLite housekeeping + FTS backfill in the background.
+ *   5. Managed model records hydrate (needed for managed-mode routing).
+ *   6. sessionsStore.hydrate (sessions + projects via Rust Core).
+ *   7. SQLite housekeeping + FTS backfill in the background.
  *      Best-effort — never blocks first paint.
- *   7. Cached LLM seed → runtimeStore (short-term hint so cold-start
+ *   8. Cached LLM seed → runtimeStore (short-term hint so cold-start
  *      cosmetics show the user's real GA-configured models instead
  *      of the demo placeholders before any bridge has spawned).
- *   8. Branch on active runtime config:
+ *   9. Branch on active runtime config:
  *      - managed with no configured model → route to Onboarding
  *      - external with no GA path     → route to Onboarding
  *      - external configured          → warmup bridge against mykey.py
@@ -45,6 +46,7 @@ import { useManagedModelsStore } from "@/stores/managed-models";
 import { usePrefsStore } from "@/stores/prefs";
 import type { LLMOption } from "@/stores/runtime";
 import { useRuntimeStore } from "@/stores/runtime";
+import { useSavedPromptsStore } from "@/stores/saved-prompts";
 import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
 import type { ManagedRuntimeDiagnostics } from "@/types/inspector";
@@ -79,7 +81,11 @@ export async function hydrateApp(): Promise<void> {
   // forget — never blocks paint.
   void pushCloseHintCopy(usePrefsStore.getState().languagePreference);
 
-  // 3. Managed runtime layout. This is intentionally safe to run on
+  // 3. Saved prompts. Composer can render defaults before this resolves,
+  // but hydrating here prevents the first popover open from doing IO.
+  await useSavedPromptsStore.getState().hydrate();
+
+  // 4. Managed runtime layout. This is intentionally safe to run on
   // every cold start: it only creates missing Galley-owned directories.
   try {
     const managedRuntime = await invoke<ManagedRuntimeDiagnostics>(
@@ -90,12 +96,12 @@ export async function hydrateApp(): Promise<void> {
     console.warn("[hydrate] managed runtime layout init failed.", e);
   }
 
-  // 4. Managed models. Startup reads only metadata and local credential
+  // 5. Managed models. Startup reads only metadata and local credential
   // presence, never the real API key values.
   const managedConfig = await useManagedModelsStore.getState().load();
   const hasConfiguredManagedModel = managedConfig.models.length > 0;
 
-  // 5. Startup-critical state: sessions/projects. Route through Rust
+  // 6. Startup-critical state: sessions/projects. Route through Rust
   // Core so a slow direct-SQL housekeeping pass cannot leave the
   // sidebar blank on Dev hot restarts.
   await useSessionsStore.getState().hydrate();
@@ -106,11 +112,11 @@ export async function hydrateApp(): Promise<void> {
     .getState()
     .check({ silent: true, downloadIfAvailable: true });
 
-  // 6. Non-critical SQLite housekeeping + FTS backfill. Fire-and-forget:
+  // 7. Non-critical SQLite housekeeping + FTS backfill. Fire-and-forget:
   // these are nice cleanup/indexing tasks, not requirements for first paint.
   void runSqlHousekeeping();
 
-  // 7. Restore cached LLM list (written by replaceLLMs whenever a
+  // 8. Restore cached LLM list (written by replaceLLMs whenever a
   // bridge's `ready` event arrives). Lets cold-start cosmetics show
   // the user's real GA-configured models instead of DEFAULT_LLMS
   // before any bridge has spawned in this session. Lives outside
@@ -125,7 +131,7 @@ export async function hydrateApp(): Promise<void> {
     console.warn("[hydrate] llm_list pref load failed.", e);
   }
 
-  // 8. Branch on active runtime config.
+  // 9. Branch on active runtime config.
   const activeRuntimeKind = usePrefsStore.getState().activeRuntimeKind;
   const needsOnboarding =
     activeRuntimeKind === "managed" ? !hasConfiguredManagedModel : !hasGAConfig;

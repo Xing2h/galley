@@ -1,0 +1,35 @@
+# 2026-06-29 · Composer saved prompts
+
+> Status: implemented · Related: `docs/DESIGN.md §4.4 Composer`
+
+## Context
+
+用户想在 Composer 附近加一个小入口：hover 后显示常用 prompt，点击预填到
+Composer；点击入口进入 dialog 管理常用提示词，包括 Galley 预设和用户自定义。
+
+这触碰了一个历史约束：Empty State 的 quick prompt 建议已经在 2026-06-03
+删除，原因是它和题词、Composer 主角地位互相打架。因此这次不能把功能做成
+空状态示例回归。
+
+## Decisions
+
+- 入口放在 Composer 右下角图片按钮旁边，和图片附件同属「往输入框添加内容」
+  的工具；LLM picker 回到左下角，只显示模型名 + caret。
+- “最常用”定义为用户手动置顶，不做使用次数或最近使用排序。
+- Quick-fill popover 最多显示 5 条置顶 prompt；点击只预填，不自动发送。
+- 管理 dialog 只覆盖 v1 必需能力：预设置顶 / 复制为自定义，自定义增删改、
+  置顶、排序。
+- 数据只存在 GUI prefs `saved_prompts_v1`。不改 Rust Core schema、CLI
+  Agent API 或 session data。
+
+## Rejected
+
+- 把 prompt 入口塞进 LLM pill 的 Cube icon：同一控件承载两个不同动作，误触和
+  可访问性都差。
+- 做完整 Prompt Library：分类、搜索、变量、统计都会把高频便利变成新产品面。
+- 做能力发现入口：更外显，但会违反 Empty State 的克制方向。
+
+## Next
+
+- Dogfood 组合胶囊在 compact / wide Composer 下的视觉重量。
+- 观察用户是否需要搜索或更多 pinned 上限；没有信号前不扩。

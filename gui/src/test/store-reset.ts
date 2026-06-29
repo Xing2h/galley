@@ -2,6 +2,7 @@ import { useManagedModelsStore } from "@/stores/managed-models";
 import { useMessagesStore } from "@/stores/messages";
 import { usePrefsStore } from "@/stores/prefs";
 import { useRuntimeStore } from "@/stores/runtime";
+import { useSavedPromptsStore } from "@/stores/saved-prompts";
 import { useSessionsStore } from "@/stores/sessions";
 import { useUiStore } from "@/stores/ui";
 
@@ -19,6 +20,7 @@ export function resetStores(): void {
   resetStore(useSessionsStore);
   resetStore(useRuntimeStore);
   resetStore(usePrefsStore);
+  resetStore(useSavedPromptsStore);
   resetStore(useUiStore);
   resetStore(useManagedModelsStore);
 }

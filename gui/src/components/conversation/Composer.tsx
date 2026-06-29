@@ -4,7 +4,6 @@ import {
   ArrowUp,
   CaretUp,
   Check,
-  Cube,
   Gear,
   Paperclip,
   Stop,
@@ -13,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -21,6 +21,7 @@ import {
 } from "react";
 
 import { ImagePreviewDialog } from "@/components/conversation/ImagePreviewDialog";
+import { SavedPromptControl } from "@/components/conversation/SavedPromptControl";
 import { Button, DialogActionRow } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { TooltipLabel } from "@/components/ui/tooltip";
@@ -95,6 +96,14 @@ const COMPOSER_ACTION_BUTTON = cn(
   "active:translate-y-[2px] active:scale-[0.97]",
   "focus-visible:outline-none focus-visible:ring-2",
   "disabled:translate-y-0 disabled:scale-100 disabled:shadow-none",
+);
+
+const COMPOSER_TERTIARY_ICON_BUTTON = cn(
+  "flex size-8 shrink-0 items-center justify-center rounded-full text-ink-muted",
+  "transition-[background-color,color,transform] duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
+  "hover:-translate-y-px active:translate-y-[2px] active:scale-[0.97]",
+  "hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35",
+  "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:active:translate-y-0 disabled:active:scale-100 disabled:hover:bg-transparent disabled:hover:text-ink-muted",
 );
 
 const COMPOSER_SEND_BUTTON = cn(
@@ -334,6 +343,32 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     // Blur-on-outside-pointer WebView focus workaround (see the hook).
     useBlurOnOutsidePointer(textareaRef, composerRootRef);
 
+    const applyComposerText = useCallback(
+      (next: string, options: { clearImagesAfterPrefill?: boolean } = {}) => {
+        if (isControlled) {
+          onChange?.(next);
+        } else {
+          setInternal(next);
+        }
+        // Programmatic prefill is not a user paste — drop any folded
+        // placeholders so the next paste counter starts at #1 and
+        // the registry doesn't carry stale entries.
+        resetPasteRegistry();
+        if (options.clearImagesAfterPrefill) clearImages();
+        // Focus + caret at end on the next frame, after React has
+        // committed the new textarea value. setSelectionRange before
+        // the commit lands at the old text length.
+        requestAnimationFrame(() => {
+          const ta = textareaRef.current;
+          if (!ta) return;
+          ta.focus();
+          const end = ta.value.length;
+          ta.setSelectionRange(end, end);
+        });
+      },
+      [isControlled, onChange, clearImages, resetPasteRegistry],
+    );
+
     // Imperative API for callers that need to seed the textarea
     // without rewiring as a controlled component. Adding it via ref
     // keeps the existing paste-fold internal-state refs intact for the
@@ -342,32 +377,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       ref,
       () => ({
         prefillText(next: string) {
-          if (isControlled) {
-            onChange?.(next);
-          } else {
-            setInternal(next);
-          }
-          // Programmatic prefill is not a user paste — drop any folded
-          // placeholders so the next paste counter starts at #1 and
-          // the registry doesn't carry stale entries.
-          resetPasteRegistry();
-          clearImages();
-          // Focus + caret at end on the next frame, after React has
-          // committed the new textarea value. setSelectionRange before
-          // the commit lands at the old text length.
-          requestAnimationFrame(() => {
-            const ta = textareaRef.current;
-            if (!ta) return;
-            ta.focus();
-            const end = ta.value.length;
-            ta.setSelectionRange(end, end);
-          });
+          applyComposerText(next, { clearImagesAfterPrefill: true });
         },
         focus() {
           textareaRef.current?.focus();
         },
       }),
-      [isControlled, onChange, clearImages, resetPasteRegistry],
+      [applyComposerText],
     );
 
     // Auto-grow: reset height to `auto` (so scrollHeight reflects
@@ -655,30 +671,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             {goal && <GoalContextBadge goal={goal} />}
 
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
-              {imagesEnabled && (
-                <TooltipLabel text={copy.composer.attachImage}>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={disabled || stopMode}
-                    aria-label={copy.composer.attachImage}
-                    className={cn(
-                      "flex size-8 items-center justify-center rounded-full text-ink-muted",
-                      // Share the action row's "key travel" motion (rise 1px /
-                      // sink 2px) so hovering across 📎 / 🎯 / send feels cohesive —
-                      // but keep the paperclip's intentional border-/shadow-less
-                      // tertiary weight.
-                      "transition-[background-color,color,transform] duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
-                      "hover:-translate-y-px active:translate-y-[2px] active:scale-[0.97]",
-                      "hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35",
-                      (disabled || stopMode) &&
-                        "cursor-not-allowed opacity-50 hover:translate-y-0 active:translate-y-0 active:scale-100 hover:bg-transparent hover:text-ink-muted",
-                    )}
-                  >
-                    <Paperclip size={16} weight="thin" />
-                  </button>
-                </TooltipLabel>
-              )}
+              <div className="flex shrink-0 items-center gap-0">
+                <SavedPromptControl
+                  currentText={text}
+                  disabled={disabled}
+                  onPrefill={(next) =>
+                    applyComposerText(next, { clearImagesAfterPrefill: false })
+                  }
+                  onReturnFocus={() => {
+                    requestAnimationFrame(() => textareaRef.current?.focus());
+                  }}
+                />
+                {imagesEnabled && (
+                  <TooltipLabel text={copy.composer.attachImage}>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={disabled || stopMode}
+                      aria-label={copy.composer.attachImage}
+                      className={COMPOSER_TERTIARY_ICON_BUTTON}
+                    >
+                      <Paperclip size={17} weight="thin" />
+                    </button>
+                  </TooltipLabel>
+                )}
+              </div>
               {effectiveGoalArmed && (
                 <span className="hidden min-w-0 truncate text-[11px] font-medium text-ink-soft sm:inline">
                   {copy.composer.goalArmedHint}
@@ -1131,10 +1148,11 @@ function LLMPill({
     : copy.composer.switchCurrent(llmDisplayName);
 
   const pillClasses = cn(
-    "flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-[12.5px] text-ink-soft",
+    "flex h-7 min-w-0 items-center gap-1 text-[12.5px] text-ink-soft",
     "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
     "hover:bg-hover hover:text-ink",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+    "rounded-sm px-2.5",
     disabled && "cursor-not-allowed opacity-60",
   );
 
@@ -1149,8 +1167,7 @@ function LLMPill({
         className={pillClasses}
         title={title}
       >
-        <Cube size={13} weight="thin" className="text-ink-muted" />
-        <span>{llmDisplayName}</span>
+        <span className="min-w-0 truncate">{llmDisplayName}</span>
         <CaretUp size={10} weight="thin" className="text-ink-muted" />
       </button>
     );
@@ -1174,8 +1191,7 @@ function LLMPill({
           className={pillClasses}
           title={title}
         >
-          <Cube size={13} weight="thin" className="text-ink-muted" />
-          <span>{llmDisplayName}</span>
+          <span className="min-w-0 truncate">{llmDisplayName}</span>
           <CaretUp size={10} weight="thin" className="text-ink-muted" />
         </button>
       </Popover.Trigger>
