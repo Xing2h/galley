@@ -99,10 +99,10 @@ export function PromptManagerDialog({
         <Dialog.Content
           className={cn(
             "fixed left-1/2 top-1/2 z-50 flex h-[560px] w-[760px] -translate-x-1/2 -translate-y-1/2 flex-col",
-            "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] rounded-lg border border-line bg-elevated shadow-elevated",
+            "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] overflow-hidden rounded-lg border border-line bg-app shadow-elevated",
           )}
         >
-          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line px-5 py-3.5">
+          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-app px-5 py-3.5">
             <div className="min-w-0">
               <Dialog.Title className="truncate text-[16px] font-semibold text-ink">
                 {promptCopy.managerTitle}
@@ -127,7 +127,7 @@ export function PromptManagerDialog({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-app px-5 py-4">
             {mode === "library" ? (
               <PromptLibrary
                 pinnedPrompts={pinnedPrompts}
@@ -308,7 +308,7 @@ function PromptCardSection({
           ))}
         </div>
       ) : (
-        <div className="rounded-md border border-dashed border-line bg-app px-3 py-4 text-[12.5px] text-ink-muted">
+        <div className="rounded-md border border-dashed border-line bg-surface px-3 py-4 text-[12.5px] text-ink-muted">
           {emptyLabel}
         </div>
       )}
@@ -359,7 +359,7 @@ function PromptCard({
     <div
       onClick={onUse}
       className={cn(
-        "group/card relative flex min-h-[122px] cursor-pointer flex-col rounded-md border border-line bg-app p-3 pb-9 text-left",
+        "group/card relative flex min-h-[122px] cursor-pointer flex-col rounded-md border border-line bg-surface p-3 pb-9 text-left",
         "transition-[background-color,border-color,box-shadow,transform] duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)]",
         "hover:-translate-y-px hover:border-brand/35 hover:bg-elevated hover:shadow-[var(--shadow-neutral-control-hover)]",
         "active:translate-y-[1px] active:scale-[0.995]",
@@ -497,7 +497,7 @@ function PromptCardIconButton({
 
 function PromptMetaChip({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-sm border border-line/70 bg-elevated px-1.5 py-0.5 text-[10.5px] leading-none text-ink-muted">
+    <span className="rounded-sm border border-line/70 bg-app px-1.5 py-0.5 text-[10.5px] leading-none text-ink-muted">
       {children}
     </span>
   );
@@ -559,7 +559,7 @@ function CustomPromptEditor({
             onChange={(e) => setTitle(e.target.value)}
             placeholder={promptCopy.titlePlaceholder}
             className={cn(
-              "h-9 w-full rounded-sm border border-line bg-app px-3 text-[13px] text-ink",
+              "h-9 w-full rounded-sm border border-line bg-surface px-3 text-[13px] text-ink",
               "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
             )}
           />
@@ -570,7 +570,7 @@ function CustomPromptEditor({
             onChange={(e) => setBody(e.target.value)}
             placeholder={promptCopy.bodyPlaceholder}
             className={cn(
-              "h-60 w-full resize-none rounded-sm border border-line bg-app px-3 py-2 text-[13px] leading-[1.55] text-ink",
+              "h-60 w-full resize-none rounded-sm border border-line bg-surface px-3 py-2 text-[13px] leading-[1.55] text-ink",
               "placeholder:text-ink-muted focus:border-line-strong focus:outline-none",
             )}
           />
