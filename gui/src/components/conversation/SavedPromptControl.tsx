@@ -272,9 +272,15 @@ export function SavedPromptControl({
     scheduleCloseForCurrentReason,
   ]);
 
-  const applyPrompt = (prompt: ResolvedSavedPrompt) => {
+  const applyPrompt = (
+    prompt: ResolvedSavedPrompt,
+    options: { closeManager?: boolean } = {},
+  ) => {
     if (disabled) return;
     suppressQuick();
+    if (options.closeManager) {
+      setManagerOpen(false);
+    }
     if (currentText.trim().length > 0 && currentText !== prompt.body) {
       setPendingPrompt(prompt);
       return;
@@ -379,6 +385,7 @@ export function SavedPromptControl({
         open={managerOpen}
         onOpenChange={setManagerOpen}
         presets={presets}
+        onUsePrompt={(prompt) => applyPrompt(prompt, { closeManager: true })}
       />
 
       <ReplaceDraftDialog
