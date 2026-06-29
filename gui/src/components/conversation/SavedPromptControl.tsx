@@ -5,7 +5,14 @@ import {
   PencilSimple,
   PushPinSimple,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+} from "react";
 
 import { PromptManagerDialog } from "@/components/conversation/PromptManagerDialog";
 import { Button, DialogActionRow } from "@/components/ui/button";
@@ -36,6 +43,10 @@ const SAVED_PROMPT_TRIGGER_BUTTON = cn(
   "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:active:translate-y-0 disabled:active:scale-100 disabled:hover:bg-transparent disabled:hover:text-ink-muted",
 );
 
+type QuickOpenReason = "hover" | "focus";
+
+const QUICK_CLOSE_DELAY_MS = 180;
+
 export function SavedPromptControl({
   currentText,
   onPrefill,
@@ -50,13 +61,131 @@ export function SavedPromptControl({
   const [managerOpen, setManagerOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] =
     useState<ResolvedSavedPrompt | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
+  const pointerInsideQuickRef = useRef(false);
+  const quickOpenReasonRef = useRef<QuickOpenReason | null>(null);
   const suppressQuickRef = useRef(false);
   const suppressTimerRef = useRef<number | null>(null);
   const presets = usePromptPresets();
   const pinnedPrompts = resolvePinnedPrompts(presets, prefs).slice(
     0,
     MAX_PINNED_PROMPTS,
+  );
+
+  const isNodeInsideQuickSurface = useCallback((node: Node | null) => {
+    if (!node) return false;
+    return Boolean(
+      triggerRef.current?.contains(node) || contentRef.current?.contains(node),
+    );
+  }, []);
+
+  const isFocusInsideQuickSurface = useCallback(() => {
+    if (typeof document === "undefined") return false;
+    const activeElement = document.activeElement;
+    return activeElement instanceof Node
+      ? isNodeInsideQuickSurface(activeElement)
+      : false;
+  }, [isNodeInsideQuickSurface]);
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current == null) return;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
+  const closeQuick = useCallback(() => {
+    clearCloseTimer();
+    quickOpenReasonRef.current = null;
+    pointerInsideQuickRef.current = false;
+    setQuickOpen(false);
+  }, [clearCloseTimer]);
+
+  const scheduleHoverClose = useCallback(() => {
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      if (pointerInsideQuickRef.current) return;
+      setQuickOpen(false);
+      quickOpenReasonRef.current = null;
+    }, QUICK_CLOSE_DELAY_MS);
+  }, [clearCloseTimer]);
+
+  const scheduleFocusClose = useCallback(() => {
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      if (pointerInsideQuickRef.current || isFocusInsideQuickSurface()) return;
+      setQuickOpen(false);
+      quickOpenReasonRef.current = null;
+    }, QUICK_CLOSE_DELAY_MS);
+  }, [clearCloseTimer, isFocusInsideQuickSurface]);
+
+  const suppressQuick = useCallback(() => {
+    clearCloseTimer();
+    if (suppressTimerRef.current != null) {
+      window.clearTimeout(suppressTimerRef.current);
+    }
+    suppressQuickRef.current = true;
+    quickOpenReasonRef.current = null;
+    pointerInsideQuickRef.current = false;
+    setQuickOpen(false);
+    suppressTimerRef.current = window.setTimeout(() => {
+      suppressQuickRef.current = false;
+      suppressTimerRef.current = null;
+    }, 420);
+  }, [clearCloseTimer]);
+
+  const openQuickFromHover = useCallback(() => {
+    if (disabled) return;
+    if (suppressQuickRef.current) return;
+    pointerInsideQuickRef.current = true;
+    quickOpenReasonRef.current = "hover";
+    clearCloseTimer();
+    setQuickOpen(true);
+  }, [clearCloseTimer, disabled]);
+
+  const openQuickFromFocus = useCallback(() => {
+    if (disabled) return;
+    if (suppressQuickRef.current) return;
+    quickOpenReasonRef.current = "focus";
+    clearCloseTimer();
+    setQuickOpen(true);
+  }, [clearCloseTimer, disabled]);
+
+  const openQuickFromFocusVisible = useCallback(
+    (event: FocusEvent<HTMLElement>) => {
+      if (!event.target.matches(":focus-visible")) return;
+      openQuickFromFocus();
+    },
+    [openQuickFromFocus],
+  );
+
+  const scheduleCloseForCurrentReason = useCallback(() => {
+    if (quickOpenReasonRef.current === "focus") {
+      scheduleFocusClose();
+      return;
+    }
+    scheduleHoverClose();
+  }, [scheduleFocusClose, scheduleHoverClose]);
+
+  const handleQuickPointerLeave = useCallback(() => {
+    pointerInsideQuickRef.current = false;
+    scheduleCloseForCurrentReason();
+  }, [scheduleCloseForCurrentReason]);
+
+  const handleQuickOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        closeQuick();
+        return;
+      }
+      if (suppressQuickRef.current) return;
+      quickOpenReasonRef.current ??= "focus";
+      setQuickOpen(true);
+    },
+    [closeQuick],
   );
 
   useEffect(() => {
@@ -70,37 +199,78 @@ export function SavedPromptControl({
     };
   }, []);
 
-  const clearCloseTimer = () => {
-    if (closeTimerRef.current == null) return;
-    window.clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = null;
-  };
-  const suppressQuick = () => {
-    clearCloseTimer();
-    if (suppressTimerRef.current != null) {
-      window.clearTimeout(suppressTimerRef.current);
-    }
-    suppressQuickRef.current = true;
-    setQuickOpen(false);
-    suppressTimerRef.current = window.setTimeout(() => {
-      suppressQuickRef.current = false;
-      suppressTimerRef.current = null;
-    }, 420);
-  };
-  const openQuick = () => {
-    if (disabled) return;
-    if (suppressQuickRef.current) return;
-    clearCloseTimer();
-    setQuickOpen(true);
-  };
-  const scheduleQuickClose = () => {
-    clearCloseTimer();
-    closeTimerRef.current = window.setTimeout(() => setQuickOpen(false), 120);
-  };
-  const handleQuickOpenChange = (open: boolean) => {
-    if (open && suppressQuickRef.current) return;
-    setQuickOpen(open);
-  };
+  useEffect(() => {
+    if (!quickOpen) return;
+
+    const eventTargetIsInsideQuickSurface = (event: Event) => {
+      const targetNode = event.target instanceof Node ? event.target : null;
+      return isNodeInsideQuickSurface(targetNode);
+    };
+
+    const pointerIsInsideQuickSurface = (event: PointerEvent) => {
+      if (eventTargetIsInsideQuickSurface(event)) return true;
+      const elementAtPoint = document.elementFromPoint(
+        event.clientX,
+        event.clientY,
+      );
+      return elementAtPoint instanceof Node
+        ? isNodeInsideQuickSurface(elementAtPoint)
+        : false;
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (pointerIsInsideQuickSurface(event)) {
+        pointerInsideQuickRef.current = true;
+        clearCloseTimer();
+        return;
+      }
+      pointerInsideQuickRef.current = false;
+      scheduleCloseForCurrentReason();
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (eventTargetIsInsideQuickSurface(event)) return;
+      closeQuick();
+    };
+
+    const handleDocumentPointerExit = () => {
+      closeQuick();
+    };
+
+    const handleDocumentMouseOut = (event: MouseEvent) => {
+      if (event.relatedTarget == null) closeQuick();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") closeQuick();
+    };
+
+    document.addEventListener("pointermove", handlePointerMove, true);
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("pointercancel", handleDocumentPointerExit, true);
+    document.addEventListener("mouseout", handleDocumentMouseOut, true);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleDocumentPointerExit);
+
+    return () => {
+      document.removeEventListener("pointermove", handlePointerMove, true);
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener(
+        "pointercancel",
+        handleDocumentPointerExit,
+        true,
+      );
+      document.removeEventListener("mouseout", handleDocumentMouseOut, true);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleDocumentPointerExit);
+    };
+  }, [
+    clearCloseTimer,
+    closeQuick,
+    isNodeInsideQuickSurface,
+    quickOpen,
+    scheduleCloseForCurrentReason,
+  ]);
 
   const applyPrompt = (prompt: ResolvedSavedPrompt) => {
     if (disabled) return;
@@ -121,10 +291,11 @@ export function SavedPromptControl({
             aria-label={promptCopy.trigger}
             title={promptCopy.trigger}
             disabled={disabled}
-            onPointerEnter={openQuick}
-            onPointerLeave={scheduleQuickClose}
-            onFocus={openQuick}
-            onBlur={scheduleQuickClose}
+            ref={triggerRef}
+            onPointerEnter={openQuickFromHover}
+            onPointerLeave={handleQuickPointerLeave}
+            onFocus={openQuickFromFocusVisible}
+            onBlur={scheduleFocusClose}
             onClick={(event) => {
               event.preventDefault();
               suppressQuick();
@@ -140,11 +311,14 @@ export function SavedPromptControl({
             align="end"
             side="top"
             sideOffset={6}
+            ref={contentRef}
             onOpenAutoFocus={(e) => e.preventDefault()}
-            onPointerEnter={openQuick}
-            onPointerLeave={scheduleQuickClose}
-            onFocusCapture={openQuick}
-            onBlurCapture={scheduleQuickClose}
+            onEscapeKeyDown={() => closeQuick()}
+            onPointerDownOutside={() => closeQuick()}
+            onPointerEnter={openQuickFromHover}
+            onPointerLeave={handleQuickPointerLeave}
+            onFocusCapture={openQuickFromFocusVisible}
+            onBlurCapture={scheduleFocusClose}
             className={cn(
               "galley-pop-in z-50 w-[320px] rounded-md border border-line bg-elevated p-1 shadow-elevated",
             )}
