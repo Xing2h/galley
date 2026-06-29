@@ -311,20 +311,17 @@ export const enCopy: AppCopy = {
     willCreateIn: (projectName) => `Will be created in ${projectName}`,
     savedPrompts: {
       trigger: "Saved prompts",
-      quickTitle: "Pinned",
-      manage: "Manage saved prompts",
       noPinned: "No pinned prompts yet.",
       replaceDraftTitle: "Replace the current draft?",
       replaceDraftBody: (title) =>
         `The input already has text. Replace it with "${title}"?`,
       replaceDraftAction: "Replace",
       managerTitle: "Saved prompts",
-      managerDescription:
-        "Choose a saved prompt to prefill the input, or manage pinned and custom prompts.",
       usePrompt: "Fill input",
       previewPrompt: "Preview",
       backToLibrary: "Back",
       fullPrompt: "Full prompt",
+      copyTitleSuffix: " (copy)",
       sectionPresets: "Presets",
       sectionCustom: "Custom",
       sectionPinned: "Pinned",

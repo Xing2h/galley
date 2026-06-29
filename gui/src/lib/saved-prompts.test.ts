@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addCustomPrompt,
+  createCopiedPromptTitle,
   deleteCustomPrompt,
   defaultSavedPromptsPrefs,
   DEFAULT_PINNED_PROMPT_IDS,
@@ -157,5 +158,57 @@ describe("saved prompt helpers", () => {
     ]);
     expect(moveCustomPrompt(movedUp, "custom:first", "up")).toBe(movedUp);
     expect(moveCustomPrompt(movedUp, "custom:missing", "down")).toBe(movedUp);
+  });
+
+  it("moves custom prompts only within the unpinned custom sequence", () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const prefs = {
+      ...defaultSavedPromptsPrefs(),
+      customPrompts: [
+        {
+          id: "custom:pinned",
+          title: "Pinned",
+          body: "Body",
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "custom:second",
+          title: "Second",
+          body: "Body",
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "custom:third",
+          title: "Third",
+          body: "Body",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      pinnedIds: ["custom:pinned"],
+    };
+
+    expect(moveCustomPrompt(prefs, "custom:second", "up")).toBe(prefs);
+
+    const movedDown = moveCustomPrompt(prefs, "custom:second", "down");
+    expect(movedDown.customPrompts.map((prompt) => prompt.id)).toEqual([
+      "custom:pinned",
+      "custom:third",
+      "custom:second",
+    ]);
+    expect(moveCustomPrompt(movedDown, "custom:pinned", "down")).toBe(
+      movedDown,
+    );
+  });
+
+  it("creates copied prompt titles with a localized suffix", () => {
+    expect(createCopiedPromptTitle("  信息查证  ", "（副本）")).toBe(
+      "信息查证（副本）",
+    );
+    expect(createCopiedPromptTitle("Check information", " (copy)")).toBe(
+      "Check information (copy)",
+    );
   });
 });

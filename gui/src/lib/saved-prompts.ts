@@ -2,6 +2,8 @@ export const SAVED_PROMPTS_PREF_KEY = "saved_prompts_v1";
 export const SAVED_PROMPTS_SCHEMA_VERSION = 1;
 export const MAX_PINNED_PROMPTS = 5;
 
+// Preset ids are stable prefs data. Keep ids even when the displayed preset
+// title or product wording changes, or existing pinnedIds will break.
 export const PROMPT_PRESET_IDS = {
   informationCheck: "preset:web-research",
   summarizeMaterial: "preset:meeting-notes",
@@ -185,19 +187,36 @@ export function addCustomPrompt(
   };
 }
 
+export function createCopiedPromptTitle(title: string, suffix: string): string {
+  return `${title.trim()}${suffix}`;
+}
+
 export function moveCustomPrompt(
   prefs: SavedPromptsPrefs,
   promptId: string,
   direction: "up" | "down",
 ): SavedPromptsPrefs {
-  const index = prefs.customPrompts.findIndex((prompt) => prompt.id === promptId);
+  const pinned = new Set(prefs.pinnedIds);
+  const movablePrompts = prefs.customPrompts.filter(
+    (prompt) => !pinned.has(prompt.id),
+  );
+  const index = movablePrompts.findIndex((prompt) => prompt.id === promptId);
   if (index < 0) return prefs;
   const target = direction === "up" ? index - 1 : index + 1;
-  if (target < 0 || target >= prefs.customPrompts.length) return prefs;
+  if (target < 0 || target >= movablePrompts.length) return prefs;
+  const targetId = movablePrompts[target]?.id;
+  if (!targetId) return prefs;
+  const sourceIndex = prefs.customPrompts.findIndex(
+    (prompt) => prompt.id === promptId,
+  );
+  const targetIndex = prefs.customPrompts.findIndex(
+    (prompt) => prompt.id === targetId,
+  );
+  if (sourceIndex < 0 || targetIndex < 0) return prefs;
   const customPrompts = [...prefs.customPrompts];
-  [customPrompts[index], customPrompts[target]] = [
-    customPrompts[target],
-    customPrompts[index],
+  [customPrompts[sourceIndex], customPrompts[targetIndex]] = [
+    customPrompts[targetIndex],
+    customPrompts[sourceIndex],
   ];
   return { ...prefs, customPrompts };
 }

@@ -295,20 +295,17 @@ export const zhCopy = {
     willCreateIn: (projectName: string) => `将创建到 ${projectName}`,
     savedPrompts: {
       trigger: "常用提示词",
-      quickTitle: "常用",
-      manage: "管理常用提示词",
       noPinned: "还没有置顶提示词。",
       replaceDraftTitle: "替换当前草稿？",
       replaceDraftBody: (title: string) =>
         `当前输入框已有内容。用「${title}」替换它？`,
       replaceDraftAction: "替换",
       managerTitle: "常用提示词",
-      managerDescription:
-        "选择一个提示词填入输入框，也可以管理置顶和自定义内容。",
       usePrompt: "填入输入框",
       previewPrompt: "查看",
       backToLibrary: "返回",
       fullPrompt: "完整提示词",
+      copyTitleSuffix: "（副本）",
       sectionPresets: "预设",
       sectionCustom: "自定义",
       sectionPinned: "置顶",

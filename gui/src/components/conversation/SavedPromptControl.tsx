@@ -1,24 +1,17 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import * as Popover from "@radix-ui/react-popover";
-import {
-  BookmarkSimple,
-  PencilSimple,
-  PushPinSimple,
-} from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BookmarkSimple } from "@phosphor-icons/react";
+import { useMemo, useState } from "react";
 
 import { PromptManagerDialog } from "@/components/conversation/PromptManagerDialog";
 import { Button, DialogActionRow } from "@/components/ui/button";
+import { TooltipLabel } from "@/components/ui/tooltip";
 import {
-  MAX_PINNED_PROMPTS,
   PROMPT_PRESET_IDS,
-  resolvePinnedPrompts,
   type PromptPreset,
   type ResolvedSavedPrompt,
 } from "@/lib/saved-prompts";
 import { useCopy } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { useSavedPromptsStore } from "@/stores/saved-prompts";
 
 interface SavedPromptControlProps {
   currentText: string;
@@ -36,8 +29,6 @@ const SAVED_PROMPT_TRIGGER_BUTTON = cn(
   "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:active:translate-y-0 disabled:active:scale-100 disabled:hover:bg-transparent disabled:hover:text-ink-muted",
 );
 
-const QUICK_CLOSE_DELAY_MS = 180;
-
 export function SavedPromptControl({
   currentText,
   onPrefill,
@@ -47,292 +38,51 @@ export function SavedPromptControl({
 }: SavedPromptControlProps) {
   const copy = useCopy();
   const promptCopy = copy.composer.savedPrompts;
-  const prefs = useSavedPromptsStore((state) => state.prefs);
-  const [quickOpen, setQuickOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] =
     useState<ResolvedSavedPrompt | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-  const closeTimerRef = useRef<number | null>(null);
-  const pointerInsideQuickRef = useRef(false);
-  const suppressQuickRef = useRef(false);
-  const suppressTimerRef = useRef<number | null>(null);
+  const [pendingPromptCloseManager, setPendingPromptCloseManager] =
+    useState(false);
   const presets = usePromptPresets();
-  const pinnedPrompts = resolvePinnedPrompts(presets, prefs).slice(
-    0,
-    MAX_PINNED_PROMPTS,
-  );
-
-  const isNodeInsideQuickSurface = useCallback((node: Node | null) => {
-    if (!node) return false;
-    return Boolean(
-      triggerRef.current?.contains(node) || contentRef.current?.contains(node),
-    );
-  }, []);
-
-  const clearCloseTimer = useCallback(() => {
-    if (closeTimerRef.current == null) return;
-    window.clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = null;
-  }, []);
-
-  const closeQuick = useCallback(() => {
-    clearCloseTimer();
-    pointerInsideQuickRef.current = false;
-    setQuickOpen(false);
-  }, [clearCloseTimer]);
-
-  const scheduleHoverClose = useCallback(() => {
-    clearCloseTimer();
-    closeTimerRef.current = window.setTimeout(() => {
-      closeTimerRef.current = null;
-      if (pointerInsideQuickRef.current) return;
-      setQuickOpen(false);
-    }, QUICK_CLOSE_DELAY_MS);
-  }, [clearCloseTimer]);
-
-  const suppressQuick = useCallback(() => {
-    clearCloseTimer();
-    if (suppressTimerRef.current != null) {
-      window.clearTimeout(suppressTimerRef.current);
-    }
-    suppressQuickRef.current = true;
-    pointerInsideQuickRef.current = false;
-    setQuickOpen(false);
-    suppressTimerRef.current = window.setTimeout(() => {
-      suppressQuickRef.current = false;
-      suppressTimerRef.current = null;
-    }, 420);
-  }, [clearCloseTimer]);
-
-  const openQuickFromHover = useCallback(() => {
-    if (disabled) return;
-    if (suppressQuickRef.current) return;
-    pointerInsideQuickRef.current = true;
-    clearCloseTimer();
-    setQuickOpen(true);
-  }, [clearCloseTimer, disabled]);
-
-  const handleQuickPointerLeave = useCallback(() => {
-    pointerInsideQuickRef.current = false;
-    scheduleHoverClose();
-  }, [scheduleHoverClose]);
-
-  const handleQuickOpenChange = useCallback(
-    (open: boolean) => {
-      if (!open) {
-        closeQuick();
-        return;
-      }
-      if (suppressQuickRef.current) return;
-      if (!pointerInsideQuickRef.current) return;
-      setQuickOpen(true);
-    },
-    [closeQuick],
-  );
-
-  useEffect(() => {
-    return () => {
-      if (closeTimerRef.current != null) {
-        window.clearTimeout(closeTimerRef.current);
-      }
-      if (suppressTimerRef.current != null) {
-        window.clearTimeout(suppressTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!quickOpen) return;
-
-    const eventTargetIsInsideQuickSurface = (event: Event) => {
-      const targetNode = event.target instanceof Node ? event.target : null;
-      return isNodeInsideQuickSurface(targetNode);
-    };
-
-    const pointerIsInsideQuickSurface = (event: PointerEvent) => {
-      if (eventTargetIsInsideQuickSurface(event)) return true;
-      const elementAtPoint = document.elementFromPoint(
-        event.clientX,
-        event.clientY,
-      );
-      return elementAtPoint instanceof Node
-        ? isNodeInsideQuickSurface(elementAtPoint)
-        : false;
-    };
-
-    const handlePointerMove = (event: PointerEvent) => {
-      if (pointerIsInsideQuickSurface(event)) {
-        pointerInsideQuickRef.current = true;
-        clearCloseTimer();
-        return;
-      }
-      pointerInsideQuickRef.current = false;
-      scheduleHoverClose();
-    };
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (eventTargetIsInsideQuickSurface(event)) return;
-      closeQuick();
-    };
-
-    const handleDocumentPointerExit = () => {
-      closeQuick();
-    };
-
-    const handleDocumentMouseOut = (event: MouseEvent) => {
-      if (event.relatedTarget == null) closeQuick();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== "visible") closeQuick();
-    };
-
-    document.addEventListener("pointermove", handlePointerMove, true);
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    document.addEventListener("pointercancel", handleDocumentPointerExit, true);
-    document.addEventListener("mouseout", handleDocumentMouseOut, true);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("blur", handleDocumentPointerExit);
-
-    return () => {
-      document.removeEventListener("pointermove", handlePointerMove, true);
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      document.removeEventListener(
-        "pointercancel",
-        handleDocumentPointerExit,
-        true,
-      );
-      document.removeEventListener("mouseout", handleDocumentMouseOut, true);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("blur", handleDocumentPointerExit);
-    };
-  }, [
-    clearCloseTimer,
-    closeQuick,
-    isNodeInsideQuickSurface,
-    quickOpen,
-    scheduleHoverClose,
-  ]);
 
   const applyPrompt = (
     prompt: ResolvedSavedPrompt,
     options: { closeManager?: boolean } = {},
   ) => {
     if (disabled) return;
-    suppressQuick();
-    if (options.closeManager) {
-      setManagerOpen(false);
-    }
     if (currentText.trim().length > 0 && currentText !== prompt.body) {
       setPendingPrompt(prompt);
+      setPendingPromptCloseManager(Boolean(options.closeManager));
       return;
     }
     onPrefill(prompt.body);
+    if (options.closeManager) {
+      setManagerOpen(false);
+      window.setTimeout(() => onReturnFocus?.(), 0);
+    }
   };
 
   return (
     <>
-      <Popover.Root open={quickOpen} onOpenChange={handleQuickOpenChange}>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            aria-label={promptCopy.trigger}
-            title={promptCopy.trigger}
-            disabled={disabled}
-            ref={triggerRef}
-            tabIndex={-1}
-            onPointerEnter={openQuickFromHover}
-            onPointerLeave={handleQuickPointerLeave}
-            onMouseDown={(event) => {
-              event.preventDefault();
-            }}
-            onClick={(event) => {
-              event.preventDefault();
-              event.currentTarget.blur();
-              suppressQuick();
-              setManagerOpen(true);
-            }}
-            className={cn(SAVED_PROMPT_TRIGGER_BUTTON, className)}
-          >
-            <BookmarkSimple size={17} weight="thin" />
-          </button>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            align="end"
-            side="top"
-            sideOffset={6}
-            ref={contentRef}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            onEscapeKeyDown={() => closeQuick()}
-            onPointerDownOutside={() => closeQuick()}
-            onPointerEnter={openQuickFromHover}
-            onPointerLeave={handleQuickPointerLeave}
-            className={cn(
-              "galley-pop-in z-50 w-[320px] rounded-md border border-line bg-elevated p-1 shadow-elevated",
-            )}
-          >
-            <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-              {promptCopy.quickTitle}
-            </div>
-            {pinnedPrompts.length > 0 ? (
-              pinnedPrompts.map((prompt) => (
-                <Popover.Close asChild key={prompt.id}>
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                    }}
-                    onClick={() => applyPrompt(prompt)}
-                    className={cn(
-                      "group/prompt flex w-full min-w-0 flex-col rounded-sm px-2.5 py-2 text-left",
-                      "transition-colors hover:bg-hover outline-none focus:outline-none focus-visible:outline-none",
-                    )}
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] font-medium text-ink">
-                      <PushPinSimple
-                        size={11}
-                        weight={prompt.pinned ? "fill" : "thin"}
-                        className="shrink-0 text-brand-strong"
-                      />
-                      <span className="truncate">{prompt.title}</span>
-                    </span>
-                    <span className="mt-0.5 line-clamp-1 text-[11.5px] leading-[1.45] text-ink-muted">
-                      {prompt.body}
-                    </span>
-                  </button>
-                </Popover.Close>
-              ))
-            ) : (
-              <div className="px-2.5 py-3 text-[12px] leading-relaxed text-ink-muted">
-                {promptCopy.noPinned}
-              </div>
-            )}
-            <div className="mt-1 border-t border-line/60 px-1.5 pb-1 pt-1">
-              <Popover.Close asChild>
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                  }}
-                  onClick={() => setManagerOpen(true)}
-                  className={cn(
-                    "flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-left text-[11px] leading-[1.35] text-ink-muted/70",
-                    "transition-colors hover:bg-hover hover:text-ink-soft outline-none focus:outline-none focus-visible:outline-none",
-                  )}
-                >
-                  <PencilSimple size={11} weight="thin" className="shrink-0" />
-                  <span>{promptCopy.manage}</span>
-                </button>
-              </Popover.Close>
-            </div>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+      <TooltipLabel text={promptCopy.trigger} side="top">
+        <button
+          type="button"
+          aria-label={promptCopy.trigger}
+          disabled={disabled}
+          tabIndex={-1}
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.currentTarget.blur();
+            setManagerOpen(true);
+          }}
+          className={cn(SAVED_PROMPT_TRIGGER_BUTTON, className)}
+        >
+          <BookmarkSimple size={17} weight="thin" />
+        </button>
+      </TooltipLabel>
 
       <PromptManagerDialog
         open={managerOpen}
@@ -346,17 +96,19 @@ export function SavedPromptControl({
         prompt={pendingPrompt}
         onOpenChange={(open) => {
           if (open) return;
-          suppressQuick();
           setPendingPrompt(null);
-          onReturnFocus?.();
+          setPendingPromptCloseManager(false);
         }}
         onConfirm={() => {
           if (!pendingPrompt) return;
-          suppressQuick();
           onPrefill(pendingPrompt.body);
+          if (pendingPromptCloseManager) {
+            setManagerOpen(false);
+          }
           setPendingPrompt(null);
+          setPendingPromptCloseManager(false);
+          window.setTimeout(() => onReturnFocus?.(), 0);
         }}
-        onReturnFocus={onReturnFocus}
       />
     </>
   );
@@ -367,13 +119,11 @@ function ReplaceDraftDialog({
   prompt,
   onOpenChange,
   onConfirm,
-  onReturnFocus,
 }: {
   open: boolean;
   prompt: ResolvedSavedPrompt | null;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
-  onReturnFocus?: () => void;
 }) {
   const copy = useCopy();
   const promptCopy = copy.composer.savedPrompts;
@@ -384,7 +134,6 @@ function ReplaceDraftDialog({
         <Dialog.Content
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            onReturnFocus?.();
           }}
           className={cn(
             "fixed left-1/2 top-1/2 z-50 w-[380px] -translate-x-1/2 -translate-y-1/2",

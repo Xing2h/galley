@@ -16,6 +16,7 @@ import { useState, type MouseEvent, type ReactNode } from "react";
 import { Button, DialogActionRow, IconButton } from "@/components/ui/button";
 import {
   canPinPrompt,
+  createCopiedPromptTitle,
   MAX_PINNED_PROMPTS,
   resolvePinnedPrompts,
   resolveSavedPrompts,
@@ -67,7 +68,9 @@ export function PromptManagerDialog({
   );
   const pinnedIds = new Set(pinnedPrompts.map((prompt) => prompt.id));
   const otherPrompts = allPrompts.filter((prompt) => !pinnedIds.has(prompt.id));
-  const customOrderIds = prefs.customPrompts.map((prompt) => prompt.id);
+  const unpinnedCustomOrderIds = otherPrompts
+    .filter((prompt) => prompt.kind === "custom")
+    .map((prompt) => prompt.id);
   const [mode, setMode] = useState<ManagerMode>("library");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -161,7 +164,7 @@ export function PromptManagerDialog({
                 pinnedPrompts={pinnedPrompts}
                 otherPrompts={otherPrompts}
                 pinnedIds={prefs.pinnedIds}
-                customOrderIds={customOrderIds}
+                customOrderIds={unpinnedCustomOrderIds}
                 pinLimitNotice={pinLimitNotice}
                 onUsePrompt={onUsePrompt}
                 onPreviewPrompt={previewSavedPrompt}
@@ -175,7 +178,10 @@ export function PromptManagerDialog({
                 }}
                 onCopyAsCustom={(prompt) => {
                   void addCustomPrompt({
-                    title: prompt.title,
+                    title: createCopiedPromptTitle(
+                      prompt.title,
+                      promptCopy.copyTitleSuffix,
+                    ),
                     body: prompt.body,
                   });
                 }}
@@ -194,7 +200,10 @@ export function PromptManagerDialog({
                 onTogglePinned={() => togglePinnedWithFeedback(previewPrompt)}
                 onCopyAsCustom={() => {
                   void addCustomPrompt({
-                    title: previewPrompt.title,
+                    title: createCopiedPromptTitle(
+                      previewPrompt.title,
+                      promptCopy.copyTitleSuffix,
+                    ),
                     body: previewPrompt.body,
                   });
                   returnToLibrary();
@@ -276,7 +285,7 @@ function PromptLibrary({
   const promptCopy = copy.composer.savedPrompts;
   return (
     <div className="space-y-5">
-      <PromptLimitNotice message={pinLimitNotice} />
+      <PromptLimitNotice message={pinLimitNotice} sticky />
       <PromptCardSection
         label={promptCopy.sectionPinned}
         prompts={pinnedPrompts}
@@ -713,9 +722,11 @@ function PromptMetaChip({ children }: { children: ReactNode }) {
 
 function PromptLimitNotice({
   message,
+  sticky = false,
   className,
 }: {
   message: string | null;
+  sticky?: boolean;
   className?: string;
 }) {
   if (!message) return null;
@@ -724,6 +735,7 @@ function PromptLimitNotice({
       className={cn(
         "rounded-md border border-warning/30 bg-warning/[var(--opacity-subtle)] px-3 py-2",
         "text-[12.5px] leading-[1.45] text-warning",
+        sticky && "sticky top-0 z-10 shadow-[var(--shadow-neutral-control)]",
         className,
       )}
     >
