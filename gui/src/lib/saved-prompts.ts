@@ -1,12 +1,14 @@
 export const SAVED_PROMPTS_PREF_KEY = "saved_prompts_v1";
-export const SAVED_PROMPTS_SCHEMA_VERSION = 1;
-export const MAX_PINNED_PROMPTS = 5;
+export const SAVED_PROMPTS_SCHEMA_VERSION = 2;
 
-// Preset ids are stable prefs data. Keep ids even when the displayed preset
-// title or product wording changes, or existing pinnedIds will break.
+// Preset ids identify the built-in prompt catalog. They are NOT referenced by
+// persisted prefs (prefs only store user-authored customPrompts), so changing
+// them can't orphan user data. Still, keep them stable once a version ships
+// for product consistency — a preset users recognize shouldn't silently
+// vanish or swap meaning across versions.
 export const PROMPT_PRESET_IDS = {
-  informationCheck: "preset:web-research",
-  summarizeMaterial: "preset:meeting-notes",
+  informationCheck: "preset:information-check",
+  summarizeMaterial: "preset:summarize-material",
   translatePolish: "preset:translate-polish",
   reviewDraft: "preset:review-draft",
   webExtraction: "preset:web-extraction",
@@ -14,14 +16,6 @@ export const PROMPT_PRESET_IDS = {
   localFiles: "preset:local-files",
   preflightChecklist: "preset:preflight-checklist",
 } as const;
-
-export const DEFAULT_PINNED_PROMPT_IDS = [
-  PROMPT_PRESET_IDS.informationCheck,
-  PROMPT_PRESET_IDS.summarizeMaterial,
-  PROMPT_PRESET_IDS.translatePolish,
-] as const;
-
-const PRESET_ID_SET = new Set<string>(Object.values(PROMPT_PRESET_IDS));
 
 export interface PromptPreset {
   id: string;
@@ -42,20 +36,17 @@ export interface ResolvedSavedPrompt {
   kind: "preset" | "custom";
   title: string;
   body: string;
-  pinned: boolean;
 }
 
 export interface SavedPromptsPrefs {
-  schemaVersion: 1;
+  schemaVersion: 2;
   customPrompts: CustomPrompt[];
-  pinnedIds: string[];
 }
 
 export function defaultSavedPromptsPrefs(): SavedPromptsPrefs {
   return {
     schemaVersion: SAVED_PROMPTS_SCHEMA_VERSION,
     customPrompts: [],
-    pinnedIds: [...DEFAULT_PINNED_PROMPT_IDS],
   };
 }
 
@@ -65,21 +56,16 @@ export function normalizeSavedPromptsPrefs(raw: unknown): SavedPromptsPrefs {
   }
 
   const customPrompts = Array.isArray(raw.customPrompts)
-    ? raw.customPrompts
-        .map(normalizeCustomPrompt)
-        .filter((prompt): prompt is CustomPrompt => Boolean(prompt))
+    ? dedupeById(
+        raw.customPrompts
+          .map(normalizeCustomPrompt)
+          .filter((prompt): prompt is CustomPrompt => Boolean(prompt)),
+      )
     : [];
-  const customIds = new Set(customPrompts.map((prompt) => prompt.id));
-  const pinnedIds = Array.isArray(raw.pinnedIds)
-    ? dedupeStrings(raw.pinnedIds)
-        .filter((id) => PRESET_ID_SET.has(id) || customIds.has(id))
-        .slice(0, MAX_PINNED_PROMPTS)
-    : [...DEFAULT_PINNED_PROMPT_IDS];
 
   return {
     schemaVersion: SAVED_PROMPTS_SCHEMA_VERSION,
     customPrompts,
-    pinnedIds,
   };
 }
 
@@ -87,73 +73,15 @@ export function resolveSavedPrompts(
   presets: PromptPreset[],
   prefs: SavedPromptsPrefs,
 ): ResolvedSavedPrompt[] {
-  const pinned = new Set(prefs.pinnedIds);
   return [
-    ...presets.map((preset) => ({
-      ...preset,
-      kind: "preset" as const,
-      pinned: pinned.has(preset.id),
-    })),
+    ...presets.map((preset) => ({ ...preset, kind: "preset" as const })),
     ...prefs.customPrompts.map((prompt) => ({
       id: prompt.id,
       title: prompt.title,
       body: prompt.body,
       kind: "custom" as const,
-      pinned: pinned.has(prompt.id),
     })),
   ];
-}
-
-export function resolvePinnedPrompts(
-  presets: PromptPreset[],
-  prefs: SavedPromptsPrefs,
-): ResolvedSavedPrompt[] {
-  const byId = new Map(
-    resolveSavedPrompts(presets, prefs).map((prompt) => [prompt.id, prompt]),
-  );
-  return prefs.pinnedIds
-    .map((id) => byId.get(id))
-    .filter((prompt): prompt is ResolvedSavedPrompt => Boolean(prompt));
-}
-
-export function canPinPrompt(
-  prefs: SavedPromptsPrefs,
-  promptId: string,
-): boolean {
-  return (
-    prefs.pinnedIds.includes(promptId) ||
-    prefs.pinnedIds.length < MAX_PINNED_PROMPTS
-  );
-}
-
-export function setPromptPinned(
-  prefs: SavedPromptsPrefs,
-  promptId: string,
-  pinned: boolean,
-): SavedPromptsPrefs {
-  if (pinned) {
-    if (prefs.pinnedIds.includes(promptId)) return prefs;
-    if (prefs.pinnedIds.length >= MAX_PINNED_PROMPTS) return prefs;
-    return { ...prefs, pinnedIds: [...prefs.pinnedIds, promptId] };
-  }
-  return {
-    ...prefs,
-    pinnedIds: prefs.pinnedIds.filter((id) => id !== promptId),
-  };
-}
-
-export function movePinnedPrompt(
-  prefs: SavedPromptsPrefs,
-  promptId: string,
-  direction: "up" | "down",
-): SavedPromptsPrefs {
-  const index = prefs.pinnedIds.indexOf(promptId);
-  if (index < 0) return prefs;
-  const target = direction === "up" ? index - 1 : index + 1;
-  if (target < 0 || target >= prefs.pinnedIds.length) return prefs;
-  const pinnedIds = [...prefs.pinnedIds];
-  [pinnedIds[index], pinnedIds[target]] = [pinnedIds[target], pinnedIds[index]];
-  return { ...prefs, pinnedIds };
 }
 
 export function createCustomPrompt(
@@ -196,27 +124,16 @@ export function moveCustomPrompt(
   promptId: string,
   direction: "up" | "down",
 ): SavedPromptsPrefs {
-  const pinned = new Set(prefs.pinnedIds);
-  const movablePrompts = prefs.customPrompts.filter(
-    (prompt) => !pinned.has(prompt.id),
-  );
-  const index = movablePrompts.findIndex((prompt) => prompt.id === promptId);
-  if (index < 0) return prefs;
-  const target = direction === "up" ? index - 1 : index + 1;
-  if (target < 0 || target >= movablePrompts.length) return prefs;
-  const targetId = movablePrompts[target]?.id;
-  if (!targetId) return prefs;
-  const sourceIndex = prefs.customPrompts.findIndex(
+  const index = prefs.customPrompts.findIndex(
     (prompt) => prompt.id === promptId,
   );
-  const targetIndex = prefs.customPrompts.findIndex(
-    (prompt) => prompt.id === targetId,
-  );
-  if (sourceIndex < 0 || targetIndex < 0) return prefs;
+  if (index < 0) return prefs;
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= prefs.customPrompts.length) return prefs;
   const customPrompts = [...prefs.customPrompts];
-  [customPrompts[sourceIndex], customPrompts[targetIndex]] = [
-    customPrompts[targetIndex],
-    customPrompts[sourceIndex],
+  [customPrompts[index], customPrompts[target]] = [
+    customPrompts[target],
+    customPrompts[index],
   ];
   return { ...prefs, customPrompts };
 }
@@ -249,7 +166,6 @@ export function deleteCustomPrompt(
     customPrompts: prefs.customPrompts.filter(
       (prompt) => prompt.id !== promptId,
     ),
-    pinnedIds: prefs.pinnedIds.filter((id) => id !== promptId),
   };
 }
 
@@ -279,13 +195,13 @@ function normalizeCustomPrompt(raw: unknown): CustomPrompt | null {
   };
 }
 
-function dedupeStrings(values: unknown[]): string[] {
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    if (typeof value !== "string" || seen.has(value)) continue;
-    seen.add(value);
-    result.push(value);
+  const result: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    result.push(item);
   }
   return result;
 }

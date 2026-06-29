@@ -311,7 +311,6 @@ export const enCopy: AppCopy = {
     willCreateIn: (projectName) => `Will be created in ${projectName}`,
     savedPrompts: {
       trigger: "Saved prompts",
-      noPinned: "No pinned prompts yet.",
       replaceDraftTitle: "Replace the current draft?",
       replaceDraftBody: (title) =>
         `The input already has text. Replace it with "${title}"?`,
@@ -324,8 +323,6 @@ export const enCopy: AppCopy = {
       copyTitleSuffix: " (copy)",
       sectionPresets: "Presets",
       sectionCustom: "Custom",
-      sectionPinned: "Pinned",
-      sectionOther: "More",
       addCustom: "Add",
       newPrompt: "New prompt",
       customPrompt: "Custom prompt",
@@ -335,19 +332,13 @@ export const enCopy: AppCopy = {
       bodyLabel: "Content",
       titlePlaceholder: "Short title",
       bodyPlaceholder: "Write the prompt to prefill into the input",
-      pin: "Pin",
-      unpin: "Unpin",
       copyAsCustom: "Copy as custom",
       moveUp: "Move up",
       moveDown: "Move down",
-      moveCustomUp: "Move custom up",
-      moveCustomDown: "Move custom down",
       deleteCustom: "Delete",
-      emptyCustom: "No custom prompts yet.",
+      emptyCustom: "No custom prompts yet. Add one, or copy a preset above.",
       savePrompt: "Save",
       createPrompt: "Create",
-      readOnlyPreset: "Presets are read-only. Copy one to edit it.",
-      pinnedLimit: (count) => `Pin up to ${count}. Unpin one first.`,
       presets: {
         informationCheck: {
           title: "Check information",

@@ -5,74 +5,57 @@ import {
   createCopiedPromptTitle,
   deleteCustomPrompt,
   defaultSavedPromptsPrefs,
-  DEFAULT_PINNED_PROMPT_IDS,
-  MAX_PINNED_PROMPTS,
   moveCustomPrompt,
   normalizeSavedPromptsPrefs,
-  PROMPT_PRESET_IDS,
-  setPromptPinned,
   updateCustomPrompt,
 } from "@/lib/saved-prompts";
 
 describe("saved prompt helpers", () => {
-  it("falls back to default pinned presets for corrupt or missing prefs", () => {
-    expect(DEFAULT_PINNED_PROMPT_IDS).toEqual([
-      PROMPT_PRESET_IDS.informationCheck,
-      PROMPT_PRESET_IDS.summarizeMaterial,
-      PROMPT_PRESET_IDS.translatePolish,
-    ]);
-    expect(normalizeSavedPromptsPrefs(undefined).pinnedIds).toEqual([
-      ...DEFAULT_PINNED_PROMPT_IDS,
-    ]);
-    expect(normalizeSavedPromptsPrefs({ schemaVersion: 99 }).pinnedIds).toEqual(
-      [...DEFAULT_PINNED_PROMPT_IDS],
+  it("resets legacy or corrupt prefs to the v2 default", () => {
+    // Legacy v1 prefs (with pinnedIds) and any unknown schema fall back to a
+    // clean v2 default — no migration, since the pinned feature was removed
+    // before the first public release.
+    const legacy = {
+      schemaVersion: 1,
+      customPrompts: [{ id: "custom:x", title: "X", body: "b" }],
+      pinnedIds: ["preset:web-research"],
+    };
+    expect(normalizeSavedPromptsPrefs(legacy)).toEqual(
+      defaultSavedPromptsPrefs(),
+    );
+    expect(normalizeSavedPromptsPrefs(undefined)).toEqual(
+      defaultSavedPromptsPrefs(),
+    );
+    expect(normalizeSavedPromptsPrefs({ schemaVersion: 99 })).toEqual(
+      defaultSavedPromptsPrefs(),
     );
   });
 
-  it("keeps preset and custom pinned ids in stable order", () => {
+  it("keeps valid v2 custom prompts", () => {
     const raw = {
-      schemaVersion: 1,
-      customPrompts: [
-        {
-          id: "custom:a",
-          title: "  A  ",
-          body: "  Body  ",
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        },
-      ],
-      pinnedIds: [
-        PROMPT_PRESET_IDS.reviewDraft,
-        "custom:a",
-        PROMPT_PRESET_IDS.informationCheck,
-        "custom:a",
-        "missing",
-      ],
+      schemaVersion: 2,
+      customPrompts: [{ id: "custom:a", title: "A", body: "Body" }],
     };
-
-    expect(normalizeSavedPromptsPrefs(raw).pinnedIds).toEqual([
-      PROMPT_PRESET_IDS.reviewDraft,
-      "custom:a",
-      PROMPT_PRESET_IDS.informationCheck,
-    ]);
+    expect(normalizeSavedPromptsPrefs(raw).customPrompts.map((p) => p.id)).toEqual(
+      ["custom:a"],
+    );
   });
 
-  it("respects the pinned prompt limit", () => {
-    const prefs = {
-      ...defaultSavedPromptsPrefs(),
-      pinnedIds: [
-        PROMPT_PRESET_IDS.informationCheck,
-        PROMPT_PRESET_IDS.summarizeMaterial,
-        PROMPT_PRESET_IDS.translatePolish,
-        PROMPT_PRESET_IDS.reviewDraft,
-        PROMPT_PRESET_IDS.webExtraction,
+  it("dedupes custom prompts sharing an id, keeping the first", () => {
+    const raw = {
+      schemaVersion: 2,
+      customPrompts: [
+        { id: "custom:dup", title: "First", body: "Body" },
+        { id: "custom:dup", title: "Second", body: "Body" },
+        { id: "custom:other", title: "Other", body: "Body" },
       ],
     };
-
-    const next = setPromptPinned(prefs, "custom:a", true);
-
-    expect(next.pinnedIds).toHaveLength(MAX_PINNED_PROMPTS);
-    expect(next.pinnedIds).not.toContain("custom:a");
+    const normalized = normalizeSavedPromptsPrefs(raw);
+    expect(normalized.customPrompts.map((p) => p.id)).toEqual([
+      "custom:dup",
+      "custom:other",
+    ]);
+    expect(normalized.customPrompts[0].title).toBe("First");
   });
 
   it("trims custom prompt input and rejects empty title or body", () => {
@@ -85,7 +68,6 @@ describe("saved prompt helpers", () => {
       "custom:review",
       now,
     );
-
     expect(added.customPrompts[0]).toMatchObject({
       id: "custom:review",
       title: "Review",
@@ -101,7 +83,6 @@ describe("saved prompt helpers", () => {
       { title: "  New  ", body: "  New body  " },
       "2026-01-02T00:00:00.000Z",
     );
-
     expect(updated.customPrompts[0]).toMatchObject({
       title: "New",
       body: "New body",
@@ -115,20 +96,6 @@ describe("saved prompt helpers", () => {
         now,
       ),
     ).toBe(added);
-  });
-
-  it("removes deleted custom prompts from pinned ids", () => {
-    const prefs = addCustomPrompt(
-      defaultSavedPromptsPrefs(),
-      { title: "A", body: "Body" },
-      "custom:a",
-      "2026-01-01T00:00:00.000Z",
-    );
-    const pinned = setPromptPinned(prefs, "custom:a", true);
-
-    expect(deleteCustomPrompt(pinned, "custom:a").pinnedIds).not.toContain(
-      "custom:a",
-    );
   });
 
   it("adds custom prompts first and moves them in manual order", () => {
@@ -160,47 +127,15 @@ describe("saved prompt helpers", () => {
     expect(moveCustomPrompt(movedUp, "custom:missing", "down")).toBe(movedUp);
   });
 
-  it("moves custom prompts only within the unpinned custom sequence", () => {
+  it("removes deleted custom prompts", () => {
     const now = "2026-01-01T00:00:00.000Z";
-    const prefs = {
-      ...defaultSavedPromptsPrefs(),
-      customPrompts: [
-        {
-          id: "custom:pinned",
-          title: "Pinned",
-          body: "Body",
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: "custom:second",
-          title: "Second",
-          body: "Body",
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: "custom:third",
-          title: "Third",
-          body: "Body",
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-      pinnedIds: ["custom:pinned"],
-    };
-
-    expect(moveCustomPrompt(prefs, "custom:second", "up")).toBe(prefs);
-
-    const movedDown = moveCustomPrompt(prefs, "custom:second", "down");
-    expect(movedDown.customPrompts.map((prompt) => prompt.id)).toEqual([
-      "custom:pinned",
-      "custom:third",
-      "custom:second",
-    ]);
-    expect(moveCustomPrompt(movedDown, "custom:pinned", "down")).toBe(
-      movedDown,
+    const prefs = addCustomPrompt(
+      defaultSavedPromptsPrefs(),
+      { title: "A", body: "Body" },
+      "custom:a",
+      now,
     );
+    expect(deleteCustomPrompt(prefs, "custom:a").customPrompts).toHaveLength(0);
   });
 
   it("creates copied prompt titles with a localized suffix", () => {

@@ -6,10 +6,8 @@ import {
   deleteCustomPrompt as deleteCustomPromptFromPrefs,
   defaultSavedPromptsPrefs,
   moveCustomPrompt as moveCustomPromptInPrefs,
-  movePinnedPrompt as movePinnedPromptInPrefs,
   normalizeSavedPromptsPrefs,
   SAVED_PROMPTS_PREF_KEY,
-  setPromptPinned as setPromptPinnedInPrefs,
   updateCustomPrompt as updateCustomPromptInPrefs,
   type SavedPromptsPrefs,
 } from "@/lib/saved-prompts";
@@ -27,8 +25,6 @@ interface SavedPromptsState {
     input: { title: string; body: string },
   ) => Promise<void>;
   deleteCustomPrompt: (id: string) => Promise<void>;
-  setPromptPinned: (id: string, pinned: boolean) => Promise<void>;
-  movePinnedPrompt: (id: string, direction: "up" | "down") => Promise<void>;
   moveCustomPrompt: (id: string, direction: "up" | "down") => Promise<void>;
 }
 
@@ -49,58 +45,61 @@ export const useSavedPromptsStore = create<SavedPromptsState>((set, get) => ({
   addCustomPrompt: async (input) => {
     const id = randomPromptId();
     const now = new Date().toISOString();
-    const next = addCustomPromptToPrefs(get().prefs, input, id, now);
-    if (next === get().prefs) return null;
-    await persist(next);
-    set({ prefs: next });
-    return id;
+    const prev = get().prefs;
+    const next = addCustomPromptToPrefs(prev, input, id, now);
+    if (next === prev) return null;
+    return commit(prev, next, id);
   },
 
   updateCustomPrompt: async (id, input) => {
+    const prev = get().prefs;
     const next = updateCustomPromptInPrefs(
-      get().prefs,
+      prev,
       id,
       input,
       new Date().toISOString(),
     );
-    if (next === get().prefs) return;
-    await persist(next);
-    set({ prefs: next });
+    if (next === prev) return;
+    await commit(prev, next);
   },
 
   deleteCustomPrompt: async (id) => {
-    const next = deleteCustomPromptFromPrefs(get().prefs, id);
-    await persist(next);
-    set({ prefs: next });
-  },
-
-  setPromptPinned: async (id, pinned) => {
-    const next = setPromptPinnedInPrefs(get().prefs, id, pinned);
-    if (next === get().prefs) return;
-    await persist(next);
-    set({ prefs: next });
-  },
-
-  movePinnedPrompt: async (id, direction) => {
-    const next = movePinnedPromptInPrefs(get().prefs, id, direction);
-    if (next === get().prefs) return;
-    await persist(next);
-    set({ prefs: next });
+    const prev = get().prefs;
+    const next = deleteCustomPromptFromPrefs(prev, id);
+    if (next === prev) return;
+    await commit(prev, next);
   },
 
   moveCustomPrompt: async (id, direction) => {
-    const next = moveCustomPromptInPrefs(get().prefs, id, direction);
-    if (next === get().prefs) return;
-    await persist(next);
-    set({ prefs: next });
+    const prev = get().prefs;
+    const next = moveCustomPromptInPrefs(prev, id, direction);
+    if (next === prev) return;
+    await commit(prev, next);
   },
 }));
 
-async function persist(next: SavedPromptsPrefs): Promise<void> {
+// Optimistic commit: update in-memory prefs first so the UI reflects the
+// change immediately and any concurrent action reads the latest state (this
+// closes the read-modify-write race the old `await persist`-then-`set` had),
+// then persist. On write failure, roll back — but only if no later action has
+// mutated state since — so memory never silently diverges from disk. Returns
+// the successId on success, or null on failure (so callers don't read a save
+// as succeeded).
+async function commit(
+  prev: SavedPromptsPrefs,
+  next: SavedPromptsPrefs,
+  successId: string | null = null,
+): Promise<string | null> {
+  useSavedPromptsStore.setState({ prefs: next });
   try {
     await setPref(SAVED_PROMPTS_PREF_KEY, next);
+    return successId;
   } catch (e) {
-    console.warn("[saved-prompts] persist failed.", e);
+    console.error("[saved-prompts] persist failed; rolling back.", e);
+    if (useSavedPromptsStore.getState().prefs === next) {
+      useSavedPromptsStore.setState({ prefs: prev });
+    }
+    return null;
   }
 }
 

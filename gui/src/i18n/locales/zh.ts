@@ -295,7 +295,6 @@ export const zhCopy = {
     willCreateIn: (projectName: string) => `将创建到 ${projectName}`,
     savedPrompts: {
       trigger: "常用提示词",
-      noPinned: "还没有置顶提示词。",
       replaceDraftTitle: "替换当前草稿？",
       replaceDraftBody: (title: string) =>
         `当前输入框已有内容。用「${title}」替换它？`,
@@ -308,8 +307,6 @@ export const zhCopy = {
       copyTitleSuffix: "（副本）",
       sectionPresets: "预设",
       sectionCustom: "自定义",
-      sectionPinned: "置顶",
-      sectionOther: "其他",
       addCustom: "新增",
       newPrompt: "新提示词",
       customPrompt: "自定义提示词",
@@ -319,20 +316,13 @@ export const zhCopy = {
       bodyLabel: "内容",
       titlePlaceholder: "简短标题",
       bodyPlaceholder: "写下要预填到输入框的提示词",
-      pin: "置顶",
-      unpin: "取消置顶",
       copyAsCustom: "复制为自定义",
       moveUp: "上移",
       moveDown: "下移",
-      moveCustomUp: "自定义上移",
-      moveCustomDown: "自定义下移",
       deleteCustom: "删除",
-      emptyCustom: "还没有自定义提示词。",
+      emptyCustom: "还没有自定义提示词。点「新增」创建一个，或从上方预设复制一个。",
       savePrompt: "保存",
       createPrompt: "创建",
-      readOnlyPreset: "预设不可编辑。复制为自定义后可以修改。",
-      pinnedLimit: (count: number) =>
-        `最多置顶 ${count} 条。请先取消一个置顶。`,
       presets: {
         informationCheck: {
           title: "信息查证",
