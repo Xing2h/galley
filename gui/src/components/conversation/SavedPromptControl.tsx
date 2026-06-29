@@ -5,14 +5,7 @@ import {
   PencilSimple,
   PushPinSimple,
 } from "@phosphor-icons/react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FocusEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PromptManagerDialog } from "@/components/conversation/PromptManagerDialog";
 import { Button, DialogActionRow } from "@/components/ui/button";
@@ -39,11 +32,9 @@ const SAVED_PROMPT_TRIGGER_BUTTON = cn(
   "flex size-8 shrink-0 items-center justify-center rounded-full text-ink-muted",
   "transition-[background-color,color,transform] duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
   "hover:-translate-y-px active:translate-y-[2px] active:scale-[0.97]",
-  "hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35",
+  "hover:bg-hover hover:text-ink outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0",
   "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:active:translate-y-0 disabled:active:scale-100 disabled:hover:bg-transparent disabled:hover:text-ink-muted",
 );
-
-type QuickOpenReason = "hover" | "focus";
 
 const QUICK_CLOSE_DELAY_MS = 180;
 
@@ -65,7 +56,6 @@ export function SavedPromptControl({
   const contentRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
   const pointerInsideQuickRef = useRef(false);
-  const quickOpenReasonRef = useRef<QuickOpenReason | null>(null);
   const suppressQuickRef = useRef(false);
   const suppressTimerRef = useRef<number | null>(null);
   const presets = usePromptPresets();
@@ -81,14 +71,6 @@ export function SavedPromptControl({
     );
   }, []);
 
-  const isFocusInsideQuickSurface = useCallback(() => {
-    if (typeof document === "undefined") return false;
-    const activeElement = document.activeElement;
-    return activeElement instanceof Node
-      ? isNodeInsideQuickSurface(activeElement)
-      : false;
-  }, [isNodeInsideQuickSurface]);
-
   const clearCloseTimer = useCallback(() => {
     if (closeTimerRef.current == null) return;
     window.clearTimeout(closeTimerRef.current);
@@ -97,7 +79,6 @@ export function SavedPromptControl({
 
   const closeQuick = useCallback(() => {
     clearCloseTimer();
-    quickOpenReasonRef.current = null;
     pointerInsideQuickRef.current = false;
     setQuickOpen(false);
   }, [clearCloseTimer]);
@@ -108,19 +89,8 @@ export function SavedPromptControl({
       closeTimerRef.current = null;
       if (pointerInsideQuickRef.current) return;
       setQuickOpen(false);
-      quickOpenReasonRef.current = null;
     }, QUICK_CLOSE_DELAY_MS);
   }, [clearCloseTimer]);
-
-  const scheduleFocusClose = useCallback(() => {
-    clearCloseTimer();
-    closeTimerRef.current = window.setTimeout(() => {
-      closeTimerRef.current = null;
-      if (pointerInsideQuickRef.current || isFocusInsideQuickSurface()) return;
-      setQuickOpen(false);
-      quickOpenReasonRef.current = null;
-    }, QUICK_CLOSE_DELAY_MS);
-  }, [clearCloseTimer, isFocusInsideQuickSurface]);
 
   const suppressQuick = useCallback(() => {
     clearCloseTimer();
@@ -128,7 +98,6 @@ export function SavedPromptControl({
       window.clearTimeout(suppressTimerRef.current);
     }
     suppressQuickRef.current = true;
-    quickOpenReasonRef.current = null;
     pointerInsideQuickRef.current = false;
     setQuickOpen(false);
     suppressTimerRef.current = window.setTimeout(() => {
@@ -141,39 +110,14 @@ export function SavedPromptControl({
     if (disabled) return;
     if (suppressQuickRef.current) return;
     pointerInsideQuickRef.current = true;
-    quickOpenReasonRef.current = "hover";
     clearCloseTimer();
     setQuickOpen(true);
   }, [clearCloseTimer, disabled]);
-
-  const openQuickFromFocus = useCallback(() => {
-    if (disabled) return;
-    if (suppressQuickRef.current) return;
-    quickOpenReasonRef.current = "focus";
-    clearCloseTimer();
-    setQuickOpen(true);
-  }, [clearCloseTimer, disabled]);
-
-  const openQuickFromFocusVisible = useCallback(
-    (event: FocusEvent<HTMLElement>) => {
-      if (!event.target.matches(":focus-visible")) return;
-      openQuickFromFocus();
-    },
-    [openQuickFromFocus],
-  );
-
-  const scheduleCloseForCurrentReason = useCallback(() => {
-    if (quickOpenReasonRef.current === "focus") {
-      scheduleFocusClose();
-      return;
-    }
-    scheduleHoverClose();
-  }, [scheduleFocusClose, scheduleHoverClose]);
 
   const handleQuickPointerLeave = useCallback(() => {
     pointerInsideQuickRef.current = false;
-    scheduleCloseForCurrentReason();
-  }, [scheduleCloseForCurrentReason]);
+    scheduleHoverClose();
+  }, [scheduleHoverClose]);
 
   const handleQuickOpenChange = useCallback(
     (open: boolean) => {
@@ -182,7 +126,7 @@ export function SavedPromptControl({
         return;
       }
       if (suppressQuickRef.current) return;
-      quickOpenReasonRef.current ??= "focus";
+      if (!pointerInsideQuickRef.current) return;
       setQuickOpen(true);
     },
     [closeQuick],
@@ -225,7 +169,7 @@ export function SavedPromptControl({
         return;
       }
       pointerInsideQuickRef.current = false;
-      scheduleCloseForCurrentReason();
+      scheduleHoverClose();
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -269,7 +213,7 @@ export function SavedPromptControl({
     closeQuick,
     isNodeInsideQuickSurface,
     quickOpen,
-    scheduleCloseForCurrentReason,
+    scheduleHoverClose,
   ]);
 
   const applyPrompt = (
@@ -298,12 +242,15 @@ export function SavedPromptControl({
             title={promptCopy.trigger}
             disabled={disabled}
             ref={triggerRef}
+            tabIndex={-1}
             onPointerEnter={openQuickFromHover}
             onPointerLeave={handleQuickPointerLeave}
-            onFocus={openQuickFromFocusVisible}
-            onBlur={scheduleFocusClose}
+            onMouseDown={(event) => {
+              event.preventDefault();
+            }}
             onClick={(event) => {
               event.preventDefault();
+              event.currentTarget.blur();
               suppressQuick();
               setManagerOpen(true);
             }}
@@ -323,8 +270,6 @@ export function SavedPromptControl({
             onPointerDownOutside={() => closeQuick()}
             onPointerEnter={openQuickFromHover}
             onPointerLeave={handleQuickPointerLeave}
-            onFocusCapture={openQuickFromFocusVisible}
-            onBlurCapture={scheduleFocusClose}
             className={cn(
               "galley-pop-in z-50 w-[320px] rounded-md border border-line bg-elevated p-1 shadow-elevated",
             )}
@@ -337,10 +282,14 @@ export function SavedPromptControl({
                 <Popover.Close asChild key={prompt.id}>
                   <button
                     type="button"
+                    tabIndex={-1}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                    }}
                     onClick={() => applyPrompt(prompt)}
                     className={cn(
                       "group/prompt flex w-full min-w-0 flex-col rounded-sm px-2.5 py-2 text-left",
-                      "transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:outline-none",
+                      "transition-colors hover:bg-hover outline-none focus:outline-none focus-visible:outline-none",
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] font-medium text-ink">
@@ -366,10 +315,14 @@ export function SavedPromptControl({
               <Popover.Close asChild>
                 <button
                   type="button"
+                  tabIndex={-1}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                  }}
                   onClick={() => setManagerOpen(true)}
                   className={cn(
                     "flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-left text-[11px] leading-[1.35] text-ink-muted/70",
-                    "transition-colors hover:bg-hover hover:text-ink-soft",
+                    "transition-colors hover:bg-hover hover:text-ink-soft outline-none focus:outline-none focus-visible:outline-none",
                   )}
                 >
                   <PencilSimple size={11} weight="thin" className="shrink-0" />

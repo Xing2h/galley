@@ -339,8 +339,7 @@ export const SidebarSessionRow = memo(function SidebarSessionRow({
       <div
         className={cn(
           "min-w-0 flex-1 transition-[padding] duration-75",
-          showActionTrigger &&
-            "group-hover:pr-6 group-focus-within:pr-6",
+          showActionTrigger && "group-hover:pr-6",
           actionsOpen && "pr-6",
         )}
       >
@@ -383,11 +382,11 @@ export const SidebarSessionRow = memo(function SidebarSessionRow({
             <IconTooltip text={copy.sidebar.supervisorCreated}>
               <span
                 role="img"
-                tabIndex={0}
+                tabIndex={-1}
                 aria-label={copy.sidebar.supervisorCreated}
                 className={cn(
                   "inline-flex shrink-0 items-center rounded-sm text-ink-muted transition-colors",
-                  "hover:text-ink-soft focus-visible:text-ink-soft focus-visible:outline-none",
+                  "hover:text-ink-soft",
                 )}
               >
                 <PlugsConnected size={12} weight="thin" />
@@ -418,7 +417,6 @@ export const SidebarSessionRow = memo(function SidebarSessionRow({
           className={cn(
             "pointer-events-none absolute right-2 top-1.5 z-10 flex h-6 w-6 items-center justify-center opacity-0 transition-opacity duration-75",
             "group-hover:pointer-events-auto group-hover:opacity-100",
-            "group-focus-within:pointer-events-auto group-focus-within:opacity-100",
             actionsOpen && "pointer-events-auto opacity-100",
           )}
         >

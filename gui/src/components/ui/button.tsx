@@ -7,6 +7,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import { IconTooltip, type TooltipSide } from "@/components/ui/tooltip";
+import { blurAfterClick, preventMouseFocus } from "@/lib/pointer-focus";
 
 /**
  * Canonical button surface for Galley. Every new button should use
@@ -254,6 +255,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       className,
       children,
       type = "button",
+      onClick,
+      onMouseDown,
       ...rest
     },
     ref,
@@ -265,11 +268,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(
           "inline-flex select-none items-center justify-center rounded-sm transition-[background-color,border-color,color,box-shadow,transform]",
           "duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
-          "disabled:cursor-not-allowed disabled:opacity-40",
+          "outline-none disabled:cursor-not-allowed disabled:opacity-40",
           VARIANT_CLASSES[variant],
           SIZE_CLASSES[size],
           className,
         )}
+        onMouseDown={(event) => {
+          onMouseDown?.(event);
+          preventMouseFocus(event);
+        }}
+        onClick={(event) => {
+          onClick?.(event);
+          blurAfterClick(event);
+        }}
         {...rest}
       >
         {leadingIcon}
@@ -293,6 +304,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       tooltip,
       tooltipSide,
       title,
+      onClick,
+      onMouseDown,
       ...rest
     },
     ref,
@@ -305,12 +318,20 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         className={cn(
           "inline-flex select-none items-center justify-center rounded-sm transition-[background-color,border-color,color,box-shadow,transform]",
           "duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
-          "disabled:cursor-not-allowed disabled:opacity-40",
+          "outline-none disabled:cursor-not-allowed disabled:opacity-40",
           ICON_VARIANT_CLASSES[variant],
           ICON_SIZE_CLASSES[size],
           active && ICON_ACTIVE_CLASSES[variant],
           className,
         )}
+        onMouseDown={(event) => {
+          onMouseDown?.(event);
+          preventMouseFocus(event);
+        }}
+        onClick={(event) => {
+          onClick?.(event);
+          blurAfterClick(event);
+        }}
         {...rest}
       >
         {children}

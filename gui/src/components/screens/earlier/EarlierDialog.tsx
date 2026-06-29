@@ -476,13 +476,13 @@ function EarlierRow({
       </div>
 
       {/* Right metadata column — tabular ledger rail (date · turns ·
-          pinned). In browse mode it yields to the hover/focus actions;
+          pinned). In browse mode it yields to the hover actions;
           in select mode it stays put. */}
       <span
         className={cn(
           "shrink-0 pt-0.5 text-right text-[10.5px] tabular-nums tracking-[0.02em] text-ink-muted",
           !selectMode &&
-            "transition-opacity duration-100 group-hover:opacity-0 group-focus-within:opacity-0",
+            "transition-opacity duration-100 group-hover:opacity-0",
         )}
       >
         {formatDate(session.lastActivityAt)}
@@ -497,7 +497,7 @@ function EarlierRow({
       </span>
 
       {!selectMode && (
-        <div className="pointer-events-none absolute right-5 top-3 flex items-center gap-1 opacity-0 transition-opacity duration-100 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        <div className="pointer-events-none absolute right-5 top-3 flex items-center gap-1 opacity-0 transition-opacity duration-100 group-hover:pointer-events-auto group-hover:opacity-100">
           <IconButton
             onClick={(e) => {
               e.stopPropagation();

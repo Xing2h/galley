@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PauseCircle } from "@phosphor-icons/react";
 
 import { useCopy } from "@/lib/i18n";
+import { preventMouseFocus } from "@/lib/pointer-focus";
 import { StatusIcon } from "@/lib/status-icon";
 import { cn } from "@/lib/utils";
 import type { Turn } from "@/types/conversation";
@@ -28,12 +29,11 @@ import type { Turn } from "@/types/conversation";
  * MainView's keyboard nav (no jarring instant jump, no scroll-into-view
  * blocked-by-flex-parent gotcha).
  *
- * Hover (and keyboard focus) reveals a tooltip on the left with the
- * first 50 chars of the question, so users don't have to click-guess
- * which dot is which. When the rail gets dense, nearby questions collapse
- * into a small vertical cluster marker; hovering that marker expands a
- * local list so detail remains available without turning the rail into
- * visual noise.
+ * Hover reveals a tooltip on the left with the first 50 chars of the
+ * question, so users don't have to click-guess which dot is which. When
+ * the rail gets dense, nearby questions collapse into a small vertical
+ * cluster marker; hovering that marker expands a local list so detail
+ * remains available without turning the rail into visual noise.
  *
  * Hidden under 3 user-msgs — short conversations don't need an index.
  *
@@ -138,7 +138,7 @@ function RailTailStatusIcon({ status }: { status: RailTailStatus }) {
   return (
     <span
       aria-hidden
-      className="relative z-10 flex size-4 items-center justify-center rounded-full group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-brand/40"
+      className="relative z-10 flex size-4 items-center justify-center rounded-full"
     >
       {status === "running" ? (
         <StatusIcon status="running" size={14} />
@@ -397,22 +397,13 @@ export function UserQuestionRail({
               onMouseLeave={() => {
                 if (item.kind === "cluster") scheduleCloseCluster();
               }}
-              onFocusCapture={() => {
-                if (item.kind === "cluster") openCluster(item.id);
-              }}
-              onBlurCapture={(e) => {
-                if (
-                  item.kind === "cluster" &&
-                  !e.currentTarget.contains(e.relatedTarget as Node | null)
-                ) {
-                  scheduleCloseCluster();
-                }
-              }}
             >
               {item.kind === "single" ? (
                 <>
                   <button
                     type="button"
+                    tabIndex={-1}
+                    onMouseDown={preventMouseFocus}
                     onClick={() => handleJump(item.question.index)}
                     aria-label={
                       showStatus
@@ -436,7 +427,6 @@ export function UserQuestionRail({
                         <span
                           className={cn(
                             "relative block size-2 rounded-full border-[1.5px] transition-colors",
-                            "group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-brand/40",
                             item.question.index === activeIndex
                               ? "border-brand-strong bg-brand-strong"
                               : "border-line-strong bg-transparent group-hover:border-ink-soft",
@@ -448,7 +438,7 @@ export function UserQuestionRail({
                   <span
                     role="tooltip"
                     className={cn(
-                      "pointer-events-none absolute right-full z-10 mr-2 flex max-w-[320px] items-center gap-2 truncate whitespace-nowrap rounded-sm border border-line bg-elevated px-2 py-1 text-[11.5px] text-ink-soft opacity-0 shadow-sm transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100",
+                      "pointer-events-none absolute right-full z-10 mr-2 flex max-w-[320px] items-center gap-2 truncate whitespace-nowrap rounded-sm border border-line bg-elevated px-2 py-1 text-[11.5px] text-ink-soft opacity-0 shadow-sm transition-opacity duration-100 group-hover:opacity-100",
                       item.topPercent < 6
                         ? "top-0"
                         : item.topPercent > 94
@@ -479,6 +469,8 @@ export function UserQuestionRail({
                 <>
                   <button
                     type="button"
+                    tabIndex={-1}
+                    onMouseDown={preventMouseFocus}
                     onClick={() => handleJump(item.firstIndex)}
                     aria-label={
                       showStatus
@@ -498,7 +490,6 @@ export function UserQuestionRail({
                     <span
                       className={cn(
                         "relative block w-2 rounded-full border-[1.5px] transition-colors",
-                        "group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-brand/40",
                         activeIndex >= item.firstIndex &&
                           activeIndex <= item.lastIndex
                           ? "border-brand-strong bg-brand-strong"
@@ -520,7 +511,7 @@ export function UserQuestionRail({
                       "absolute right-full top-1/2 z-10 h-14 w-4 -translate-y-1/2",
                       isClusterOpen
                         ? "pointer-events-auto"
-                        : "pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto",
+                        : "pointer-events-none group-hover:pointer-events-auto",
                     )}
                   />
                   <div
@@ -534,7 +525,7 @@ export function UserQuestionRail({
                       "absolute right-full z-10 mr-2 w-max max-w-[min(320px,calc(100vw-80px))] rounded-sm border border-line bg-elevated py-1 text-[11.5px] text-ink-soft shadow-sm transition-opacity duration-100",
                       isClusterOpen
                         ? "pointer-events-auto opacity-100"
-                        : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+                        : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100",
                       item.topPercent < 18
                         ? "top-0"
                         : item.topPercent > 82
@@ -547,9 +538,10 @@ export function UserQuestionRail({
                         <button
                           key={question.index}
                           type="button"
+                          tabIndex={-1}
+                          onMouseDown={preventMouseFocus}
                           onClick={() => handleJump(question.index)}
-                          tabIndex={isClusterOpen ? 0 : -1}
-                          className="flex w-full items-center gap-2 px-2 py-1 text-left text-ink-soft transition-colors hover:bg-hover hover:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-none"
+                          className="flex w-full items-center gap-2 px-2 py-1 text-left text-ink-soft transition-colors hover:bg-hover hover:text-ink"
                         >
                           <span
                             className={cn(

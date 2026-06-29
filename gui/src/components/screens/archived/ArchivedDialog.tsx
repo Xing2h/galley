@@ -457,13 +457,13 @@ function ArchivedRow({
 
       {/* Archived date as a right-aligned tabular metadata column — a
           clean ledger rail down the list (Swiss: alignment is structure).
-          Yields to the row actions on hover / keyboard focus, the same
+          Yields to the row actions on hover, the same
           swap the sidebar rows use. */}
-      <span className="shrink-0 pt-0.5 text-[10.5px] tabular-nums tracking-[0.02em] text-ink-muted transition-opacity duration-100 group-hover:opacity-0 group-focus-within:opacity-0">
+      <span className="shrink-0 pt-0.5 text-[10.5px] tabular-nums tracking-[0.02em] text-ink-muted transition-opacity duration-100 group-hover:opacity-0">
         {formatDate(session.updatedAt)}
       </span>
 
-      <div className="pointer-events-none absolute right-5 top-3 flex items-center gap-1 opacity-0 transition-opacity duration-100 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+      <div className="pointer-events-none absolute right-5 top-3 flex items-center gap-1 opacity-0 transition-opacity duration-100 group-hover:pointer-events-auto group-hover:opacity-100">
         <IconButton
           onClick={onRestore}
           title={copy.common.restore}

@@ -1,6 +1,7 @@
 import { CaretRight } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 
+import { preventMouseFocus } from "@/lib/pointer-focus";
 import { cn } from "@/lib/utils";
 
 /**
@@ -48,10 +49,12 @@ export function ChannelCard({
       >
         <button
           type="button"
+          tabIndex={-1}
+          onMouseDown={preventMouseFocus}
           aria-expanded={expanded}
           className={cn(
             "group/toggle flex min-w-0 flex-1 items-center gap-3 rounded-sm px-1.5 py-0.5 text-left transition-colors",
-            "hover:bg-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
+            "hover:bg-hover outline-none",
           )}
           onClick={onToggle}
         >
@@ -77,7 +80,7 @@ export function ChannelCard({
         <div
           className={cn(
             "ml-auto flex shrink-0 items-center gap-1.5 opacity-80 transition-opacity",
-            "group-hover/im:opacity-100 group-focus-within/im:opacity-100",
+            "group-hover/im:opacity-100",
             busy && "opacity-100",
           )}
         >

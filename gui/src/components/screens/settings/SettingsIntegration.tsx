@@ -318,7 +318,7 @@ export function SettingsIntegration() {
                 className={`mt-[1px] flex size-5 shrink-0 items-center justify-center transition-opacity group-hover:text-ink ${
                   copiedExampleIndex === index
                     ? "text-ink opacity-100"
-                    : "text-ink-muted opacity-40 group-hover:opacity-100 group-focus-visible:opacity-100"
+                    : "text-ink-muted opacity-40 group-hover:opacity-100"
                 }`}
               >
                 {copiedExampleIndex === index ? (

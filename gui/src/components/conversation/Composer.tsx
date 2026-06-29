@@ -34,6 +34,7 @@ import {
 } from "@/lib/composer-images";
 import { useCopy } from "@/lib/i18n";
 import { goalPillLabel } from "@/lib/goals";
+import { preventMouseFocus } from "@/lib/pointer-focus";
 import { cn } from "@/lib/utils";
 import type { PendingImageAttachment } from "@/types/conversation";
 import type { GoalBrief, GoalLaunchConfig } from "@/types/goal";
@@ -94,7 +95,7 @@ const COMPOSER_ACTION_BUTTON = cn(
   // compression scale. Integer-pixel movement, never sub-pixel.
   "hover:-translate-y-px",
   "active:translate-y-[2px] active:scale-[0.97]",
-  "focus-visible:outline-none focus-visible:ring-2",
+  "outline-none",
   "disabled:translate-y-0 disabled:scale-100 disabled:shadow-none",
 );
 
@@ -102,13 +103,13 @@ const COMPOSER_TERTIARY_ICON_BUTTON = cn(
   "flex size-8 shrink-0 items-center justify-center rounded-full text-ink-muted",
   "transition-[background-color,color,transform] duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
   "hover:-translate-y-px active:translate-y-[2px] active:scale-[0.97]",
-  "hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35",
+  "hover:bg-hover hover:text-ink outline-none",
   "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:active:translate-y-0 disabled:active:scale-100 disabled:hover:bg-transparent disabled:hover:text-ink-muted",
 );
 
 const COMPOSER_SEND_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-brand-strong/40 bg-brand text-ink focus-visible:ring-brand/45",
+  "border-brand-strong/40 bg-brand text-ink",
   "shadow-[var(--shadow-brand-control)]",
   "hover:bg-brand-strong hover:text-elevated hover:shadow-[var(--shadow-brand-control-hover)]",
   "active:bg-brand-strong active:text-elevated active:shadow-[var(--shadow-control-press)]",
@@ -116,7 +117,7 @@ const COMPOSER_SEND_BUTTON = cn(
 
 const COMPOSER_STOP_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-warning/70 bg-warning text-elevated focus-visible:ring-warning/50",
+  "border-warning/70 bg-warning text-elevated",
   "shadow-[var(--shadow-composer-stop)]",
   "hover:bg-warning-hover hover:shadow-[var(--shadow-composer-stop-pulse)]",
   "active:shadow-[var(--shadow-control-press)]",
@@ -124,7 +125,7 @@ const COMPOSER_STOP_BUTTON = cn(
 
 const COMPOSER_CONFIG_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-line bg-surface text-ink-soft focus-visible:ring-brand/35",
+  "border-line bg-surface text-ink-soft",
   "shadow-[var(--shadow-neutral-control)]",
   "hover:border-brand/35 hover:bg-brand-soft hover:text-ink hover:shadow-[var(--shadow-neutral-control-hover)]",
   "active:shadow-[var(--shadow-control-press)]",
@@ -132,7 +133,7 @@ const COMPOSER_CONFIG_BUTTON = cn(
 
 const COMPOSER_GOAL_BUTTON = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-line bg-surface text-ink-soft focus-visible:ring-brand/40",
+  "border-line bg-surface text-ink-soft",
   "shadow-[var(--shadow-neutral-control)]",
   "hover:border-brand/45 hover:bg-brand-soft hover:text-brand-strong hover:shadow-[var(--shadow-neutral-control-hover)]",
   "active:shadow-[var(--shadow-control-press)]",
@@ -140,7 +141,7 @@ const COMPOSER_GOAL_BUTTON = cn(
 
 const COMPOSER_GOAL_BUTTON_ARMED = cn(
   COMPOSER_ACTION_BUTTON,
-  "border-brand/45 bg-brand-soft text-brand-strong focus-visible:ring-brand/45",
+  "border-brand/45 bg-brand-soft text-brand-strong",
   "shadow-[var(--shadow-neutral-control)]",
   "hover:bg-brand/[var(--opacity-medium)] hover:shadow-[var(--shadow-neutral-control-hover)]",
   "active:shadow-[var(--shadow-control-press)]",
@@ -151,7 +152,7 @@ const COMPOSER_GOAL_SEND_BUTTON = cn(
   "text-[12.5px] font-semibold transition-[background-color,border-color,color,box-shadow,transform]",
   "duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
   "border-brand-strong/40 bg-brand text-ink",
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/45",
+  "outline-none",
   "shadow-[var(--shadow-brand-control)] hover:-translate-y-px hover:bg-brand-strong hover:text-elevated hover:shadow-[var(--shadow-brand-control-hover)]",
   "active:translate-y-[2px] active:scale-[0.97] active:bg-brand-strong active:text-elevated active:shadow-[var(--shadow-control-press)]",
   "disabled:translate-y-0 disabled:scale-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none",
@@ -626,8 +627,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   <button
                     type="button"
                     aria-label={copy.conversation.previewImage}
+                    tabIndex={-1}
+                    onMouseDown={preventMouseFocus}
                     onClick={() => setPreviewIndex(imageIndex)}
-                    className="block h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35"
+                    className="block h-full w-full outline-none"
                   >
                     <img
                       src={image.previewUrl}
@@ -639,6 +642,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     <button
                       type="button"
                       aria-label={copy.composer.removeImage}
+                      tabIndex={-1}
+                      onMouseDown={preventMouseFocus}
                       onClick={(event) => {
                         event.stopPropagation();
                         removeImage(image, imageIndex);
@@ -646,7 +651,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       className={cn(
                         "absolute right-1 top-1 flex size-5 items-center justify-center rounded-full",
                         "bg-elevated/95 text-ink shadow-[var(--shadow-neutral-control)]",
-                        "opacity-0 transition-opacity duration-120 hover:bg-hover focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35 group-hover/image:opacity-100",
+                        "opacity-0 transition-opacity duration-120 hover:bg-hover outline-none group-hover/image:opacity-100",
                       )}
                     >
                       <X size={12} weight="bold" />
@@ -686,6 +691,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   <TooltipLabel text={copy.composer.attachImage}>
                     <button
                       type="button"
+                      tabIndex={-1}
+                      onMouseDown={preventMouseFocus}
                       onClick={() => fileInputRef.current?.click()}
                       disabled={disabled || stopMode}
                       aria-label={copy.composer.attachImage}
@@ -713,6 +720,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 >
                   <button
                     type="button"
+                    tabIndex={-1}
+                    onMouseDown={preventMouseFocus}
                     onClick={handleGoalArmToggle}
                     disabled={goalEntryDisabled && !requiresModelConfig}
                     aria-label={
@@ -753,6 +762,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   >
                     <button
                       type="button"
+                      tabIndex={-1}
+                      onMouseDown={preventMouseFocus}
                       onClick={() => {
                         if (isStopping) return;
                         onStop?.();
@@ -787,6 +798,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   >
                     <button
                       type="button"
+                      tabIndex={-1}
+                      onMouseDown={preventMouseFocus}
                       onClick={handleSubmit}
                       disabled={
                         disabled ||
@@ -1151,7 +1164,7 @@ function LLMPill({
     "flex h-7 min-w-0 items-center gap-1 text-[12.5px] text-ink-soft",
     "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
     "hover:bg-hover hover:text-ink",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+    "outline-none",
     "rounded-sm px-2.5",
     disabled && "cursor-not-allowed opacity-60",
   );
@@ -1162,6 +1175,8 @@ function LLMPill({
     return (
       <button
         type="button"
+        tabIndex={-1}
+        onMouseDown={preventMouseFocus}
         onClick={onOpenLLMSwitcher}
         disabled={disabled}
         className={pillClasses}
@@ -1187,6 +1202,8 @@ function LLMPill({
       <Popover.Trigger asChild>
         <button
           type="button"
+          tabIndex={-1}
+          onMouseDown={preventMouseFocus}
           disabled={disabled}
           className={pillClasses}
           title={title}
@@ -1212,6 +1229,8 @@ function LLMPill({
               <Popover.Close asChild key={llm.index}>
                 <button
                   type="button"
+                  tabIndex={-1}
+                  onMouseDown={preventMouseFocus}
                   onClick={() => onSelectLLM?.(llm.index)}
                   className={cn(
                     "group/llm-option flex w-full min-w-0 items-center gap-2 rounded-sm px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-hover",
@@ -1237,7 +1256,7 @@ function LLMPill({
                         "transition-[max-width,opacity] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
                         isDuplicateDisplayName
                           ? "max-w-[96px] opacity-100"
-                          : "max-w-0 opacity-0 group-hover/llm-option:max-w-[96px] group-hover/llm-option:opacity-100 group-focus-visible/llm-option:max-w-[96px] group-focus-visible/llm-option:opacity-100",
+                          : "max-w-0 opacity-0 group-hover/llm-option:max-w-[96px] group-hover/llm-option:opacity-100",
                       )}
                       title={providerLabel}
                     >
@@ -1256,6 +1275,8 @@ function LLMPill({
               <Popover.Close asChild>
                 <button
                   type="button"
+                  tabIndex={-1}
+                  onMouseDown={preventMouseFocus}
                   onClick={onConfigureModels}
                   className={cn(
                     "flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-left text-[11px] leading-[1.35] text-ink-muted/70",

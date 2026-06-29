@@ -17,6 +17,7 @@ import { useMemo, type ReactNode } from "react";
 import { Button, IconButton } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { useCopy } from "@/lib/i18n";
+import { preventMouseFocus } from "@/lib/pointer-focus";
 import { cn } from "@/lib/utils";
 import type {
   ManagedModelProviderRecord,
@@ -130,17 +131,18 @@ export function ProviderCard({
         "transition-[background-color,border-color,box-shadow,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
         "hover:-translate-y-[0.5px] hover:border-line-strong hover:shadow-card",
         "active:translate-y-[0.5px] active:shadow-[var(--shadow-button-raised-active)]",
-        "focus-within:border-line-strong focus-within:shadow-card",
         open && "border-line-strong shadow-card",
       )}
     >
       <div className="flex min-w-0 items-center gap-3 px-2 py-1.5 transition-colors">
         <button
           type="button"
+          tabIndex={-1}
+          onMouseDown={preventMouseFocus}
           aria-expanded={open}
           className={cn(
             "group/toggle flex min-w-0 flex-1 items-center gap-3 rounded-sm px-1.5 py-0.5 text-left",
-            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
+            "outline-none",
           )}
           onClick={onToggle}
         >
@@ -149,7 +151,7 @@ export function ProviderCard({
               "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm transition-colors",
               open
                 ? "bg-elevated text-brand-strong"
-                : "text-ink-muted group-hover/provider:bg-brand-soft group-hover/provider:text-brand-strong group-focus-within/provider:bg-brand-soft group-focus-within/provider:text-brand-strong",
+                : "text-ink-muted group-hover/provider:bg-brand-soft group-hover/provider:text-brand-strong",
             )}
           >
             {open ? (
@@ -162,7 +164,7 @@ export function ProviderCard({
             <span
               className={cn(
                 "min-w-0 truncate text-[13px] font-medium transition-colors",
-                "group-hover/provider:text-brand-strong group-focus-within/provider:text-brand-strong",
+                "group-hover/provider:text-brand-strong",
                 open ? "text-brand-strong" : "text-ink",
               )}
               title={provider.displayName}
@@ -173,7 +175,7 @@ export function ProviderCard({
             <span
               className={cn(
                 "inline-flex shrink-0 rounded-sm border border-line bg-surface/80 px-1.5 py-px text-[10.5px] text-ink-muted transition-colors",
-                "group-hover/provider:border-line-strong group-hover/provider:bg-elevated/80 group-focus-within/provider:border-line-strong group-focus-within/provider:bg-elevated/80",
+                "group-hover/provider:border-line-strong group-hover/provider:bg-elevated/80",
                 open && "border-line-strong bg-elevated/75",
               )}
             >
@@ -188,7 +190,7 @@ export function ProviderCard({
         <div
           className={cn(
             "ml-auto flex shrink-0 items-center gap-1.5 opacity-75 transition-opacity",
-            "group-hover/provider:opacity-100 group-focus-within/provider:opacity-100",
+            "group-hover/provider:opacity-100",
             headerProbeState.kind === "loading" && "opacity-100",
           )}
         >

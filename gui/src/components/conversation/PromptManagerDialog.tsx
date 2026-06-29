@@ -11,7 +11,6 @@ import {
 } from "@phosphor-icons/react";
 import {
   useState,
-  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -98,7 +97,6 @@ export function PromptManagerDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-overlay" />
         <Dialog.Content
-          aria-describedby="saved-prompts-desc"
           className={cn(
             "fixed left-1/2 top-1/2 z-50 flex h-[560px] w-[760px] -translate-x-1/2 -translate-y-1/2 flex-col",
             "max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] rounded-lg border border-line bg-elevated shadow-elevated",
@@ -109,9 +107,6 @@ export function PromptManagerDialog({
               <Dialog.Title className="truncate text-[16px] font-semibold text-ink">
                 {promptCopy.managerTitle}
               </Dialog.Title>
-              <Dialog.Description id="saved-prompts-desc" className="sr-only">
-                {promptCopy.managerDescription}
-              </Dialog.Description>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {mode === "library" && (
@@ -352,13 +347,6 @@ function PromptCard({
       : promptCopy.customPrompt;
   const pinDisabled = !prompt.pinned && !canPin;
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return;
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    onUse();
-  };
-
   const handleAction = (
     event: MouseEvent<HTMLButtonElement>,
     action: () => void,
@@ -369,16 +357,11 @@ function PromptCard({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-label={`${promptCopy.usePrompt}: ${prompt.title}`}
       onClick={onUse}
-      onKeyDown={handleKeyDown}
       className={cn(
         "group/card relative flex min-h-[122px] cursor-pointer flex-col rounded-md border border-line bg-app p-3 pb-9 text-left",
         "transition-[background-color,border-color,box-shadow,transform] duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)]",
         "hover:-translate-y-px hover:border-brand/35 hover:bg-elevated hover:shadow-[var(--shadow-neutral-control-hover)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35",
         "active:translate-y-[1px] active:scale-[0.995]",
         prompt.pinned && "border-brand/30 bg-brand/[var(--opacity-subtle)]",
       )}
@@ -410,8 +393,8 @@ function PromptCard({
       </p>
       <div
         className={cn(
-          "absolute bottom-2 right-2 flex items-center gap-1 opacity-0",
-          "transition-opacity duration-120 group-hover/card:opacity-100 group-focus-within/card:opacity-100",
+          "pointer-events-none absolute bottom-2 right-2 flex items-center gap-1 opacity-0",
+          "transition-opacity duration-120 group-hover/card:pointer-events-auto group-hover/card:opacity-100",
         )}
       >
         <PromptCardIconButton
@@ -504,6 +487,7 @@ function PromptCardIconButton({
       active={active}
       disabled={disabled}
       onClick={onClick}
+      tabIndex={-1}
       className="bg-elevated/95"
     >
       {children}

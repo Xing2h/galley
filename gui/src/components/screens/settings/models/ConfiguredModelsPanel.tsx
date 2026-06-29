@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Button, IconButton } from "@/components/ui/button";
 import { TooltipLabel } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
+import { preventMouseFocus } from "@/lib/pointer-focus";
 import { cn } from "@/lib/utils";
 import type {
   ManagedModelProviderRecord,
@@ -262,7 +263,7 @@ function ConfiguredModelRow({
         "group px-3 py-2 transition-colors duration-150",
         isEditing
           ? "bg-selected/45"
-          : "hover:bg-elevated/55 focus-within:bg-elevated/55",
+          : "hover:bg-elevated/55",
         swapClass,
       )}
     >
@@ -270,6 +271,8 @@ function ConfiguredModelRow({
         <button
           ref={(node) => onRegisterRow?.(model.id, node)}
           type="button"
+          tabIndex={-1}
+          onMouseDown={preventMouseFocus}
           aria-expanded={isEditing}
           aria-label={`${copy.editModel}: ${display.title}`}
           onClick={() => {
@@ -278,7 +281,7 @@ function ConfiguredModelRow({
           }}
           className={cn(
             "min-w-0 flex-1 rounded-sm pr-2 text-left",
-            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand/20",
+            "outline-none",
           )}
         >
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -311,7 +314,7 @@ function ConfiguredModelRow({
         </button>
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          <div className="flex items-center gap-0.5 opacity-50 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="flex items-center gap-0.5 opacity-50 transition-opacity group-hover:opacity-100">
             <IconButton
               ariaLabel={copy.testModel}
               size="sm"
@@ -371,7 +374,7 @@ function ConfiguredModelRow({
             size="xs"
             disabled={!canMoveUp}
             onClick={onMoveUp}
-            className="text-ink-muted/45 transition-colors group-hover:text-ink-muted group-focus-within:text-ink-muted hover:text-ink"
+            className="text-ink-muted/45 transition-colors group-hover:text-ink-muted hover:text-ink"
           >
             <ArrowUp size={11} weight="bold" />
           </IconButton>
@@ -380,7 +383,7 @@ function ConfiguredModelRow({
             size="xs"
             disabled={!canMoveDown}
             onClick={onMoveDown}
-            className="text-ink-muted/45 transition-colors group-hover:text-ink-muted group-focus-within:text-ink-muted hover:text-ink"
+            className="text-ink-muted/45 transition-colors group-hover:text-ink-muted hover:text-ink"
           >
             <ArrowDown size={11} weight="bold" />
           </IconButton>

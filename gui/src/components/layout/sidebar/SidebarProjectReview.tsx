@@ -16,6 +16,7 @@ import {
 import { IconButton } from "@/components/ui/button";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/i18n";
+import { preventMouseFocus } from "@/lib/pointer-focus";
 import { effectiveProjectActivityAt } from "@/lib/projects";
 import { groupSessions } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
@@ -248,12 +249,14 @@ function SidebarProjectReviewEmpty({
     <div className="px-3 py-5">
       <button
         type="button"
+        tabIndex={-1}
+        onMouseDown={preventMouseFocus}
         onClick={onNewProject}
         className={cn(
           "flex w-full cursor-pointer items-center gap-2 rounded-sm border border-brand/30 bg-selected/50 px-3 py-2.5 text-left",
           "text-[12.5px] font-medium text-ink-soft transition-[background-color,border-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
           "hover:border-brand/50 hover:bg-selected hover:text-ink active:translate-y-px active:duration-[45ms]",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+          "outline-none",
         )}
       >
         <Plus size={13} weight="thin" className="shrink-0 text-brand-strong" />
@@ -282,13 +285,15 @@ function SidebarProjectGroupToggle({
   return (
     <button
       type="button"
+      tabIndex={-1}
+      onMouseDown={preventMouseFocus}
       onClick={onToggle}
       aria-expanded={open}
       className={cn(
         "mx-1.5 mt-3 flex w-[calc(100%-12px)] cursor-pointer items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted",
         "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover hover:text-ink-soft",
         "active:translate-y-px active:duration-[45ms]",
-        "outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+        "outline-none",
       )}
     >
       <CaretRight
@@ -337,22 +342,13 @@ function SidebarProjectRow({
   const row = (
     <div
       data-galley-context-menu-trigger={hasRowActions ? "" : undefined}
-      role="button"
-      tabIndex={0}
       aria-expanded={expanded}
       onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick?.();
-        }
-      }}
       className={cn(
         "group relative mx-1.5 flex w-[calc(100%-12px)] cursor-pointer items-center gap-2.5 overflow-hidden rounded-sm px-3 py-1.5 text-left text-[13px] outline-none",
-        "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] focus-visible:ring-2 focus-visible:ring-brand/30",
+        "transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
         "active:translate-y-px active:duration-[45ms]",
-        (onStartConversation || hasRowActions) &&
-          "group-hover:pr-16 group-focus-within:pr-16",
+        (onStartConversation || hasRowActions) && "group-hover:pr-16",
         actionsOpen && "pr-16",
         active
           ? "bg-selected text-ink"
@@ -393,7 +389,6 @@ function SidebarProjectRow({
           className={cn(
             "pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-75",
             "group-hover:pointer-events-auto group-hover:opacity-100",
-            "group-focus-within:pointer-events-auto group-focus-within:opacity-100",
             actionsOpen && "pointer-events-auto opacity-100",
           )}
         >
@@ -401,9 +396,8 @@ function SidebarProjectRow({
             <IconTooltip text={newConversationTitle}>
               <button
                 type="button"
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                }}
+                tabIndex={-1}
+                onMouseDown={preventMouseFocus}
                 onClick={(e) => {
                   e.stopPropagation();
                   onStartConversation();
@@ -412,9 +406,9 @@ function SidebarProjectRow({
                 className={cn(
                   "inline-flex size-[28px] shrink-0 items-center justify-center rounded-sm",
                   "text-ink-muted transition-[background-color,color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
-                  "group-hover:text-ink-soft group-focus-within:text-ink-soft",
+                  "group-hover:text-ink-soft",
                   "hover:bg-hover hover:text-ink active:translate-y-px active:bg-selected/60 active:duration-[45ms]",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+                  "outline-none",
                 )}
               >
                 <Plus size={13} weight="thin" />
@@ -433,6 +427,7 @@ function SidebarProjectRow({
                     tooltip={false}
                     size="xs"
                     active={actionsOpen}
+                    tabIndex={-1}
                     onPointerDown={(e) => {
                       e.stopPropagation();
                     }}

@@ -15,6 +15,7 @@ import {
 } from "@/components/conversation/ImagePreviewDialog";
 import { IconTooltip } from "@/components/ui/tooltip";
 import { useCopy, type AppCopy } from "@/lib/i18n";
+import { preventMouseFocus } from "@/lib/pointer-focus";
 import { cn } from "@/lib/utils";
 import type { MessageAttachment, Origin } from "@/types/conversation";
 
@@ -220,23 +221,17 @@ export const MessageUser = memo(function MessageUser({
       className="group relative my-5"
       onMouseEnter={showActions}
       onMouseLeave={scheduleHideActions}
-      onFocusCapture={showActions}
-      onBlurCapture={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-          scheduleHideActions();
-        }
-      }}
     >
       {supervisorTooltip && (
         <div className="mb-1 flex items-center">
           <IconTooltip text={supervisorTooltip} side="top">
             <span
               role="img"
-              tabIndex={0}
+              tabIndex={-1}
               aria-label={copy.conversation.supervisorMessage}
               className={cn(
                 "inline-flex items-center rounded-sm text-ink-muted transition-colors",
-                "hover:text-ink-soft focus-visible:text-ink-soft focus-visible:outline-none",
+                "hover:text-ink-soft",
               )}
             >
               <PlugsConnected size={12} weight="thin" />
@@ -273,6 +268,8 @@ export const MessageUser = memo(function MessageUser({
         <div className="mt-1">
           <button
             type="button"
+            tabIndex={-1}
+            onMouseDown={preventMouseFocus}
             onClick={() => setCollapsed((c) => !c)}
             aria-expanded={!collapsed}
             className="inline-flex h-6 items-center gap-1 rounded-sm px-1 text-[11.5px] text-ink-muted underline-offset-2 transition-[background-color,color,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] hover:bg-hover hover:text-ink hover:underline active:translate-y-px active:duration-[45ms]"
@@ -335,11 +332,13 @@ function UserImageAttachments({
           <button
             key={image.id}
             type="button"
+            tabIndex={-1}
+            onMouseDown={preventMouseFocus}
             onClick={() => setPreviewIndex(imageIndex)}
             className={cn(
               "h-24 w-24 overflow-hidden rounded-md border border-brand-strong/25 bg-surface shadow-[var(--shadow-neutral-control)]",
               "transition-[border-color,box-shadow,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]",
-              "hover:-translate-y-px hover:border-brand-strong/50 hover:shadow-[var(--shadow-neutral-control-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/35",
+              "hover:-translate-y-px hover:border-brand-strong/50 hover:shadow-[var(--shadow-neutral-control-hover)] outline-none",
             )}
             aria-label={copy.conversation.previewImage}
           >

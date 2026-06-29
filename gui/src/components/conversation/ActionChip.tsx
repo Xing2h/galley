@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 
 import { IconTooltip, type TooltipSide } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { blurAfterClick, preventMouseFocus } from "@/lib/pointer-focus";
 
 /**
  * Shared copy / save action chip for the conversation. One visual
@@ -31,7 +32,7 @@ const ACTION_CHIP_BASE = cn(
   "inline-flex select-none items-center justify-center rounded-sm",
   "transition-[background-color,border-color,color,box-shadow,transform]",
   "duration-[140ms] ease-[cubic-bezier(0.2,0,0,1)] active:duration-[70ms]",
-  "active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
+  "active:translate-y-px outline-none",
 );
 
 export interface ActionChipProps {
@@ -73,11 +74,14 @@ export function ActionChip({
       type="button"
       aria-label={label}
       aria-hidden={!revealed || undefined}
-      tabIndex={revealed ? 0 : -1}
-      // Floating chip lives on a transient selection — don't let the
-      // mousedown clear the selection before the click copies it.
-      onMouseDown={floating ? (event) => event.preventDefault() : undefined}
-      onClick={onClick}
+      tabIndex={-1}
+      // Floating chip lives on a transient selection; every chip also
+      // avoids mouse focus so hover-only UI doesn't stick after click.
+      onMouseDown={preventMouseFocus}
+      onClick={(event) => {
+        onClick();
+        blurAfterClick(event);
+      }}
       className={cn(
         ACTION_CHIP_BASE,
         floating

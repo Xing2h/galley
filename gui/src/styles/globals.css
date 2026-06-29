@@ -207,6 +207,15 @@
   --opacity-strong: 0.40;    /* 强强调 */
 }
 
+@layer base {
+  button:focus,
+  button:focus-visible,
+  [role="button"]:focus,
+  [role="button"]:focus-visible {
+    outline: none;
+  }
+}
+
 html[data-theme="dark"] {
   color-scheme: dark;
 

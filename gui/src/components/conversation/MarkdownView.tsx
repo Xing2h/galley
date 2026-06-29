@@ -27,6 +27,7 @@ import { createOnigurumaEngine } from "shiki/engine/oniguruma";
 
 import { useResolvedTheme } from "@/components/theme/ThemeContext";
 import { useCopy, type AppCopy } from "@/lib/i18n";
+import { blurAfterClick, preventMouseFocus } from "@/lib/pointer-focus";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui";
 import { makeAppError } from "@/types/app-error";
@@ -458,13 +459,18 @@ function CodeBlock({ code, language }: CodeBlockProps) {
         <button
           type="button"
           aria-pressed={wrapped}
-          onClick={() => setWrapped((value) => !value)}
+          tabIndex={-1}
+          onMouseDown={preventMouseFocus}
+          onClick={(event) => {
+            setWrapped((value) => !value);
+            blurAfterClick(event);
+          }}
           className={cn(
             "inline-flex items-center rounded-sm bg-code-surface/85 px-1.5 py-0.5 text-[10.5px] uppercase tracking-[0.08em] backdrop-blur-sm",
             "transition-[background-color,color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
             wrapped
               ? "text-ink-soft opacity-100"
-              : "text-ink-muted opacity-0 hover:text-ink-soft group-hover/codeblock:opacity-100 focus-visible:opacity-100",
+              : "text-ink-muted opacity-0 hover:text-ink-soft group-hover/codeblock:opacity-100",
             "hover:bg-hover",
           )}
         >
@@ -534,13 +540,16 @@ function CodeCopyButton({ code }: { code: string }) {
   return (
     <button
       type="button"
-      onClick={onCopy}
+      tabIndex={-1}
+      onMouseDown={preventMouseFocus}
+      onClick={(event) => {
+        void onCopy();
+        blurAfterClick(event);
+      }}
       className={cn(
         "inline-flex items-center gap-1 rounded-sm bg-code-surface/85 px-1.5 py-0.5 text-[10.5px] uppercase tracking-[0.08em] backdrop-blur-sm",
         "transition-[background-color,color,opacity,transform] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] active:translate-y-[0.5px] active:duration-[45ms]",
-        // Hidden until hover, but stays put once you've clicked
-        // (focus-visible) so keyboard users can still see feedback.
-        "opacity-0 group-hover/codeblock:opacity-100 focus-visible:opacity-100",
+        "opacity-0 group-hover/codeblock:opacity-100",
         copied
           ? "text-success"
           : "text-ink-muted hover:bg-hover hover:text-ink-soft",
